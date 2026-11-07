@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/MadManJohnSmith/catpart-parser/main/src/catpart/schema/v0.json",
   "title": "catpart-inspect output, schema v0",
-  "description": "Version-0 report emitted by `catpart-inspect <file>` (ticket #11). Fields describe the outer container structure documented in docs/evidence/2026-11-07-container-triage.md: the 32-byte header (magic at bytes 0-8, big-endian dword at bytes 8-12) and the container-name strings. Evolution is additive within a schema version: consumers must ignore properties they do not know, and additionalProperties is true so the detected-version field (version-detection ticket #13) can be added while the schema stays v0.",
+  "description": "Version-0 report emitted by `catpart-inspect <file>` (ticket #11). Fields describe the outer container structure documented in docs/evidence/2026-11-07-container-triage.md: the 32-byte header (magic at bytes 0-8, big-endian dword at bytes 8-12) and the container-name strings. Evolution is additive within a schema version: consumers must ignore properties they do not know. The detected-version field (version-detection ticket #13) was added on that basis while the schema stayed v0; it is documented but not required so reports emitted before ticket #13 still validate.",
   "type": "object",
   "properties": {
     "schema_version": {
@@ -23,6 +23,11 @@
       "type": "integer",
       "minimum": 0,
       "description": "File size in bytes."
+    },
+    "detected_version": {
+      "type": "string",
+      "pattern": "^(unknown|V5R[0-9]{2}SP[0-9]+HF[0-9]+)$",
+      "description": "Release marker (V5RxxSPxxHFxx) detected from the embedded CNEXTINFOS string (docs/evidence/2026-11-07-container-triage.md, 'Per-file version marker'): 8 KB window first, 64 KB fallback, 'unknown' when no marker is present (map decision on ticket #4; 338/1818 corpus files)."
     },
     "container_names": {
       "type": "array",

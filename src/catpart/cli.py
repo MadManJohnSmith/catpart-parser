@@ -5,11 +5,12 @@ schema-versioned JSON; ``catpart-fitness`` is a stub until the
 fitness-runner ticket (#14).
 
 catpart-inspect output is schema v0 (ticket #11): schema_version, magic,
-header_dword, file_size, container_names. File-level failures (missing
-file, unreadable, smaller than the 32-byte header) print a
-``catpart-inspect: error: ...`` line to stderr and exit 1; usage errors
-exit 2 via argparse convention. catpart-fitness exits 2 with a
-"not implemented yet" note while it is a stub.
+header_dword, file_size, container_names; the detected CNEXTINFOS
+version field (ticket #13) was added while the schema stayed v0.
+File-level failures (missing file, unreadable, smaller than the 32-byte
+header) print a ``catpart-inspect: error: ...`` line to stderr and exit
+1; usage errors exit 2 via argparse convention. catpart-fitness exits 2
+with a "not implemented yet" note while it is a stub.
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from pathlib import Path
 
 from catpart.containers import scan_container_names
 from catpart.header import HEADER_SIZE, parse_header
+from catpart.version import detect_version
 
 SCHEMA_VERSION = 0
 
@@ -41,12 +43,14 @@ def build_inspect_report(path: Path) -> dict:
         )
     with open(path, "rb") as fh, mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ) as data:
         info = parse_header(data[:HEADER_SIZE])
+        version = detect_version(data)
         names = scan_container_names(data)
     return {
         "schema_version": SCHEMA_VERSION,
         "magic": info.magic,
         "header_dword": info.header_dword,
         "file_size": file_size,
+        "detected_version": version,
         "container_names": names,
     }
 
@@ -63,7 +67,8 @@ def main_inspect(argv: list[str] | None = None) -> int:
         description=(
             "Inspect a CATIA V5 .CATPart/.CATProduct file and emit a "
             "schema-versioned JSON report (schema v0: magic string, header "
-            "dword, file size, container-name strings)."
+            "dword, file size, detected CNEXTINFOS version, container-name "
+            "strings)."
         ),
     )
     parser.add_argument("file", type=Path, help="path to a .CATPart/.CATProduct file")

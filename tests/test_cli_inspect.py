@@ -45,6 +45,7 @@ def test_inspect_emits_schema_v0_json_for_synthetic_file(
     assert report["magic"] == "V5_CFV2"
     assert report["header_dword"] == 0x0001_0000
     assert report["file_size"] == catpart_file.stat().st_size
+    assert report["detected_version"] == "V5R21SP0HF0"
     assert report["container_names"] == [
         "CameraStartupContainer",
         "CATFeatCont",
@@ -167,3 +168,43 @@ def test_scan_without_version_marker(build_catpart, tmp_path: Path, capsys) -> N
         build_catpart(table_names=("CATPrtCont",), with_marker=False)
     )
     assert inspect_names(path, capsys) == ["CATPrtCont"]
+
+
+def test_inspect_detected_version_unknown_when_marker_absent(
+    build_catpart, tmp_path: Path, capsys
+) -> None:
+    # The unknown bucket (map decision on ticket #4): files without the
+    # marker report "unknown", not a null or a missing field.
+    path = tmp_path / "nomarker.CATPart"
+    path.write_bytes(build_catpart(with_marker=False))
+    code, out, err = run_inspect([str(path)], capsys)
+    assert code == 0, err
+    report = json.loads(out)
+    assert_schema_valid(report)
+    assert report["detected_version"] == "unknown"
+
+
+def test_inspect_detected_version_beyond_8k(
+    build_catpart, tmp_path: Path, capsys
+) -> None:
+    # +78 corpus files carry the marker only past 8 KB; the CLI detects
+    # them through the same mmap buffer it scans for container names.
+    path = tmp_path / "late-marker.CATPart"
+    path.write_bytes(build_catpart(pad_before_table=9000))
+    code, out, err = run_inspect([str(path)], capsys)
+    assert code == 0, err
+    report = json.loads(out)
+    assert_schema_valid(report)
+    assert report["detected_version"] == "V5R21SP0HF0"
+
+
+def test_inspect_detected_version_unknown_for_bare_token(
+    build_catpart, tmp_path: Path, capsys
+) -> None:
+    # Only the CNEXTINFOS-anchored form is a marker (evidence note:
+    # naive V5Rxx patterns are a negative result).
+    path = tmp_path / "bare.CATPart"
+    path.write_bytes(build_catpart(with_marker=False, payload=b"\x00V5R19SP0HF0\x00"))
+    code, out, err = run_inspect([str(path)], capsys)
+    assert code == 0, err
+    assert json.loads(out)["detected_version"] == "unknown"

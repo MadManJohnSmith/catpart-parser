@@ -68,3 +68,17 @@ def test_future_fields_accepted_additively() -> None:
     # consumers (and this validator) must ignore unknown properties.
     future = {**REPORT, "version": "V5R21SP0HF0"}
     validate(future, load_schema("v0"))
+
+
+@pytest.mark.parametrize(
+    "value", ["V5R19SP0HF0", "V5R24SP6HF0", "V5R17SP1HF22", "unknown"]
+)
+def test_detected_version_values_accepted(value: str) -> None:
+    # Ticket #13: the detected CNEXTINFOS version, documented additively.
+    validate({**REPORT, "detected_version": value}, load_schema("v0"))
+
+
+@pytest.mark.parametrize("value", ["V5R21", "R21SP0HF0", "v5r21sp0hf0", ""])
+def test_detected_version_bad_values_rejected(value: str) -> None:
+    with pytest.raises(ValidationError):
+        validate({**REPORT, "detected_version": value}, load_schema("v0"))
