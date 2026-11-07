@@ -1,3 +1,0 @@
-# Header
-
-byte-ranged laws.
