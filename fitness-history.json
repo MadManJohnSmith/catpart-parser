@@ -13,17 +13,6 @@
       },
       "l2": null,
       "l3": null
-    },
-    {
-      "run_id": "20261109T100000Z-abcdef",
-      "timestamp": "2026-11-09T10:00:00Z",
-      "dev": {
-        "clean": 1748,
-        "total": 1751,
-        "pct": 99.83
-      },
-      "l2": null,
-      "l3": null
     }
   ]
 }
