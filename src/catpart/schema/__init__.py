@@ -1,8 +1,11 @@
-"""Versioned JSON schemas for the CLI's output (Spec A #8).
+"""Versioned JSON schemas for the package's JSON outputs (Spec A #8).
 
 The schemas ship as package data inside this subpackage; tests and the
 fitness runner load them through :func:`load_schema` so every consumer
-validates against the same committed file.
+validates against the same committed file. Names are ``v0`` (the
+``catpart-inspect`` output) and ``fitness-report-v0`` /
+``fitness-history-row-v0`` (the two ``catpart-fitness`` artifacts,
+ticket #14).
 
 Evolution rule: output changes are additive within a schema version —
 consumers must ignore properties they do not know. That is why schema
@@ -20,7 +23,7 @@ _SCHEMAS = files("catpart.schema")
 
 
 def available_versions() -> tuple[str, ...]:
-    """Schema versions committed in this package (e.g. ``("v0",)``)."""
+    """Schema names committed in this package (``"v0"``, ``"fitness-report-v0"``, ...)."""
     return tuple(
         sorted(
             entry.name.removesuffix(".json")

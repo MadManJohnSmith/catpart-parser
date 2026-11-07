@@ -1,16 +1,21 @@
 """Console-script entry points for catpart-parser.
 
 The two seams of Spec A (#8): ``catpart-inspect`` emits
-schema-versioned JSON; ``catpart-fitness`` is a stub until the
-fitness-runner ticket (#14).
+schema-versioned JSON; ``catpart-fitness`` (ticket #14) runs the
+fitness protocol of ADR-0001 over the corpus manifest — classify every
+file through :func:`build_inspect_report`, write the full report, and
+append exactly one row (accepted or rejected) to the committed
+append-only ``fitness/history.jsonl``.
 
 catpart-inspect output is schema v0 (ticket #11): schema_version, magic,
 header_dword, file_size, container_names; the detected CNEXTINFOS
 version field (ticket #13) was added while the schema stayed v0.
 File-level failures (missing file, unreadable, smaller than the 32-byte
 header) print a ``catpart-inspect: error: ...`` line to stderr and exit
-1; usage errors exit 2 via argparse convention. catpart-fitness exits 2
-with a "not implemented yet" note while it is a stub.
+1; usage errors exit 2 via argparse convention. catpart-fitness follows
+the same convention: exit 0 for a completed run (the acceptance verdict
+is data on the history row, not a process status), 1 on runtime
+failures, 2 on usage errors.
 """
 
 from __future__ import annotations
@@ -84,13 +89,62 @@ def main_inspect(argv: list[str] | None = None) -> int:
 
 
 def main_fitness(argv: list[str] | None = None) -> int:
-    """Entry point of the ``catpart-fitness`` console script.
+    """Entry point of the ``catpart-fitness`` console script (ticket #14).
 
-    Stub until the fitness-runner ticket (#14): the fitness protocol
-    itself is ADR-0001. Exits 2 with a note on stderr; the non-zero
-    code marks "requested operation not available" as distinct from a
-    runtime failure (1).
+    Measures fitness per ADR-0001 over the corpus manifest, writes the
+    full report to ``fitness/reports/<run_id>.json`` and appends exactly
+    one history row — accepted or rejected — to the committed
+    ``fitness/history.jsonl``; the row JSON is printed to stdout. Exit
+    codes: 0 for a completed run (acceptance is data, not process
+    status), 1 on runtime failures (unreadable or malformed manifest,
+    corrupt committed history, unwritable artifacts), 2 on usage errors
+    (argparse).
+
+    The runner import is deferred because the runner consumes
+    :func:`build_inspect_report` from this module; a module-level import
+    would form an import cycle.
     """
-    del argv  # accepted for console-script signature symmetry
-    print("catpart-fitness: not implemented yet", file=sys.stderr)
-    return 2
+    parser = argparse.ArgumentParser(
+        prog="catpart-fitness",
+        description=(
+            "Run the fitness protocol (ADR-0001) over the corpus manifest: "
+            "classify every file through catpart-inspect, write the full "
+            "report JSON, and append one row - accepted or rejected - to "
+            "the committed fitness/history.jsonl. Defaults assume the "
+            "repository layout; run from the repository root."
+        ),
+    )
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=Path("manifests/corpus-manifest.csv"),
+        help="corpus manifest CSV (default: manifests/corpus-manifest.csv "
+        "relative to the working directory)",
+    )
+    parser.add_argument(
+        "--corpus-root",
+        type=Path,
+        default=None,
+        help="root the manifest's local_path entries resolve against "
+        "(default: the repository root derived from the manifest location)",
+    )
+    parser.add_argument(
+        "--fitness-dir",
+        type=Path,
+        default=None,
+        help="directory holding history.jsonl and reports/ "
+        "(default: <repository root>/fitness)",
+    )
+    args = parser.parse_args(argv)
+    try:
+        from catpart.fitness.runner import FitnessError, run_fitness
+
+        row = run_fitness(
+            args.manifest, corpus_root=args.corpus_root, fitness_dir=args.fitness_dir
+        )
+    except FitnessError as exc:
+        print(f"catpart-fitness: error: {exc}", file=sys.stderr)
+        return 1
+    json.dump(row, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    return 0
