@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/MadManJohnSmith/catpart-parser/main/src/catpart/schema/v0.json",
+  "title": "catpart-inspect output, schema v0",
+  "description": "Version-0 report emitted by `catpart-inspect <file>` (ticket #11). Fields describe the outer container structure documented in docs/evidence/2026-11-07-container-triage.md: the 32-byte header (magic at bytes 0-8, big-endian dword at bytes 8-12) and the container-name strings. Evolution is additive within a schema version: consumers must ignore properties they do not know, and additionalProperties is true so the detected-version field (version-detection ticket #13) can be added while the schema stays v0.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 0,
+      "description": "Version of this schema. Bumped only by a breaking output change; additive changes keep the version."
+    },
+    "magic": {
+      "type": "string",
+      "description": "ASCII decoding of header bytes 0-8 with trailing NUL bytes stripped: 'V5_CFV2' on well-formed files. Reported as observed, not verified: 6 corpus files are known to carry a different magic."
+    },
+    "header_dword": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295,
+      "description": "Big-endian uint32 at header bytes 8-12. Always below file size in the Phase 1 corpus (size - dword has median 10280); semantics not yet proven, so the value is reported as-is."
+    },
+    "file_size": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "File size in bytes."
+    },
+    "container_names": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true,
+      "description": "Container-name strings found in the file: unique, in first-occurrence order, whole-name matches against the vocabulary documented in the Phase 1 evidence note (docs/evidence/2026-11-07-container-triage.md, container name table ~0x7e4-0xd00)."
+    }
+  },
+  "required": [
+    "schema_version",
+    "magic",
+    "header_dword",
+    "file_size",
+    "container_names"
+  ],
+  "additionalProperties": true
+}

@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "catpart-parser"
+version = "0.1.0"
+description = "Reader for CATIA V5 .CATPart/.CATProduct binaries, built by evidence-driven reverse engineering."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "MadManJohnSmith" }]
+keywords = ["CATIA", "CATPart", "CATProduct", "CAD", "reverse-engineering", "parser"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+
+[project.urls]
+Homepage = "https://github.com/MadManJohnSmith/catpart-parser"
+Issues = "https://github.com/MadManJohnSmith/catpart-parser/issues"
+
+[project.scripts]
+catpart-inspect = "catpart.cli:main_inspect"
+catpart-fitness = "catpart.cli:main_fitness"
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+catpart = ["schema/*.json"]
