@@ -9,6 +9,10 @@
       "const": 0,
       "description": "Version of this schema. Bumped only by a breaking change of the history-row shape; additive changes keep the version."
     },
+    "inspect_schema_version": {
+      "type": "integer",
+      "description": "Version of the catpart-inspect output schema the run validated every parsed file against (1 as of ticket #23); additive field (Spec C: the schema version is part of every output document and every history row). Rows emitted before ticket #23 lack the field."
+    },
     "run_id": {
       "type": "string",
       "pattern": "^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{6}$",

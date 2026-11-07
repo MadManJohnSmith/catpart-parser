@@ -116,12 +116,14 @@ def main_fitness_quiet(capsys) -> tuple[int, str, str]:
 
 
 def clean_bytes(build_catpart, **kwargs) -> bytes:
-    """Bytes of a fixture file that parses clean under the v0 invariants.
+    """Bytes of a fixture file that parses clean under the v1 invariants.
 
-    The one v0 invariant (``header-dword-below-file-size``, see
-    ``catpart.fitness.invariants``) needs the header dword below the
-    file size; the conftest default dword (0x10000) exceeds these ~2 KB
-    fixtures, so clean fixtures use a corpus-plausible 1024.
+    The v1 invariants (``catpart.fitness.invariants``) need the header
+    dword below the file size, the V5_CFV2 magic, and - when the file
+    ends with CB__END\\0, as the fixture does - the law-H1 chain and the
+    trailer constants; the conftest fixture builds all of that
+    structurally genuine. The conftest default dword (0x10000) exceeds
+    these ~2 KB fixtures, so clean fixtures use a corpus-plausible 1024.
     """
     kwargs.setdefault("header_dword", 1024)
     return build_catpart(**kwargs)
@@ -179,12 +181,20 @@ def write_mini_corpus(tmp_path: Path, build_catpart) -> tuple[Path, dict[str, by
         "dev-b": (
             "dev",
             clean_bytes(
-                build_catpart, table_names=("CATPrtCont",), payload=b"\x01\x02\x03\x04" * 8
+                build_catpart,
+                records=(("CATPrtCont", "CATProdCont"),),
+                payload=b"\x01\x02\x03\x04" * 8,
             ),
         ),
         "dev-crash": ("dev", b"V5_CFV2\x00"),  # shorter than the 32-byte header
         "ho-a": ("held-out", clean_bytes(build_catpart, payload=b"\xab\xcd\xef\x01" * 8)),
-        "ho-b": ("held-out", clean_bytes(build_catpart, table_names=("CATStdCont",))),
+        "ho-b": (
+            "held-out",
+            # A product-like table: every with-table corpus file names
+            # CATPrtCont (part) or CATProdCont/CATMechProdCont (product)
+            # - kind law K1 - so a table with neither would not be clean.
+            clean_bytes(build_catpart, records=(("CATProdCont", "CATFeatCont"),)),
+        ),
     }
     rows = [manifest_row(name, split, data) for name, (split, data) in files.items()]
     for name, (_, data) in files.items():
@@ -211,7 +221,8 @@ def test_report_classifies_clean_and_crash_files(
     assert clean["classification"] == "clean"
     assert clean["error"] is None
     assert clean["detected_version"] == "V5R21SP0HF0"
-    assert clean["container_names"][0] == "CameraStartupContainer"
+    assert clean["container_names"][0] == "CATPrtCont"
+    assert clean["kind"] == "part"
     assert clean["path"] == "parts/dev-a.CATPart"
     assert clean["split"] == "dev"
 
@@ -222,6 +233,24 @@ def test_report_classifies_clean_and_crash_files(
     )
     assert crash["detected_version"] is None
     assert crash["container_names"] is None
+
+
+def test_row_and_report_carry_the_inspect_schema_version(
+    tmp_path: Path, build_catpart, capsys
+) -> None:
+    # Spec C: "the schema version is part of every output document and
+    # every history row". The row's own schema_version names the row
+    # format (fitness-history-row-v0); inspect_schema_version names the
+    # catpart-inspect contract the run validated against (v1 as of C1).
+    write_mini_corpus(tmp_path, build_catpart)
+    code, out, err = run_fitness_cli(tmp_path, capsys)
+    assert code == 0, err
+    row = json.loads(out)
+    assert row["inspect_schema_version"] == 1
+    report = json.loads(
+        (tmp_path / "fitness" / row["report"]).read_text(encoding="utf-8")
+    )
+    assert report["inspect_schema_version"] == 1
 
 
 def test_missing_invariant_classification(tmp_path: Path, build_catpart, capsys) -> None:
@@ -255,19 +284,25 @@ def test_missing_invariant_classification(tmp_path: Path, build_catpart, capsys)
 
 def test_schema_invalid_classification(tmp_path: Path, build_catpart, capsys, monkeypatch) -> None:
     # A parser regression that emits a schema-violating report (here:
-    # container_names missing). The committed validator is the authority
-    # for this classification, so the fake output is validated exactly
-    # like real output.
+    # the kind field missing from a v1 report). The committed validator
+    # is the authority for this classification, so the fake output is
+    # validated exactly like real output.
     write_mini_corpus(tmp_path, build_catpart)
 
     def broken_inspect(path):
         return {
-            "schema_version": 0,
+            "schema_version": 1,
             "magic": "V5_CFV2",
             "header_dword": 1024,
+            "header_dword12": 1024,
+            "ff8_at_16_24": True,
+            "header_dword16": None,
+            "header_dword20": None,
             "file_size": 2048,
             "detected_version": "unknown",
-            # container_names missing -> violates schema v0
+            "containers": [],
+            "trailer": None,
+            # kind missing -> violates schema v1
         }
 
     monkeypatch.setattr("catpart.fitness.runner.build_inspect_report", broken_inspect)
@@ -278,7 +313,7 @@ def test_schema_invalid_classification(tmp_path: Path, build_catpart, capsys, mo
     )
     classifications = {record["classification"] for record in report["files"]}
     assert classifications == {"schema-invalid"}
-    assert all("container_names" in record["error"] for record in report["files"])
+    assert all("kind" in record["error"] for record in report["files"])
     assert report["splits"]["dev"]["schema-invalid"] == 3
     assert report["totals"]["schema-invalid"] == 5
 
@@ -707,6 +742,11 @@ def test_history_row_schema_rejects_malformed_rows(mutation) -> None:
 def test_future_fields_accepted_additively() -> None:
     # Evolution rule (schema/__init__.py): additive changes keep the version.
     validate({**VALID_ROW, "notes": "accepted by session 42"}, load_schema("fitness-history-row-v0"))
+
+
+def test_inspect_schema_version_field_on_row_schema() -> None:
+    # C1 adds inspect_schema_version additively to the v0 row shape.
+    validate({**VALID_ROW, "inspect_schema_version": 1}, load_schema("fitness-history-row-v0"))
 
 
 def test_report_schema_rejects_unknown_classification() -> None:

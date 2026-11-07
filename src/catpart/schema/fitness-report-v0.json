@@ -2,12 +2,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/MadManJohnSmith/catpart-parser/main/src/catpart/schema/fitness-report-v0.json",
   "title": "catpart-fitness run report, schema v0",
-  "description": "Full report of one catpart-fitness run (ADR-0001: a report per run, kept next to the committed history). It is the audit trail behind the appended history row: per-file classifications, per-split aggregates and the no-regret verdict. Classification vocabulary follows ticket #14 and the Clean parse definition in GLOSSARY.md: clean, schema-invalid (validated against catpart-inspect schema v0), crash (catpart-inspect raised, including the documented file-level refusals), missing-invariant (output valid but a minimal invariant fails), plus unavailable for manifest rows whose file is not on disk (never parsed, counts against the rate denominator). Evolution is additive within a schema version: consumers must ignore properties they do not know.",
+  "description": "Full report of one catpart-fitness run (ADR-0001: a report per run, kept next to the committed history). It is the audit trail behind the appended history row: per-file classifications, per-split aggregates and the no-regret verdict. Classification vocabulary follows ticket #14 and the Clean parse definition in GLOSSARY.md: clean, schema-invalid (validated against the committed catpart-inspect schema - v1 as of ticket #23), crash (catpart-inspect raised, including the documented file-level refusals), missing-invariant (output valid but a minimal invariant fails), plus unavailable for manifest rows whose file is not on disk (never parsed, counts against the rate denominator). Evolution is additive within a schema version: consumers must ignore properties they do not know.",
   "type": "object",
   "properties": {
     "schema_version": {
       "const": 0,
       "description": "Version of this schema. Bumped only by a breaking change of the report shape; additive changes keep the version."
+    },
+    "inspect_schema_version": {
+      "type": "integer",
+      "description": "Version of the catpart-inspect output schema the run validated every parsed file against (1 as of ticket #23); additive field (Spec C: the schema version is part of every output document and every history row). Reports emitted before ticket #23 lack the field."
     },
     "run_id": {
       "type": "string",
@@ -194,7 +198,12 @@
           "container_names": {
             "type": ["array", "null"],
             "items": { "type": "string" },
-            "description": "Container names from the catpart-inspect output; null when the file was never parsed."
+            "description": "Container names at container level: the parsed container-name table records (schema v1), unique, in first-occurrence order; null when the file was never parsed. Reports from the v0 era carried the whole-file vocabulary scan instead."
+          },
+          "kind": {
+            "type": ["string", "null"],
+            "enum": ["part", "product", "unknown", null],
+            "description": "Part/product kind from the catpart-inspect output (law K1); null when the file was never parsed."
           },
           "error": {
             "type": ["string", "null"],

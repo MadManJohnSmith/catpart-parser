@@ -7,15 +7,19 @@ file through :func:`build_inspect_report`, write the full report, and
 append exactly one row (accepted or rejected) to the committed
 append-only ``fitness/history.jsonl``.
 
-catpart-inspect output is schema v0 (ticket #11): schema_version, magic,
-header_dword, file_size, container_names; the detected CNEXTINFOS
-version field (ticket #13) was added while the schema stayed v0.
-File-level failures (missing file, unreadable, smaller than the 32-byte
-header) print a ``catpart-inspect: error: ...`` line to stderr and exit
-1; usage errors exit 2 via argparse convention. catpart-fitness follows
-the same convention: exit 0 for a completed run (the acceptance verdict
-is data on the history row, not a process status), 1 on runtime
-failures, 2 on usage errors.
+catpart-inspect output is schema v1 (ticket #23): the v0 metadata
+(magic, header dword8, file size, detected CNEXTINFOS version — tickets
+#11/#13) plus the remaining header dwords, the part/product kind, the
+parsed container-name table records (docs/evidence/2026-11-07-
+container-table-and-trailer.md) and the trailer. v0 replaced its
+whole-file container-name string scan with the record parse and dropped
+the ``container_names`` field; that breaking change is why the schema
+version moved to v1. File-level failures (missing file, unreadable,
+smaller than the 32-byte header) print a ``catpart-inspect: error: ...``
+line to stderr and exit 1; usage errors exit 2 via argparse convention.
+catpart-fitness follows the same convention: exit 0 for a completed run
+(the acceptance verdict is data on the history row, not a process
+status), 1 on runtime failures, 2 on usage errors.
 """
 
 from __future__ import annotations
@@ -26,20 +30,22 @@ import mmap
 import sys
 from pathlib import Path
 
-from catpart.containers import scan_container_names
+from catpart.containers import detect_kind, parse_container_table
 from catpart.header import HEADER_SIZE, parse_header
+from catpart.trailer import parse_trailer
 from catpart.version import detect_version
 
-SCHEMA_VERSION = 0
+SCHEMA_VERSION = 1
 
 
 def build_inspect_report(path: Path) -> dict:
-    """Build the schema-v0 report dict for ``path``.
+    """Build the schema-v1 report dict for ``path``.
 
-    The file is memory-mapped so the whole-file container-name scan
-    (corpus maximum: a 375 MB part) never loads the payload into RAM.
-    Raises :class:`OSError` for unreadable paths and :class:`ValueError`
-    for files smaller than the 32-byte header.
+    The file is memory-mapped so the whole-file scans (the container-name
+    table over the evidence-validated first 2 MB window; corpus maximum:
+    a 375 MB part) never load the payload into RAM. Raises
+    :class:`OSError` for unreadable paths and :class:`ValueError` for
+    files smaller than the 32-byte header.
     """
     file_size = path.stat().st_size
     if file_size < HEADER_SIZE:
@@ -49,14 +55,21 @@ def build_inspect_report(path: Path) -> dict:
     with open(path, "rb") as fh, mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ) as data:
         info = parse_header(data[:HEADER_SIZE])
         version = detect_version(data)
-        names = scan_container_names(data)
+        records = parse_container_table(data)
+        trailer = parse_trailer(data)
     return {
         "schema_version": SCHEMA_VERSION,
         "magic": info.magic,
         "header_dword": info.header_dword,
+        "header_dword12": info.header_dword12,
+        "ff8_at_16_24": info.ff8_at_16_24,
+        "header_dword16": info.header_dword16,
+        "header_dword20": info.header_dword20,
         "file_size": file_size,
         "detected_version": version,
-        "container_names": names,
+        "kind": detect_kind(records),
+        "containers": [record.to_json() for record in records],
+        "trailer": None if trailer is None else trailer.to_json(),
     }
 
 
@@ -71,9 +84,9 @@ def main_inspect(argv: list[str] | None = None) -> int:
         prog="catpart-inspect",
         description=(
             "Inspect a CATIA V5 .CATPart/.CATProduct file and emit a "
-            "schema-versioned JSON report (schema v0: magic string, header "
-            "dword, file size, detected CNEXTINFOS version, container-name "
-            "strings)."
+            "schema-versioned JSON report (schema v1: magic, header dwords, "
+            "file size, detected CNEXTINFOS version, part/product kind, the "
+            "parsed container-name table records and the trailer)."
         ),
     )
     parser.add_argument("file", type=Path, help="path to a .CATPart/.CATProduct file")

@@ -2,16 +2,20 @@
 
 The schemas ship as package data inside this subpackage; tests and the
 fitness runner load them through :func:`load_schema` so every consumer
-validates against the same committed file. Names are ``v0`` (the
-``catpart-inspect`` output) and ``fitness-report-v0`` /
+validates against the same committed file. Names are ``v1`` (the current
+``catpart-inspect`` output, ticket #23; ``v0`` stays committed as the
+contract for previously emitted reports) and ``fitness-report-v0`` /
 ``fitness-history-row-v0`` (the two ``catpart-fitness`` artifacts,
 ticket #14).
 
 Evolution rule: output changes are additive within a schema version —
-consumers must ignore properties they do not know. That is why schema
-v0 sets ``additionalProperties`` to ``true``: the detected-version field
-arrives with the version-detection ticket (#13) while the schema stays
-v0.
+consumers must ignore properties they do not know. That is why every
+schema sets ``additionalProperties`` to ``true``: the detected-version
+field arrived with the version-detection ticket (#13) while the schema
+stayed v0, and the inspect fields of later Spec C tickets will arrive
+while the schema stays v1. A breaking change — like v1 dropping v0's
+whole-file ``container_names`` scan for the parsed table records —
+bumps the version instead.
 """
 
 from __future__ import annotations

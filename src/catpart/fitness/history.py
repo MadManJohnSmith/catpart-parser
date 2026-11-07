@@ -26,8 +26,8 @@ from catpart.schema import load_schema
 from catpart.schema.validate import SchemaError, ValidationError, validate
 
 #: Capability levels of the fitness ladder (ADR-0001). Only L1 (clean
-#: parse) carries a scalar while the parser reports schema v0; L2 and L3
-#: stay null in every artifact until those levels exist.
+#: parse) carries a scalar while the parser reports metadata only (L1 of
+#: Spec C); L2 and L3 stay null in every artifact until those levels exist.
 LEVELS: tuple[str, ...] = ("L1", "L2", "L3")
 
 ROW_SCHEMA = load_schema("fitness-history-row-v0")
@@ -172,7 +172,7 @@ def evaluate_no_regret(
     A level compares when both sides carry a scalar for it; every
     comparable level must satisfy "Dev rises AND Held-out does not
     fall". Raises :class:`ValueError` when no level is comparable —
-    with a baseline row there is always at least L1 at schema v0.
+    with a baseline row there is always at least L1.
     """
     comparable = [
         level

@@ -8,13 +8,13 @@ Implements the fitness protocol of ADR-0001 for ticket #14. Per run,
 2. runs ``catpart-inspect`` in-process (:func:`catpart.cli.build_inspect_report`,
    not a subprocess) over the files available on disk and classifies
    each file: ``clean`` / ``schema-invalid`` (validated against the
-   committed ``v0.json`` through :mod:`catpart.schema.validate` — the
-   single validation authority, not a fork) / ``crash`` (inspect raised,
-   including the documented file-level refusals such as a truncated
-   header) / ``missing-invariant`` (output valid but a minimal invariant
-   fails, :mod:`catpart.fitness.invariants`). Manifest rows whose file
-   is not on disk are ``unavailable``: never parsed, and counted as not
-   clean;
+   committed inspect schema — ``v1.json`` as of ticket #23 — through
+   :mod:`catpart.schema.validate`, the single validation authority, not
+   a fork) / ``crash`` (inspect raised, including the documented
+   file-level refusals such as a truncated header) /
+   ``missing-invariant`` (output valid but a minimal invariant fails,
+   :mod:`catpart.fitness.invariants`). Manifest rows whose file is not
+   on disk are ``unavailable``: never parsed, and counted as not clean;
 3. aggregates the clean-parse scalar per split — L1's fitness is "the
    share of the Corpus that is a Clean parse" (GLOSSARY), so the
    denominator is the manifest rows of the split. The manifest's
@@ -95,9 +95,16 @@ CLASSIFICATIONS: tuple[str, ...] = (
 #: Manifest columns the runner consumes; extra columns are ignored.
 REQUIRED_COLUMNS = ("sha256", "split", "path", "local_path")
 
-INSPECT_SCHEMA = load_schema("v0")
+INSPECT_SCHEMA = load_schema("v1")
 REPORT_SCHEMA = load_schema("fitness-report-v0")
 ROW_SCHEMA = load_schema("fitness-history-row-v0")
+
+#: The catpart-inspect contract version the run validates against, taken
+#: from the committed schema itself (single authority). It rides on every
+#: report and history row additively (Spec C: "the schema version is part
+#: of every output document and every history row"); the artifacts' own
+#: ``schema_version`` keeps naming their shape (fitness-*-v0).
+INSPECT_SCHEMA_VERSION = INSPECT_SCHEMA["properties"]["schema_version"]["const"]
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
@@ -189,7 +196,7 @@ def _classify_file(file_path: Path) -> tuple[str, str | None, dict | None]:
     except ValidationError as exc:
         return CLASS_SCHEMA_INVALID, str(exc), report
     except SchemaError as exc:
-        raise FitnessError(f"schema v0 is invalid: {exc}") from exc
+        raise FitnessError(f"the committed inspect schema is invalid: {exc}") from exc
     failure = check_invariants(report)
     if failure is not None:
         return CLASS_MISSING_INVARIANT, failure, report
@@ -252,13 +259,25 @@ def _aggregate(
 def _per_file_record(row: dict[str, str], classification: str, error: str | None, output: dict | None) -> dict:
     # Schema-invalid output may be missing any field, so inspect-derived
     # values use .get() and report whatever the parser actually emitted.
+    # container_names carries the names at container level: the parsed
+    # container-name table records (schema v1 dropped the v0 whole-file
+    # string scan), unique, in first-occurrence order.
+    containers = None if output is None else output.get("containers")
+    container_names: list[str] | None = None
+    if containers is not None:
+        container_names = []
+        for record in containers:
+            name = record.get("name") if isinstance(record, dict) else None
+            if name is not None and name not in container_names:
+                container_names.append(name)
     return {
         "sha256": row["sha256"],
         "path": row["path"],
         "split": row["split"],
         "classification": classification,
         "detected_version": None if output is None else output.get("detected_version"),
-        "container_names": None if output is None else output.get("container_names"),
+        "kind": None if output is None else output.get("kind"),
+        "container_names": container_names,
         "error": error,
     }
 
@@ -379,6 +398,7 @@ def run_fitness(
     scalars_json = level_scores_to_json(level_scores)
     report = {
         "schema_version": 0,
+        "inspect_schema_version": INSPECT_SCHEMA_VERSION,
         "run_id": _run_id(instant),
         "timestamp": _timestamp(instant),
         "tool_version": _tool_version(),
@@ -394,6 +414,7 @@ def run_fitness(
     }
     history_row = {
         "schema_version": 0,
+        "inspect_schema_version": INSPECT_SCHEMA_VERSION,
         "run_id": report["run_id"],
         "timestamp": report["timestamp"],
         "tool_version": report["tool_version"],

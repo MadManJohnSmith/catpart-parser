@@ -3,19 +3,29 @@
 The real corpus is gitignored and never present in CI (Spec A #8, ADR-0003),
 so every test builds its own minimal, structurally genuine fixture here.
 The layouts mirror the byte-level facts in
-docs/evidence/2026-11-07-container-triage.md; ticket A2 (#12) replaces this
-ad-hoc builder with the committed deterministic fixture generator.
+docs/evidence/2026-11-07-container-triage.md (Phase 1: header, version
+marker, trailer marker) and
+docs/evidence/2026-11-07-container-table-and-trailer.md (B1: container-name
+table records, trailer field model, writer registration block, the
+dual-region header variant).
 
-Structural facts exercised by ``build_catpart`` (evidence note, byte ranges):
+Structural facts exercised by ``build_catpart`` (evidence notes, byte ranges):
 
-- 32-byte header: magic ``V5_CFV2\\0`` (bytes 0-8), big-endian dword
-  (bytes 8-12), small dword (bytes 12-16), eight ``0xFF`` bytes (bytes
-  16-24), zeros (bytes 24-32).
-- Plaintext container-name table records: a small little-endian dword
-  followed by one or two NUL-terminated ASCII names (record format is an
-  open question; the fixture only mimics the observed shape).
+- 32-byte header: magic ``V5_CFV2\\0`` (bytes 0-8), big-endian dword8
+  (bytes 8-12), big-endian dword12 (bytes 12-16, == file size - dword8,
+  law H1), eight ``0xFF`` bytes (bytes 16-24) — or, in the dual-region
+  variant, two more big-endian dwords dword16/dword20 — zeros (bytes
+  24-32).
+- Container-name table records (B1 record layout, little-endian): the
+  40-byte prefix with constants f5=``0x006c0001``, f6=2, f8=0 and the
+  f9 anchor ``0x20810002``, two NUL-terminated ASCII names zero-padded
+  to a multiple of 8 (law T1), the constant 8-byte tail, and a 16-byte
+  GUID.
 - CNEXTINFOS version-marker line after the table region.
-- Trailer ending with ``CB__END\\0``.
+- Writer registration block ``[0x4e][u32le 17]"DASSAULT-SYSTEMES"[u32le
+  5]"CATIA"[u32le 6]"041803"`` in the payload (B1).
+- Trailer: the last 36 bytes, seven big-endian dwords A..G (A=1,
+  C==D, E=0, G==dword12) plus the ``CB__END\\0`` marker (B1).
 """
 
 from __future__ import annotations
@@ -30,55 +40,146 @@ CNEXTINFOS_LINE = (
     b"NOTHING-CNEXTINFOS-UpdateVersion-StreamBlock-SafeEarlyBlock-"
     b"StrongEarly&V5R21SP0HF0 built on 01-15-2014.20.00"
 )
-TRAILER = b"CB__END\x00"
+TRAILER_MARKER = b"CB__END\x00"
 
-# Names from the evidence note's container-name table, in the order a small
-# product-like fixture presents them.
-EXAMPLE_TABLE_NAMES = (
-    "CameraStartupContainer",
-    "CATFeatCont",
-    "CATProdCont",
-    "CGMGeom",
-    "CATContainer",
-    "V5USERID",
+#: Constants of the B1 record layout (all little-endian prefix fields).
+RECORD_F5 = 0x006C0001
+RECORD_ANCHOR = 0x20810002  # f9, bytes 02 00 81 20 little-endian
+RECORD_TAIL = b"\x03\x00\xf7\x00\x03\x00\x00\x00"
+TABLE_ID_CONTAINERS = 0x00030001
+
+#: (name1, name2) record pairs of the default fixture: a small part-like
+#: table (CATPrtCont present -> kind "part" per the kind-law evidence note).
+EXAMPLE_RECORDS = (
+    ("CATPrtCont", "CATProdCont"),
+    ("CATFeatCont", "CATPrtCont"),
+    ("CGMGeom", "CATContainer"),
 )
 
 
-def _name_record(*names: str) -> bytes:
-    """One table record as observed: small dword, then NUL-terminated names."""
-    blob = b"".join(name.encode("ascii") + b"\x00" for name in names)
-    return struct.pack("<I", 2 + len(names)) + blob
+def ceil8(n: int) -> int:
+    return ((n + 7) // 8) * 8
+
+
+def container_record(
+    name: str,
+    parent_name: str,
+    *,
+    stream_id: int = 1,
+    weight: int = 11,
+    table_id: int = TABLE_ID_CONTAINERS,
+    index: int = 1,
+    guid: bytes = bytes(16),
+) -> bytes:
+    """One container-name table record in the B1 layout (law T1/T3)."""
+    names = name.encode("ascii") + b"\x00" + parent_name.encode("ascii") + b"\x00"
+    area = ceil8(len(names))
+    prefix = struct.pack(
+        "<8I",
+        stream_id,
+        weight,
+        table_id,
+        index,
+        RECORD_F5,
+        2,  # f6 constant
+        0,  # f7 (small value; 0 is the corpus mode)
+        0,  # f8 constant
+    )
+    prefix += struct.pack("<2I", RECORD_ANCHOR, area // 8 + 1)  # f9, f10 (law T1)
+    return prefix + names + b"\x00" * (area - len(names)) + RECORD_TAIL + guid
+
+
+def registration_block(tag: int = 0x4E) -> bytes:
+    """The writer registration block (B1): tag + length-prefixed strings."""
+    return (
+        bytes([tag])
+        + struct.pack("<I", 17)
+        + b"DASSAULT-SYSTEMES"
+        + struct.pack("<I", 5)
+        + b"CATIA"
+        + struct.pack("<I", 6)
+        + b"041803"
+    )
 
 
 def build_catpart(
     *,
     magic: bytes = MAGIC,
     header_dword: int = 0x0001_0000,
-    table_names: tuple[str, ...] = EXAMPLE_TABLE_NAMES,
+    records: tuple[tuple[str, str], ...] = EXAMPLE_RECORDS,
     with_marker: bool = True,
     with_trailer: bool = True,
+    with_registration: bool = True,
+    dual_region: bool = False,
     payload: bytes = b"\x12\x34\x56\x78" * 8,
     pad_before_table: int = 0x700,
 ) -> bytes:
-    """Assemble a minimal, structurally genuine CATIA V5-shaped file."""
+    """Assemble a minimal, structurally genuine CATIA V5-shaped file.
+
+    ``dual_region=True`` emits the 146-file variant header (two more
+    big-endian dwords at 16-24 instead of the eight ``0xFF`` bytes, B1
+    evidence note). The header dword12 and the trailer G field are the
+    law-H1 chain values (dword8 + dword12 == file size, G == dword12);
+    a deliberately malformed ``header_dword`` larger than the file gets
+    dword12 = 0 so the fixture itself stays well-formed at the byte
+    level while violating the invariant under test.
+    """
     header = magic[:8].ljust(8, b"\x00")
     header += struct.pack(">I", header_dword)
-    header += struct.pack("<I", 0x0000_1FA4)  # small dword, bytes 12-16
-    header += b"\xff" * 8  # bytes 16-24
-    header += b"\x00" * 8  # bytes 24-32
+    header += b"\x00" * 4  # dword12 patched below, big-endian
+    if dual_region:
+        # Two more big-endian dwords instead of the ff x8 marker; the
+        # corpus values are region offsets the parser reports as-is.
+        header += struct.pack(">II", 0x0000_0010, 0x0000_0020)
+    else:
+        header += b"\xff" * 8
+    header += b"\x00" * 8
     assert len(header) == 32
 
-    parts = [header, b"\x00" * pad_before_table]
-    if table_names:
-        # Two names per record, as observed in the corpus table region.
-        for i in range(0, len(table_names), 2):
-            parts.append(_name_record(*table_names[i : i + 2]))
+    body = [header, b"\x00" * pad_before_table]
+    for i, (name, parent_name) in enumerate(records):
+        body.append(
+            container_record(
+                name,
+                parent_name,
+                stream_id=1 + 5 * i,
+                index=i + 1,
+                guid=struct.pack(">QQ", 0, 0x1AE0 + i),
+            )
+        )
     if with_marker:
-        parts.append(b"\x00\x00\x00\x00" + CNEXTINFOS_LINE)
-    parts.append(payload)
+        body.append(b"\x00\x00\x00\x00" + CNEXTINFOS_LINE)
+    body.append(payload)
+
+    registration_offset = 0
+    if with_trailer and with_registration:
+        registration_offset = sum(len(part) for part in body)
+        body.append(registration_block())
+
+    data = b"".join(body)
+    final_size = len(data) + (36 if with_trailer else 0)
+    dword12 = final_size - header_dword
+    if not 0 <= dword12 <= 0xFFFFFFFF:
+        dword12 = 0
+    data = data[:12] + struct.pack(">I", dword12) + data[16:]
+
     if with_trailer:
-        parts.append(b"\x00\x00\x00\x00" + TRAILER)
-    return b"".join(parts)
+        # Trailer model (B1): A=1, B=registration offset, C==D, E=0,
+        # F=0, G==dword12, then the CB__END\0 marker.
+        data += (
+            struct.pack(
+                ">7I",
+                1,
+                registration_offset,
+                0xE7,
+                0xE7,
+                0,
+                0,
+                dword12,
+            )
+            + TRAILER_MARKER
+        )
+    return data
 
 
 @pytest.fixture(name="build_catpart")

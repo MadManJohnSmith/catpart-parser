@@ -1,0 +1,199 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/MadManJohnSmith/catpart-parser/main/src/catpart/schema/v1.json",
+  "title": "catpart-inspect output, schema v1",
+  "description": "Version-1 report emitted by `catpart-inspect <file>` (ticket #23). Supersedes v0 (ticket #11): the container list is now the parsed container-name table records of docs/evidence/2026-11-07-container-table-and-trailer.md instead of v0's whole-file string scan (the v0 field container_names is dropped; that breaking change is why the version bumped), and the file metadata adds the part/product kind, the remaining header dwords and the trailer. Every field cites the evidence note and byte ranges that justify it; values whose semantics are unproven are reported as-is. Evolution is additive within a schema version: consumers must ignore properties they do not know.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "description": "Version of this schema. Bumped only by a breaking output change; additive changes keep the version."
+    },
+    "magic": {
+      "type": "string",
+      "description": "ASCII decoding of header bytes 0-8 with trailing NUL bytes stripped: 'V5_CFV2' on well-formed files (docs/evidence/2026-11-07-container-triage.md, bytes 0-8). Reported as observed, not verified: 6 corpus files are known to carry a different magic."
+    },
+    "header_dword": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295,
+      "description": "Big-endian uint32 at header bytes 8-12 (dword8). Always below file size in the Phase 1 corpus (docs/evidence/2026-11-07-container-triage.md, bytes 8-12). Per the tail-region law H1 (docs/evidence/2026-11-07-container-table-and-trailer.md) it is the start offset of the CATIA_V5 CB0001 tail region on CB__END-ending files; reported as-is."
+    },
+    "header_dword12": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295,
+      "description": "Big-endian uint32 at header bytes 12-16 (dword12). On CB__END-ending files it equals the tail-region length and trailer G (law H1, 1556/1556 corpus files; docs/evidence/2026-11-07-container-table-and-trailer.md). Never 0xFFFFFFFF (0/1818 Phase 1 files)."
+    },
+    "ff8_at_16_24": {
+      "type": "boolean",
+      "description": "True when header bytes 16-24 are eight 0xFF bytes (1672/1818 Phase 1 files, docs/evidence/2026-11-07-container-triage.md). False marks the dual-region variant (146 files, docs/evidence/2026-11-07-container-table-and-trailer.md, 'The 146 files without ff x8'): a different writer generation whose header continues as two more big-endian dwords."
+    },
+    "header_dword16": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 4294967295,
+      "description": "Big-endian uint32 at header bytes 16-20 of the dual-region variant (offset of an additional CATIA_V5 CB0001 region in 143/146 dual-region files, docs/evidence/2026-11-07-container-table-and-trailer.md). Null when ff8_at_16_24 is true (the bytes are the ff x8 marker, not a dword)."
+    },
+    "header_dword20": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "maximum": 4294967295,
+      "description": "Big-endian uint32 at header bytes 20-24 of the dual-region variant. Null when ff8_at_16_24 is true. Semantics unproven (open question in docs/evidence/2026-11-07-container-table-and-trailer.md); reported as-is."
+    },
+    "file_size": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "File size in bytes."
+    },
+    "detected_version": {
+      "type": "string",
+      "pattern": "^(unknown|V5R[0-9]{2}SP[0-9]+HF[0-9]+)$",
+      "description": "Release marker (V5RxxSPxxHFxx) detected from the embedded CNEXTINFOS string (docs/evidence/2026-11-07-container-triage.md, 'Per-file version marker'): 8 KB window first, 64 KB fallback, 'unknown' when no marker is present (map decision on ticket #4; 338/1818 corpus files)."
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["part", "product", "unknown"],
+      "description": "Part/product kind from the container-name table records (law K1, docs/evidence/2026-11-07-container-kind-law.md): 'part' when a record is named CATPrtCont, 'product' when CATProdCont or CATMechProdCont is named and CATPrtCont is not, 'unknown' otherwise (no table, or a table carrying neither name - 0/1810 with-table corpus files)."
+    },
+    "containers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The container's own name (record field name1, bytes S+40 to the first NUL): printable ASCII."
+          },
+          "parent_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The record's parent/base name (record field name2, second NUL-terminated string): corpus vocabulary led by CATContainer, CATFeatCont, CATProdCont (docs/evidence/2026-11-07-container-table-and-trailer.md)."
+          },
+          "table_id": {
+            "type": "integer",
+            "enum": [196609, 262145, 327681],
+            "description": "Record field f3 at S+8 (little-endian): exactly three values corpus-wide (19300/19300 records) - 0x00030001 (196609) container rows, 0x00040001 (262145) the AppliCont row, 0x00050001 (327681) observed on some files."
+          },
+          "index": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Record field idx at S+12 (little-endian): 1-based index within the table id; skips observed."
+          },
+          "stream_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Record field f1 at S+0 (little-endian): stream-position value; the join key with the (unparsed) directory table (law D1, docs/evidence/2026-11-07-container-table-and-trailer.md)."
+          },
+          "weight": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Record field f2 at S+4 (little-endian): per-record weight (11/12/13/21 observed; semantics unproven); feeds the directory cumulative law D2."
+          },
+          "guid": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{32}$",
+            "description": "The record's 16-byte GUID (bytes S+names_area+8 .. +24 of the record), lowercase hex; per-record object id."
+          }
+        },
+        "required": ["name", "parent_name", "table_id", "index", "stream_id", "weight", "guid"],
+        "additionalProperties": true
+      },
+      "description": "The parsed container-name table records, in file order (docs/evidence/2026-11-07-container-table-and-trailer.md: records located by the f9 anchor 0x20810002 at S+32 and fully validated against the record model - laws T1/T3 - before being reported; the scan covers the evidence-validated first 2 MB window). Empty for the 8 corpus files with no table."
+    },
+    "trailer": {
+      "type": ["object", "null"],
+      "properties": {
+        "a": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "Big-endian uint32 at file size - 36: constant 0x00000001 on every CB__END-ending corpus file (1556/1556, docs/evidence/2026-11-07-container-table-and-trailer.md)."
+        },
+        "registration_offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "Trailer field B (big-endian uint32 at file size - 32): absolute file offset of the writer registration block (byte-proven: it moves by exactly the size delta between near-identical saves; docs/evidence/2026-11-07-container-table-and-trailer.md)."
+        },
+        "c": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "Trailer field C (big-endian uint32 at file size - 28): first half of the C==D pair, stored twice, value file-dependent (0x000000e7 is the mode); semantics unproven, reported as-is."
+        },
+        "d": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "Trailer field D (big-endian uint32 at file size - 24): second half of the C==D pair; equals C on every CB__END-ending corpus file (1556/1556)."
+        },
+        "e": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "Trailer field E (big-endian uint32 at file size - 20): 0 on 1555/1556 CB__END-ending files (the one exception is a dual-region file). Reported as-is, not invariant-enforced."
+        },
+        "f": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "Trailer field F (big-endian uint32 at file size - 16): 0 (1378 files), 1 (177), 2 (1); semantics unproven, reported as-is."
+        },
+        "tail_region_length": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4294967295,
+          "description": "Trailer field G (big-endian uint32 at file size - 12): equals header dword12 == file size - header_dword8 (law H1, 1556/1556 CB__END-ending files) - the length of the CATIA_V5 CB0001 tail region."
+        },
+        "registration": {
+          "type": ["object", "null"],
+          "properties": {
+            "tag": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The registration block's tag byte, 0x4d or 0x4e, as a single character ('M'/'N'); per B1, 0x4e on most R15-R18 and R21 files, 0x4d on most R19/R20 and R23+. Meaning unproven."
+            },
+            "company": {
+              "type": "string",
+              "const": "DASSAULT-SYSTEMES",
+              "description": "First length-prefixed (u32le) string of the block, byte-exact by validation."
+            },
+            "product": {
+              "type": "string",
+              "const": "CATIA",
+              "description": "Second length-prefixed (u32le) string of the block, byte-exact by validation."
+            },
+            "code": {
+              "type": "string",
+              "const": "041803",
+              "description": "Third length-prefixed (u32le) string of the block; identical across all observed versions (not the writing release; meaning unproven)."
+            }
+          },
+          "required": ["tag", "company", "product", "code"],
+          "additionalProperties": true,
+          "description": "The writer registration block at registration_offset, reported only when it matches the documented byte pattern ([tag 0x4d|0x4e][u32le 17]\"DASSAULT-SYSTEMES\"[u32le 5]\"CATIA\"[u32le 6]\"041803\"; 1553/1556 CB__END-ending files, docs/evidence/2026-11-07-container-table-and-trailer.md); null when the offset is out of range or the bytes differ."
+        }
+      },
+      "required": ["a", "registration_offset", "c", "d", "e", "f", "tail_region_length", "registration"],
+      "additionalProperties": true,
+      "description": "The file trailer (docs/evidence/2026-11-07-container-table-and-trailer.md): the last 36 bytes of a file ending with CB__END\\0 - seven big-endian dwords plus the 8-byte marker. Null when the file does not end with CB__END\\0 (262/1818 corpus files, including all dual-region files without a CB__END tail) or is shorter than 36 bytes."
+    }
+  },
+  "required": [
+    "schema_version",
+    "magic",
+    "header_dword",
+    "header_dword12",
+    "ff8_at_16_24",
+    "header_dword16",
+    "header_dword20",
+    "file_size",
+    "detected_version",
+    "kind",
+    "containers",
+    "trailer"
+  ],
+  "additionalProperties": true
+}

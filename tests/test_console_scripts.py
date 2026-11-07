@@ -30,7 +30,7 @@ def test_inspect_console_script(catpart_file: Path) -> None:
     )
     assert proc.returncode == 0, proc.stderr
     report = json.loads(proc.stdout)
-    assert report["schema_version"] == 0
+    assert report["schema_version"] == 1
     assert report["magic"] == "V5_CFV2"
 
 
