@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Corpus binaries are never committed — only their manifests.
+corpus/
+*.CATPart
+*.CATProduct
+
+# Editor / OS noise
+.idea/
+.vscode/
+.DS_Store
+
+# REA evidence bundles can be large; keep dated reports, not bundles
+evidence-bundles/
