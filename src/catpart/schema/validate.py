@@ -60,6 +60,18 @@ def _is_number(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
+def _json_equal(left: object, right: object) -> bool:
+    """JSON-value equality: ``true``/``false`` never equal ``1``/``0``.
+
+    Python's ``==`` collapses bools into ints (``True == 1``), which would
+    let a ``const``/``enum`` accept the wrong JSON value and make
+    ``uniqueItems`` see bool/int neighbors as duplicates.
+    """
+    if isinstance(left, bool) != isinstance(right, bool):
+        return False
+    return left == right
+
+
 def _is_integer(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
@@ -107,12 +119,12 @@ def validate(instance: object, schema: object, where: str = "$") -> None:
     if "type" in schema:
         _check_type(instance, schema["type"], where)
 
-    if "const" in schema and instance != schema["const"]:
+    if "const" in schema and not _json_equal(instance, schema["const"]):
         raise ValidationError(f"{where}: expected {schema['const']!r}, got {instance!r}")
     if "enum" in schema:
         if not isinstance(schema["enum"], list):
             raise SchemaError(f"{where}: 'enum' keyword must be an array")
-        if instance not in schema["enum"]:
+        if not any(_json_equal(instance, choice) for choice in schema["enum"]):
             raise ValidationError(
                 f"{where}: {instance!r} is not one of {schema['enum']!r}"
             )
@@ -173,7 +185,7 @@ def _validate_array(instance: list, schema: dict, where: str) -> None:
         )
     if schema.get("uniqueItems"):
         for index, item in enumerate(instance):
-            if item in instance[:index]:
+            if any(_json_equal(item, other) for other in instance[:index]):
                 raise ValidationError(f"{where}: duplicate item at index {index}")
 
 

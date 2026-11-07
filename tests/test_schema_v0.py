@@ -45,6 +45,7 @@ def test_empty_container_names_allowed() -> None:
     "mutation",
     [
         lambda r: {**r, "schema_version": 1},
+        lambda r: {**r, "schema_version": False},  # false is not 0 in JSON
         lambda r: {**r, "magic": None},
         lambda r: {**r, "header_dword": "65536"},
         lambda r: {**r, "header_dword": True},

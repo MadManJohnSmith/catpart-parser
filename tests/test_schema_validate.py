@@ -54,6 +54,19 @@ def test_const_and_enum() -> None:
         validate("a", {"enum": "ab"})
 
 
+def test_bool_and_number_are_distinct_json_values() -> None:
+    # JSON Schema equality: true is not 1 and false is not 0 — the same
+    # bool/number separation the type tests pin, applied to value equality
+    # (const, enum membership, uniqueItems).
+    bad(True, {"const": 1})
+    bad(1, {"const": True})
+    bad(False, {"const": 0})
+    bad(True, {"enum": [1]})
+    bad(1, {"enum": [True]})
+    ok(True, {"enum": [True]})
+    ok([True, 1], {"uniqueItems": True})  # distinct values, not duplicates
+
+
 def test_object_keywords() -> None:
     schema = {
         "type": "object",
