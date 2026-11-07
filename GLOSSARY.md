@@ -25,6 +25,23 @@ The disjoint subset of the Corpus used only to verify increments; its
 Fitness is reported but never climbed.
 _Avoid_: test set, validation set
 
+### Format
+
+**Container**:
+A named section of the CATIA V5 container format (e.g. `CATProdCont`,
+`CATFeatCont`), listed in the file's plaintext container-name table.
+_Avoid_: chunk, block
+
+**Version marker**:
+The embedded plaintext CNEXTINFOS string stating the exact release and
+service pack that wrote the file.
+_Avoid_: header version
+
+**Trailer**:
+The structure terminating a file with `CB__END\0`, carrying size-like
+fields.
+_Avoid_: footer
+
 ### Fitness
 
 **Fitness**:
