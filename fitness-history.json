@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "source": "fitness/history.jsonl",
+  "note": "One entry per accepted fitness run (the ADR-0001 no-regret baseline), oldest to newest; pct is the L1 Dev clean-parse share.",
+  "runs": [
+    {
+      "run_id": "20261107T205256Z-f4fbe7",
+      "timestamp": "2026-11-07T20:52:56Z",
+      "dev": {
+        "clean": 1745,
+        "total": 1751,
+        "pct": 99.66
+      }
+    }
+  ]
+}
