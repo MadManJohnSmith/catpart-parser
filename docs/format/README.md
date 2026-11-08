@@ -7,7 +7,9 @@ not implemented"). Every claim below cites the dated evidence note under
 `docs/evidence/` and the byte ranges it was measured on; interpretations
 are marked. This file covers exactly the structures L1 parses
 (`catpart-inspect`, schema v1, ticket #23); later tickets extend it as
-structures are decoded.
+structures are decoded — sections beyond the L1 set are marked
+**(documented, not parsed)** and impose no parser behavior until a
+parser ticket adopts them.
 
 Evidence method: read-only byte analysis over the 1818 magic-verified
 corpus files, reproduced by the committed scripts named in each evidence
@@ -108,12 +110,82 @@ Evidence: `docs/evidence/2026-11-07-container-table-and-trailer.md`
 matches, else `registration` is null; the tag's meaning and the
 `041803` code are open questions.
 
+## 4. Container payload blocks — CATStorageProperty **(documented, not parsed)**
+
+Evidence:
+`docs/evidence/2026-11-07-container-payload-layout.md` (B3; rates on a
+114-file sample spanning V5R15–V5R32, per-release values in
+`docs/evidence/data/container-payloads-claims.csv`; the sample includes
+the 10 step-(a) R19/R21 files across 7 repos). Labels: **established**
+= rate >= 0.98 on the scanned set; **candidate** = below that bar. No
+field in this section has an L1 output yet — the section exists so the
+B/C branch parses only what is documented.
+
+**Block model.** A storage block starts at every ASCII
+`CATStorageProperty` prefixed by `34 12` (1082/1082 blocks, 0
+exceptions):
+
+| Bytes | Field | Claim |
+|---|---|---|
+| +0 | prefix | `34 12` on all 1082 sample blocks. |
+| +2 | type name | ASCII `CATStorageProperty` + `80 01 00 00 00 00 22 <u8> 00 00 00` framing, then tag34-framed names. |
+| then | name1 | doc-type name: `34 <len> <name>` followed by `0x9f` or a type-tag byte — law C3b (**established**, 4438/4475 = 0.992; the 37 residuals are binary coincidences in stream data, not a framing variant). Vocabulary: `CATProdCont` (parts), `CATProduct` (products), `CATPrtCont`, `CGMGeom`, `CATCGRCont`, `CATPart`, `CATIA`, ... |
+| then | name2 | second tag34-framed name (`a0 02 00 00 00 00 34 <len> <name> 9f`); empty (`34 00`) when absent. |
+| then | GUID | 16 bytes after the `3b 10` marker, at a **variable slot** (observed 0x57–0x7b, shifts with the name lengths) inside the first 0x90 bytes. Join key to the name-table records (section 2): C1b (**candidate**, 941/968 = 0.972 — the 27 residual blocks' containers are absent from those files' name tables, consistent with B1's subset observation). |
+
+**Region rule** (**established**, C2, 1082/1082 byte-verified): a
+block's payload region runs from the block start to the nearest of —
+next storage block (650), next `OSMX` (244), next
+`CATIA_V5 CB0001\0` (188), header dword8 tail start (0), EOF (0).
+Whether every OSMX/CB0001 match is a real stream header is open
+(evidence note, open question 2).
+
+**The CATIA identity block.** Exactly one per file (114/114), named
+`CATIA`, with a 16-zero-byte GUID slot — it never joins a record by
+design. It carries the save-time document file name as name2 in 37/114
+files (*inference*: file-identity block with a null object id; not
+verified).
+
+**Cardinality law** (**established**, C6, 114/114): exactly one
+`CATProdCont` record per file, joined by exactly one block (doc-type
+name `CATProdCont` on parts, `CATProduct` on products).
+
+**CATFeatCont negative finding** (**established**, C7, 114/114,
+cross-checked corpus-wide): 0 of 19,300 name-table records have
+`name1 == CATFeatCont`; it appears only as *name2* of other containers'
+records, and there are **zero literal `CATFeatCont` byte sequences
+outside the name table**. *Inference*: a display/secondary name, not a
+container that owns a payload region — there is no CATFeatCont layout
+to decode at payload level.
+
+**String framing families inside regions** (context, not laws; rates
+from the note's decompositions):
+
+| Family | Form | Where seen |
+|---|---|---|
+| tag34 name | `34 <len> <ascii> <0x9f \| type-tag>` | property sections (names above) |
+| u16le ASCII | `<u16le n> <n ascii>` | property/registration sections (`0b 00 "OMBDoc_0002"`) |
+| u32le ASCII | `<u32le n> <n ascii>` | stream attribute strings, dominant at corpus scale (253k vs 1999 u16le rows) — its own sub-format, unproven (C4/C4b **candidate**) |
+| u8-tag | `0x30–0x3f <len> <ascii>` | short codes (`36 08 "FINJPL  "`) |
+| UTF-16 property | `<u16le 2n+4> <marker u16 3> <n utf16le chars>` | property names (`28 00 03 00 "CATStorageProperty"`) |
+| UTF-16 storage | `<u16le 2n+2> <n utf16le chars>` | storage/stream names (`32 00 "Cont_0_1ae0_6991af79_dba"`) |
+
+C5 (**candidate**, 3776/6563 = 0.575): framed UTF-16 runs match these
+formulas; the residual is UTF-16-shaped binary noise. Known anomalies
+carried in the note: container GUIDs re-referenced downstream (136
+blocks, worst 19x), JPEG previews embedded in product regions (106/1082
+regions), `CB0001` recurring as a stream-area delimiter (73/114 sample
+files).
+
 ## Not yet documented (not parsed)
 
 The B1 evidence note additionally documents the **directory table**
 (40-byte records binding the name records via laws D1-D3) — it has no
-L1 output field yet and is deliberately unparsed. Container *semantics*
-(f2 weights, f1 stream positions, the C==D pair, f7, the registration
-tag), the `unknown`-version file families, and everything beyond these
-three structures await later tickets; `docs/evidence/` is the register
-of open questions.
+L1 output field yet and is deliberately unparsed. Beyond section 4's
+block model: the **OSMX/CB0001 stream headers** (boundary semantics
+unproven), the **u32le attribute-string sub-format** inside geometry
+streams, the **displayed part/product name and unit system for parts**
+(bounded probe: negative inside payload regions; u32le `"Pixel"`/`"mm"`
+scale properties found in stream territory of 3 drafting files; open
+question 1 of the B3 note), and everything else await later tickets;
+`docs/evidence/` is the register of open questions.
