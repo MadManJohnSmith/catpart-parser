@@ -28,6 +28,37 @@ annotation, `document_name`, trailer, detected version) and
 and `fitness/history.jsonl`. Phase 2 (format document assembly) is the
 active front.
 
+## Progress
+
+Implementation tracker — 17 tickets under specs
+[#8](https://github.com/MadManJohnSmith/catpart-parser/issues/8) (tooling),
+[#9](https://github.com/MadManJohnSmith/catpart-parser/issues/9) (format
+inference) and [#10](https://github.com/MadManJohnSmith/catpart-parser/issues/10)
+(L1 parser). Updated as tickets close; authoritative state lives in the
+issue tracker.
+
+**9/17 closed — Phase 3 (L1 parser) closed 2026-11-08; Phase 2 active.**
+
+| Spec | Ticket | State |
+|---|---|---|
+| A | [#11](https://github.com/MadManJohnSmith/catpart-parser/issues/11) A1 package skeleton & CLI | done |
+| A | [#13](https://github.com/MadManJohnSmith/catpart-parser/issues/13) A3 version detection + manifest backfill | done |
+| A | [#14](https://github.com/MadManJohnSmith/catpart-parser/issues/14) A4 fitness runner | done |
+| A | [#12](https://github.com/MadManJohnSmith/catpart-parser/issues/12) A2 fixture generator | planned |
+| A | [#15](https://github.com/MadManJohnSmith/catpart-parser/issues/15) A5 GitHub Actions CI (after A2) | planned |
+| A | [#16](https://github.com/MadManJohnSmith/catpart-parser/issues/16) A6 gh-pages publication | planned |
+| B | [#17](https://github.com/MadManJohnSmith/catpart-parser/issues/17) B1 container table & trailer | done |
+| B | [#19](https://github.com/MadManJohnSmith/catpart-parser/issues/19) B3 container payload blocks | done |
+| B | [#18](https://github.com/MadManJohnSmith/catpart-parser/issues/18) B2 header/tail semantics | in progress |
+| B | [#20](https://github.com/MadManJohnSmith/catpart-parser/issues/20) B4 CGMGeom/CATCGRCont payloads | planned |
+| B | [#21](https://github.com/MadManJohnSmith/catpart-parser/issues/21) B5 R19 vs R21 differential (after B2) | planned |
+| B | [#22](https://github.com/MadManJohnSmith/catpart-parser/issues/22) B6 format document v1 (Phase 2 close) | planned |
+| C | [#23](https://github.com/MadManJohnSmith/catpart-parser/issues/23) C1 schema v1 + L1 baseline | done |
+| C | [#24](https://github.com/MadManJohnSmith/catpart-parser/issues/24) C2 feature tree (documented negative) | done |
+| C | [#25](https://github.com/MadManJohnSmith/catpart-parser/issues/25) C3 units/names (document_name; units negative) | done |
+| C | [#26](https://github.com/MadManJohnSmith/catpart-parser/issues/26) C4 Phase 3 acceptance | done |
+| C | [#27](https://github.com/MadManJohnSmith/catpart-parser/issues/27) C5 fitness publication (after A6) | planned |
+
 ## Roadmap
 
 | Level | Deliverable | Status |
