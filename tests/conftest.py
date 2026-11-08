@@ -102,6 +102,26 @@ def registration_block(tag: int = 0x4E) -> bytes:
     )
 
 
+def catia_identity_block(name2: bytes = b"") -> bytes:
+    """One CATStorageProperty identity block (C3 phase A claims D1/D2).
+
+    Byte layout observed in the corpus (docs/evidence/
+    2026-11-08-units-names-probe.md): the B3 block header, name1
+    ``CATIA`` tag34-framed and 0x9f-terminated, then the name2 field
+    ``a0 02 00 00 00 00 34 <len> <ascii> 9f`` (empty: ``34 00 9f``),
+    then the ``3b 10`` marker with the identity block's 16 zero bytes
+    (null GUID) and a trailing ``9f``.
+    """
+    block = b"\x34\x12" + b"CATStorageProperty"
+    block += b"\x80\x01\x00\x00\x00\x00\x22\x0c\x00\x00\x00"
+    block += b"\x34\x01\x01\x00" + b"\x34\x10" + b"CATUnicodeString"
+    block += b"\xa0\x02\x00\x00\x00\x00\x34\x05" + b"CATIA" + b"\x9f"
+    block += b"\xa0\x02\x00\x00\x00\x00\x34"
+    block += bytes([len(name2)]) + name2 + b"\x9f"
+    block += b"\x3b\x10" + bytes(16) + b"\x9f"
+    return block
+
+
 def build_catpart(
     *,
     magic: bytes = MAGIC,
@@ -113,6 +133,7 @@ def build_catpart(
     dual_region: bool = False,
     payload: bytes = b"\x12\x34\x56\x78" * 8,
     pad_before_table: int = 0x700,
+    identity_name2: str | bytes | None = None,
 ) -> bytes:
     """Assemble a minimal, structurally genuine CATIA V5-shaped file.
 
@@ -123,6 +144,12 @@ def build_catpart(
     a deliberately malformed ``header_dword`` larger than the file gets
     dword12 = 0 so the fixture itself stays well-formed at the byte
     level while violating the invariant under test.
+
+    ``identity_name2`` (C3 phase A) appends a CATStorageProperty
+    identity block to the payload: a ``str`` is stored as its ASCII
+    name2 (the save-time document name), ``bytes`` verbatim (for
+    malformed-walk fixtures), ``None`` (default) omits the block
+    entirely (the parser must then report a null document_name).
     """
     header = magic[:8].ljust(8, b"\x00")
     header += struct.pack(">I", header_dword)
@@ -149,6 +176,10 @@ def build_catpart(
         )
     if with_marker:
         body.append(b"\x00\x00\x00\x00" + CNEXTINFOS_LINE)
+    if identity_name2 is not None:
+        if isinstance(identity_name2, str):
+            identity_name2 = identity_name2.encode("ascii")
+        body.append(catia_identity_block(identity_name2))
     body.append(payload)
 
     registration_offset = 0

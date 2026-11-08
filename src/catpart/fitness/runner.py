@@ -8,13 +8,14 @@ Implements the fitness protocol of ADR-0001 for ticket #14. Per run,
 2. runs ``catpart-inspect`` in-process (:func:`catpart.cli.build_inspect_report`,
    not a subprocess) over the files available on disk and classifies
    each file: ``clean`` / ``schema-invalid`` (validated against the
-   committed inspect schema — ``v1.json`` as of ticket #23 — through
-   :mod:`catpart.schema.validate`, the single validation authority, not
-   a fork) / ``crash`` (inspect raised, including the documented
-   file-level refusals such as a truncated header) /
-   ``missing-invariant`` (output valid but a minimal invariant fails,
-   :mod:`catpart.fitness.invariants`). Manifest rows whose file is not
-   on disk are ``unavailable``: never parsed, and counted as not clean;
+   committed inspect schema — ``v1.json``, additively extended by
+   ticket #25 — through :mod:`catpart.schema.validate`, the single
+   validation authority, not a fork) / ``crash`` (inspect raised,
+   including the documented file-level refusals such as a truncated
+   header) / ``missing-invariant`` (output valid but a minimal
+   invariant fails, :mod:`catpart.fitness.invariants`). Manifest rows
+   whose file is not on disk are ``unavailable``: never parsed, and
+   counted as not clean;
 3. aggregates the clean-parse scalar per split — L1's fitness is "the
    share of the Corpus that is a Clean parse" (GLOSSARY), so the
    denominator is the manifest rows of the split. The manifest's

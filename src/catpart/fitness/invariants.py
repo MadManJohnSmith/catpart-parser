@@ -43,10 +43,35 @@ never an invariant.
   2026-11-07-container-kind-law.md). ``unknown`` kind with a non-empty
   container list contradicts the documented law.
 
-The glossary's eventual L1 invariants (units present, feature tree
-present when the file has one) wait for the output fields those tickets
-add; later levels append invariants next to the fields they need, each
-citing its evidence like the parser modules do.
+- ``units-present`` — **defined, not enforced (documented negative,
+  ticket #25)**. The glossary's clean-parse checklist names "units
+  present"; C3 phase A probed the two decoded territories (container
+  payload regions, OSMX/stream territory + CB0001 tail) for a model
+  unit system on a 108-file R15-R24 sample and found none
+  (docs/evidence/2026-11-08-units-names-probe.md): zero framed
+  unit-token structures anywhere (U2 0/108, P1 0/108), every unit-token
+  hit being either the drafting ``Pixel``/``mm`` drawing-scale store of
+  the 2 drafting-namespace files (B3's documented exception — viewport
+  scales, not model units) or a verified binary coincidence, and the
+  spec-tree ``Volume/Mass/Length`` tokens being model content, not a
+  document-level declaration. The parser therefore emits no units field
+  (the evidence rule: a structure without a documented claim is not
+  implemented), and the invariant, defined with its documented
+  exceptions, holds on every file: no file is penalized for lacking
+  something the corpus does not document. This is the C2 precedent
+  (docs/evidence/2026-11-08-container-tree.md): a claimed structure
+  that fails measurement closes as a documented negative. The check
+  enters INVARIANTS only when a units claim lands and the parser emits
+  the corresponding field; the probe records where a future search
+  would have to look (and that a token-less enum encoding is out of
+  reach of byte evidence in those territories).
+
+The name-side claim of the same ticket IS parsed: ``document_name``
+(the CATIA identity block's save-time document name,
+docs/evidence/2026-11-08-units-names-probe.md) — reported as-is, with
+no invariant: the field is version-dependent (40/108 sample files,
+0/43 on R20+) and optional by design, so absence is a documented
+shape, not a defect.
 """
 
 from __future__ import annotations

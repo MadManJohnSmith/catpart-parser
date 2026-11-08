@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/MadManJohnSmith/catpart-parser/main/src/catpart/schema/v1.json",
   "title": "catpart-inspect output, schema v1",
-  "description": "Version-1 report emitted by `catpart-inspect <file>` (ticket #23). Supersedes v0 (ticket #11): the container list is now the parsed container-name table records of docs/evidence/2026-11-07-container-table-and-trailer.md instead of v0's whole-file string scan (the v0 field container_names is dropped; that breaking change is why the version bumped), and the file metadata adds the part/product kind, the remaining header dwords and the trailer. Every field cites the evidence note and byte ranges that justify it; values whose semantics are unproven are reported as-is. Evolution is additive within a schema version: consumers must ignore properties they do not know.",
+  "description": "Version-1 report emitted by `catpart-inspect <file>` (ticket #23). Supersedes v0 (ticket #11): the container list is now the parsed container-name table records of docs/evidence/2026-11-07-container-table-and-trailer.md instead of v0's whole-file string scan (the v0 field container_names is dropped; that breaking change is why the version bumped), and the file metadata adds the part/product kind, the remaining header dwords and the trailer. Ticket #25 adds document_name (the CATIA identity block's save-time document name) additively within v1. Every field cites the evidence note and byte ranges that justify it; values whose semantics are unproven are reported as-is. Evolution is additive within a schema version: consumers must ignore properties they do not know.",
   "type": "object",
   "properties": {
     "schema_version": {
@@ -55,6 +55,10 @@
       "type": "string",
       "enum": ["part", "product", "unknown"],
       "description": "Part/product kind from the container-name table records (law K1, docs/evidence/2026-11-07-container-kind-law.md): 'part' when a record is named CATPrtCont, 'product' when CATProdCont or CATMechProdCont is named and CATPrtCont is not, 'unknown' otherwise (no table, or a table carrying neither name - 0/1810 with-table corpus files)."
+    },
+    "document_name": {
+      "type": ["string", "null"],
+      "description": "The save-time document file name carried by the CATIA identity block's name2 field (ticket #25; docs/evidence/2026-11-08-units-names-probe.md, claims D1/D2/D3/D4): exactly one CATStorageProperty block per file is named CATIA with a 16-zero-byte GUID slot (D1, 108/108 on the R15-R24 probe sample; B3: 114/114) and its name2 walks as 'a0 02 00 00 00 00 34 <len> <ascii> <0x9f|type-tag>' (D2, 108/108). Reported as-is: it is the save-time name, not the current file name - it equals the manifest basename on 37/40 present cases and the 3 exceptions are renamed files keeping the old name. Always carries the .CATPart/.CATProduct extension when present (D4, 40/40). Null when the name2 field is empty (34 00 9f; 68/108 sample files - every R20+ file of the sample), when the file has no (or more than one) identity block, or when the walk fails. No unit-system field exists: the probe's unit side is a documented negative (docs/format/README.md, section 5)."
     },
     "containers": {
       "type": "array",
@@ -192,6 +196,7 @@
     "file_size",
     "detected_version",
     "kind",
+    "document_name",
     "containers",
     "trailer"
   ],

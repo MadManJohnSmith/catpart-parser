@@ -179,7 +179,7 @@ def test_kind_part_wins_over_product_containers(
 
 
 def test_invalid_reports_rejected_by_schema_v1(
-    build_catpart, tmp_path: Path, capsys
+    build_catpart, tmp_path, capsys
 ) -> None:
     # The committed schema is the authority: a report claiming the wrong
     # schema version, or a bogus kind, must not validate.
@@ -191,3 +191,42 @@ def test_invalid_reports_rejected_by_schema_v1(
         validate({**report, "kind": "assembly"}, schema)
     with pytest.raises(ValidationError):
         validate({**report, "ff8_at_16_24": "yes"}, schema)
+
+
+def test_document_name_from_identity_block(
+    build_catpart, tmp_path, capsys
+) -> None:
+    # The CATIA identity block's save-time document name (C3 phase A,
+    # claims D1/D2/D4): emitted as-is, never derived from the path.
+    report = inspect_report(
+        build_catpart,
+        tmp_path,
+        capsys,
+        identity_name2="SP02_ALPHA5_SEPA2_RETENUE_ROULEMENT.CATPart",
+    )
+    assert report["document_name"] == (
+        "SP02_ALPHA5_SEPA2_RETENUE_ROULEMENT.CATPart"
+    )
+
+
+def test_document_name_null_when_identity_block_lacks_name2(
+    build_catpart, tmp_path, capsys
+) -> None:
+    # The name2 field is empty (34 00 9f) on 68/108 probe-sample files -
+    # every R20+ file of the sample; the field is null, not fabricated.
+    report = inspect_report(build_catpart, tmp_path, capsys)
+    assert report["document_name"] is None
+
+
+def test_document_name_null_when_identity_walk_fails(
+    build_catpart, tmp_path, capsys
+) -> None:
+    # A malformed identity block must null the field, not crash the
+    # parse (graceful cross-line behavior, AC-3).
+    report = inspect_report(
+        build_catpart,
+        tmp_path,
+        capsys,
+        identity_name2=b"\x01\x02\x03",  # non-printable name2 bytes
+    )
+    assert report["document_name"] is None

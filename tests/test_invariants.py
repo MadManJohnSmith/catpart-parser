@@ -174,3 +174,25 @@ def test_kind_unknown_with_table_violates() -> None:
     failure = check_invariants(report)
     assert failure is not None
     assert failure.startswith("container-kind-known:")
+
+
+# --- units-present: defined, NOT enforced (C3 phase A documented negative) --
+
+
+def test_units_present_is_not_enforced_without_a_documented_claim() -> None:
+    # The clean-parse checklist names "units present"; C3 phase A probed
+    # the two decoded territories for a model unit system and found none
+    # (docs/evidence/2026-11-08-units-names-probe.md), so the invariant
+    # is defined with its documented exceptions (C2 precedent) and no
+    # file is penalized: a report without any units field is clean.
+    assert "units-present" not in [name for name, _ in INVARIANTS]
+    report = v1_report()
+    report.pop("document_name", None)
+    assert check_invariants(report) is None
+
+
+def test_units_present_unaffected_by_document_name() -> None:
+    # document_name (the adopted name claim) carries no units semantics:
+    # present or null, the checklist outcome is the same.
+    assert check_invariants(v1_report(document_name="Part1.CATPart")) is None
+    assert check_invariants(v1_report(document_name=None)) is None

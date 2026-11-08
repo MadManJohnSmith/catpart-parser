@@ -22,6 +22,7 @@ Parser mapping:
 |---|---|---|
 | Header (bytes 0-32) | `catpart.header` | Phase 1 + B1 |
 | Container-name table records | `catpart.containers` | B1 + kind-law note |
+| CATIA identity block (`document_name`) | `catpart.identity` | C3 phase A + B3 |
 | Trailer (last 36 bytes) | `catpart.trailer` | B1 |
 
 ## 1. Header — bytes 0-32
@@ -205,15 +206,62 @@ blocks, worst 19x), JPEG previews embedded in product regions (106/1082
 regions), `CB0001` recurring as a stream-area delimiter (73/114 sample
 files).
 
+## 5. CATIA identity block — document_name
+
+Evidence:
+`docs/evidence/2026-11-08-units-names-probe.md` (C3 phase A, ticket #25;
+rates on a 108-file R15-R24 sample, per-release values in
+`docs/evidence/data/units-names-probe-claims.csv`) and the B3 identity
+-block paragraph (section 4). Labels as in section 4.
+
+**Identity block law** (**established**, D1, 108/108): exactly one
+storage block per file is named `CATIA` (with the 16-zero-byte GUID
+slot; it never joins a name-table record). **Name2 walk** (**established**,
+D2, 108/108): after name1's terminator, the field
+`a0 02 00 00 00 00 34 <len> <ascii> <0x9f|type-tag>` parses on every
+identity block; the empty form is `34 00 9f`.
+
+**document_name** (parsed, schema v1): the walk's name2, reported
+as-is. Present on 40/108 sample files — per release R15 8/9, R16 7/14,
+R17 12/17, R18 8/9, R19 5/16, and **0/43 on R20/R21/R23/R24**. When
+present it always carries the `.CATPart`/`.CATProduct` extension (D4,
+40/40) and equals the current manifest basename on 37/40 files — the 3
+exceptions are renamed files keeping the save-time name
+(`Geometrical Bundle1.CATProduct` with a space vs the current
+`GeometricalBundle1.CATProduct`), which upgrades B3's *inference* to a
+measured fact: **the field is the save-time document name, never a
+current-file assertion**. Null when the name2 field is empty, when the
+file has no (or more than one) identity block, or when the walk fails —
+the parser never raises on malformed input.
+
+**Units negative** (**established**, ticket #25): the model unit system
+(length/mass/angle) has **no documented location** in the two decoded
+territories. A fixed vocabulary of 29 unit tokens, framed patterns
+only, over the 108-file sample yields zero structured occurrences:
+payload regions 34 scattered hits on 4 files (all verified binary
+coincidences), OSMX/stream territory only the drafting `Pixel`/`mm`
+scale store of the 2 drafting-namespace files (B3's documented
+exception — viewport scales, not model units), tail region 0, and 0/108
+files carry unit tokens in stream/tail territory without a drafting
+namespace (U2). The spec-tree `Volume/Density/Mass/Length/Angle` tokens
+(42 hits, u32le) are model content of CAA-sample parts, not a
+document-level declaration. The glossary's `units-present` invariant is
+therefore **defined, not enforced** (C2 precedent,
+`catpart.fitness.invariants`): its documented exceptions cover every
+current file, so no file is penalized. A future units claim must come
+from a new B-branch note (and a token-less enum encoding is out of
+reach of byte evidence in these territories).
+
 ## Not yet documented (not parsed)
 
 The B1 evidence note additionally documents the **directory table**
 (40-byte records binding the name records via laws D1-D3) — it has no
 L1 output field yet and is deliberately unparsed. Beyond section 4's
 block model: the **OSMX/CB0001 stream headers** (boundary semantics
-unproven), the **u32le attribute-string sub-format** inside geometry
-streams, the **displayed part/product name and unit system for parts**
-(bounded probe: negative inside payload regions; u32le `"Pixel"`/`"mm"`
-scale properties found in stream territory of 3 drafting files; open
-question 1 of the B3 note), and everything else await later tickets;
-`docs/evidence/` is the register of open questions.
+unproven) and the **u32le attribute-string sub-format** inside geometry
+streams await later tickets; the **model unit system** is a documented
+negative (section 5), and the **displayed part/product display name
+beyond the save-time document name** likewise (0/108 files carry any
+framed display-name property token or the basename outside the identity
+block; open question 1 of the B3 note is closed by the C3 phase A
+probe). `docs/evidence/` is the register of open questions.

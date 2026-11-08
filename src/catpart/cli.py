@@ -14,9 +14,13 @@ parsed container-name table records (docs/evidence/2026-11-07-
 container-table-and-trailer.md) and the trailer. v0 replaced its
 whole-file container-name string scan with the record parse and dropped
 the ``container_names`` field; that breaking change is why the schema
-version moved to v1. File-level failures (missing file, unreadable,
-smaller than the 32-byte header) print a ``catpart-inspect: error: ...``
-line to stderr and exit 1; usage errors exit 2 via argparse convention.
+version moved to v1. Ticket #25 adds ``document_name`` additively (the
+CATIA identity block's save-time document name, docs/evidence/
+2026-11-08-units-names-probe.md; the probe's unit-system side is a
+documented negative, so no units field exists). File-level failures
+(missing file, unreadable, smaller than the 32-byte header) print a
+``catpart-inspect: error: ...`` line to stderr and exit 1; usage errors
+exit 2 via argparse convention.
 catpart-fitness follows the same convention: exit 0 for a completed run
 (the acceptance verdict is data on the history row, not a process
 status), 1 on runtime failures, 2 on usage errors.
@@ -32,6 +36,7 @@ from pathlib import Path
 
 from catpart.containers import detect_kind, parse_container_table
 from catpart.header import HEADER_SIZE, parse_header
+from catpart.identity import parse_document_name
 from catpart.trailer import parse_trailer
 from catpart.version import detect_version
 
@@ -56,6 +61,7 @@ def build_inspect_report(path: Path) -> dict:
         info = parse_header(data[:HEADER_SIZE])
         version = detect_version(data)
         records = parse_container_table(data)
+        document_name = parse_document_name(data)
         trailer = parse_trailer(data)
     return {
         "schema_version": SCHEMA_VERSION,
@@ -68,6 +74,7 @@ def build_inspect_report(path: Path) -> dict:
         "file_size": file_size,
         "detected_version": version,
         "kind": detect_kind(records),
+        "document_name": document_name,
         "containers": [record.to_json() for record in records],
         "trailer": None if trailer is None else trailer.to_json(),
     }
@@ -86,6 +93,7 @@ def main_inspect(argv: list[str] | None = None) -> int:
             "Inspect a CATIA V5 .CATPart/.CATProduct file and emit a "
             "schema-versioned JSON report (schema v1: magic, header dwords, "
             "file size, detected CNEXTINFOS version, part/product kind, the "
+            "save-time document_name from the CATIA identity block, the "
             "parsed container-name table records and the trailer)."
         ),
     )
