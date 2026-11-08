@@ -144,7 +144,7 @@ def scan_tail(t, d8):
         "magic": t[:16] == CB0001, "taillen": len(t),
         "walk_ok": False, "n_entries": 0, "entries": [],
         "break": "", "n_regions": 0, "tiling_full": None,
-        "gaps": [], "nested_gap": False, "tail_end_gap": "",
+        "gaps": [], "tail_end_gap": "",
     }
     if not out["magic"] or len(t) < 100:
         return out
@@ -236,7 +236,6 @@ def scan_tail(t, d8):
                                u32le(eb, 8) == 2 and eb[12] == 2 and
                                u32be(eb, 13) == out["C"] and
                                eb[48] == 0x12)
-            out["endblock_len"] = 81
         # exact length accounting:
         # 64 (magic+header+zeros) + entry0 area + entry0 name field
         # + sum over entries (184 fixed + name field) + 81 (end block) + 36
