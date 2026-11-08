@@ -62,7 +62,12 @@ Differs (version-scoped, not between the pair): the **dual-region
 header** (dword16/dword20 instead of ff x 8) does not occur on R19/R21
 (0/1004). The corpus's 146 dual files are R15 (2), R16 (12) and
 unknown (132), all in the two CAA repos (B31CAADoc 142, CAA_PrjSrc 4)
-- an R15/R16/unknown generation, absent from every bucket R17+.
+- an R15/R16/unknown generation, absent from every bucket R17+. Byte
+example of the variant (same repo as the pair, R16SP0
+`137b897fc0c276e3`): header bytes 16-24 read `00 00 18 9a 00 00 11 34`
+(dword16 = 6298 = the first `CATIA_V5 CB0001\0` offset; dword20 =
+4404, semantics open) where an R19/R21 file reads
+`ff ff ff ff ff ff ff ff`.
 
 Untested: dword16/dword20 semantics (no dual files on the pair);
 bytes 28-32 (no committed scan reads them).
@@ -149,7 +154,8 @@ Differs:
   `4e 03 e8 00 40 00 0c 00 | 31 00 | 32 0b` - cntA = 0x0031 = 49,
   cntB = 0x0b32 = 2866, low byte 0x32 = 50 = cntA + 1; contrast
   `0018baa84f3bff6b` (R19): `29 00 2a 00` = 41, 42.
-- **Walk coverage** (decoder property, not a law): 0.764 R19 (496/649)
+- **Walk coverage** (decoder property, not a law; a statistic, so no
+  byte example applies): 0.764 R19 (496/649)
   vs 0.639 R21 (227/355); break families are the same (flag stops,
   name stops) at content-shifted offsets (R19 flag@4191-4205, R21
   flag@4291-4303 / name@5863-5893). Parts walk worse than products on
@@ -168,7 +174,8 @@ CATFeatCont negative C7 (1.000 on both lines); the six string framing
 families appear unchanged.
 
 Differs: **C4b, the u16le share among length-framed ASCII rows,
-collapses from 0.241 (R19) to 0.003 (R20/R21).** Driver unresolved (B3
+collapses from 0.241 (R19) to 0.003 (R20/R21)** (a framing statistic;
+no byte example applies). Driver unresolved (B3
 open question 6): R19's sample files are small (max 8.9 MB), R20/R21's
 are dominated by large parts whose stream strings drown the property
 framing - content vs writer cannot be separated without an
