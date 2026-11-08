@@ -53,6 +53,21 @@ structure with evidence per claim.
 
 **Acceptance:** ≥ 80% clean-parse rate on the corpus with stable JSON output.
 
+**Status (2026-11-08): met** — measured as L1 clean-parse on Dev
+(1751 non-held-out manifest files): **1745/1751 = 99.66%**, held-out
+(Motor-V6) 73/73 = 100%, no-regret chain intact (ADR-0001) in
+`fitness/history.jsonl` (4 rows: accepted baseline + 3 rejected
+equal/no-op attempts under strictly stronger checklists and extended
+output — the climb is strengthening at a constant scalar). Stable JSON:
+schema v1, additive evolution, all clean outputs schema-valid.
+Remaining 6 failures classified (ticket #26): all `magic_ok=no` corpus
+junk (mislabeled non-CATIA files), none are parser bugs or undocumented
+structures. The planned "feature tree + units" L1 output landed as the
+measured reality allows: container inventory (`containers[]` with
+base-class annotation) + `document_name`; units: documented negative
+(2026-11-08 probe) — see `docs/format/README.md` sections 2, 4, 5 and
+the #24/#25 resolution comments.
+
 ## Phase 4 — L2 geometry
 
 - Extract mesh/curve data; export to STEP or a renderable mesh format.
