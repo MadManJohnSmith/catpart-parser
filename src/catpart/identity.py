@@ -38,7 +38,7 @@ field stays null on files that lack it.
 The unit-system side of the phase A probe is a **documented negative**
 (no unit-system structure exists in the two decoded territories), so
 this module parses names only — there is deliberately no units field
-(docs/format/README.md, section 5).
+(docs/format/payload-blocks.md, section 5.3).
 """
 
 from __future__ import annotations

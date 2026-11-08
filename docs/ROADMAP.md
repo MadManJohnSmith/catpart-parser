@@ -65,8 +65,8 @@ junk (mislabeled non-CATIA files), none are parser bugs or undocumented
 structures. The planned "feature tree + units" L1 output landed as the
 measured reality allows: container inventory (`containers[]` with
 base-class annotation) + `document_name`; units: documented negative
-(2026-11-08 probe) — see `docs/format/README.md` sections 2, 4, 5 and
-the #24/#25 resolution comments.
+(2026-11-08 probe) — see `docs/format/container-table.md`,
+`docs/format/payload-blocks.md` and the #24/#25 resolution comments.
 
 ## Phase 4 — L2 geometry
 
