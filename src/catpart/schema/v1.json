@@ -69,12 +69,12 @@
           "parent_name": {
             "type": "string",
             "minLength": 1,
-            "description": "The record's parent/base name (record field name2, second NUL-terminated string): corpus vocabulary led by CATContainer, CATFeatCont, CATProdCont (docs/evidence/2026-11-07-container-table-and-trailer.md)."
+            "description": "The record's parent/base name (record field name2, second NUL-terminated string): a base-class/secondary-name annotation with a 5-value corpus-wide vocabulary (CATContainer, CATFeatCont, CATProdCont, CATSiMuGenCont, CATDrwCont), not necessarily another record's name (docs/evidence/2026-11-07-container-table-and-trailer.md, docs/evidence/2026-11-08-container-tree.md)."
           },
           "table_id": {
             "type": "integer",
             "enum": [196609, 262145, 327681],
-            "description": "Record field f3 at S+8 (little-endian): exactly three values corpus-wide (19300/19300 records) - 0x00030001 (196609) container rows, 0x00040001 (262145) the AppliCont row, 0x00050001 (327681) observed on some files."
+            "description": "Record field f3 at S+8 (little-endian): exactly three values corpus-wide (19300/19300 records) - 0x00030001 (196609) container rows, 0x00040001 (262145; 1198 of its 1441 rows are the AppliCont row), 0x00050001 (327681) observed on some files."
           },
           "index": {
             "type": "integer",

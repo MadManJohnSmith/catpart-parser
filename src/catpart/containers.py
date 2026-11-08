@@ -12,9 +12,9 @@ multi-byte fields **little-endian**, from S):
   table (law D1).
 - S+4  f2  per-record weight: 11 (9455 recs), 12 (4930), 13 (3070),
   21 (1198, the AppliCont row), then rarer values.
-- S+8  f3  table id: ``0x00030001`` (17488 recs), ``0x00040001`` (1441,
-  the AppliCont row), ``0x00050001`` (371) — exactly three values
-  corpus-wide (law T3).
+- S+8  f3  table id: ``0x00030001`` (17488 recs), ``0x00040001`` (1441
+  rows, 1198 of them the AppliCont row), ``0x00050001`` (371) — exactly
+  three values corpus-wide (law T3).
 - S+12 idx 1-based index within the table id (skips observed).
 - S+16 f5  constant ``0x006c0001``; S+20 f6 constant 2; S+28 f8
   constant 0; S+32 f9 constant ``0x20810002`` (the anchor).

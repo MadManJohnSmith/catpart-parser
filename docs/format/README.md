@@ -58,7 +58,7 @@ Record layout (all multi-byte fields **little-endian**):
 |---|---|---|
 | S+0 | f1 | stream-position value; join key with the (unparsed) directory table (law D1). Reported as `stream_id`. |
 | S+4 | f2 | per-record weight: 11 (9455 recs), 12 (4930), 13 (3070), 21 (1198, the `AppliCont` row), then rarer values. Reported as `weight`. |
-| S+8 | f3 | table id: exactly three values corpus-wide (law T3, 19300/19300) — `0x00030001` (17488), `0x00040001` (1441, the `AppliCont` row), `0x00050001` (371). Reported as `table_id`. |
+| S+8 | f3 | table id: exactly three values corpus-wide (law T3, 19300/19300) — `0x00030001` (17488), `0x00040001` (1441 rows, 1198 of them the `AppliCont` row; container-tree note), `0x00050001` (371). Reported as `table_id`. |
 | S+12 | idx | 1-based index within the table id (skips observed). Reported as `index`. |
 | S+16 | f5 | constant `0x006c0001` (law T3). Validated, not reported. |
 | S+20 | f6 | constant 2 (law T3). Validated, not reported. |
@@ -82,6 +82,28 @@ with-table files: `CATPrtCont` among the record names <=> part
 product (374/374; 2 parts carry `CATMechProdCont` next to `CATPrtCont`,
 so the part name decides). No table => kind `unknown` (8 files).
 Reported as `kind`.
+
+### Container tree (documented, not parsed)
+
+Evidence: `docs/evidence/2026-11-08-container-tree.md` (verified by
+`scripts/triage/verify_container_tree.py`; per-file rows in
+`docs/evidence/data/container-tree-scan.csv`). Ticket #24's owner
+decision names the L1 "feature tree" the container tree assembled from
+these records (node = {name, parent_name, table_id, index, guid,
+weight}). The candidate assembly law — records form a connected
+hierarchy via `parent_name` (child's `name2` = parent's `name1`),
+rooted at `AppliCont`/`CATContainer`-style roots — **was tested and
+fails corpus-wide**: only 1699/19300 records (8.8%) have a `parent_name`
+matching a same-file `name1`; 0/1810 files resolve fully; the
+`parent_name` vocabulary is exactly 5 values corpus-wide, and its two
+dominant members (`CATContainer` 63.8%, `CATFeatCont` 26.0%) appear 0
+times as `name1` — `name2` is a base-class/secondary-name annotation,
+not a within-file parent pointer. `AppliCont` is not a root under that
+relation (its own `name2` is `CATContainer`; absent from 377 files).
+
+No tree model is implemented: choosing the L1 container tree's shape is
+a new model decision pending after ticket #24's review, and until one is
+documented here the parser emits no tree field.
 
 ## 3. Trailer — last 36 bytes
 

@@ -63,6 +63,14 @@ table, a parameter block). L3's Fitness is the share of Constructs in
 `docs/format/` that the parser supports with verified semantics.
 _Avoid_: feature, element
 
+**Feature tree**:
+The L1 name for the container tree — the file's container-name table
+records viewed as a tree (each record a node with name, parent_name,
+table_id, index, guid, weight). CATIA's full specification tree
+(Sketches, Pads and other features) is out of L1 scope; it belongs to
+B-branch work.
+_Avoid_: specification tree
+
 **Fitness history**:
 The committed append-only record of every measured run — accepted or
 rejected — that lets any session or CI run see the trend and the cost of
