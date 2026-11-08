@@ -44,6 +44,16 @@ container structure and compression status, backed by evidence notes.
 **Acceptance:** a draft format document (`docs/format/`) describing the outer
 structure with evidence per claim.
 
+**Status (2026-11-08): met** — `docs/format/` v1 (commit `812d630`): one
+page per structural area (header, tail catalog, container table, trailer,
+payload blocks, geometry) plus `validation.md` (cross-validation summary
+across R15–R32, the R19/R21 differential verdicts, corrections register).
+115 claims — 89 established / 8 candidate / 18 open — every claim with
+byte ranges, version scope, label and evidence link; consistency kept by
+`scripts/triage/check_format_claims.py` (pinned by tests). The document
+alone supports implementing the outer structure + container-inventory
+level that the shipped L1 parser emits.
+
 ## Phase 3 — L1 parser
 
 - CLI `catpart-inspect <file>` outputting metadata + feature tree + units as
