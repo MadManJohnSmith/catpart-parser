@@ -37,15 +37,14 @@ inference) and [#10](https://github.com/MadManJohnSmith/catpart-parser/issues/10
 (L1 parser). Updated as tickets close; authoritative state lives in the
 issue tracker.
 
-**13/17 closed — Phases 2 and 3 closed 2026-11-08; remaining: tooling
-publication (A2, A5, A6, C5).**
+**14/17 closed — Phases 2 and 3 closed 2026-11-08; remaining: publication (A5, A6, C5).**
 
 | Spec | Ticket | State |
 |---|---|---|
 | A | [#11](https://github.com/MadManJohnSmith/catpart-parser/issues/11) A1 package skeleton & CLI | done |
 | A | [#13](https://github.com/MadManJohnSmith/catpart-parser/issues/13) A3 version detection + manifest backfill | done |
 | A | [#14](https://github.com/MadManJohnSmith/catpart-parser/issues/14) A4 fitness runner | done |
-| A | [#12](https://github.com/MadManJohnSmith/catpart-parser/issues/12) A2 fixture generator | planned |
+| A | [#12](https://github.com/MadManJohnSmith/catpart-parser/issues/12) A2 fixture generator | done |
 | A | [#15](https://github.com/MadManJohnSmith/catpart-parser/issues/15) A5 GitHub Actions CI (after A2) | planned |
 | A | [#16](https://github.com/MadManJohnSmith/catpart-parser/issues/16) A6 gh-pages publication | planned |
 | B | [#17](https://github.com/MadManJohnSmith/catpart-parser/issues/17) B1 container table & trailer | done |
