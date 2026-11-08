@@ -18,16 +18,22 @@ for everyone who receives CATIA files without owning a CATIA seat.
 
 ## Status
 
-**Research phase — format triage.** No parseable output yet. See
-[docs/ROADMAP.md](docs/ROADMAP.md) and
-[docs/research/format-landscape.md](docs/research/format-landscape.md).
+**L1 parser shipped — Phase 3 closed (2026-11-08).** `catpart-inspect`
+emits schema-v1 JSON (header, container inventory with base-class
+annotation, `document_name`, trailer, detected version) and
+`catpart-fitness` measures clean-parse over the corpus: **Dev 99.66%
+(1745/1751), held-out 100% (73/73)**, no-regret per ADR-0001. See
+[docs/ROADMAP.md](docs/ROADMAP.md) (Phase 3 status block),
+[docs/format/README.md](docs/format/README.md) (documented structures)
+and `fitness/history.jsonl`. Phase 2 (format document assembly) is the
+active front.
 
 ## Roadmap
 
 | Level | Deliverable | Status |
 |---|---|---|
-| L0 | Public corpus + byte-level triage with reproducible evidence | planned |
-| L1 | Container/section map, metadata, feature tree, units, names | planned |
+| L0 | Public corpus + byte-level triage with reproducible evidence | done (Phase 0/1) |
+| L1 | Container/section map, metadata, container inventory, names | done (Phase 3) |
 | L2 | Geometry basics: meshes and curves exportable to STEP or renderable | planned |
 | L3 | Full parametric B-rep (precise CAD solids) | planned, hardest |
 
