@@ -64,11 +64,15 @@ table, a parameter block). L3's Fitness is the share of Constructs in
 _Avoid_: feature, element
 
 **Feature tree**:
-The L1 name for the container tree — the file's container-name table
-records viewed as a tree (each record a node with name, parent_name,
-table_id, index, guid, weight). CATIA's full specification tree
-(Sketches, Pads and other features) is out of L1 scope; it belongs to
-B-branch work.
+The L1 name for the container-name table's record inventory — the
+file's containers as an ordered list (name, parent_name, table_id,
+index, guid, weight), emitted by `catpart-inspect` as `containers[]`.
+There is **no instance hierarchy**: the measured corpus shows
+`parent_name` is a base-class annotation (5-value vocabulary), not a
+within-file parent pointer (ticket #24, 2026-11-08 note), so no tree
+field is emitted. CATIA's full specification tree (Sketches, Pads and
+other features) is out of L1 scope; a real instance-hierarchy claim
+would be new B-branch work.
 _Avoid_: specification tree
 
 **Fitness history**:

@@ -101,9 +101,15 @@ times as `name1` — `name2` is a base-class/secondary-name annotation,
 not a within-file parent pointer. `AppliCont` is not a root under that
 relation (its own `name2` is `CATContainer`; absent from 377 files).
 
-No tree model is implemented: choosing the L1 container tree's shape is
-a new model decision pending after ticket #24's review, and until one is
-documented here the parser emits no tree field.
+Ticket #24 resolution (2026-11-08): **documented negative**. No tree
+model is implemented and the parser emits no tree field — the evidence
+rule ("a structure without a documented claim is not implemented", Spec
+C) forbids inventing a hierarchy the name table does not carry.
+`containers[]` (the section 2 fields) is the L1 container inventory and
+already carries `parent_name` as measured. A real instance-hierarchy
+claim (e.g. the directory table's d5 = 1 + cumsum(f2) ordering law, or
+product-region properties) would be a new B-branch ticket documenting
+it here first.
 
 ## 3. Trailer — last 36 bytes
 
