@@ -27,10 +27,9 @@ annotation, `document_name`, trailer, detected version) and
 (1745/1751), held-out 100% (73/73)**, no-regret per ADR-0001. See
 [docs/ROADMAP.md](docs/ROADMAP.md) (Phase 3 status block),
 [docs/format/README.md](docs/format/README.md) (documented structures)
-and `fitness/history.jsonl`. Publication (A6/C5) is the active front. The
-badge above is published locally (ADR-0003, never in CI):
-`python scripts/publish_fitness.py` rebuilds and force-pushes the `gh-pages`
-JSON it reads.
+and `fitness/history.jsonl`. Published live: the badge above reads the
+`gh-pages` endpoint, refreshed locally by `scripts/publish_fitness.py`
+(ADR-0003, never in CI) — rebuilds and force-pushes the `gh-pages` JSON.
 
 ## Progress
 
@@ -41,7 +40,7 @@ inference) and [#10](https://github.com/MadManJohnSmith/catpart-parser/issues/10
 (L1 parser). Updated as tickets close; authoritative state lives in the
 issue tracker.
 
-**15/17 closed — Phases 2 and 3 closed 2026-11-08; A5 (CI) landed 2026-11-09; remaining: publication (A6, C5).**
+**17/17 closed — Specs A/B/C complete (2026-11-09): A5 (CI), A6/C5 (gh-pages + badge) landed. Next: Phase 4 (L2 geometry).**
 
 | Spec | Ticket | State |
 |---|---|---|
@@ -50,7 +49,7 @@ issue tracker.
 | A | [#14](https://github.com/MadManJohnSmith/catpart-parser/issues/14) A4 fitness runner | done |
 | A | [#12](https://github.com/MadManJohnSmith/catpart-parser/issues/12) A2 fixture generator | done |
 | A | [#15](https://github.com/MadManJohnSmith/catpart-parser/issues/15) A5 GitHub Actions CI (after A2) | done |
-| A | [#16](https://github.com/MadManJohnSmith/catpart-parser/issues/16) A6 gh-pages publication | planned |
+| A | [#16](https://github.com/MadManJohnSmith/catpart-parser/issues/16) A6 gh-pages publication | done |
 | B | [#17](https://github.com/MadManJohnSmith/catpart-parser/issues/17) B1 container table & trailer | done |
 | B | [#19](https://github.com/MadManJohnSmith/catpart-parser/issues/19) B3 container payload blocks | done |
 | B | [#18](https://github.com/MadManJohnSmith/catpart-parser/issues/18) B2 header/tail semantics | done |
@@ -61,7 +60,7 @@ issue tracker.
 | C | [#24](https://github.com/MadManJohnSmith/catpart-parser/issues/24) C2 feature tree (documented negative) | done |
 | C | [#25](https://github.com/MadManJohnSmith/catpart-parser/issues/25) C3 units/names (document_name; units negative) | done |
 | C | [#26](https://github.com/MadManJohnSmith/catpart-parser/issues/26) C4 Phase 3 acceptance | done |
-| C | [#27](https://github.com/MadManJohnSmith/catpart-parser/issues/27) C5 fitness publication (after A6) | planned |
+| C | [#27](https://github.com/MadManJohnSmith/catpart-parser/issues/27) C5 fitness publication (after A6) | done |
 
 ## Roadmap
 
