@@ -33,14 +33,14 @@ and `fitness/history.jsonl`. Published live: the badge above reads the
 
 ## Progress
 
-Implementation tracker — 17 tickets under specs
+Implementation tracker — 23 tickets under specs
 [#8](https://github.com/MadManJohnSmith/catpart-parser/issues/8) (tooling),
 [#9](https://github.com/MadManJohnSmith/catpart-parser/issues/9) (format
 inference) and [#10](https://github.com/MadManJohnSmith/catpart-parser/issues/10)
 (L1 parser). Updated as tickets close; authoritative state lives in the
 issue tracker.
 
-**17/17 closed — Specs A/B/C complete (2026-11-09): A5 (CI), A6/C5 (gh-pages + badge) landed. Next: Phase 4 (L2 geometry).**
+**Specs A/B/C complete (17/17, 2026-11-09). Phase 4 opened: spec D (#28, L2 geometry) with 6 tickets — 0/6.**
 
 | Spec | Ticket | State |
 |---|---|---|
@@ -61,6 +61,12 @@ issue tracker.
 | C | [#25](https://github.com/MadManJohnSmith/catpart-parser/issues/25) C3 units/names (document_name; units negative) | done |
 | C | [#26](https://github.com/MadManJohnSmith/catpart-parser/issues/26) C4 Phase 3 acceptance | done |
 | C | [#27](https://github.com/MadManJohnSmith/catpart-parser/issues/27) C5 fitness publication (after A6) | done |
+| D | [#29](https://github.com/MadManJohnSmith/catpart-parser/issues/29) G1 nested store navigation decoded | planned |
+| D | [#30](https://github.com/MadManJohnSmith/catpart-parser/issues/30) G2 vertex pool decoded | planned |
+| D | [#31](https://github.com/MadManJohnSmith/catpart-parser/issues/31) G3 primitive semantics (triangles) | planned |
+| D | [#32](https://github.com/MadManJohnSmith/catpart-parser/issues/32) G4 catpart-export CLI + geometry fixtures | planned |
+| D | [#33](https://github.com/MadManJohnSmith/catpart-parser/issues/33) G5 L2 fitness + publication | planned |
+| D | [#34](https://github.com/MadManJohnSmith/catpart-parser/issues/34) G6 grind L2 to the bar (Phase 4 close) | planned |
 
 ## Roadmap
 
