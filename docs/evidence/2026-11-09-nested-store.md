@@ -58,9 +58,10 @@ none. Store classes over the 1,173 (claims CSV, per release):
   section 6, not model failures.
 - **N1h (established (observed)):** the header variant — 1,056/1,173 =
   0.900. The store origin (magic offset from the block start) spans
-  248..268 B (mode 252, n = 330; 250, n = 286) — the block's property
-  preamble, the nested analog of the V8 `X = block_start + 244..262`
-  law.
+  246..322 B; 248..268 covers 1,051/1,056 (mode 252, n = 330; 250,
+  n = 286) — the block's property preamble, the nested analog of the
+  V8 `X = block_start + 244..262` law. The five outliers are the four
+  padded/variant stores (310 x2, 322 x2) and one R20 store at 246.
 - **N1l (established (observed family)):** the header-less variant —
   12 parts, **all R19**, tail length 2,686-2,690 B, origin = block
   start. The header is simply absent: the payload starts at block + 64
@@ -142,12 +143,20 @@ B2's outer tail model unchanged:
   `Header`, `SceneGraph`, `SurfacicReps` (+ `CGRHEADER` on the 2
   variant stores). The stream records tile the end of the store body in
   origin-relative terms: per stream name a small (9-63 B) record and a
-  larger (84-132 B) record; `MAIN` (132 B) closes the territory at
-  dword8.
-- **N7b (established, 1,068/1,068 one-sided):** `sp == 1` exactly on
-  the larger record of each stream (Y in 84..132, all in [80, 200]);
-  `sp == 2` on the small records and on the `SurfacicReps` payload
-  record. A nested-specific space-flag law (the outer's sp = 1 set is
+  larger (84-132 B) record on the non-variant stores; `MAIN` (132 B)
+  closes the territory at dword8. Exceptions live on the 8 padded/
+  variant stores: three 66-B `Describe` records, six `Header` records
+  up to 210 KB, two `CGRHEADER` records (1,329/1,420 B); the
+  `SurfacicReps` payload records (647 B-2.5 MB) are N7c's, not
+  end-tiling records.
+- **N7b (established, one-sided):** every `sp == 1` record has Y in
+  84..132, inside [80, 200] (4,248/4,248); every small record and every
+  `SurfacicReps` payload record is `sp == 2` (6,372 + 696). The
+  per-store reading — `sp == 1` on the larger record of each stream —
+  holds on non-variant stores; the 8 padded/variant stores break it
+  (`sp == 2` also on 10 payload-region records, including two
+  `Header` records with Y = 125, inside [80, 200]). A nested-specific
+  space-flag law (the outer's sp = 1 set is
   `Cont_*`/`CATIA1`/`Format`/`CATPreview`).
 - **N7c (established (observed), 1,005/1,068 = 0.941):** the catalog
   names a `SurfacicReps` stream — parsed as an entry on 696 stores
@@ -258,15 +267,22 @@ on 95/1,377 parts (R16 50, `unknown` 25, R17 6, R23 6, R21 3, R20 3,
 R19 1, R15 1) — the same architecture one container over; not decoded
 further here.
 
+The decoder also defines a `header_invalid` class (header found, then
+ff/zeros or catalog validation fails); it never fired on this corpus
+(0/1,377 — every file lands in the families above) and is tallied as
+`N10_header_invalid` so a future corpus cannot silently undercount it.
+
 ## 7. The store payload (N8)
 
 - **N8 (established (existence), 953/1,068 = 0.892 of stores):** the
   store body (origin + 32/64 .. catalog start) carries verified
   strip-index records (B4's grammar) — the tessellation payload of
   B4's V5 claim, now tied to the decoded store. The 115 strip-less
-  stores are the 63 SurfacicReps-less small stores (body median
-  ~635-700 B, no room for payload) plus stores with the stream named
-  but no verified strip records (B4's float64 content variant
+  stores are the 63 SurfacicReps-less stores (body median 1,579 B,
+  quartiles 1,071/1,579/3,629, min 635 — mostly small, but 12 exceed
+  5 KB and 5 reach 73-271 KB, so size alone does not explain their
+  missing strips; unknown 7) plus stores with the stream named but no
+  verified strip records (B4's float64 content variant
   `086a4effaab7` among them).
 
 ## 8. Corrections to the B4 model (recorded, none massaged)
@@ -297,7 +313,7 @@ further here.
 | claim | statement | rate | label |
 |---|---|---|---|
 | N1 | nested stream store in the CATStdCont block region (header or header-less) | 1,068/1,173 = 0.910 of CATStdCont parts (0.776 of dev parts); per-release 0.64-1.00 (unknown 0.42) | established (observed) |
-| N1h | header variant (32-B header at block + 248..268) | 1,056/1,173 = 0.900 | established (observed) |
+| N1h | header variant (32-B header at block + 246..322; 248..268 on 1,051/1,056) | 1,056/1,173 = 0.900 | established (observed) |
 | N1l | header-less variant (origin = block start, body at +64) | 12/1,173 = 0.010, all R19 | established (observed family) |
 | N2 | header layout (magic + BE dwords + ff x 8 + zeros x 8, 32 B) | 1,056/1,056 | established |
 | N3 | dword8 = catalog offset (CB0001 byte-verifies at origin + dword8) | 1,045/1,056 = 0.990; overshoot k = 5..28 on 11 (0.010, else standard) | established + variant (candidate) |
@@ -340,6 +356,8 @@ per-release table is in `nested-store-claims.csv`.
    zero-padded to a round dword12.
 6. The 63 store-less CATStdCont regions and the 95 `CATSeeBodyCont`
    stores — second-tier container stores, undecoded.
+7. Why the 12 SurfacicReps-less stores over 5 KB (5 of them 73-271 KB)
+   carry no verified strip records — size alone does not explain it.
 
 ## Reproduction
 

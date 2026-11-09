@@ -493,6 +493,7 @@ def tally_claims(out_dir):
         cls = f["store_class"]
         tally("N1_store_present", rel, cls in ("header", "headerless"))
         tally("N10_seebody_store", rel, tf(f["seebody_store"]))
+        tally("N10_header_invalid", rel, cls == "header_invalid")
         if cls != "no_stdcont":
             tally("N1h_header_variant", rel, cls == "header")
             tally("N1l_headerless_variant", rel, cls == "headerless")
