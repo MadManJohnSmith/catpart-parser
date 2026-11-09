@@ -9,9 +9,13 @@ Evidence: [2026-11-08-geometry-payloads.md](../evidence/2026-11-08-geometry-payl
 per-file rows in `docs/evidence/data/geometry-payloads-files.csv`,
 per-claim per-release rates in
 `docs/evidence/data/geometry-payloads-claims.csv`, plus the regions /
-zones / blocks / sigscan CSVs), building on the block model of page 5
-(payload-blocks.md) and B2's tail catalog (page 2), and the B5
-differential ([2026-11-08-r19-r21-differential.md](../evidence/2026-11-08-r19-r21-differential.md)).
+zones / blocks / sigscan CSVs), the G1 corpus-wide nested-store decode
+([2026-11-09-nested-store.md](../evidence/2026-11-09-nested-store.md),
+ticket #29; verified by `scripts/triage/decode_nested_store.py`;
+per-file / per-store / per-region / per-claim rows in
+`docs/evidence/data/nested-store-*.csv`), building on the block model
+of page 5 (payload-blocks.md) and B2's tail catalog (page 2), and the
+B5 differential ([2026-11-08-r19-r21-differential.md](../evidence/2026-11-08-r19-r21-differential.md)).
 
 Scope: rates on an 81-file scan (44 parts, 37 products, V5R15-V5R32 +
 unknown); the location map on 8 large parts (V5R18-V5R24, four
@@ -43,12 +47,38 @@ Paragraph claims:
 
 ## 6.2 The nested stream store (CATStdCont / CATSeeBodyCont)
 
+Evidence: B4's discovery scan (first table row keeps its sample rate
+for history) and the G1 corpus-wide decode —
+[2026-11-09-nested-store.md](../evidence/2026-11-09-nested-store.md)
+(ticket #29; verified by `scripts/triage/decode_nested_store.py`;
+per-file rows in `docs/evidence/data/nested-store-files.csv`,
+per-store rows in `nested-store-regions.csv`, per-region rows in
+`nested-store-streams.csv`, per-claim per-release rates in
+`nested-store-claims.csv`). G1 scope: all 1,377 dev parts
+(`split=dev` — every repo except the Motor-V6 holdout), so rates are
+corpus-wide; per-line n is the actual manifest count (R25/R28/R32
+n = 1, R26 n = 2). The nested store is the outer file architecture one
+level down: same header generation marker, same B2 catalog record
+model and stop behavior, same 36-B `CB__END` trailer, same 126-B
+inter-block tail — with four measured deltas (entry-0 X0 = 132,
+trailer A/E pairing, no registration block in the trailer region, and
+two header variants).
+
 | ID | Subject | Claim | Label | Scope |
 |---|---|---|---|---|
-| GE-V3-nested (V3) | nested container | a nested `V5_CFV2` container sits in the `CATStdCont` block region (probe window: first 0x400 B after the block start): a 32-byte header (magic `56 35 5F 43 46 56 32 00`, big-endian dword8/dword12, ff x 8) whose dword8 points at a nested `CATIA_V5 CB0001\0` catalog — the same architecture as the outer file, one level down. 39/44 = 0.886 (per-release 0.67-1.00; R19 4/4, R21 5/5); the 5 misses keep the `SurfacicReps` token in 4 cases, and for one probe file the magic is absent within 0x4000 — the store has header variants (open). | established | parts of the 81-file scan |
-| GE-V4-stream-names (V4) | stream names | the UTF-16 stream names (`SurfacicReps`, `SceneGraph`, `MainDataStream`, `Describe`, `Header`, `MAIN`) occur in a payload region — 41/44 = 0.932 (R19 4/4, R21 4/5). The vocabulary appears in CATStdCont regions on 62/69 of B3's sample regions and in `CATSeeBodyCont` regions on 7 files — the same store architecture one level below the body containers. | established | 81-file scan |
+| GE-V3-nested (V3, N1) | nested container | a nested stream store sits in the `CATStdCont` block region of 1,068/1,173 = 0.910 CATStdCont-carrying dev parts (0.776 of all dev parts; 204 parts carry no CATStdCont block): a header variant (1,056 = 0.900, every release line R15-R32 + unknown; per-release store rate among CATStdCont parts 0.64 (R23) - 1.00) and a header-less variant (12, R19 only). B4's sample rate 39/44 = 0.886 is refreshed by the G1 note's correction C5. Products carry no such store (0/37, B4). | established (observed) | dev parts, R15-R32 + unknown |
+| GE-N2-header (N2) | nested header | 32-byte header at the store origin (block + 248..268, mode 252): [0:8] magic `56 35 5F 43 46 56 32 00` (`V5_CFV2\0` — the outer header's own magic), [8:12] dword8 big-endian = catalog offset, [12:16] dword12 big-endian = catalog tail length, [16:24] `ff` x 8, [24:32] zeros x 8 — the outer header truncated to 32 B. 1,056/1,056. | established | header stores |
+| GE-N3-pointer (N3) | dword8 pointer | the nested `CATIA_V5 CB0001\0` catalog byte-verifies at origin + dword8 on 1,045/1,056 = 0.990 header stores; 11 (R16/R17 + one R20) overshoot by k = 5..28 B with every other law unchanged (regions still origin-relative, the tail parses with dword12 length) — a pointer variant, not a model failure (G1 correction C3). | established + variant (candidate) | header stores |
+| GE-N3b-extent (N3b) | container extent | the store ends at catalog_start + dword12 (the nested H1 analog) and the next valid storage block starts exactly 126 B later — 1,067/1,068 = 0.999 exact ([1, 200] on 1,068/1,068; the exception is the CGRHEADER-variant store at 190). The 126 B carry the writer registration block (41 B) at the container end followed by zeros (N9, 1,067/1,068) — the same inter-block tail the V8 delta law shows, now exact. | established | decoded stores |
+| GE-N4-catalog (N4) | nested catalog | B2's outer tail record model one level down, unchanged: entry-0 M-law with M = 86 (1,068/1,068), cntB == cntA + 1 (1,067/1,068), seq from 2 (1,068/1,068), hdr84 + xrec13 + fil87 + UTF-16 name records (11,321 primary entries); the primary walk stops at B2's known name-stop condition (the outer tail of the same files breaks identically) and B4's resync applies; B2's exact length accounting holds on 740/741 clean-walk stores. Entry-0 X0 = 132 (outer 94; 1,066/1,068 — two CGRHEADER-variant stores carry 110). Variants: 18 `unknown`-release stores zero-pad the catalog to a round dword12 (3,072/4,096) — `CB__END` inside the tail, the G law off by the padding. | established | decoded stores |
+| GE-N5-coords (N5) | coordinate base | catalog entry X/Y are relative to the store origin (the `V5_CFV2` magic; the block start for the header-less variant) — B4 open question 6 answered: header stores end their last named region exactly at origin + dword8 (1,056/1,056, R2 exact); header-less stores tile [64, catalog) with min region start 64 (12/12); the trailer's B is origin-relative too. | established | decoded stores |
+| GE-V4-stream-names (V4, N7) | stream names | the catalog names the stream regions from one vocabulary — `MAIN`, `Describe`, `MainDataStream`, `Header`, `SceneGraph`, `SurfacicReps` (+ `CGRHEADER` on 2 variant stores) — as small records (9-63 B) plus a larger record per stream (84-132 B) tiling the end of the body; `sp == 1` exactly on the larger records (Y in [80, 200], 1,068/1,068 one-sided — a nested-specific space-flag law). A `SurfacicReps` stream is named on 1,005/1,068 = 0.941 stores (parsed entry on 696, name text otherwise); where parsed it names the store's payload region. B4's token-level claim (41/44) is refreshed corpus-wide. | established | decoded stores |
+| GE-N6-trailer (N6) | nested trailer | the catalog ends with `CB__END\0` within the tail (1,068/1,068; at the tail end on 1,050 — 18 padded stores carry it inside zero padding) with C == D (1,050/1,050) and G == tail length (1,050/1,050); the trailer's region `[B, B+C)` never starts with a writer registration block (0/1,050 — the outer's always does; it names stream payload instead, median 2,936 B, up to 5.5 MB). | established (negative) | decoded stores |
+| GE-N6a-AE (N6a) | trailer A/E/F | trailer A = 1 on 970/1,050 = 0.924, A = 0 on 80/1,050 = 0.076 (all lines R18-R24, body >= 43,650 B) — B4's worked example is an A = 0 store, the exception not the norm (G1 correction C2). A = 0 pairs exactly with E != 0 (80/80; the 3 remaining E != 0 stores carry A = 1 and F = 2), and F mirrors the outer trailer's generation scope (F = 0 on every store from R19 on, 921/921; F = 1 on R15-R17 + unknown). What (A, E) mark is open. | candidate (laws measured, meaning open) | decoded stores |
+| GE-N10-variants (N10) | header variants | the parts without a probe-window header classify into: header-less stores (12, R19 — one store, the same catalog naming the `SurfacicReps` payload `[64, <catalog>)`); stores on the next block (34, R19 — a `CATXDocLinkCont` neighbour carries a normal header store; B4's 0x400 probe window crossed the region boundary, G1 correction C1); embedded-document catalogs (8, `unknown` — B1's distributed family, entry-0 X0 = 94, not a stream store); no store in region (63: unknown 58, R23 4, R16 1); no CATStdCont block (204). `CATSeeBodyCont` regions carry their own header store on 95 parts. Answers B4 open question 4 and the "one store or two" question: one. | established (classification) | dev parts |
+| GE-N8-strip (N8) | payload tie-in | the store body (origin + 32/64 .. catalog start) carries B4's verified strip-index records on 953/1,068 = 0.892 of stores — the tessellation payload tied to the decoded store; the 115 strip-less stores are the small SurfacicReps-less ones plus content variants (B4's float64 store among them). | established (existence) | decoded stores |
 | (products) | products | products carry no nested store and no stream-name tokens (0/37). | established (negative) | 37 products |
-| (worked example) | nested trailer | `e9ca6192a2854002` (R19 part): nested header at block + 252, dword8 = 841,923, dword12 = 3,230; the nested tail magic byte-verifies at nested + dword8 and the nested container ends 126 B before the next storage block (the same ~126 B tail the V8 delta law shows). The nested catalog (12 records, 9 parsed before a name stop) names regions `MAIN`, `Describe`, `MainDataStream`, `Header`, `SceneGraph`; the region text additionally carries the UTF-16 stream name `SurfacicReps`; the nested trailer's region (B = 812,056, C = 29,304) is the last ~29 KB stream region. The nested trailer's A = 0 here, unlike the outer trailer's constant 1 (open). | established (observed, one file) | e9ca6192a2854002 |
+| (worked example) | nested store | `e9ca6192a2854002` (R19 part): origin at block + 252, dword8 = 841,923, dword12 = 3,230; catalog at 8,868,516; container end 8,871,746 = next block - 126; trailer (A = 0, B = 812,056, C = 29,304, G = 3,230) — one of the A = 0 / E != 0 stores. Parsed regions tile [812,056, 841,923) origin-relative: the trailer region plus `MAIN`/`Describe`/`MainDataStream`/`Header`/`SceneGraph` records (9-132 B), the last region ending exactly at dword8, two 9-B gaps (one filled by the resync entry); the catalog text additionally carries the UTF-16 stream name `SurfacicReps` (its record is one of the walk-unparsed ones). | established (observed, one file) | e9ca6192a2854002 |
 
 ## 6.3 Embedded tessellation — the L3-gate answer (ADR-0001)
 
