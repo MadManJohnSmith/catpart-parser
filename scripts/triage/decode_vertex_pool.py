@@ -89,7 +89,8 @@ FILE_FIELDS = [
     "bbox_min_x", "bbox_min_y", "bbox_min_z",
     "bbox_max_x", "bbox_max_y", "bbox_max_z",
     "n_strip_candidates", "n_facets_strict", "n_facets_u8",
-    "n_facets_u16be", "n_facets_inbounds", "n_facets_unresolved",
+    "n_facets_u16be", "n_facets_inbounds", "n_facets_shape_only",
+    "n_facets_unresolved",
     "facet_inbounds_rate", "max_index_accepted",
     "pool_without_strips", "strips_without_pool",
 ]
@@ -180,10 +181,13 @@ def parse_facet(mm, o, body_hi, total_verts):
             idxs = [int.from_bytes(mm[base + i * width:base + (i + 1) * width],
                                    "big") for i in range(n)]
             if total_verts > 0 and max(idxs) < total_verts:
-                return (mk, ty, n, width, idxs, max(idxs))
+                return (mk, ty, n, width, idxs, max(idxs), True)
             if total_verts == 0 and k in (0, ty) and width == 1:
-                # no pool decoded: accept the grammar shape only
-                return (mk, ty, n, width, idxs, max(idxs))
+                # no pool decoded: accept the grammar shape only — this
+                # is never a strict/inbounds facet (the in-bounds test
+                # is vacuous without a pool); the caller tallies it as
+                # unresolved.
+                return (mk, ty, n, width, idxs, max(idxs), False)
     return None
 
 
@@ -240,11 +244,13 @@ def scan_store(mm, rel, ordinal, blk, blocks, d8_outer):
             i = cands.index(nxt[0]) if nxt else len(cands)
         else:
             i += 1
-    n_u8 = sum(1 for f in facets if f[3] == 1)
-    n_u16 = sum(1 for f in facets if f[3] == 2)
-    maxacc = max((f[5] for f in facets), default="")
-    rate = (len(facets) / len(cands)) if cands else ""
-    n_unresolved = max(0, len(cands) - len(facets))
+    strict = [f for f in facets if f[6]]
+    n_shape = len(facets) - len(strict)
+    n_u8 = sum(1 for f in strict if f[3] == 1)
+    n_u16 = sum(1 for f in strict if f[3] == 2)
+    maxacc = max((f[5] for f in strict), default="")
+    rate = (len(strict) / len(cands)) if cands else ""
+    n_unresolved = max(0, len(cands) - len(strict))
 
     row = {
         "sha256": rel["sha256"], "size_bytes": rel["size_bytes"],
@@ -259,9 +265,10 @@ def scan_store(mm, rel, ordinal, blk, blocks, d8_outer):
         "vertex_finite_rate": finite_rate,
         "vertex_plausible_rate": plausrate,
         "n_strip_candidates": len(cands),
-        "n_facets_strict": len(facets),
+        "n_facets_strict": len(strict),
         "n_facets_u8": n_u8, "n_facets_u16be": n_u16,
-        "n_facets_inbounds": len(facets),
+        "n_facets_inbounds": len(strict),
+        "n_facets_shape_only": n_shape,
         "n_facets_unresolved": n_unresolved,
         "facet_inbounds_rate": rate,
         "max_index_accepted": maxacc,
