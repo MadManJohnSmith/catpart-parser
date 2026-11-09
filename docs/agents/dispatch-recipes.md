@@ -74,5 +74,10 @@ files:
 - Decisions are final (ADRs + issue map #1). If evidence contradicts a
   documented assumption, record the correction (precedent: B1's
   +12 -> +18) instead of massaging.
-- One subagent at a time on this host (concurrency limit); background
-  dispatches preferred so the coordinator loop stays responsive.
+- At most 2 concurrent subagents on this host (owner update 2026-11-09;
+  supersedes the earlier 1-at-a-time limit). Background dispatches
+  preferred so the coordinator loop stays responsive. The second slot
+  goes to review-vs-next-implementation overlap (next implementer bases
+  on the reviewed ticket's branch, accepting a possible rebase) and to
+  non-critical-path work; ticket-graph dependencies still gate what can
+  run in parallel.
