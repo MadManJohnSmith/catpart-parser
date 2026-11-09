@@ -25,8 +25,7 @@ annotation, `document_name`, trailer, detected version) and
 (1745/1751), held-out 100% (73/73)**, no-regret per ADR-0001. See
 [docs/ROADMAP.md](docs/ROADMAP.md) (Phase 3 status block),
 [docs/format/README.md](docs/format/README.md) (documented structures)
-and `fitness/history.jsonl`. Phase 2 (format document assembly) is the
-active front.
+and `fitness/history.jsonl`. Publication (A6/C5) is the active front.
 
 ## Progress
 
@@ -37,7 +36,7 @@ inference) and [#10](https://github.com/MadManJohnSmith/catpart-parser/issues/10
 (L1 parser). Updated as tickets close; authoritative state lives in the
 issue tracker.
 
-**14/17 closed — Phases 2 and 3 closed 2026-11-08; remaining: publication (A5, A6, C5).**
+**15/17 closed — Phases 2 and 3 closed 2026-11-08; A5 (CI) landed 2026-11-09; remaining: publication (A6, C5).**
 
 | Spec | Ticket | State |
 |---|---|---|
@@ -45,7 +44,7 @@ issue tracker.
 | A | [#13](https://github.com/MadManJohnSmith/catpart-parser/issues/13) A3 version detection + manifest backfill | done |
 | A | [#14](https://github.com/MadManJohnSmith/catpart-parser/issues/14) A4 fitness runner | done |
 | A | [#12](https://github.com/MadManJohnSmith/catpart-parser/issues/12) A2 fixture generator | done |
-| A | [#15](https://github.com/MadManJohnSmith/catpart-parser/issues/15) A5 GitHub Actions CI (after A2) | planned |
+| A | [#15](https://github.com/MadManJohnSmith/catpart-parser/issues/15) A5 GitHub Actions CI (after A2) | done |
 | A | [#16](https://github.com/MadManJohnSmith/catpart-parser/issues/16) A6 gh-pages publication | planned |
 | B | [#17](https://github.com/MadManJohnSmith/catpart-parser/issues/17) B1 container table & trailer | done |
 | B | [#19](https://github.com/MadManJohnSmith/catpart-parser/issues/19) B3 container payload blocks | done |
