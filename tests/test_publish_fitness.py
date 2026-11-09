@@ -178,6 +178,27 @@ def test_accepted_row_with_bad_counts_fails_closed(tmp_path: Path) -> None:
         publish.render_files(history)
 
 
+def test_out_of_order_accepted_timestamps_fail_closed(tmp_path: Path) -> None:
+    # The trend JSON promises oldest-to-newest: an append-order violation is
+    # a hard error, never a mislabeled publication (A6 review F3).
+    history = write_history(
+        tmp_path,
+        [
+            history_row("20261108T190649Z-a5daec", "2026-11-08T19:06:49Z", True, dev=(1748, 1751)),
+            history_row("20261107T205256Z-f4fbe7", "2026-11-07T20:52:56Z", True),
+        ],
+    )
+    with pytest.raises(publish.PublishError, match="not append-ordered"):
+        publish.render_files(history)
+
+
+def test_malformed_accepted_timestamp_fails_closed(tmp_path: Path) -> None:
+    row = history_row("20261107T205256Z-f4fbe7", "not-a-date", True)
+    history = write_history(tmp_path, [row])
+    with pytest.raises(publish.PublishError, match="invalid history timestamp"):
+        publish.render_files(history)
+
+
 # --- the badge and the README agree -----------------------------------------
 
 
@@ -299,3 +320,36 @@ def test_no_push_builds_the_local_ref_only(tmp_path: Path, monkeypatch, capsys) 
         "fitness-history.json",
         "fitness-latest.json",
     ]
+
+
+@requires_git
+def test_stale_remote_is_republished_on_a_no_op_run(tmp_path: Path, monkeypatch, capsys) -> None:
+    """A local no-op run still syncs a stale remote (A6 review F1).
+
+    A --no-push build followed by a real run must republish the local head
+    to the empty/outdated origin instead of reporting up-to-date against
+    it — otherwise a failed push could leave the badge stale indefinitely.
+    """
+    origin = tmp_path / "origin.git"
+    run_git("init", "--bare", str(origin))
+    repo = tmp_path / "repo"
+    write_history(repo, synthetic_history())
+    run_git("init", str(repo))
+    monkeypatch.chdir(repo)
+
+    # Build locally only: the origin stays empty.
+    assert publish.main(["--remote", str(origin), "--no-push"]) == 0
+    capsys.readouterr()
+    assert len(run_git("ls-remote", str(origin))) == 0
+
+    # The next real run's tree matches the local branch but the remote is
+    # stale: the local head is republished, not reported up to date.
+    assert publish.main(["--remote", str(origin)]) == 0
+    assert "republished" in capsys.readouterr().out
+    head = run_git("-C", str(origin), "rev-parse", "refs/heads/gh-pages")
+    assert head == run_git("rev-parse", "refs/heads/gh-pages")
+
+    # Once the remote agrees, the same run is a true no-op again.
+    assert publish.main(["--remote", str(origin)]) == 0
+    assert "already up to date" in capsys.readouterr().out
+    assert run_git("-C", str(origin), "rev-parse", "refs/heads/gh-pages") == head

@@ -15,9 +15,10 @@ files, and rebuilds the ``gh-pages`` branch from exactly those files:
   newest (run_id, timestamp, L1 Dev scalar). An accepted run cannot have
   dropped the Held-out split (no-regret would reject it), so the Dev
   trend is the whole accepted trend.
-- ``.nojekyll`` — keep GitHub Pages serving raw paths without Jekyll
-  processing; the badge itself reads ``raw.githubusercontent.com``,
-  which serves ``.json`` as application/json either way.
+- ``.nojekyll`` — keep the GitHub Pages URL serving the raw files without
+  Jekyll processing; the badge itself reads ``raw.githubusercontent.com``,
+  which serves ``.json`` as text/plain — accepted by the shields endpoint
+  badge, which requires no particular content type.
 
 Branch mechanics use git plumbing only (``hash-object`` / ``mktree`` /
 ``commit-tree`` / ``update-ref``): no worktree, no index checkout, the
@@ -50,6 +51,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 #: The exact file set of the gh-pages tree — nothing else is published.
@@ -176,12 +178,33 @@ def read_history(history_path: Path) -> list[dict]:
     return rows
 
 
+def _parse_timestamp(timestamp: str) -> datetime:
+    """Parse an ISO-8601 UTC history timestamp (``...Z`` or ``...+00:00``)."""
+    try:
+        return datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise PublishError(f"invalid history timestamp {timestamp!r}: {exc}") from exc
+
+
 def _accepted_dev(rows: list[dict]) -> list[tuple[dict, tuple[int, int]]]:
-    """The accepted rows with their L1 Dev ``(clean, total)``, in file order."""
+    """The accepted rows with their L1 Dev ``(clean, total)``, in file order.
+
+    File order must be append order (non-decreasing timestamps): the trend
+    JSON promises oldest-to-newest, so an out-of-order history is a hard
+    error, never a mislabeled publication.
+    """
     runs: list[tuple[dict, tuple[int, int]]] = []
+    previous_ts: datetime | None = None
     for row in rows:
         if not row["accepted"]:
             continue
+        ts = _parse_timestamp(row["timestamp"])
+        if previous_ts is not None and ts < previous_ts:
+            raise PublishError(
+                f"accepted run {row['run_id']}: timestamp {row['timestamp']!r} is older "
+                "than a previous accepted run; the history is not append-ordered"
+            )
+        previous_ts = ts
         l1 = row["scalars"].get("L1")
         dev = l1.get("dev") if isinstance(l1, dict) else None
         if not isinstance(dev, dict):
@@ -310,6 +333,17 @@ def publish(repo: Path, history_path: Path, remote: str, *, push: bool) -> str:
     if head is not None:
         head_tree = _git(repo, ["rev-parse", f"{head}^{{tree}}"]).strip()
         if head_tree == tree:
+            # The local tree already matches: only the remote may still be
+            # stale (a previous push failed mid-run, or the branch was built
+            # with --no-push first). Republish when it differs, so a rerun
+            # never leaves the badge reading an older-but-true remote.
+            if push and _remote_head(repo, remote) != head:
+                _git(repo, ["push", "--force", remote, PUBLISH_BRANCH])
+                print(
+                    f"republished {PUBLISH_BRANCH} {head} (tree {tree}) to {remote}: "
+                    f"{NOJEKYLL_FILENAME}, {HISTORY_FILENAME}, {LATEST_FILENAME}"
+                )
+                return head
             print(f"gh-pages is already up to date (tree {tree}); nothing to publish")
             return head
 
