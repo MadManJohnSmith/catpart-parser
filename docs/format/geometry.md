@@ -13,7 +13,11 @@ zones / blocks / sigscan CSVs), the G1 corpus-wide nested-store decode
 ([2026-11-09-nested-store.md](../evidence/2026-11-09-nested-store.md),
 ticket #29; verified by `scripts/triage/decode_nested_store.py`;
 per-file / per-store / per-region / per-claim rows in
-`docs/evidence/data/nested-store-*.csv`), building on the block model
+`docs/evidence/data/nested-store-*.csv`), the G2 vertex-pool decode
+([2026-11-09-vertex-pool.md](../evidence/2026-11-09-vertex-pool.md),
+ticket #30; verified by `scripts/triage/decode_vertex_pool.py`;
+per-file / per-pool-group / per-claim rows in
+`docs/evidence/data/vertex-pool-*.csv`), building on the block model
 of page 5 (payload-blocks.md) and B2's tail catalog (page 2), and the
 B5 differential ([2026-11-08-r19-r21-differential.md](../evidence/2026-11-08-r19-r21-differential.md)).
 
@@ -80,22 +84,42 @@ two header variants).
 | (products) | products | products carry no nested store and no stream-name tokens (0/37). | established (negative) | 37 products |
 | (worked example) | nested store | `e9ca6192a2854002` (R19 part): origin at block + 252, dword8 = 841,923, dword12 = 3,230; catalog at 8,868,516; container end 8,871,746 = next block - 126; trailer (A = 0, B = 812,056, C = 29,304, G = 3,230) — one of the A = 0 / E != 0 stores. Parsed regions tile [812,056, 841,923) origin-relative: the trailer region plus `MAIN`/`Describe`/`MainDataStream`/`Header`/`SceneGraph` records (9-132 B), the last region ending exactly at dword8, two 9-B gaps (one filled by the resync entry); the catalog text additionally carries the UTF-16 stream name `SurfacicReps` (its record is one of the walk-unparsed ones). | established (observed, one file) | e9ca6192a2854002 |
 
+### 6.2.1 The vertex pool (G2)
+
+Evidence: the G2 corpus-wide decode
+([2026-11-09-vertex-pool.md](../evidence/2026-11-09-vertex-pool.md),
+ticket #30; verified by `scripts/triage/decode_vertex_pool.py`;
+per-file rows in `docs/evidence/data/vertex-pool-files.csv`,
+per-pool-group rows in `vertex-pool-pools.csv`, per-claim per-release
+rates in `vertex-pool-claims.csv`). Scope: all 1,377 dev parts
+(corpus-wide; per-release n is the actual manifest count).
+
+| ID | Subject | Claim | Label | Scope |
+|---|---|---|---|---|
+| GE-P1-pool (P1) | pool location | the strip records' indices point into runs of 15-byte vertex records `[05 08 01][f32le x][f32le y][f32le z]` inside pool groups of the store body: a wrapper `10 24 04 ff ff 00 00 00` + `01 06` + a vertex count (one byte, `ff` escaping to a u32le count) followed by exactly that many vertex records. 995/1,377 = 0.723 dev parts carry pool groups (2,090 groups, 423,659 vertices; every release line positive). The trailer-named region `[B, B+C)` is NOT the pool — it carries edge/curve geometry records (triplet + f32le length; midpoint/length semantics) plus an increasing u32le offset directory. | established (observed) | dev parts, R15-R32 + unknown |
+| GE-P2-count (P2/P2g) | count law | the walked vertex-record count equals the group's count field on every decoded group — 2,090/2,090 = 1.000; the count field is a true vertex count. | established | decoded pool groups |
+| GE-P3-f32 (P3) | float format | vertex coordinates are little-endian float32 xyz triplets, interleaved per record, 100% finite (2,090/2,090 groups; no f16/f64 pool vertices observed). | established | decoded pool groups |
+| GE-P4-scale (P4/P9) | magnitude | coordinates plausible mm-scale (all components <= 1e5 in absolute value) on 2,033/2,090 = 0.973 groups and 970/995 = 0.975 parts (median max coordinate magnitude 55, p90 1,500, max 2.3e5) — the 2.5% tail (110-230 m-scale parts) keeps the unit question open; no unit field decoded. | candidate (unit assumption) | decoded pools |
+| GE-P5-facet (P5/P6) | facet grammar | the connectivity records refine B4's grammar into families: 0x41 triangle lists (n == 3*type, no normal), 0x49 triangles with a 12-byte f32le unit normal, 0x42 boundary loops without normal, 0x4a/0x4c boundary loops with normal; loop-count u8 bytes precede the indices and sum to n; index width adapts (u8 for small pools, u16be otherwise). Normals carry fixed subnormal epsilons for near-zero components (`00 00 00 a5` = 1.8e-40, `32 31 0d 25` = 1.6e-16). Facet indices are local to their pool group; on single-pool-group stores the functional test is exact (all indices < count). Corpus-wide 613/1,377 = 0.445 parts have candidates strict-parsing in-bounds and 833 keep unresolved variants (per-file strict rates 0.029-0.906 — the grammar is incomplete on some writers). | candidate (grammar incomplete corpus-wide) | dev parts, R15-R32 + unknown |
+| GE-P7-variants (P7/P8) | variants | pools without connectivity exist (36/1,377 = 0.026 parts decode pool groups with zero strip candidates — G1 unknown 7 answered: pool-without-strips is real); strip candidates without any pool group are near-absent (3/1,377 = 0.002). B4's "float64 store" `086a4effaab7` is reclassified (G2 correction C6): its 4.58 MB store carries a normal f32le pool (2 groups, 921 vertices) with zero strip candidates — pool-without-connectivity, not an encoding variant. | established (observed) | dev parts |
+
 ## 6.3 Embedded tessellation — the L3-gate answer (ADR-0001)
 
 | ID | Subject | Claim | Label | Scope |
 |---|---|---|---|---|
 | GE-V5-strip (V5) | strip records | verified strip-index records (grammar below) inside the `CATStdCont` region — 36/44 parts = 0.818 (per-release 0.5-1.00; R19 4/4, R21 4/5; small-part misses are content density). Density scales with model content: 177,061 verified records in the 237.9 MB R24 part, 67,672 in the 375.7 MB R20 part, 24,840 in the 190.2 MB R21 part, down to single digits in small parts. All 14 release buckets R15-R32 contribute positive files — the store is a constant of the format, not a generation. | established (existence) | parts of the 81-file scan |
-| GE-G1 (G1) | record grammar | strip-index record family: `01 <marker 0x41..0x4f> <type 0x01..0x0a> ff [u32le n][n x u16be values]` — markers `0x0141/0142/0143/0149/014a/014c/014f` observed; counts mostly 4-30. A record is verified when 1 <= n <= 1e6 and the record fits in the file; isolated matches outside the store are binary coincidences. Worked examples (`e9ca6192a2854002` at 8,043,557 and 8,043,617) include an index pattern zig-zagging between two ascending arcs — the shape of a closed triangle strip around an annular region, with repeated indices at the joins. The grammar is a byte-level fact; the primitive semantics (triangles vs polylines, vertex pool format) are inferred from index patterns and remain undecoded. | candidate (semantics) | grammar measured on the sample; semantics inferred |
+| GE-G1 (G1) | record grammar | strip-index record family: `01 <marker 0x41..0x4f> <type 0x01..0x0a> ff [u32le n][n x u16be values]` — markers `0x0141/0142/0143/0149/014a/014c/014f` observed; counts mostly 4-30. A record is verified when 1 <= n <= 1e6 and the record fits in the file; isolated matches outside the store are binary coincidences. Worked examples (`e9ca6192a2854002` at 8,043,557 and 8,043,617) include an index pattern zig-zagging between two ascending arcs — the shape of a closed triangle strip around an annular region, with repeated indices at the joins. The grammar is a byte-level fact; the primitive semantics are decoded one level further by G2 (6.2.1: triangle lists / boundary loops with normals, indexing a decoded f32le vertex pool — G2 correction C7). | established (grammar); semantics established by G2 (candidate corpus-wide) | grammar measured on the sample; G2 decode in 6.2.1 |
 | GE-V7 (V7) | 2-0 tags | little-endian version-like tags `[u16le t][u32le n]"2-0"` (bytes `03 00 00 00 "2-0"`) and `"2X-0"` (`04 00 00 00 "2X-0"`) inside CGMGeom regions and the adjacent bulk — `13bb5c0c` carries 1,091 + 10,910 of them, `50cd280f` 3,678 + 34,120, but only 4/44 files = 0.091: content-dependent, not a format constant. Recorded as a candidate discriminator for a future CGM-stream ticket, not a law. | candidate | 81-file scan |
-| (float64 variant) | content variant | one deep file (`086a4effaab7`, R20) carries a 4.58 MB nested store of float64 coordinate data with zero verified strip records — a content variant (open: compressed or differently encoded store). | open | 086a4effaab7 |
+| (float64 variant) | content variant | one deep file (`086a4effaab7`, R20) carries a 4.58 MB nested store with zero verified strip records — reclassified by G2 (correction C6): the store carries a normal f32le vertex pool (2 groups, 921 vertices) with no connectivity records — pool-without-connectivity, not a float64 encoding variant. | established (observed, one file) | 086a4effaab7 |
 
 **The L3-gate statement (ADR-0001)**: an embedded tessellated
 (discretized) representation **exists for ~0.82-0.93 of parts** (rates
 V4/V5) in the CATStdCont nested store (scene-graph/surfacic
 representations); it is **absent in products**; it is **not** in
 `CATCGRCont` (empty, V2) and **not** in `CGMGeom` (the exact-model
-container). Its byte-level decode is future work (post-Phase-2; B4 open
-questions 1-3).
+container). Its byte-level decode is under way: the nested store and
+vertex pool are decoded (6.2, 6.2.1); the remaining facet-grammar and
+unit questions are G2/G3 open questions (B4 open questions 1-3).
 
 Reproduction: `python3 -I scripts/triage/decode_geometry_payloads.py`
 (~36 s; outputs the six CSVs).
