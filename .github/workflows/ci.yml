@@ -1,0 +1,66 @@
+# ADR-0003: GitHub Actions stays light — lint and unit tests over
+# script-generated synthetic fixtures only. The corpus is never present
+# in CI: not committed (dispatch-recipes hard rule), not downloaded, not
+# cached, not referenced by any step. Real fitness runs locally on the
+# machine holding corpus/ and publishes to gh-pages.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  lint:
+    name: lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Install pinned ruff
+        # Version lives in pyproject.toml ([lint] extra): single source
+        # of truth so dev machines and CI flag the same things.
+        run: python -m pip install -e '.[lint]'
+      - name: Ruff
+        run: ruff check .
+
+  tests:
+    name: tests (pytest, synthetic fixtures)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Install package
+        run: python -m pip install -e '.[test]'
+      - name: Pytest
+        run: python -m pytest -q
+
+  binary-guard:
+    name: binary guard (no CATIA binaries staged)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Install package
+        run: python -m pip install -e '.[test]'
+      - name: Guard test (A2, #12)
+        # The A2 guard scans every tracked file: rejects CATIA suffixes
+        # and any file whose first 8 bytes are the V5_CFV2 magic, so a
+        # forced `git add` of a corpus binary (under any name or path)
+        # fails this job. Logic lives in tests/test_fixturegen.py — run,
+        # not duplicated.
+        run: python -m pytest -v tests/test_fixturegen.py::test_no_real_catia_binaries_staged

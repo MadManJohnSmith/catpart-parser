@@ -35,6 +35,25 @@ catpart-fitness = "catpart.cli:main_fitness"
 
 [project.optional-dependencies]
 test = ["pytest>=8.0"]
+# Pinned exactly: ruff's rule set shifts between releases and lint
+# results must not drift between a dev machine and CI.
+lint = ["ruff==0.17.4"]
+
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint]
+# Classic default subset: pyflakes (F) plus the pycodestyle error classes
+# that flag real bugs (E4 imports/errors, E7 comparisons/naming, E9
+# runtime). Deliberately no style rules (E5 line length, I import order,
+# UP, B, ...) — the tree keeps its existing shape; see scripts/triage.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+# One-off analysis scripts behind dated evidence notes: terse by design,
+# not package code. Their style nits (lambda assignments, ambiguous
+# names, multi-imports) stay as written.
+"scripts/triage/*" = ["E401", "E731", "E741", "F541", "F841"]
 
 [tool.setuptools]
 package-dir = { "" = "src" }

@@ -264,7 +264,7 @@ def test_missing_invariant_classification(tmp_path: Path, build_catpart, capsys)
     parts.mkdir(parents=True, exist_ok=True)
     (parts / "bad-dword.CATPart").write_bytes(data)
     (parts / "ho-ok.CATPart").write_bytes(held_out)
-    manifest_path = write_manifest(tmp_path, rows)
+    write_manifest(tmp_path, rows)
 
     code, out, err = run_fitness_cli(tmp_path, capsys)
     assert code == 0, err

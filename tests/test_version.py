@@ -12,8 +12,6 @@ from __future__ import annotations
 import mmap
 from pathlib import Path
 
-import pytest
-
 from catpart.version import detect_version, detect_version_with_window
 
 

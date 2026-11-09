@@ -283,7 +283,7 @@ def build_fixture(
     payload = bytes(rng.randrange(256) for _ in range(64)) if variant == "junk-payload" else struct.pack(
         ">Q", rng.getrandbits(64)
     ) * 8
-    guid_base = rng.getrandbits(64)
+    rng.getrandbits(64)  # burned to keep later draws on the writer's stream
 
     data = build_catpart(
         magic=b"X5_BADMAG" if variant == "bad-magic" else MAGIC,

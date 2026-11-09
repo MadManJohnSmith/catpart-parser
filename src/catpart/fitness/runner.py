@@ -46,7 +46,6 @@ from __future__ import annotations
 
 import csv
 import hashlib
-import io
 import json
 import re
 import uuid
