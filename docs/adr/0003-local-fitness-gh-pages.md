@@ -24,3 +24,21 @@ shields.io badge pointing at that endpoint, linked from the README.
 
 - `gh-pages` is the fitness visibility surface; the local job updates it.
 - shields.io is an accepted external dependency of the grind loop.
+
+## Publication mechanics (A6, 2026-11-09)
+
+- The local job is `scripts/publish_fitness.py` (stdlib-only). It reads
+  the committed `fitness/history.jsonl` and renders two shields-endpoint
+  JSON files: `fitness-latest.json` (the last accepted run's L1 Dev
+  clean-parse share — the badge the README Status section reads) and
+  `fitness-history.json` (the accepted-run trend, oldest to newest).
+- It rebuilds `gh-pages` from exactly those files (plus `.nojekyll`)
+  using git plumbing — no worktree or index checkout, the current branch
+  and working tree are untouched — and force-pushes it. Rerunning with
+  unchanged history is a no-op (the branch tree is a pure function of
+  the history file), so rows are never duplicated.
+- Run it by hand on the machine holding `corpus/`:
+  `python scripts/publish_fitness.py` (defaults to remote `origin`;
+  `--remote` targets any clone or path). Local-only per the decision
+  above: it is never called from CI, and the badge URL is
+  `https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/MadManJohnSmith/catpart-parser/gh-pages/fitness-latest.json`.

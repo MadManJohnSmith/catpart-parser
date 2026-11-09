@@ -18,6 +18,8 @@ for everyone who receives CATIA files without owning a CATIA seat.
 
 ## Status
 
+[![L1 clean-parse (Dev)](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/MadManJohnSmith/catpart-parser/gh-pages/fitness-latest.json)](https://github.com/MadManJohnSmith/catpart-parser/blob/main/fitness/history.jsonl)
+
 **L1 parser shipped — Phase 3 closed (2026-11-08).** `catpart-inspect`
 emits schema-v1 JSON (header, container inventory with base-class
 annotation, `document_name`, trailer, detected version) and
@@ -25,7 +27,10 @@ annotation, `document_name`, trailer, detected version) and
 (1745/1751), held-out 100% (73/73)**, no-regret per ADR-0001. See
 [docs/ROADMAP.md](docs/ROADMAP.md) (Phase 3 status block),
 [docs/format/README.md](docs/format/README.md) (documented structures)
-and `fitness/history.jsonl`. Publication (A6/C5) is the active front.
+and `fitness/history.jsonl`. Publication (A6/C5) is the active front. The
+badge above is published locally (ADR-0003, never in CI):
+`python scripts/publish_fitness.py` rebuilds and force-pushes the `gh-pages`
+JSON it reads.
 
 ## Progress
 
