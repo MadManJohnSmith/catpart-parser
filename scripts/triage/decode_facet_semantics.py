@@ -17,10 +17,13 @@ docs/evidence/2026-11-09-facet-semantics.md):
   f32le unit normal; the k count bytes (0..4) sum to n; markers 0x43/0x45/
   0x4b/0x4e use the 5-byte header form (two bytes before ff).  The refs are
   u8 or u16be (big-endian) per record, selected by the tiling law: the
-  exact-tiling parse wins, then — on a gap edge — the store-width context
-  (the widths of the store's exact-tile records vote; a unanimous vote
-  wins the tie-break, mixed votes or none keep the narrower width,
-  2026-11-10 correction #35).  Records tile the facet region
+  exact-tiling parse wins, then — on a gap edge of a CLEAN store (no
+  `01 02` edge group and no trailer opener, the class where the defect
+  was verified) — the store-width context (the widths of the store's
+  exact-tile records vote; a unanimous vote wins the tie-break, mixed
+  votes or none keep the narrower width, 2026-11-10 correction #35,
+  class-bounded 2026-11-10).  Composite stores keep the unconditional
+  narrower-width gap behavior.  Records tile the facet region
   header-to-header.
 
   Index space.  Refs index the store's vertex pool by LEXICOGRAPHIC RANK
@@ -354,19 +357,24 @@ def scan_store(mm, blk, blocks, d8_outer, rel, ordinal):
     lex = sorted(range(len(pool)),
                  key=lambda i: (pool[i][0], pool[i][1], pool[i][2]))
     hdrs = [m.start() for m in STRIP_RE.finditer(mm, body_lo, body_hi)]
-    # Store-width pre-pass (F1w as corrected 2026-11-10 #35): every
-    # candidate header is parsed under the default tie-break and the
-    # exact-tile records — those whose end equals the next header
-    # position — vote their width; a unanimous vote becomes the gap-edge
-    # tie-break width, mixed votes (or no exact tiles) keep the default
-    # narrower-width preference.  Mirrors scan_facets exactly.
-    exact_widths = set()
-    for i, o in enumerate(hdrs):
-        nxt = hdrs[i + 1] if i + 1 < len(hdrs) else body_hi
-        rec = parse_facet_record(mm, o, body_hi, nxt)
-        if rec is not None and rec["end"] == nxt:
-            exact_widths.add(rec["width"])
-    prefer = exact_widths.pop() if len(exact_widths) == 1 else 1
+    # Store-width pre-pass (F1w as corrected 2026-11-10 #35), bounded to
+    # the clean store class (no `01 02` edge group AND no trailer opener —
+    # the class where the cluster-final truncation was verified; the
+    # third re-scope): composite stores keep the unconditional width-1
+    # gap behavior.  Every candidate header is parsed under the default
+    # tie-break and the exact-tile records — those whose end equals the
+    # next header position — vote their width; a unanimous vote becomes
+    # the gap-edge tie-break width, mixed votes (or no exact tiles) keep
+    # the default narrower-width preference.  Mirrors scan_facets exactly.
+    prefer = 1
+    if not ("0102" in kinds or any(k.startswith("ff") for k in kinds)):
+        exact_widths = set()
+        for i, o in enumerate(hdrs):
+            nxt = hdrs[i + 1] if i + 1 < len(hdrs) else body_hi
+            rec = parse_facet_record(mm, o, body_hi, nxt)
+            if rec is not None and rec["end"] == nxt:
+                exact_widths.add(rec["width"])
+        prefer = exact_widths.pop() if len(exact_widths) == 1 else 1
     recs = []
     n_5byte = 0
     gap_bytes = 0

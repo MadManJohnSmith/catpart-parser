@@ -133,7 +133,16 @@ def _export_store(data, span, ordinal: int) -> tuple[dict, list, list]:
             "(G2 P8 family: strips without a pool, or an empty store)",
         )
     lex = facets.lex_rank_map(flat)
-    scan = facets.scan_facets(data, span.body_lo, span.body_hi)
+    # The store-width context is bounded to the clean store class (#35,
+    # 2026-11-10): pass the class knowledge this decode already performed
+    # (the composite-space gate above) down to the scanner. Composite
+    # stores never reach this line — they raised undecoded-variant.
+    scan = facets.scan_facets(
+        data,
+        span.body_lo,
+        span.body_hi,
+        clean_store=not pool.has_composite_space(kinds),
+    )
     beyond = max((max(rec.refs, default=-1) for rec in scan.records), default=-1)
     if beyond >= len(flat):
         raise ExportError(

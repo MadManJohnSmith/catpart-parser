@@ -12,16 +12,20 @@ Model (docs/evidence/2026-11-09-facet-semantics.md):
   0x4b/0x4e, whose header carries one extra byte before ``ff``). The k
   count bytes (0..4) sum to n and delimit the ty sub-loops. The
   reference width is per-record u8 or u16be (big-endian), chosen by the
-  tiling law (F1w, as corrected 2026-11-10 #35): a record is accepted
-  when some (width, k) parse ends at or before the next record header
-  (or the body end); the exact-tiling parse wins, then — on a gap edge
-  — the store-width context: the widths of the store's exact-tile
-  records (those ending at the next header position) vote, and a
-  unanimous vote wins the gap-edge tie-break (a cluster-final u16be
-  record before a gap keeps its width); mixed votes or no exact tiles
-  fall back to the narrower width. Records tile their region
-  header-to-header; content that fails every parse is gap variant
-  content (unresolved), not exported geometry.
+  tiling law (F1w, as corrected 2026-11-10 #35, class-bounded to clean
+  stores 2026-11-10): a record is accepted when some (width, k) parse
+  ends at or before the next record header (or the body end); the
+  exact-tiling parse wins, then — on a gap edge of a CLEAN store (no
+  ``01 02`` edge group and no trailer opener, the class where the
+  defect was verified) — the store-width context: the widths of the
+  store's exact-tile records (those ending at the next header position)
+  vote, and a unanimous vote wins the gap-edge tie-break (a
+  cluster-final u16be record before a gap keeps its width); mixed votes
+  or no exact tiles fall back to the narrower width. Composite stores
+  keep the unconditional narrower-width gap behavior (until G6 decodes
+  the composite index space from first principles). Records tile their
+  region header-to-header; content that fails every parse is gap
+  variant content (unresolved), not exported geometry.
 - Index space (F2, correction C8): the references are LEXICOGRAPHIC
   RANKS of the pool coordinates (x, then y, then z), not walk positions
   — on the clean subset the strip reading under lex ranks reproduces the
@@ -160,7 +164,9 @@ def parse_facet_record(
     )
 
 
-def scan_facets(data, body_lo: int, body_hi: int) -> FacetScan:
+def scan_facets(
+    data, body_lo: int, body_hi: int, clean_store: bool = False
+) -> FacetScan:
     """Walk the store body's facet region header-to-header (G3 scan_store).
 
     Candidates come from the ``01 [41-4f] . ff`` header regex; each
@@ -168,21 +174,30 @@ def scan_facets(data, body_lo: int, body_hi: int) -> FacetScan:
     after it. Header positions no parse accepts are gap variant content
     and surface as ``unresolved_candidates``.
 
-    The walk is preceded by a store-width pre-pass (F1w as corrected
-    2026-11-10 #35): every candidate header is parsed under the default
-    tie-break and the exact-tile records — those whose end equals the
-    next header position — vote their width; a unanimous vote becomes
-    the gap-edge tie-break width, mixed votes (or no exact tiles) keep
-    the default narrower-width preference.
+    ``clean_store`` bounds the store-width context to the clean store
+    class (no ``01 02`` edge group and no trailer opener — the class
+    where the cluster-final truncation was verified; #35's third
+    re-scope, 2026-11-10). The store decode knows the class and passes
+    it down. On a clean store the walk is preceded by the store-width
+    pre-pass (F1w as corrected 2026-11-10 #35): every candidate header
+    is parsed under the default tie-break and the exact-tile records —
+    those whose end equals the next header position — vote their width;
+    a unanimous vote becomes the gap-edge tie-break width, mixed votes
+    (or no exact tiles) keep the default narrower-width preference.
+    Composite stores — the default, and any caller that does not pass
+    the flag (fail-safe) — keep the historical unconditional width-1
+    gap behavior.
     """
     hdrs = [m.start() for m in STRIP_RE.finditer(data, body_lo, body_hi)]
-    exact_widths: set[int] = set()
-    for i, o in enumerate(hdrs):
-        nxt = hdrs[i + 1] if i + 1 < len(hdrs) else body_hi
-        rec = parse_facet_record(data, o, body_hi, nxt)
-        if rec is not None and rec.end == nxt:
-            exact_widths.add(rec.width)
-    prefer = exact_widths.pop() if len(exact_widths) == 1 else 1
+    prefer = 1
+    if clean_store:
+        exact_widths: set[int] = set()
+        for i, o in enumerate(hdrs):
+            nxt = hdrs[i + 1] if i + 1 < len(hdrs) else body_hi
+            rec = parse_facet_record(data, o, body_hi, nxt)
+            if rec is not None and rec.end == nxt:
+                exact_widths.add(rec.width)
+        prefer = exact_widths.pop() if len(exact_widths) == 1 else 1
     records = []
     consumed: set[int] = set()
     i = 0
