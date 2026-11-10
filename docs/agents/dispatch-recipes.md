@@ -80,4 +80,7 @@ files:
   goes to review-vs-next-implementation overlap (next implementer bases
   on the reviewed ticket's branch, accepting a possible rebase) and to
   non-critical-path work; ticket-graph dependencies still gate what can
-  run in parallel.
+  run in parallel. Observed 2026-11-09: the provider's user-turn
+  concurrency limit (error 3008) can fail a child's turn when child
+  turns overlap a long coordinator turn — keep coordinator turns short
+  while children run, and re-dispatch a failed child as a new delegate.
