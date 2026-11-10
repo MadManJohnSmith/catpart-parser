@@ -55,7 +55,7 @@
               "unused-pool-vertices",
               "no-facet-records"
             ],
-            "description": "Warning class. unresolved-facet-family: facet records outside the pinned families (0x41/0x44/0x49/0x4b/0x4e, G3 open questions 3-5) or unparseable header candidates were skipped. degenerate-triangles-skipped: the G3 F7 skip convention fired (0 on every clean-store soup). open-shell: the mesh is a manifold with boundary edges (G3 F6's sheet-like open shells, legitimate geometry). unused-pool-vertices: pool positions no triangle references. no-facet-records: pool without any facet header candidate (G2 P7), exported vertices-only."
+            "description": "Warning class. unresolved-facet-family: facet records of families whose primitive reading G3 has not pinned (0x41/0x44/0x49/0x4b/0x4e, open questions 3-5) and/or unparseable header candidates; where such records produce in-pool loops they still decode under the structural strip reading (G3's soup convention). degenerate-triangles-skipped: the G3 F7 skip convention fired (0 on every clean-store soup). open-shell: the mesh is a manifold with boundary edges (G3 F6's sheet-like open shells, legitimate geometry). unused-pool-vertices: pool positions no triangle references. no-facet-records: pool without any facet header candidate (G2 P7), exported vertices-only."
           },
           "detail": {
             "type": "string",

@@ -201,10 +201,14 @@ def _export_store(data, span, ordinal: int) -> tuple[dict, list, list]:
         warnings.append(
             {
                 "class": WARN_UNRESOLVED_FAMILY,
-                "detail": "skipped facet records outside the pinned "
-                f"families: {_marker_names(scan.skipped_markers) or 'none'}"
+                "detail": "facet records of families whose primitive "
+                "reading G3 has not pinned: "
+                f"{_marker_names(scan.skipped_markers) or 'none'}"
                 f"; unparseable header candidates: "
-                f"{scan.unresolved_candidates} (G3 open questions 3-5)",
+                f"{scan.unresolved_candidates} (G3 open questions 3-5; "
+                "in-pool loops of these markers still decode under the "
+                "structural strip reading, without the pinned winding "
+                "check)",
             }
         )
 
