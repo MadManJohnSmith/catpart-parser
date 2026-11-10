@@ -49,9 +49,12 @@ forms, both byte-measured:
 - **5-byte form** `01 <mk> <ty> <b3> ff ...` — one extra byte before
   ff (observed `01 4b 01 01 ff` and `01 4e 0x 02 ff`-shaped headers).
   STRIP_RE does not match this form, so these records sit in the gaps
-  between 4-byte records; 446 of them start exactly at a preceding
-  record's end across 105 parts (counted at gap starts only — the
-  count is a lower bound; semantics open, question 3).
+  between 4-byte records; 534 of them start exactly at a preceding
+  record's end across 121 parts (counted at gap starts only — the
+  count is a lower bound; semantics open, question 3).  2026-11-10
+  correction (#35): was 446/105 before the clean-store width fix —
+  the +88 are real gap-start 5-byte records newly visible at the
+  corrected record ends.
 
 - **F1 (established (observed), 516/1,068 = 0.483 stores with every
   candidate tiling; per-file 0.0-1.000):** a record is accepted when
@@ -128,7 +131,7 @@ and the closure test (section 5):
 | 0x41 | none | triangle list (n == 3*type) | 59/59 records n == 3*type corpus-wide | established (byte law); primitive not winding-tested |
 | 0x49 | 12B normal | n == 3*type law holds; primitive reading NOT established | 3,722/3,722 records n == 3*type; no 0x49 loop sits on a pool-only store (the family appears only on `01 02`-carrying stores), so the winding test cannot decide its primitive | candidate (law); semantics open |
 | 0x44 | none | unknown | 649 records; tails parse under the k-count law on some stores | open |
-| 0x4b/0x4e | 12B normal (0x4b byte-verified) | unknown (5-byte header variant) | 446 gap-start records; 0x4b tails violate the count-sum law (count 5, n 8, 8 refs — 2 records hand-verified) | open (G2 unknown 6 sharpens to: the variant is real, frequent on 105 parts) |
+| 0x4b/0x4e | 12B normal (0x4b byte-verified) | unknown (5-byte header variant) | 534 gap-start records (2026-11-10 #35: was 446/105 — see section 2 correction); 0x4b tails violate the count-sum law (count 5, n 8, 8 refs — 2 records hand-verified) | open (G2 unknown 6 sharpens to: the variant is real, frequent on 121 parts) |
 
 - **F3 (established on scope):** 0x4a loops are strip segments.  The
   discriminator is the SIGN: the fan reading of the same loops is
@@ -184,11 +187,13 @@ G4 (the exporter) can emit every decoded triangle as-is.
 
 ## 5. Degenerate/repeat observations and the export convention (F6, F7)
 
-- **Repeat references are real geometry (fact):** 48,509/157,981 =
-  0.307 of decoded loops repeat at least one reference (per-part
+- **Repeat references are real geometry (fact):** 48,341/157,981 =
+  0.306 of decoded loops repeat at least one reference (per-part
   columns `n_loops`/`n_loops_repeat` in the files CSV; 150,788/157,981
   = 0.954 of loops belong to the strip families) — the strip-join
-  pattern B4 saw.  The dominant shape re-emits one vertex
+  pattern B4 saw.  2026-11-10 correction (#35): was 48,509/157,981 =
+  0.307; the clean-store width fix un-does 168 fake half-read repeat
+  loops on the 16 flipped stores.  The dominant shape re-emits one vertex
   between the others (fan strips around an apex: `[apex, rim_i, apex,
   rim_{i+1}, ...]` — cone-like patches); the standard strip reading
   yields the degenerate (apex, rim, apex) triangles between the real
@@ -294,9 +299,13 @@ faces — consistent with the closed-manifold invariants.
    bytes, per-family primitive semantics, and the lex-rank index
    space.  B4's verified records are reattributed accordingly; the
    zig-zag patterns B4 saw in `e9ca6192a2854002` are strip joins and
-   apex-fan repeats (section 5), now measured corpus-wide (0.307 of
-   all loops repeat a reference: 48,509/157,981; the strip share of
-   repeats is 0.954).
+   apex-fan repeats (section 5), now measured corpus-wide (0.306 of
+   all loops repeat a reference: 48,341/157,981; 2026-11-10 correction
+   (#35): was 0.307/48,509 — 168 fake half-read repeats un-done.  The
+   strip share of REPEATS is not derivable corpus-wide from the
+   committed CSVs; the 0.954 quoted here before was the strip share of
+   ALL loops (150,788/157,981), mislabeled — clean scope after the fix:
+   3/3 = 1.000).
 4. **C11 — G2's "u8 on every facet the committed decoder accepts":**
    true as far as it went; the tiling law shows u16be records exist
    corpus-wide wherever the element space exceeds 255 (they were the
@@ -361,8 +370,10 @@ stores — see section 3 and the loops CSV; 2026-11-10 #35: was
    (30/179 clean stores): a further element source (the `00 00`
    sub-kind wrappers seen next to `01 06` groups on box-family parts)
    or a second pool form.
-3. **The 5-byte-header variant (0x4b/0x4e):** 446 gap-start records on
-   105 parts; 0x4b carries a 12-byte normal (byte-verified) but its
+3. **The 5-byte-header variant (0x4b/0x4e):** 534 gap-start records on
+   121 parts (2026-11-10 correction (#35): was 446/105 — +88 real
+   gap-start records newly visible at the corrected record ends);
+   0x4b carries a 12-byte normal (byte-verified) but its
    count law differs (count 5 vs n 8); 0x4e tails look nested
    (a count byte followed by sub-counted runs).  G2 unknown 6.
 4. **0x44 and 0x41 primitive semantics:** both lack normals so the
