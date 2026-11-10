@@ -42,8 +42,25 @@ def history_row(
     accepted: bool,
     dev: tuple[int, int] = (1745, 1751),
     held_out: tuple[int, int] = (73, 73),
+    l2: tuple[int, int, int, int] | None = None,
 ) -> dict:
-    """One synthetic row in the committed fitness-history-row-v0 shape."""
+    """One synthetic row in the committed fitness-history-row-v0 shape.
+
+    ``l2`` (dev pass/total, held-out pass/total) populates ``scalars.L2``
+    in the G5 shape; ``None`` keeps the pre-G5 null.
+    """
+    if l2 is None:
+        l2_scalars = None
+    else:
+        l2_dev, l2_ho = (l2[0], l2[1]), (l2[2], l2[3])
+        l2_scalars = {
+            "dev": {"rate": l2_dev[0] / l2_dev[1], "pass": l2_dev[0], "total": l2_dev[1]},
+            "held-out": {
+                "rate": l2_ho[0] / l2_ho[1],
+                "pass": l2_ho[0],
+                "total": l2_ho[1],
+            },
+        }
     return {
         "schema_version": 0,
         "run_id": run_id,
@@ -66,7 +83,7 @@ def history_row(
                     "total": held_out[1],
                 },
             },
-            "L2": None,
+            "L2": l2_scalars,
             "L3": None,
         },
         "report": f"reports/{run_id}.json",
@@ -136,6 +153,50 @@ def test_render_is_deterministic(tmp_path: Path) -> None:
     # Idempotence precondition: same input history -> byte-identical files.
     history = write_history(tmp_path, synthetic_history())
     assert publish.render_files(history) == publish.render_files(history)
+
+
+def test_history_json_carries_the_l2_series_next_to_l1(tmp_path: Path) -> None:
+    # Ticket #33: the trend gains the L2 pass/total series per accepted
+    # run; pre-G5 rows publish as a null entry. The badge stays L1.
+    history = write_history(
+        tmp_path,
+        [
+            history_row("20261107T205256Z-f4fbe7", "2026-11-07T20:52:56Z", True),
+            history_row(
+                "20261109T100000Z-abcdef",
+                "2026-11-09T10:00:00Z",
+                True,
+                dev=(1749, 1751),
+                l2=(1096, 1377, 60, 61),
+            ),
+        ],
+    )
+    document = json.loads(publish.render_files(history)[publish.HISTORY_FILENAME])
+    assert document["runs"][0]["l2"] is None
+    assert document["runs"][1]["l2"] == {
+        "dev": {"pass": 1096, "total": 1377, "pct": 79.59},
+        "held-out": {"pass": 60, "total": 61, "pct": 98.36},
+    }
+
+    endpoint = json.loads(publish.render_files(history)[publish.LATEST_FILENAME])
+    assert endpoint["label"] == "L1 clean-parse (Dev)"  # one headline per level
+
+
+def test_accepted_row_with_bad_l2_counts_fails_closed(tmp_path: Path) -> None:
+    row = history_row(
+        "20261109T100000Z-abcdef", "2026-11-09T10:00:00Z", True, l2=(2000, 1377, 60, 61)
+    )
+    history = write_history(tmp_path, [row])
+    with pytest.raises(publish.PublishError, match="invalid L2 dev pass/total"):
+        publish.render_files(history)
+
+
+def test_accepted_row_with_malformed_l2_object_fails_closed(tmp_path: Path) -> None:
+    row = history_row("20261109T100000Z-abcdef", "2026-11-09T10:00:00Z", True)
+    row["scalars"]["L2"] = {"dev": {"clean": 1, "total": 2}}  # L1-shaped, not pass/total
+    history = write_history(tmp_path, [row])
+    with pytest.raises(publish.PublishError, match="invalid L2 dev pass/total"):
+        publish.render_files(history)
 
 
 def test_badge_color_bands(tmp_path: Path) -> None:

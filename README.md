@@ -31,6 +31,22 @@ and `fitness/history.jsonl`. Published live: the badge above reads the
 `gh-pages` endpoint, refreshed locally by `scripts/publish_fitness.py`
 (ADR-0003, never in CI) — rebuilds and force-pushes the `gh-pages` JSON.
 
+**L2 geometry-sanity (spec D, [#33](https://github.com/MadManJohnSmith/catpart-parser/issues/33)) —
+code landed, corpus baseline pending.** `catpart-fitness` also measures
+the L2 scalar per ADR-0001: the share of `kind=part` manifest rows whose
+`catpart-export` output passes sanity — export success, non-empty mesh,
+manifold, finite plausible bounding box, no degenerate triangles above
+the G3 F7 threshold (0 on every clean-store soup). The L2 population is
+parts-only: products are excluded (the documented negative — 0/37
+sampled products carry any geometry store,
+[docs/evidence/2026-11-08-geometry-payloads.md](docs/evidence/2026-11-08-geometry-payloads.md)).
+Component signals (closed-volume-where-expected, open shells, degenerate
+counts) are reported per run and never collapse into the headline; the
+badge above stays L1 (one headline per level, ADR-0001), and
+`fitness-history.json` carries the L2 accepted-run series next to L1.
+The accepted L2 baseline row lands with the first real corpus run of the
+G5-era runner; until then no L2 number is published.
+
 ## Progress
 
 Implementation tracker — 23 tickets under specs
@@ -79,8 +95,10 @@ issue tracker.
 
 ## Method
 
-- **Corpus-driven.** Fitness is the share of the corpus that parses cleanly,
-  plus geometric sanity checks (renderable without NaNs, closed volumes).
+- **Corpus-driven.** Fitness is the share of the corpus that parses
+  cleanly (L1), plus the L2 geometry-sanity share of parts whose export
+  is sane (non-empty manifold mesh, finite bounding box;
+  closed-volume-where-expected is reported as a component, not gated).
 - **Evidence-driven.** Every structural claim is tied to concrete byte ranges
   and file digests; negative findings are recorded too.
 - **Interop-only reverse engineering.** We document observed structures; no
