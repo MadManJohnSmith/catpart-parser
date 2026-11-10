@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/MadManJohnSmith/catpart-parser/main/src/catpart/schema/fitness-history-row-v0.json",
   "title": "catpart-fitness history row, schema v0",
-  "description": "One line of the committed append-only fitness/history.jsonl (ADR-0001): exactly one row per run, accepted or rejected, each recording the corpus digest so a corpus change visibly invalidates comparisons. The scalars keep room for the per-level L1/L2/L3 ladder (ADR-0001) even though only L1 exists while catpart-inspect reports schema v0. Evolution is additive within a schema version: consumers must ignore properties they do not know, which is why additionalProperties stays true.",
+  "description": "One line of the committed append-only fitness/history.jsonl (ADR-0001): exactly one row per run, accepted or rejected, each recording the corpus digest so a corpus change visibly invalidates comparisons. The scalars carry the per-level L1/L2/L3 ladder (ADR-0001): L1 since Spec C, L2 since ticket #33, L3 still reserved. Evolution is additive within a schema version: consumers must ignore properties they do not know, which is why additionalProperties stays true.",
   "type": "object",
   "properties": {
     "schema_version": {
@@ -46,16 +46,28 @@
       "properties": {
         "dev_rose": {
           "type": ["boolean", "null"],
-          "description": "True when the Dev split rate strictly rose against the baseline; null when no baseline comparison happened."
+          "description": "True when a comparable level's Dev rate strictly rose against the baseline (any of L1/L2); null when no baseline comparison happened."
         },
         "held_out_fell": {
           "type": ["boolean", "null"],
-          "description": "True when the Held-out split rate fell against the baseline; null when no baseline comparison happened."
+          "description": "True when a comparable level's Held-out rate fell against the baseline (any of L1/L2); null when no baseline comparison happened."
         },
         "reason": {
           "type": "string",
           "minLength": 1,
           "description": "Fixed human-readable verdict string: why the run was accepted or rejected (including the baseline cases)."
+        },
+        "l2_dev_rose": {
+          "type": ["boolean", "null"],
+          "description": "True when the L2 Dev pass rate strictly rose against the baseline; null when no baseline comparison happened or L2 was not comparable (a pre-G5 baseline row carries no L2 scalar). Additive field (ticket #33)."
+        },
+        "l2_dev_fell": {
+          "type": ["boolean", "null"],
+          "description": "True when the L2 Dev pass rate fell against the baseline (a no-regret violation); null when no baseline comparison happened or L2 was not comparable. Additive field (ticket #33)."
+        },
+        "l2_held_out_fell": {
+          "type": ["boolean", "null"],
+          "description": "True when the L2 Held-out pass rate fell against the baseline (a no-regret violation); null when no baseline comparison happened or L2 was not comparable. Additive field (ticket #33)."
         }
       },
       "required": ["dev_rose", "held_out_fell", "reason"],
@@ -118,8 +130,58 @@
           "additionalProperties": true
         },
         "L2": {
-          "type": "null",
-          "description": "Reserved for the L2 geometry-sanity scalar (ADR-0001); null until that level exists."
+          "type": ["object", "null"],
+          "description": "The L2 geometry-sanity scalar (ADR-0001, ticket #33): pass/total over the split's kind=part manifest rows (products excluded - the documented negative, 0/37 sampled products carry any geometry store). Null in rows emitted before G5 and when a split has no part rows (nothing measurable).",
+          "properties": {
+            "dev": {
+              "type": "object",
+              "properties": {
+                "rate": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "L2 pass rate on the Dev split: pass / total kind=part manifest rows in the split."
+                },
+                "pass": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Dev part rows whose export passed the L2 sanity gate (export success, non-empty mesh, manifold, finite plausible bounding box, no degenerate triangles above threshold)."
+                },
+                "total": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Kind=part manifest rows on the Dev split - the L2 population."
+                }
+              },
+              "required": ["rate", "pass", "total"],
+              "additionalProperties": true
+            },
+            "held-out": {
+              "type": "object",
+              "properties": {
+                "rate": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "L2 pass rate on the Held-out split: pass / total kind=part manifest rows in the split."
+                },
+                "pass": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Held-out part rows whose export passed the L2 sanity gate."
+                },
+                "total": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Kind=part manifest rows on the Held-out split - the L2 population."
+                }
+              },
+              "required": ["rate", "pass", "total"],
+              "additionalProperties": true
+            }
+          },
+          "required": ["dev", "held-out"],
+          "additionalProperties": true
         },
         "L3": {
           "type": "null",

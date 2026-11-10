@@ -37,6 +37,7 @@ class FitnessError(Exception):
 from catpart.fitness.history import (  # noqa: E402
     LevelScore,
     NoRegret,
+    PartScore,
     SplitScore,
     evaluate_no_regret,
 )
@@ -46,6 +47,7 @@ __all__ = [
     "FitnessError",
     "LevelScore",
     "NoRegret",
+    "PartScore",
     "SplitScore",
     "evaluate_no_regret",
     "run_fitness",

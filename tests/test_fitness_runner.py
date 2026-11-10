@@ -159,6 +159,9 @@ def test_first_run_writes_report_and_single_baseline_row(
         "dev_rose": None,
         "held_out_fell": None,
         "reason": "baseline: no previous accepted row",
+        "l2_dev_rose": None,
+        "l2_dev_fell": None,
+        "l2_held_out_fell": None,
     }
     assert row["scalars"]["L1"]["dev"] == {"rate": 2 / 3, "clean": 2, "total": 3}
     assert row["scalars"]["L1"]["held-out"] == {"rate": 1.0, "clean": 2, "total": 2}
@@ -378,10 +381,15 @@ def test_second_run_appends_exactly_one_row_and_never_rewrites(
     assert second_row["run_id"] != first_row["run_id"]
     assert second_row["accepted"] is False
     assert second_row["baseline_run_id"] == first_row["run_id"]
+    # L2 is not comparable yet (the runner still emits scalars.L2 null at
+    # this stage of the history), so the l2_* verdict fields stay null.
     assert second_row["no_regret"] == {
         "dev_rose": False,
         "held_out_fell": False,
         "reason": "dev did not rise",
+        "l2_dev_rose": None,
+        "l2_dev_fell": None,
+        "l2_held_out_fell": None,
     }
     assert history_path.read_text(encoding="utf-8") == "\n".join(lines) + "\n"
 
@@ -415,6 +423,9 @@ def test_no_regret_flags_dev_rise_with_held_out_fall_as_rejected(
         "dev_rose": True,
         "held_out_fell": True,
         "reason": "held-out fell",
+        "l2_dev_rose": None,
+        "l2_dev_fell": None,
+        "l2_held_out_fell": None,
     }
 
 
@@ -436,6 +447,9 @@ def test_accepted_when_dev_rises_and_held_out_stable(
         "dev_rose": True,
         "held_out_fell": False,
         "reason": "dev rose and held-out did not fall",
+        "l2_dev_rose": None,
+        "l2_dev_fell": None,
+        "l2_held_out_fell": None,
     }
     assert second_row["baseline_run_id"] == json.loads(out1)["run_id"]
 
@@ -518,6 +532,9 @@ def test_corpus_digest_change_voids_comparison(
         "dev_rose": None,
         "held_out_fell": None,
         "reason": "baseline: previous accepted row has a different corpus digest",
+        "l2_dev_rose": None,
+        "l2_dev_fell": None,
+        "l2_held_out_fell": None,
     }
 
 

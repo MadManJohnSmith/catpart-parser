@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/MadManJohnSmith/catpart-parser/main/src/catpart/schema/fitness-report-v0.json",
   "title": "catpart-fitness run report, schema v0",
-  "description": "Full report of one catpart-fitness run (ADR-0001: a report per run, kept next to the committed history). It is the audit trail behind the appended history row: per-file classifications, per-split aggregates and the no-regret verdict. Classification vocabulary follows ticket #14 and the Clean parse definition in GLOSSARY.md: clean, schema-invalid (validated against the committed catpart-inspect schema - v1 as of ticket #23), crash (catpart-inspect raised, including the documented file-level refusals), missing-invariant (output valid but a minimal invariant fails), plus unavailable for manifest rows whose file is not on disk (never parsed, counts against the rate denominator). Evolution is additive within a schema version: consumers must ignore properties they do not know.",
+  "description": "Full report of one catpart-fitness run (ADR-0001: a report per run, kept next to the committed history). It is the audit trail behind the appended history row: per-file classifications, per-split aggregates and the no-regret verdict. Classification vocabulary follows ticket #14 and the Clean parse definition in GLOSSARY.md: clean, schema-invalid (validated against the committed catpart-inspect schema - v1 as of ticket #23), crash (catpart-inspect raised, including the documented file-level refusals), missing-invariant (output valid but a minimal invariant fails), plus unavailable for manifest rows whose file is not on disk (never parsed, counts against the rate denominator). Since ticket #33 it also carries the L2 geometry-sanity scalar (scalars.L2, pass/total over kind=part rows), the per-split l2 detail blocks and per-part l2 records. Evolution is additive within a schema version: consumers must ignore properties they do not know.",
   "type": "object",
   "properties": {
     "schema_version": {
@@ -68,6 +68,21 @@
             "minimum": 0,
             "maximum": 1,
             "description": "clean / files."
+          },
+          "l2": {
+            "type": "object",
+            "description": "L2 detail for this split (ticket #33): the kind=part population, pass/fail/unavailable verdicts, rate, error-class and failed-check histograms of the failed exports, and component signals (closed-volume-where-expected, open shells, degenerate-triangle totals, vertices-only exports) - reported, never collapsed into the headline scalar. Absent in reports emitted before G5.",
+            "properties": {
+              "parts": { "type": "integer", "minimum": 0 },
+              "pass": { "type": "integer", "minimum": 0 },
+              "fail": { "type": "integer", "minimum": 0 },
+              "unavailable": { "type": "integer", "minimum": 0 },
+              "rate": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+              "error_classes": { "type": "object" },
+              "failed_checks": { "type": "object" },
+              "components": { "type": "object" }
+            },
+            "additionalProperties": true
           }
         },
         "required": [
@@ -136,12 +151,39 @@
           "required": ["dev", "held-out"],
           "additionalProperties": true
         },
-        "L2": { "type": "null" },
+        "L2": {
+          "type": ["object", "null"],
+          "description": "The L2 geometry-sanity scalar (ADR-0001, ticket #33): pass/total over the split's kind=part manifest rows (products excluded - the documented negative, 0/37 sampled products carry any geometry store). Null when a split has no part rows (nothing measurable) and in reports emitted before G5.",
+          "properties": {
+            "dev": {
+              "type": "object",
+              "properties": {
+                "rate": { "type": "number", "minimum": 0, "maximum": 1 },
+                "pass": { "type": "integer", "minimum": 0 },
+                "total": { "type": "integer", "minimum": 1 }
+              },
+              "required": ["rate", "pass", "total"],
+              "additionalProperties": true
+            },
+            "held-out": {
+              "type": "object",
+              "properties": {
+                "rate": { "type": "number", "minimum": 0, "maximum": 1 },
+                "pass": { "type": "integer", "minimum": 0 },
+                "total": { "type": "integer", "minimum": 1 }
+              },
+              "required": ["rate", "pass", "total"],
+              "additionalProperties": true
+            }
+          },
+          "required": ["dev", "held-out"],
+          "additionalProperties": true
+        },
         "L3": { "type": "null" }
       },
       "required": ["L1", "L2", "L3"],
       "additionalProperties": true,
-      "description": "Per-level scalars (ADR-0001 keeps room for L1/L2/L3); L2/L3 are null until those levels exist."
+      "description": "Per-level scalars (ADR-0001 keeps room for L1/L2/L3); L2 is populated since ticket #33, L3 remains null until that level exists."
     },
     "accepted": {
       "type": "boolean",
@@ -204,6 +246,23 @@
             "type": ["string", "null"],
             "enum": ["part", "product", "unknown", null],
             "description": "Part/product kind from the catpart-inspect output (law K1); null when the file was never parsed."
+          },
+          "l2": {
+            "type": ["object", "null"],
+            "description": "Per-part L2 measurement (ticket #33): status pass/fail/unavailable, the exporter's machine-readable error_class and detail on an export failure, failed_check on a sanity-gate failure (empty-mesh / not-manifold / nonfinite-bbox / degenerate-triangles), and the export summary's components (mesh invariants, bounding box, warnings). Null for rows outside the L2 population (kind != part). Absent in reports emitted before G5.",
+            "properties": {
+              "status": { "type": "string", "enum": ["pass", "fail", "unavailable"] },
+              "error_class": { "type": ["string", "null"] },
+              "error": { "type": ["string", "null"] },
+              "failed_check": { "type": ["string", "null"] },
+              "vertex_count": { "type": ["integer", "null"], "minimum": 0 },
+              "triangle_count": { "type": ["integer", "null"], "minimum": 0 },
+              "degenerate_triangle_count": { "type": ["integer", "null"], "minimum": 0 },
+              "mesh": { "type": ["object", "null"] },
+              "bounding_box": { "type": ["object", "null"] },
+              "warnings": { "type": ["array", "null"] }
+            },
+            "additionalProperties": true
           },
           "error": {
             "type": ["string", "null"],
