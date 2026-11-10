@@ -71,13 +71,18 @@ forms, both byte-measured:
 G2's association rule ("indices are local to their pool group") holds
 for bounds but the ORDER is not the walk order.  The functional test:
 
-- **F2 (established on the clean-store scope, 1,290/1,300 = 0.9923
-  winding triangles parallel):** mapping each reference to the pool
-  vertex at its **lexicographic rank of (x, y, z)** reproduces the
+- **F2 (established on the 76 in-pool souped stores, 1,290/1,300 =
+  0.9923 winding triangles parallel):** mapping each reference to the
+  pool vertex at its **lexicographic rank of (x, y, z)** reproduces the
   stored normals under the per-family readings (section 3).  Controls
   on the same 1,300 triangles: walk order 357/1,300 = 0.2746; lex
   (x,z,y) 0.379; lex (y,x,z) 0.286; lex (y,z,x) 0.091; lex (z,x,y)
-  0.059; lex (z,y,x) 0.272 — every alternative mapping fails.
+  0.059; lex (z,y,x) 0.272 (the alternative-order rates are
+  approximate — method-sensitive on small samples) — every alternative
+  mapping fails.  On the full 179-clean-store scope the rate is
+  1,299/1,349 = 0.9629, with exceptions on 5 further stores (below);
+  the composite-space stores are excluded by F2c's own analysis either
+  way.
 - **F2b (fact, one store):** the 8-vertex box `10b9ae4a3cd58298`
   makes the mapping explicit: its walked pool order is
   `(0,0,0), (20,0,0), (0,100,0), (20,100,0), (0,100,60), (20,100,60),
@@ -85,11 +90,15 @@ for bounds but the ORDER is not the walk order.  The functional test:
   lexicographic ranks — rank 4 = (20,0,0), rank 0 = (0,0,0), rank 6 =
   (20,100,0), rank 2 = (0,100,0) — under which all six records decode
   to the six faces with their stored normals (12/12 triangles, 12
-  sign-positive).  Under walk order the same records are bowties
-  (zero Newell area) — G2's P6 "in-bounds" test could not see this.
-- **F2c (candidate, 77/1,068 = 0.072 parts):** the lex mapping
+  sign-positive).  Under walk order the same records fail: 0/12 strip
+  triangles parallel to the stored normals (zero-area bowties on 4 of
+  6 records, wrong-normal on the other 2); the ring Newell is zero
+  under BOTH orders (strip refs zig-zag by construction), so the
+  discriminator is the strip-triangle sign test, not Newell area —
+  G2's P6 "in-bounds" test could not see this either.
+- **F2c (candidate, 76/1,068 = 0.071 parts):** the lex mapping
   validates end-to-end only on stores whose element space is the pool
-  alone (the 76 souped stores + 1; see section 6: 889/1,068 = 0.832
+  alone (the 76 souped stores; see section 6: 889/1,068 = 0.832
   stores carry an `01 02` edge group and/or a trailer opener and their
   references run beyond the pool — 793/889 = 0.892 of them).
 
@@ -102,11 +111,11 @@ and the closure test (section 5):
 
 | marker | carries | loop reading | evidence | label |
 |---|---|---|---|---|
-| 0x4a | 12B normal | **triangle-strip segment** per loop (n_refs-2 triangles, alternating flip, phase reset per loop) | clean stores: 1,274/1,284 strip triangles parallel, 1,272 sign+ (1 anti-parallel record named below); the box 12/12 | established (clean-store scope) |
+| 0x4a | 12B normal | **triangle-strip segment** per loop (n_refs-2 triangles, alternating flip, phase reset per loop) | souped stores: 1,274/1,284 strip triangles parallel, 1,272 sign+ (anti-parallel records named below); the box 12/12 | established (souped-store scope) |
 | 0x42 | none | triangle-strip segment (structurally identical tails to 0x4a; no normal to winding-test) | adding 0x42-as-strips closes the two R17 open shells (90135d46, b9b887db) — closure 64/76 -> 66/76; loops 10,684 corpus-wide | established (functional, closure) |
-| 0x4c | 12B normal | **closed polygon** per loop, corners in ring order (Newell normal == stored normal) | 16/16 clean-store loops Newell sign+; strip reading gives 16/16 MIXED signs (rejected); ring-order refs are lex-adjacent hops | established (clean-store scope) |
+| 0x4c | 12B normal | **closed polygon** per loop, corners in ring order (Newell normal == stored normal) | 16/16 souped-store loops Newell sign+; strip reading gives 16/16 MIXED signs (rejected); ring-order refs are lex-adjacent hops | established (souped-store scope) |
 | 0x41 | none | triangle list (n == 3*type) | 59/59 records n == 3*type corpus-wide | established (byte law); primitive not winding-tested |
-| 0x49 | 12B normal | n == 3*type law holds; primitive reading NOT established | 3,722/3,722 records n == 3*type; the one in-pool 0x49 loop fails strip/list/Newell readings | candidate (law); semantics open |
+| 0x49 | 12B normal | n == 3*type law holds; primitive reading NOT established | 3,722/3,722 records n == 3*type; no 0x49 loop sits on a pool-only store (the family appears only on `01 02`-carrying stores), so the winding test cannot decide its primitive | candidate (law); semantics open |
 | 0x44 | none | unknown | 649 records; tails parse under the k-count law on some stores | open |
 | 0x4b/0x4e | 12B normal (0x4b byte-verified) | unknown (5-byte header variant) | 446 gap-start records; 0x4b tails violate the count-sum law (count 5, n 8, 8 refs — 2 records hand-verified) | open (G2 unknown 6 sharpens to: the variant is real, frequent on 105 parts) |
 
@@ -121,20 +130,25 @@ and the closure test (section 5):
   true for 0x4a/0x42 content, false for 0x4c (correction C10).
 - **F9/F10 (established byte laws):** n == 3*type holds on 59/59
   0x41 and 3,722/3,722 0x49 records.
-- **Counterexamples named (not massaged):** on the clean subset, one
+- **Counterexamples named (not massaged):** on the 76-soup scope, one
   record reads anti-parallel — `6888b9868df81c00` (R16), one 0x4a ty=1
   record with refs (0, 1, 2, 3): both strip triangles exactly parallel
   to the stored normal but sign-negative (a reversed-normal writer
-  variant).  Five further clean-subset loops are off-plane, all on
-  `b9b887db0d516d88` (R17).  Writer variants at the ~1% level.
+  variant).  Five further souped-scope loops are off-plane, all on
+  `b9b887db0d516d88` (R17).  On the full 179-clean scope: 3 stores
+  carry anti-parallel triangles (`6888b9868df81c00`, `aa84a202df09ed45`,
+  `bd79fa8e39e8fab2` — 5 sign-negative triangles) and 6 stores carry
+  off-plane triangles (adding `1ffad5964894f1ff`, `38e7359df7a82d35`,
+  `a6d450edd4a8ff17` — 50 off-plane triangles, 3.7%).
 
 ## 4. The winding law (F5)
 
 **All normal-bearing facet geometry is counter-clockwise seen from the
 stored normal (right-hand rule), i.e. the OBJ convention.** Measured:
-1,288 sign-positive vs 2 sign-negative triangles on the clean subset
+1,288 sign-positive vs 2 sign-negative triangles on the 76-soup scope
 (1,290 parallel of 1,300; the 10 off-plane are the counterexamples
-above).  Concretely: for strip loops the consistent triangle sequence
+above; full-179 scope: 1,294+/5- of 1,299 parallel).  Concretely: for
+strip loops the consistent triangle sequence
 is (r_t, r_{t+1}, r_{t+2}) with the flip on odd t (phase reset per
 loop); for polygon loops the ring order has positive Newell normal.
 G4 (the exporter) can emit every decoded triangle as-is.
@@ -190,9 +204,10 @@ a thin bracket; **no `01 02` group, no trailer opener**):
   closed 66/76 = 0.868; oriented 66/66 of the closed):** every
   clean store with a decodable facet set soups to a manifold — no
   edge used more than twice on any of the 76.  The 10 non-closed are
-  sheet-like open shells (paired boundary edges): the 2-triangle
-  single-quad parts (R16 96efc97f, R20 81f730b6/e5768c51), a 12-triangle
-  strip shell (R19 fe6d27fd), and the 24-record 48-triangle tube family
+  sheet-like open shells (paired boundary edges): five 2-triangle
+  single-quad parts (R16 96efc97f, R16 6888b986, R20 81f730b6/e5768c51,
+  R21 40d452d9), two 12-triangle strip shells (R19 fe6d27fd,
+  R19 1c057c47), and the three 24-record 48-triangle tube parts
   (bb996ab7/c5dfda57/e066a5ff — usage {1: 48, 2: 48}, a rim-paired
   open surface).  Per release: R15 2/2, R16 0/2, R17 5/5, R18 1/1,
   R19 12/16, R20 20/22, R21 21/23, R23 1/1, R26 2/2, unknown 2/2.
@@ -210,7 +225,9 @@ a thin bracket; **no `01 02` group, no trailer opener**):
   + f32le triples + a trailing f32le length equal to the middle
   triple's norm, as G2 sketched).  The exact composite numbering is
   OPEN (question 1) — under pool-only mapping the composite stores'
-  in-pool-looking loops wind at only 0.167, i.e. the mapping is
+  in-pool-looking loops wind far below the bar (≈ 0.13-0.16 by
+  denominator choice, review-measured; not derivable from the
+  committed CSVs alone), i.e. the mapping is
   genuinely incomplete there, not wrong-by-variant.
 
 ## 7. Render sanity check (the visual gate)
@@ -219,10 +236,12 @@ Viewer tooling on this host: none — `blender`, `meshlab`, `f3d`,
 `assimp`, `paraview` absent from PATH; `trimesh`/`numpy` not importable;
 nothing installed (per the dispatch rules).  The machine check stands
 on the mesh invariants above (manifold/closure/orientation/bbox) which
-are the acceptance seed's numbers; **the visual confirmation of the
-soup is deferred to the coordinator** (render
-`docs/evidence/data/facet-soup-369fc90b25b4977d.obj` — a bracket-like
-thin solid).
+are the acceptance seed's numbers.  **Coordinator visual check
+(2026-11-09, post-branch): PASS** — a stdlib-only software orthographic
+raster of `docs/evidence/data/facet-soup-369fc90b25b4977d.obj` (three
+views, flat shading) shows five vertical prisms of decreasing height,
+consistent shading across views, no scrambled triangles or inverted
+faces — consistent with the closed-manifold invariants.
 
 ## 8. Corrections to G2/B4 (recorded, none massaged)
 
@@ -251,12 +270,22 @@ thin solid).
    bytes, per-family primitive semantics, and the lex-rank index
    space.  B4's verified records are reattributed accordingly; the
    zig-zag patterns B4 saw in `e9ca6192a2854002` are strip joins and
-   apex-fan repeats (section 5), now measured corpus-wide (0.313 of
-   strip loops repeat a reference).
+   apex-fan repeats (section 5), now measured corpus-wide (0.307 of
+   all loops repeat a reference: 48,509/157,981; the strip share of
+   repeats is 0.954).
 4. **C11 — G2's "u8 on every facet the committed decoder accepts":**
    true as far as it went; the tiling law shows u16be records exist
    corpus-wide wherever the element space exceeds 255 (they were the
    unresolved-candidate mass of G2's P6u, 834/1,377 parts).
+   Coverage effect, measured from the committed CSVs: strict records
+   101,569 (G2) -> 111,287 (G3) on the 962 candidate-bearing parts —
+   619 parts improved, 434 unchanged, **15 worse** (deltas -1..-8:
+   11xR19, 2xR21, 1xR24, 1xR20 — `2aa29713`, `346091a9`, `4f3ac472`,
+   `57d4b858`, `7b8d0128`, `93ee5c76`, `995383c2`, `9a2f57fa`,
+   `bc21020d`, `c0b26146`, `d1dae6aa`, `d594d37a`, `d748c70c`,
+   `f21255ac`, `ffdbc4f7`).  Likely mechanism (not root-caused):
+   records G2's u8 parse accepted that the exact-tiling law now
+   assigns to gap or 5-byte-header content — recorded, not absorbed.
 
 ## Claims
 
@@ -264,21 +293,23 @@ thin solid).
 |---|---|---|---|
 | F1 | facet records tile their region header-to-header under the (width, k) tiling law; two header forms (4-byte, 5-byte variant) | 516/1,068 = 0.483 stores tile completely (composite-space stores carry gap content); per-file 0.0-1.000 | established (observed) |
 | F1w | reference width is per-record u8 or u16be (big-endian), chosen by the tiling law | every accepted record | established (observed) |
-| F2 | facet references are lexicographic ranks of (x, y, z) into the pool | clean subset 1,290/1,300 = 0.9923 winding triangles parallel (walk-order control 0.2746; other axis orders <= 0.38); box 12/12 with 12 sign+ | established (clean-store scope) |
+| F2 | facet references are lexicographic ranks of (x, y, z) into the pool | souped stores 1,290/1,300 = 0.9923 winding triangles parallel (walk-order control 0.2746; other axis orders <= 0.38, approximate); full 179-clean scope 1,299/1,349 = 0.9629; box 12/12 with 12 sign+ | established (souped-store scope) |
 | F2b | the box worked example decodes to its six faces only under lex ranks | 1 store, 12/12 triangles | established (one store) |
-| F2c | the lex mapping validates end-to-end on pool-only stores | 77/1,068 = 0.072 parts (the 76 souped stores + 1) | candidate (scope-limited) |
-| F3 | 0x4a loops are triangle-strip segments (flip phase, reset per loop) | clean subset 1,274/1,284 strip triangles parallel (1,272 sign+); box 12/12 | established (clean-store scope) |
-| F4 | 0x4c loops are closed polygons in ring order (Newell == stored normal) | 16/16 clean-store loops sign+; strip reading 16/16 sign-mixed (rejected) | established (clean-store scope) |
-| F5 | winding law: CCW seen from the stored normal (RH rule) | 1,288 sign+ vs 2 sign- of 1,290 parallel (0.9984); counterexamples named | established (clean-store scope) |
+| F2c | the lex mapping validates end-to-end on pool-only stores | 76/1,068 = 0.071 parts (the souped stores) | candidate (scope-limited) |
+| F3 | 0x4a loops are triangle-strip segments (flip phase, reset per loop) | souped stores 1,274/1,284 strip triangles parallel (1,272 sign+); full-179 1,299/1,349 = 0.9629; box 12/12 | established (souped-store scope) |
+| F4 | 0x4c loops are closed polygons in ring order (Newell == stored normal) | 16/16 souped-store loops sign+; strip reading 16/16 sign-mixed (rejected) | established (souped-store scope) |
+| F5 | winding law: CCW seen from the stored normal (RH rule) | souped stores 1,288 sign+ vs 2 sign- of 1,290 parallel (0.9984); full-179 1,294+/5- of 1,299; counterexamples named | established (souped-store scope) |
 | F6 | clean-store soups are manifolds; closed solids 66/76; oriented 66/66 closed | 76/76 = 1.000 manifold; 0.868 closed | established (clean-store scope) |
 | F7 | zero degenerate triangles in the soups (skip convention applied) | 1,354/1,354 | established (clean-store scope) |
 | F8 | composite index space: `01 02` edge groups + `ff`-opener trailer region; refs beyond pool | 889/1,068 = 0.832 stores; 793/889 refs beyond pool | candidate (numbering open) |
 | F9 | 0x41: n == 3*type | 59/59 | established (byte law) |
-| F10 | 0x49: n == 3*type; primitive semantics otherwise open | 3,722/3,722; one in-pool loop fails all readings | candidate (law); semantics open |
+| F10 | 0x49: n == 3*type; primitive semantics otherwise open | 3,722/3,722; no 0x49 loop on a pool-only store — winding test silent | candidate (law); semantics open |
 
 Version scope: F1-F10 measured on the 1,068 decoded stores of the
-1,377 dev parts; the established scopes are the 179 pool-only
-("clean") stores (76 of which soup), per-release rows in
+1,377 dev parts; the established winding/semantics scopes are the
+**76 in-pool souped stores** (0.9923 parallel; the full 179
+clean-store scope measures 0.9629 with exceptions on 5 further
+stores — see section 3 and the loops CSV), per-release rows in
 `facet-semantics-claims.csv`.
 
 ## Unknowns / next questions (G4 pointers)
@@ -303,8 +334,9 @@ Version scope: F1-F10 measured on the 1,068 decoded stores of the
 4. **0x44 and 0x41 primitive semantics:** both lack normals so the
    winding test is silent; 0x44 = 649 records with tails that parse
    only on some stores.
-5. **0x49 primitive reading:** n == 3*type holds; the single in-pool
-   loop fails strip/list/Newell — likely composite-space on its store.
+5. **0x49 primitive reading:** n == 3*type holds; no 0x49 loop sits
+   on a pool-only store (the family rides on `01 02`-carrying stores),
+   so the winding test cannot decide its primitive.
 6. **The 10 open shells:** confirm the sheet-body interpretation
    (rim-paired boundary edges) against a part with known content.
 
