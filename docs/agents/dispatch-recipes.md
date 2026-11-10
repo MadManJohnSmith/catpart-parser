@@ -84,3 +84,20 @@ files:
   concurrency limit (error 3008) can fail a child's turn when child
   turns overlap a long coordinator turn — keep coordinator turns short
   while children run, and re-dispatch a failed child as a new delegate.
+  Observed 2026-11-10: two overlapping CHILD turns trip 3008 even with
+  short coordinator turns (the G5 review died twice this way), and the
+  provider can also fail a turn with error 1005 (quota limit, distinct
+  from 3008). Until the owner updates the concurrency policy, child
+  turns run SERIALIZED: at most one child in flight; the second slot
+  hosts only coordinator-executed work. A failed child's worktree is
+  usually clean — check before re-dispatching, and re-dispatch as a NEW
+  delegate_task (both 3008 and 1005 recovered on retry).
+- Adopting an external changeset (precedent: ticket #35, 2026-11-10):
+  state the expected per-store/per-part delta BEFORE running the corpus
+  A/B, and treat any unexplained delta as a stop-and-re-root-cause gate.
+  A plausible root-cause story (the external report's C11 mechanism)
+  was falsified by the A/B: 1/15 expected recoveries plus 1,517
+  u16be->u8 demotions at corpus scale. External patches are never
+  executed — they are diffed and read only; corpus runs use committed
+  code. Verdicts, expected deltas and re-scopes live in the ticket
+  (#35 comment 2026-11-10).
