@@ -84,4 +84,9 @@ _Avoid_: changelog, log
 **No-regret rule**:
 The acceptance rule for an increment: the change is kept only if the
 headline rises on the Dev split and does not fall on the Held-out split.
+Extended by #33 (2026-11-10): the rule aggregates both levels — accepted
+when no comparable split regressed (L2 is protective) and at least one
+comparable level's Dev rose, so an L2-only improvement with a flat
+headline is acceptable (reason recorded); the first L2-bearing run
+against a pre-L2 baseline keeps L1's protection.
 _Avoid_: acceptance test, gate

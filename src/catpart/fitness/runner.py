@@ -76,6 +76,9 @@ from catpart.fitness.history import (
     REASON_BASELINE_CORPUS_CHANGED,
     REASON_BASELINE_FIRST,
     REASON_BASELINE_NO_L2,
+    REASON_REJECTED_BOTH,
+    REASON_REJECTED_HELD_OUT,
+    REASON_REJECTED_L1_DEV,
     LevelScore,
     NoRegret,
     PartScore,
@@ -638,13 +641,35 @@ def run_fitness(
         baseline_scores = level_scores_from_json(baseline["scalars"], "baseline row scalars")
         if baseline_scores.get("L2") is None and level_scores.get("L2") is not None:
             # The first L2-bearing run against a pre-G5 baseline has no L2
-            # baseline to compare against; the corpus-change precedent
-            # applies (a baseline that cannot support the comparison
-            # accepts the run as the new baseline, reason recorded) — the
-            # ticket's "first accepted L2 row is the baseline".
-            accepted = True
+            # baseline: L2 is ungated, but L1 IS comparable (same corpus
+            # digest, same scalar) and stays protected — an L1 regression
+            # must not ride the L2 baseline transition into the append-only
+            # accepted history. This is NOT the corpus-change precedent:
+            # there the digest itself differs and no level is comparable.
+            # Flat L1 + the first L2 scalar is the expected transition and
+            # is accepted (review of #33, 2026-11-10).
+            l1_base, l1_cur = baseline_scores["L1"], level_scores["L1"]
+            if l1_base is None or l1_cur is None:  # defensive; L1 always exists
+                raise FitnessError("cannot evaluate the no-regret rule: L1 scalar missing")
+            dev_fell = l1_cur.dev.fraction() < l1_base.dev.fraction()
+            ho_fell = l1_cur.held_out.fraction() < l1_base.held_out.fraction()
+            accepted = not dev_fell and not ho_fell
+            if dev_fell and ho_fell:
+                reason = REASON_REJECTED_BOTH
+            elif ho_fell:
+                reason = REASON_REJECTED_HELD_OUT
+            elif dev_fell:
+                reason = REASON_REJECTED_L1_DEV
+            else:
+                reason = REASON_BASELINE_NO_L2
             baseline_run_id = baseline["run_id"]
-            no_regret = NoRegret(True, None, None, REASON_BASELINE_NO_L2)
+            no_regret = NoRegret(
+                accepted=accepted,
+                dev_rose=l1_cur.dev.fraction() > l1_base.dev.fraction(),
+                held_out_fell=ho_fell,
+                reason=reason,
+                # l2_* stay None: L2 was not comparable.
+            )
         else:
             try:
                 verdict = evaluate_no_regret(baseline_scores, level_scores)

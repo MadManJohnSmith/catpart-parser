@@ -33,6 +33,7 @@ from catpart.fitness import LevelScore, PartScore, SplitScore, evaluate_no_regre
 from catpart.fitness.history import (
     REASON_ACCEPTED,
     REASON_ACCEPTED_L2,
+    REASON_BASELINE_FIRST,
     REASON_BASELINE_NO_L2,
     REASON_REJECTED_BOTH,
     REASON_REJECTED_DEV,
@@ -743,9 +744,11 @@ def test_manifest_missing_kind_column_fails_closed(
 def test_baseline_without_l2_scalar_is_accepted_as_the_new_baseline(
     tmp_path: Path, build_catpart, capsys, monkeypatch
 ) -> None:
-    # A pre-G5 accepted baseline (scalars.L2 null) cannot support an L2
-    # comparison: the corpus-change precedent accepts the run as the new
-    # baseline — the ticket's "first accepted L2 row is the baseline".
+    # A pre-G5 accepted baseline (scalars.L2 null) has no L2 to compare:
+    # L2 is ungated for this one transition run, but L1 stays protected
+    # (non-regression) — here L1 rises (1/2 -> 2/3), so the run is
+    # accepted as the ticket's "first accepted L2 row is the baseline"
+    # and the verdict records L1's own outcome (review of #33, 2026-11-10).
     from test_fitness_runner import write_mini_corpus
 
     manifest_path, _files = write_mini_corpus(tmp_path, build_catpart)
@@ -770,10 +773,97 @@ def test_baseline_without_l2_scalar_is_accepted_as_the_new_baseline(
     assert row["accepted"] is True
     assert row["baseline_run_id"] == pre_g5["run_id"]
     assert row["no_regret"] == {
-        "dev_rose": None,
-        "held_out_fell": None,
+        "dev_rose": True,
+        "held_out_fell": False,
         "reason": REASON_BASELINE_NO_L2,
         "l2_dev_rose": None,
         "l2_dev_fell": None,
         "l2_held_out_fell": None,
     }
+
+
+def test_baseline_transition_rejects_an_l1_regression(
+    tmp_path: Path, build_catpart, capsys, monkeypatch
+) -> None:
+    # The baseline transition does NOT adopt the corpus-change precedent:
+    # L2 is ungated (no baseline to compare against) but L1 is comparable
+    # (same corpus digest, same scalar) and stays protected — a run that
+    # regresses L1 while landing the first L2 scalar is rejected, and the
+    # pre-G5 row remains the last accepted row (review of #33, 2026-11-10).
+    from test_fitness_runner import write_mini_corpus
+
+    manifest_path, _files = write_mini_corpus(tmp_path, build_catpart)
+    monkeypatch.setattr("catpart.fitness.runner.build_export", all_pass)
+    pre_g5 = {
+        **VALID_ROW,
+        "run_id": "20261107T120000Z-abc123",
+        "timestamp": "2026-11-07T12:00:00Z",
+        "corpus_digest": digest_of_manifest(manifest_path),
+        "accepted": True,
+        "scalars": {
+            **VALID_ROW["scalars"],
+            "L1": {
+                **VALID_ROW["scalars"]["L1"],
+                "dev": {"rate": 1.0, "clean": 3, "total": 3},
+            },
+            "L2": None,
+        },
+    }
+    history_path = tmp_path / "fitness" / "history.jsonl"
+    history_path.parent.mkdir(parents=True, exist_ok=True)
+    history_path.write_text(
+        json.dumps(pre_g5, separators=(",", ":")) + "\n", encoding="utf-8"
+    )
+
+    code, out, err = run_fitness_cli(tmp_path, capsys)
+    assert code == 0, err
+    row = json.loads(out)
+    assert row["accepted"] is False
+    assert row["baseline_run_id"] == pre_g5["run_id"]
+    assert row["no_regret"] == {
+        "dev_rose": False,
+        "held_out_fell": False,
+        "reason": REASON_REJECTED_L1_DEV,
+        "l2_dev_rose": None,
+        "l2_dev_fell": None,
+        "l2_held_out_fell": None,
+    }
+    last = json.loads(history_path.read_text(encoding="utf-8").splitlines()[-1])
+    assert last["accepted"] is False
+
+
+def test_l2_success_path_through_the_real_export_seam(
+    tmp_path: Path, build_catpart, capsys
+) -> None:
+    # The runner's L2 success path must be exercised through the real
+    # export seam at least once, not only through mocked summaries: two
+    # G4 geometry-variant part fixtures (closed manifold meshes) in a
+    # real manifest, no monkeypatching.
+    from fixtures_gen import build_fixture
+
+    write_manifest(
+        tmp_path,
+        [
+            manifest_row("geo-dev", "dev", build_fixture("part", seed=11, variant="geometry")),
+            manifest_row(
+                "geo-ho", "held-out", build_fixture("part", seed=12, variant="geometry")
+            ),
+        ],
+    )
+    write_fixture_files(
+        tmp_path,
+        {
+            "geo-dev": ("dev", build_fixture("part", seed=11, variant="geometry")),
+            "geo-ho": ("held-out", build_fixture("part", seed=12, variant="geometry")),
+        },
+    )
+    code, out, err = run_fitness_cli(tmp_path, capsys)
+    assert code == 0, err
+    row = json.loads(out)
+    assert row["accepted"] is True
+    assert row["scalars"]["L1"]["dev"] == {"rate": 1.0, "clean": 1, "total": 1}
+    assert row["scalars"]["L2"] == {
+        "dev": {"rate": 1.0, "pass": 1, "total": 1},
+        "held-out": {"rate": 1.0, "pass": 1, "total": 1},
+    }
+    assert row["no_regret"]["reason"] == REASON_BASELINE_FIRST
