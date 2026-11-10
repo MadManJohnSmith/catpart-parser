@@ -113,7 +113,7 @@ here — decoding them is post-Phase-2 work.
 | UT-tag-0x55 | the tail-header tag 0x55 | occurs only on the 8 no-trailer unknown-version files; absent from R19/R21 (tag is 0x4e on 100% of both lines) | open | all marked lines (untested) |
 | UT-osmx-cb0001 | whether every OSMX / CB0001 region end is a real stream header | the region rule byte-verifies boundaries only (B3 open question 2); no version-scoped test exists | open | all marked lines (untested) |
 | UT-u32le-subformat | the u32le attribute-string sub-format inside stream regions | candidate framing only (C4/C4b); no per-version model to test | open | all marked lines (untested) |
-| UT-strip-semantics | strip-record primitive semantics (triangles vs polylines, vertex pool) | the grammar is a byte-level fact on both lines; the semantics are inferred and need a controlled decode pass; not version-scoped | open | all marked lines (untested) |
+| UT-strip-semantics | strip-record primitive semantics (triangles vs polylines, vertex pool) | resolved by G2/G3 on pool-only stores (geometry.md 6.2.1/6.3.1: pool grammar, per-family strip/polygon readings, lex-rank mapping); what stays untested here is the composite index space (GE-F8) and the 0x44/0x49/0x4b/0x4e families, not version-scoped | open (composite/unpinned families) | all marked lines (untested) |
 
 ## 7.5 Corrections recorded in v1
 

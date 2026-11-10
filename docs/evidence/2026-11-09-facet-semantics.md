@@ -277,13 +277,19 @@ faces — consistent with the closed-manifold invariants.
    true as far as it went; the tiling law shows u16be records exist
    corpus-wide wherever the element space exceeds 255 (they were the
    unresolved-candidate mass of G2's P6u, 834/1,377 parts).
-   Coverage effect, measured from the committed CSVs: strict records
-   101,569 (G2) -> 111,287 (G3) on the 962 candidate-bearing parts —
-   619 parts improved, 434 unchanged, **15 worse** (deltas -1..-8:
-   11xR19, 2xR21, 1xR24, 1xR20 — `2aa29713`, `346091a9`, `4f3ac472`,
+   Coverage effect, measured from the committed CSVs (per-part join of
+   `vertex-pool-files.csv` `n_facets_strict` with
+   `facet-semantics-files.csv` `n_records`): strict records 101,569
+   (G2) -> 111,287 (G3) over the 1,068 decoded stores — 619 improved,
+   434 unchanged, **15 worse** (deltas -1..-8: 11xR19, 2xR21, 1xR24,
+   1xR20 — `2aa29713`, `346091a9`, `4f3ac472`,
    `57d4b858`, `7b8d0128`, `93ee5c76`, `995383c2`, `9a2f57fa`,
    `bc21020d`, `c0b26146`, `d1dae6aa`, `d594d37a`, `d748c70c`,
-   `f21255ac`, `ffdbc4f7`).  Likely mechanism (not root-caused):
+   `f21255ac`, `ffdbc4f7`).  The partition's scope is the 1,068 stores,
+   not the 962 candidate-bearing ones: 283 of the improved already had
+   G2-strict records and 336 gain their first (2026-11-10 correction:
+   the earlier wording attached the 619/434/15 partition to the 962).
+   Likely mechanism (not root-caused):
    records G2's u8 parse accepted that the exact-tiling law now
    assigns to gap or 5-byte-header content — recorded, not absorbed.
 
@@ -296,7 +302,7 @@ faces — consistent with the closed-manifold invariants.
 | F2 | facet references are lexicographic ranks of (x, y, z) into the pool | souped stores 1,290/1,300 = 0.9923 winding triangles parallel (walk-order control 0.2746; other axis orders <= 0.38, approximate); full 179-clean scope 1,299/1,349 = 0.9629; box 12/12 with 12 sign+ | established (souped-store scope) |
 | F2b | the box worked example decodes to its six faces only under lex ranks | 1 store, 12/12 triangles | established (one store) |
 | F2c | the lex mapping validates end-to-end on pool-only stores | 76/1,068 = 0.071 parts (the souped stores) | candidate (scope-limited) |
-| F3 | 0x4a loops are triangle-strip segments (flip phase, reset per loop) | souped stores 1,274/1,284 strip triangles parallel (1,272 sign+); full-179 1,299/1,349 = 0.9629; box 12/12 | established (souped-store scope) |
+| F3 | 0x4a loops are triangle-strip segments (flip phase, reset per loop) | souped stores 1,274/1,284 strip triangles parallel (1,272 sign+); full-179 all-families 1,299/1,349 = 0.9629 (strips only: 1,282/1,348 = 0.9510); box 12/12 | established (souped-store scope) |
 | F4 | 0x4c loops are closed polygons in ring order (Newell == stored normal) | 16/16 souped-store loops sign+; strip reading 16/16 sign-mixed (rejected) | established (souped-store scope) |
 | F5 | winding law: CCW seen from the stored normal (RH rule) | souped stores 1,288 sign+ vs 2 sign- of 1,290 parallel (0.9984); full-179 1,294+/5- of 1,299; counterexamples named | established (souped-store scope) |
 | F6 | clean-store soups are manifolds; closed solids 66/76; oriented 66/66 closed | 76/76 = 1.000 manifold; 0.868 closed | established (clean-store scope) |

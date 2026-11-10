@@ -16,7 +16,7 @@ not implemented"). One page per structural area:
 | [container-table.md](container-table.md) | Container-name table records, kind law K1, container-tree resolution | parsed (`catpart.containers`) |
 | [trailer.md](trailer.md) | Trailer (last 36 bytes) + writer registration block | parsed (`catpart.trailer`) |
 | [payload-blocks.md](payload-blocks.md) | CATStorageProperty block model, CATIA identity block, `document_name`, units negative | `document_name` parsed (`catpart.identity`); the rest documented, not parsed |
-| [geometry.md](geometry.md) | Geometry containers (CGMGeom / CATStdCont / CATCGRCont), nested stream store, embedded tessellation (the L3-gate answer) | documented, not parsed |
+| [geometry.md](geometry.md) | Geometry containers (CGMGeom / CATStdCont / CATCGRCont), nested stream store, embedded tessellation (the L3-gate answer) | partially parsed at L2 (`catpart.geometry`, G4 #32; exported by `catpart-export`) |
 | [validation.md](validation.md) | Cross-validation across the marked lines (R15-R32) + the R19/R21 differential verdicts + corrections register | - |
 
 Evidence method: read-only byte analysis over the 1818 magic-verified
@@ -70,10 +70,13 @@ implements per page:
 | container-table.md | `catpart.containers`: the anchor scan (2 MB window), full-record validation (T3 constants, f3 vocabulary, T1 padding + f10), the 7-field record; `detect_kind` (law K1) => `containers[]` + `kind` | the directory table (3.3); any tree model — the documented negative (3.5): no tree field, `parent_name` reported as the measured annotation |
 | trailer.md | `catpart.trailer`: the last-36-bytes model (7 big-endian dwords) + the registration block when byte-exact; null when no `CB__END\0` | the registration tag's meaning and the `041803` code (open); field semantics are invariant-enforced, not parser-enforced |
 | payload-blocks.md | `catpart.identity`: `document_name` via the fixed identity-block walk (D1/D2), null-safe | the block model, region rule, GUID join, framing families, cardinality laws |
-| geometry.md | nothing | the nested store, strip records, entropy attribution |
+| geometry.md | nothing at L1; at L2 `catpart.geometry` (G4, #32) decodes the nested store, vertex pool and facet records (6.2-6.3.1) and `catpart-export` emits `export-summary-v1.json` | the composite index space (GE-F8), the 0x44/0x4b/0x4e and 0x49 primitive readings, the unnamed-stream bulk, entropy attribution |
 
 A structure without a documented claim is not implemented — and
 conversely, every parsed field above traces to a claim on these pages.
+The geometry row is the L1/L2 split of ADR-0001: L1
+(`catpart-inspect`) still emits none of it, L2 consumes the page's
+6.2-6.3.1 claims.
 
 ## Not yet documented (not parsed)
 
@@ -85,9 +88,12 @@ conversely, every parsed field above traces to a claim on these pages.
   geometry streams (`UT-u32le-subformat`).
 - The **unnamed stream bulk** record format (`b2 03` family, float64
   arrays, entropy 7.2-7.84) — the largest undecoded territory (geometry.md 6.1).
-- **Strip-record primitive semantics** (`UT-strip-semantics`); the
-  nested-store header variants (5/44 parts without the nested magic in
-  the probe window); the `Cont_<id>` name-to-GUID transform.
+- The **facet families without a winding verdict** (geometry.md 6.3.1 —
+  the strip/polygon semantics themselves were decoded by G3, #31): the
+  `0x49` primitive reading (no 0x49 loop sits on a pool-only store),
+  `0x44`, the 5-byte-header `0x4b`/`0x4e` variant (G2 unknown 6); the
+  **composite index space** of the `01 02`-carrying stores (GE-F8,
+  889/1,068 stores); the `Cont_<id>` name-to-GUID transform.
 - Tail-catalog open fields: the cntB high byte (`UT-cnt-high-byte`),
   the 8 file-dependent tail-header bytes (`UT-tail-var8`), the entry-0
   quantum M's driver (`UT-e0-M-driver`), the tag `0x55` files, the

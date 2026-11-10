@@ -33,6 +33,33 @@ endpoint de `gh-pages`, refrescado localmente por
 `scripts/publish_fitness.py` (ADR-0003, nunca en CI) — reconstruye y fuerza
 el push del JSON de `gh-pages`.
 
+**Geometría L2 (spec D, [#33](https://github.com/MadManJohnSmith/catpart-parser/issues/33)) —
+disponible, baseline publicado.** `catpart-fitness` también mide el
+escalar L2 por ADR-0001: la proporción de filas `kind=part` del manifest
+cuya salida de `catpart-export` pasa la sanidad — exportación exitosa,
+malla no vacía, manifold, bounding box finito y plausible, sin
+triángulos degenerados por encima del umbral F7 de G3 (0 en cada soup de
+store limpio). La población L2 es solo de piezas: los products se
+excluyen (el negativo documentado — 0/37 products muestreados llevan
+algún store de geometría,
+[docs/evidence/2026-11-08-geometry-payloads.md](docs/evidence/2026-11-08-geometry-payloads.md)).
+Las señales por componente (volumen cerrado donde se espera, shells
+abiertos, conteos degenerados) se reportan por ejecución y nunca
+colapsan en el titular; el badge de arriba sigue siendo L1 (un titular
+por nivel, ADR-0001), y `fitness-history.json` lleva la serie L2 de
+ejecuciones aceptadas junto a la L1. El baseline L2 aceptado (run
+`20261110T172440Z-3ea53d`, 2026-11-10): **Dev 76/1,381 = 5.50%,
+held-out 0/61**. La brecha está clasificada, no es anecdótica:
+1,024 `undecoded-variant` (espacio de índices compuesto, lecturas
+primitivas 0x4b/0x4e y 0x41/0x44 sin fijar — los abiertos que ponen la
+barra), 313 `missing-geometry-store` (consistente con el rango
+documentado 0.82–0.93 de presencia de stores), 29
+`malformed-store-header`; de los 76 pases, 66 volúmenes cerrados +
+10 shells abiertos (señales por componente).
+[#34](https://github.com/MadManJohnSmith/catpart-parser/issues/34) (G6)
+mueve las variantes no decodificadas hacia la barra de ≥ 80% bajo
+no-regret.
+
 ## Progreso
 
 Tracker de implementación — 23 tickets bajo las specs
@@ -66,8 +93,8 @@ geometría L2) con 6 tickets — 5/6 (G1-G5 hechos 2026-11-10).**
 | C | [#27](https://github.com/MadManJohnSmith/catpart-parser/issues/27) C5 fitness publication (after A6) | hecho |
 | D | [#29](https://github.com/MadManJohnSmith/catpart-parser/issues/29) G1 nested store navigation decoded | hecho |
 | D | [#30](https://github.com/MadManJohnSmith/catpart-parser/issues/30) G2 vertex pool decoded | hecho |
-| D | [#31](https://github.com/MadManJohnSmith/catpart-parser/issues/31) G3 primitive semantics (triangles) | planeado |
-| D | [#32](https://github.com/MadManJohnSmith/catpart-parser/issues/32) G4 catpart-export CLI + geometry fixtures | planeado |
+| D | [#31](https://github.com/MadManJohnSmith/catpart-parser/issues/31) G3 primitive semantics (triangles) | hecho |
+| D | [#32](https://github.com/MadManJohnSmith/catpart-parser/issues/32) G4 catpart-export CLI + geometry fixtures | hecho |
 | D | [#33](https://github.com/MadManJohnSmith/catpart-parser/issues/33) G5 L2 fitness + publication | hecho |
 | D | [#34](https://github.com/MadManJohnSmith/catpart-parser/issues/34) G6 grind L2 to the bar (Phase 4 close) | planeado |
 

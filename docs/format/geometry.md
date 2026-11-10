@@ -1,8 +1,14 @@
-# 6. Geometry containers — CGMGeom / CATStdCont / CATCGRCont **(documented, not parsed)**
+# 6. Geometry containers — CGMGeom / CATStdCont / CATCGRCont **(partially parsed)**
 
-No schema v1 field touches the geometry containers; this page documents
-their location, architecture and the embedded-tessellation answer (the
-L3 fitness gate of ADR-0001).
+The L1 schema (`catpart-inspect`, schema v1) still emits no geometry
+field; the geometry-touching schema is G4's `export-summary-v1.json`
+(`src/catpart/schema/export-summary-v1.json`, #32), written by
+`catpart-export` from the decoded nested store (6.2-6.3.1). This page
+documents the containers' location, architecture, the decoded
+store/pool/facet model and the embedded-tessellation answer (the L3
+fitness gate of ADR-0001); what stays undecoded is named in the claims
+below (the composite index space, GE-F8, and the 0x44/0x49/0x4b/0x4e
+families).
 
 Evidence: [2026-11-08-geometry-payloads.md](../evidence/2026-11-08-geometry-payloads.md)
 (B4, ticket #20; verified by `scripts/triage/decode_geometry_payloads.py`;
@@ -150,5 +156,9 @@ G3 note.
 | GE-F8-composite (F8) | composite index space | 889/1,068 = 0.832 stores carry an `01 02` group (6-byte records `02 02 (u16be)(u16be)` whose endpoints are lex-adjacent pool vertices — an edge/rim table) and/or a `10 24 04 ff ff 00 00 00 ff [u32le length]` opener of the trailer-named region (the length equals trailer C on the worked example); on 793/889 of them facet references exceed the pool (up to 18,442 vs pool 1,624). Under the pool-only mapping their in-pool-looking loops wind far below the bar (≈ 0.13-0.16 by denominator, review-measured) — the numbering is genuinely incomplete, not a variant. | candidate (numbering open) | decoded stores |
 | GE-F9-4149 (F9/F10) | 0x41/0x49 laws | 0x41: n == 3*type on 59/59 records; 0x49: n == 3*type on 3,722/3,722 — both byte laws hold corpus-wide; 0x49's primitive reading stays open (no 0x49 loop sits on a pool-only store, so the winding test is silent), 0x41/0x44 carry no normal so the winding test is silent (0x44: 649 records, semantics open). | established (byte laws); primitive readings open | decoded stores |
 
-Reproduction: `python3 -I scripts/triage/decode_geometry_payloads.py`
-(~36 s; outputs the six CSVs).
+Reproduction:
+
+    python3 -I scripts/triage/decode_geometry_payloads.py    # B4 scan (~36 s; six CSVs)
+    python3 -I scripts/triage/decode_nested_store.py         # G1 nested-store decode (6.2)
+    python3 -I scripts/triage/decode_vertex_pool.py          # G2 vertex-pool decode (6.2.1)
+    python3 -I scripts/triage/decode_facet_semantics.py      # G3 facet semantics + soup (6.3.1)

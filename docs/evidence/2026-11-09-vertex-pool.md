@@ -205,7 +205,7 @@ python3 -I scripts/triage/decode_vertex_pool.py \
 - **P8 strips-without-pool (established (negative at 3/1,377 =
   0.002)):** only 3 parts show strip candidates with no decodable
   pool group — the pool is present essentially whenever strips are.
-- **P6u unresolved-facet variants (candidate, 833/1,377 = 0.605):**
+- **P6u unresolved-facet variants (candidate, 834/1,377 = 0.606):**
   the remaining gap is grammar coverage on large bodies (further
   marker/normal variants), not pool absence — the pool decodes on
   100% of its groups regardless (P2g).
@@ -254,7 +254,7 @@ Version scope: P1-P8 hold on every release line R15-R32 + `unknown`
    section-cumulative base vs dual-cluster service; needs one
    controlled decode of a mid-size multi-group part (the small-store
    and single-group cases are exact).
-2. **The remaining facet families** (0.605 of parts keep unresolved
+2. **The remaining facet families** (0.606 of parts keep unresolved
    candidates; strict rates 0.029-0.906 per file): further
    marker/normal/writer variants on large bodies — extend the
    grammar from a mid-size part with a low strict rate.
