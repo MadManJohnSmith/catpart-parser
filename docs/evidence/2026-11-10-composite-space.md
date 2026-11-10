@@ -33,7 +33,11 @@ store's scene-graph nodes: every one of the 939 composite stores (939/
 (element_count, edge_ref_bound), and on 877/939 = 0.934 the declared
 element_count is >= max reference + 1 — i.e. every facet reference
 resolves inside a declared element space that is LARGER than the pool
-on 935/939 of them. The extra elements live in the pre-facet scene-graph
+on 876/939 of them (2026-11-10 correction (#34 review): the first
+wording said 935/939 = element_count != pool, conflating unequal with
+larger — 4 stores have element_count == pool and 59 have it SMALLER
+than the pool, both named residue). The extra elements live in the
+pre-facet scene-graph
 territory as per-rep point lists stored LEX-SORTED (x, y, z) with prefix
 compression (byte-verified point-by-point on 026d6726), plus the
 `33 3X` curve-record families in the `00 00`-group/opener territory.
@@ -64,7 +68,8 @@ other point counts:
   the walk lands exactly on 812/899 stores (u16be groups on 628 stores,
   u8 on 220, multi-group stores carrying both — per-group, not
   per-store). Byte checks on the anchors: 0018baa8 — count 0x46 = 70,
-  70 x 6 B = 431 B to the next wrapper, exact; 02ee1544 — ff-escaped
+  70 records x 6 B + 11 B head = 431 B to the next wrapper, exact;
+  02ee1544 — ff-escaped
   count 402, 402 x 6 B lands exactly; 70b59f2a — 604 x 6 B exact;
   026d6726 — count 8, records of 3, 3, 9, 2, 2, 2, 2 and 9 points
   (32 u8 refs), 59 B exact. The stage-1 "157 other forms" = groups
@@ -104,16 +109,21 @@ G1 N7's scene-graph stream payload. Two measured laws:
   **element_count = max reference + 1** over the facet and edge records
   — the declared size of the composite element space — and
   edge_ref_bound = the edge table's max endpoint + 1 where the edge
-  table reaches the top of the space (strict equality of both: 713/939
-  = 0.759; the edge-bound component alone: 335/899). The 62 stores
+  table reaches the top of the space (strict equality of the size
+  component alone: 713/939 = 0.759; both components strict: 323/939 —
+  2026-11-10 relabel (#34 review): the first wording called 713/939
+  "strict equality of both"; the edge-bound component alone: 335/899).
+  The 62 stores
   where element_count < max ref + 1 are a named residue (count-field
   variants or multi-source refs; not massaged).
 - **N3 (candidate, 883/939 = 0.940):** every facet reference is < the
   declared element_count — **the facet refs resolve inside a declared
-  space larger than the pool**. On 935/939 composite stores the
+  space larger than the pool**. On 876/939 composite stores the
   declared space EXCEEDS the pool size (element_count == pool on only
   4 — N4, the clean-store degenerate case, matching the box's (8, 0)
-  with pool 8).
+  with pool 8; smaller than the pool on 59 — named residue; 2026-11-10
+  correction (#34 review): the first wording said 935/939, conflating
+  unequal with larger).
 - **N5 (established (negative) on the anchors; 24/939 marginal at
   corpus scale):** there is **no second vertex pool**: `05 08 01`
   vertex records occur only inside `01 06` groups on all 4 anchors; at
@@ -128,7 +138,10 @@ G1 N7's scene-graph stream payload. Two measured laws:
   436.26, 2.3975)` written as `[436.26, 2.3975]`; `(392.82, 434.60,
   2.81) -> (392.82, 434.60, 2.9)` written as `[2.9]`); the list is
   perfectly lex-nondecreasing and CONTAINS POOL VERTICES VERBATIM
-  (e.g. pool v1 = (392.39, 434.55, 2.1) re-listed by the node). The
+  (10/10 pool vertices re-listed; 2026-11-10 example correction (#34
+  review): pool v1 = (392.21988, 435.5, 2.1) is the list's FIRST point
+  — the triple quoted before, (392.39, 434.55, 2.1), is node-list
+  point 1, not a pool vertex). The
   small nodes carry `[f32 a][f32 0][origin xyz]` + the token counts
   only. On the big stores (70b59f2a's 262 KB / 17.6 KB nodes) the node
   payloads show compressed-stream byte statistics (runs of `77`/`bb`/
@@ -150,10 +163,18 @@ The answer to "where do the >= pool refs resolve":
   Evidence: (a) on 026d6726 the facet record `01 4a 07 ff` (7 loops,
   stored normal exactly (0, 0, -1)) has first loop (17, 2, 27, 1, 18,
   3) — under pool-lex ranks the pool elements 1, 2, 3 carry z (2.81,
-  2.9, 2.1): the loop CANNOT be planar, but the pool's lex-z list is
-  measured, so pool-lex indexing is falsified on composite stores;
-  under the global merge (pool 10 + the node's decoded points) the
-  loop decodes **exactly planar — all six z = 2.1**; (b) the declared
+  2.9, 2.1) and refs 17, 18, 27 point BEYOND the 10-element pool
+  entirely: the loop CANNOT be planar under pool-lex, and the pool's
+  lex-z list is measured, so pool-lex indexing is falsified on
+  composite stores.  2026-11-10 correction (#34 review): the first
+  wording also claimed the confirmation — "under the global merge
+  (pool 10 + the node's decoded points) the loop decodes exactly
+  planar, all six z = 2.1" — but that construction does not reproduce
+  under any documented reading (0/1-based, duplicates kept or deduped;
+  the exact merge law is undocumented). The confirmation is OUTSTANDING,
+  not checked; recovering the exact merge construction is open work
+  (unknown 4), and M1 stays candidate on the falsification + N2/C1
+  corroboration alone; (b) the declared
   element_count tracks max_ref + 1 (N2), which a pool-independent
   element space predicts; (c) on 70b59f2a the winding test under
   pool-lex + node-points-direct scores 0.5153 vs 0.4435 walk-order —
@@ -194,8 +215,11 @@ The answer to "where do the >= pool refs resolve":
 2. **2026-11-10, G3 F8 ("edge/rim table", endpoints lex-adjacent):**
    the edge-table endpoints index the FULL composite element space, not
    only the pool — on 0018baa8 and 70b59f2a the max edge endpoint
-   (569, 1,811) equals/exceeds the max facet reference (569, 1,819) and
-   exceeds the pool (164, 1,164). The "lex-adjacent median 2.0"
+   (569, 1,811) exceeds the pool (164, 1,164) and on 0018baa8 equals
+   the max facet reference (569); on 70b59f2a the edge max 1,811 sits
+   below the facet max 1,819 (2026-11-10 wording correction (#34
+   review): "equals/exceeds" overstated that store). The
+   "lex-adjacent median 2.0"
    measurement was an artifact of the in-pool subset. F8's store-level
    rates reproduce unchanged.
 3. **New evidence (not a correction):** the un-wrapped `01 01` polyline
@@ -209,12 +233,12 @@ The answer to "where do the >= pool refs resolve":
 | E2 | the box's un-wrapped `01 01 0c` list = 12 `02 02` segment records indexing the same lex space as its facets | 1 store, 12/12 edges | established (one store) |
 | E3 | un-wrapped `01 01` polyline lists on composite stores, same record grammar, strict end-alignment | 680/939 = 0.724 stores, 64,143 records | candidate |
 | N1 | list-node token `ff ff 02 00 01` + two P1g counts (element_count, edge_ref_bound) in the scene-graph territory | 939/939 = 1.000 | established (observed) |
-| N2 | element_count = max facet/edge reference + 1 (declared space size); edge_ref_bound = edge max + 1 | size >= max+1: 877/939 = 0.934; strict ==: 713/939 = 0.759; anchors 5/5 | candidate (below bar; residue 62 named) |
+| N2 | element_count = max facet/edge reference + 1 (declared space size); edge_ref_bound = edge max + 1 | size >= max+1: 877/939 = 0.934; strict == of the size component: 713/939 = 0.759 (both components strict: 323/939); anchors 5/5 | candidate (below bar; residue 62 named) |
 | N3 | every facet reference < declared element_count (resolves in the declared space) | 883/939 = 0.940 | candidate |
 | N4 | element_count == pool size on composite-structured stores with no extra elements (the clean degenerate) | 4/939 (box: (8, 0) with pool 8) | established (observed) |
 | N5 | no second `05 08 01` vertex pool outside `01 06` groups | 0/4 anchors; 24/939 marginal runs at corpus scale (named) | established (negative, anchors) |
 | N6 | node point lists are LEX-SORTED (x, y, z) with prefix compression `[x if changed][y if changed][z always]`, f32le; pool vertices re-listed verbatim | 1 store, 30+ points hand-verified; big-store form unknown (compressed?) | established (one store); encoding candidate |
-| M1 | element space = pool + node point lists (+ curve points); refs = positions in the globally lex-sorted merge (F2 = the degenerate case) | L1 loop exactly planar on 026d6726; pool-lex falsified there (pool lex-z 2.81/2.9/2.1 for refs 1, 2, 3); 70b59f2a winding 0.5153 vs 0.4435 walk under unfiltered extraction | candidate (numbering) |
+| M1 | element space = pool + node point lists (+ curve points); refs = positions in the globally lex-sorted merge (F2 = the degenerate case) | pool-lex FALSIFIED on 026d6726 (pool lex-z 2.81/2.9/2.1 for refs 1, 2, 3; refs 17/18/27 beyond the 10-pool); the merge-construction confirmation does not yet reproduce (2026-11-10 correction: exact merge law undocumented); 70b59f2a winding 0.5153 vs 0.4435 walk under unfiltered extraction | candidate (numbering) |
 | C1 | `33 3X` curve families in `00 00`-group/opener territory; 7-B header + per-family payloads (33 32 = [P][Q][P]+ \|Q\|; 33 37/33 38 big-endian f32) | present 939/939; layouts verified on anchors; semantics open | established (observed, layout); semantics unknown |
 | C2 | `30 04 04 ff ff` records between facets and edge lists | 907/939 stores (presence census) | established (observed) |
 
