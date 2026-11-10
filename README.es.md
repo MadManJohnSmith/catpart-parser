@@ -43,7 +43,7 @@ de formato) y [#10](https://github.com/MadManJohnSmith/catpart-parser/issues/10)
 autoritativo vive en el issue tracker.
 
 **Specs A/B/C completas (17/17, 2026-11-09). Fase 4 abierta: spec D (#28,
-geometría L2) con 6 tickets — 2/6 (G1+G2 hechos 2026-11-09).**
+geometría L2) con 6 tickets — 5/6 (G1-G5 hechos 2026-11-10).**
 
 | Spec | Ticket | Estado |
 |---|---|---|
@@ -68,7 +68,7 @@ geometría L2) con 6 tickets — 2/6 (G1+G2 hechos 2026-11-09).**
 | D | [#30](https://github.com/MadManJohnSmith/catpart-parser/issues/30) G2 vertex pool decoded | hecho |
 | D | [#31](https://github.com/MadManJohnSmith/catpart-parser/issues/31) G3 primitive semantics (triangles) | planeado |
 | D | [#32](https://github.com/MadManJohnSmith/catpart-parser/issues/32) G4 catpart-export CLI + geometry fixtures | planeado |
-| D | [#33](https://github.com/MadManJohnSmith/catpart-parser/issues/33) G5 L2 fitness + publication | planeado |
+| D | [#33](https://github.com/MadManJohnSmith/catpart-parser/issues/33) G5 L2 fitness + publication | hecho |
 | D | [#34](https://github.com/MadManJohnSmith/catpart-parser/issues/34) G6 grind L2 to the bar (Phase 4 close) | planeado |
 
 ## Hoja de ruta

@@ -32,7 +32,7 @@ and `fitness/history.jsonl`. Published live: the badge above reads the
 (ADR-0003, never in CI) — rebuilds and force-pushes the `gh-pages` JSON.
 
 **L2 geometry-sanity (spec D, [#33](https://github.com/MadManJohnSmith/catpart-parser/issues/33)) —
-code landed, corpus baseline pending.** `catpart-fitness` also measures
+shipped, baseline published.** `catpart-fitness` also measures
 the L2 scalar per ADR-0001: the share of `kind=part` manifest rows whose
 `catpart-export` output passes sanity — export success, non-empty mesh,
 manifold, finite plausible bounding box, no degenerate triangles above
@@ -44,8 +44,15 @@ Component signals (closed-volume-where-expected, open shells, degenerate
 counts) are reported per run and never collapse into the headline; the
 badge above stays L1 (one headline per level, ADR-0001), and
 `fitness-history.json` carries the L2 accepted-run series next to L1.
-The accepted L2 baseline row lands with the first real corpus run of the
-G5-era runner; until then no L2 number is published.
+The accepted L2 baseline (run `20261110T172440Z-3ea53d`, 2026-11-10):
+**Dev 76/1,381 = 5.50%, held-out 0/61**. The gap is classified, not
+anecdotal: 1,024 `undecoded-variant` (composite index space, unpinned
+0x4b/0x4e and 0x41/0x44 primitive readings — the open items that gate
+the bar), 313 `missing-geometry-store` (consistent with the documented
+0.82–0.93 store-presence range), 29 `malformed-store-header`; of the 76
+passes, 66 closed volumes + 10 open shells (component signals).
+[#34](https://github.com/MadManJohnSmith/catpart-parser/issues/34) (G6)
+grinds the undecoded variants toward the ≥ 80% bar under no-regret.
 
 ## Progress
 
@@ -56,7 +63,7 @@ inference) and [#10](https://github.com/MadManJohnSmith/catpart-parser/issues/10
 (L1 parser). Updated as tickets close; authoritative state lives in the
 issue tracker.
 
-**Specs A/B/C complete (17/17, 2026-11-09). Phase 4 opened: spec D (#28, L2 geometry) with 6 tickets — 4/6 (G1-G4 done 2026-11-09).**
+**Specs A/B/C complete (17/17, 2026-11-09). Phase 4 opened: spec D (#28, L2 geometry) with 6 tickets — 5/6 (G1-G5 done 2026-11-10).**
 
 | Spec | Ticket | State |
 |---|---|---|
@@ -81,7 +88,7 @@ issue tracker.
 | D | [#30](https://github.com/MadManJohnSmith/catpart-parser/issues/30) G2 vertex pool decoded | done |
 | D | [#31](https://github.com/MadManJohnSmith/catpart-parser/issues/31) G3 primitive semantics (triangles) | done |
 | D | [#32](https://github.com/MadManJohnSmith/catpart-parser/issues/32) G4 catpart-export CLI + geometry fixtures | done |
-| D | [#33](https://github.com/MadManJohnSmith/catpart-parser/issues/33) G5 L2 fitness + publication | planned |
+| D | [#33](https://github.com/MadManJohnSmith/catpart-parser/issues/33) G5 L2 fitness + publication | done |
 | D | [#34](https://github.com/MadManJohnSmith/catpart-parser/issues/34) G6 grind L2 to the bar (Phase 4 close) | planned |
 
 ## Roadmap
