@@ -40,7 +40,7 @@ inference) and [#10](https://github.com/MadManJohnSmith/catpart-parser/issues/10
 (L1 parser). Updated as tickets close; authoritative state lives in the
 issue tracker.
 
-**Specs A/B/C complete (17/17, 2026-11-09). Phase 4 opened: spec D (#28, L2 geometry) with 6 tickets — 2/6 (G1+G2 done 2026-11-09).**
+**Specs A/B/C complete (17/17, 2026-11-09). Phase 4 opened: spec D (#28, L2 geometry) with 6 tickets — 3/6 (G1+G2+G3 done 2026-11-09).**
 
 | Spec | Ticket | State |
 |---|---|---|
@@ -63,7 +63,7 @@ issue tracker.
 | C | [#27](https://github.com/MadManJohnSmith/catpart-parser/issues/27) C5 fitness publication (after A6) | done |
 | D | [#29](https://github.com/MadManJohnSmith/catpart-parser/issues/29) G1 nested store navigation decoded | done |
 | D | [#30](https://github.com/MadManJohnSmith/catpart-parser/issues/30) G2 vertex pool decoded | done |
-| D | [#31](https://github.com/MadManJohnSmith/catpart-parser/issues/31) G3 primitive semantics (triangles) | planned |
+| D | [#31](https://github.com/MadManJohnSmith/catpart-parser/issues/31) G3 primitive semantics (triangles) | done |
 | D | [#32](https://github.com/MadManJohnSmith/catpart-parser/issues/32) G4 catpart-export CLI + geometry fixtures | planned |
 | D | [#33](https://github.com/MadManJohnSmith/catpart-parser/issues/33) G5 L2 fitness + publication | planned |
 | D | [#34](https://github.com/MadManJohnSmith/catpart-parser/issues/34) G6 grind L2 to the bar (Phase 4 close) | planned |
