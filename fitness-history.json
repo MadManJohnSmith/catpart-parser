@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "source": "fitness/history.jsonl",
-  "note": "One entry per accepted fitness run (the ADR-0001 no-regret baseline), oldest to newest; pct is the L1 Dev clean-parse share.",
+  "note": "One entry per accepted fitness run (the ADR-0001 no-regret baseline), oldest to newest; dev is the L1 clean-parse share and l2 the geometry-sanity share over parts (null before the L2 baseline exists).",
   "runs": [
     {
       "run_id": "20261107T205256Z-f4fbe7",
@@ -10,6 +10,28 @@
         "clean": 1745,
         "total": 1751,
         "pct": 99.66
+      },
+      "l2": null
+    },
+    {
+      "run_id": "20261110T172440Z-3ea53d",
+      "timestamp": "2026-11-10T17:24:40Z",
+      "dev": {
+        "clean": 1745,
+        "total": 1751,
+        "pct": 99.66
+      },
+      "l2": {
+        "dev": {
+          "pass": 76,
+          "total": 1381,
+          "pct": 5.5
+        },
+        "held-out": {
+          "pass": 0,
+          "total": 61,
+          "pct": 0.0
+        }
       }
     }
   ]
