@@ -281,14 +281,17 @@ faces — consistent with the closed-manifold invariants.
    `vertex-pool-files.csv` `n_facets_strict` with
    `facet-semantics-files.csv` `n_records`): strict records 101,569
    (G2) -> 111,287 (G3) over the 1,068 decoded stores — 619 improved,
-   434 unchanged, **15 worse** (deltas -1..-8: 11xR19, 2xR21, 1xR24,
-   1xR20 — `2aa29713`, `346091a9`, `4f3ac472`,
+   434 unchanged, **15 worse** (deltas -1..-8: 12xR19, 2xR21, 1xR24 —
+   `2aa29713`, `346091a9`, `4f3ac472`,
    `57d4b858`, `7b8d0128`, `93ee5c76`, `995383c2`, `9a2f57fa`,
    `bc21020d`, `c0b26146`, `d1dae6aa`, `d594d37a`, `d748c70c`,
    `f21255ac`, `ffdbc4f7`).  The partition's scope is the 1,068 stores,
    not the 962 candidate-bearing ones: 283 of the improved already had
    G2-strict records and 336 gain their first (2026-11-10 correction:
    the earlier wording attached the 619/434/15 partition to the 962).
+   2026-11-10 correction (#36 review): the release mix was misstated
+   as "11xR19, 2xR21, 1xR24, 1xR20"; both CSVs have 12xR19 and no R20
+   among the 15.
    Likely mechanism (not root-caused):
    records G2's u8 parse accepted that the exact-tiling law now
    assigns to gap or 5-byte-header content — recorded, not absorbed.
