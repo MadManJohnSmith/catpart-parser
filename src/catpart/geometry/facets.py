@@ -12,9 +12,14 @@ Model (docs/evidence/2026-11-09-facet-semantics.md):
   0x4b/0x4e, whose header carries one extra byte before ``ff``). The k
   count bytes (0..4) sum to n and delimit the ty sub-loops. The
   reference width is per-record u8 or u16be (big-endian), chosen by the
-  tiling law (F1w): a record is accepted when some (width, k) parse ends
-  at or before the next record header (or the body end); the exact-
-  tiling parse wins, then the narrower width. Records tile their region
+  tiling law (F1w, as corrected 2026-11-10 #35): a record is accepted
+  when some (width, k) parse ends at or before the next record header
+  (or the body end); the exact-tiling parse wins, then — on a gap edge
+  — the store-width context: the widths of the store's exact-tile
+  records (those ending at the next header position) vote, and a
+  unanimous vote wins the gap-edge tie-break (a cluster-final u16be
+  record before a gap keeps its width); mixed votes or no exact tiles
+  fall back to the narrower width. Records tile their region
   header-to-header; content that fails every parse is gap variant
   content (unresolved), not exported geometry.
 - Index space (F2, correction C8): the references are LEXICOGRAPHIC
@@ -85,13 +90,18 @@ class FacetScan:
     skipped_markers: dict[int, int]  # parsed records outside EXPORTED_MARKERS
 
 
-def parse_facet_record(data, o: int, body_hi: int, nxt: int) -> FacetRecord | None:
+def parse_facet_record(
+    data, o: int, body_hi: int, nxt: int, prefer_width: int = 1
+) -> FacetRecord | None:
     """Parse one facet record at header offset ``o`` under the tiling law.
 
     ``nxt`` is the next record header offset (or the body end). The
     (width, k) combo must end at or before ``nxt``; the exact-tiling
-    parse wins, then the narrower width (F1/F1w). Returns ``None`` when
-    no variant of the grammar validates — gap variant content.
+    parse wins, then the narrower width — except on a gap edge
+    (``end < nxt``), where ``prefer_width`` (the store-width context
+    derived by :func:`scan_facets`, default 1 = the historical narrower
+    width) wins the tie-break (F1/F1w). Returns ``None`` when no
+    variant of the grammar validates — gap variant content.
     """
     mk = data[o + 1]
     ty = data[o + 2]
@@ -114,7 +124,13 @@ def parse_facet_record(data, o: int, body_hi: int, nxt: int) -> FacetRecord | No
             end = base + k + width * n
             if end > nxt:
                 continue
-            rank = (0 if end == nxt else 1, width)
+            if end == nxt:
+                rank = (0, width)  # exact tiling wins; narrower on exact ties
+            else:
+                # Gap edge: the store-width context wins the tie-break
+                # (P3-B, #35 2026-11-10); the default context of 1 keeps
+                # the historical narrower-width preference.
+                rank = (1, 0 if width == prefer_width else 1)
             if best is None or rank < best[0]:
                 refs = [
                     int.from_bytes(
@@ -151,15 +167,29 @@ def scan_facets(data, body_lo: int, body_hi: int) -> FacetScan:
     accepted record's end positions the walk at the next header at or
     after it. Header positions no parse accepts are gap variant content
     and surface as ``unresolved_candidates``.
+
+    The walk is preceded by a store-width pre-pass (F1w as corrected
+    2026-11-10 #35): every candidate header is parsed under the default
+    tie-break and the exact-tile records — those whose end equals the
+    next header position — vote their width; a unanimous vote becomes
+    the gap-edge tie-break width, mixed votes (or no exact tiles) keep
+    the default narrower-width preference.
     """
     hdrs = [m.start() for m in STRIP_RE.finditer(data, body_lo, body_hi)]
+    exact_widths: set[int] = set()
+    for i, o in enumerate(hdrs):
+        nxt = hdrs[i + 1] if i + 1 < len(hdrs) else body_hi
+        rec = parse_facet_record(data, o, body_hi, nxt)
+        if rec is not None and rec.end == nxt:
+            exact_widths.add(rec.width)
+    prefer = exact_widths.pop() if len(exact_widths) == 1 else 1
     records = []
     consumed: set[int] = set()
     i = 0
     while i < len(hdrs):
         o = hdrs[i]
         nxt = hdrs[i + 1] if i + 1 < len(hdrs) else body_hi
-        rec = parse_facet_record(data, o, body_hi, nxt)
+        rec = parse_facet_record(data, o, body_hi, nxt, prefer_width=prefer)
         if rec is None:
             i += 1
             continue

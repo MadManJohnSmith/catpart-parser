@@ -16,9 +16,12 @@ docs/evidence/2026-11-09-facet-semantics.md):
   with marker families 0x41-0x4f; markers 0x49/0x4a/0x4c carry a 12-byte
   f32le unit normal; the k count bytes (0..4) sum to n; markers 0x43/0x45/
   0x4b/0x4e use the 5-byte header form (two bytes before ff).  The refs are
-  u8 or u16be (big-endian) per record, selected by the tiling law: a record
-  ends exactly at the next record header (or the body end).  Records tile
-  the facet region header-to-header.
+  u8 or u16be (big-endian) per record, selected by the tiling law: the
+  exact-tiling parse wins, then — on a gap edge — the store-width context
+  (the widths of the store's exact-tile records vote; a unanimous vote
+  wins the tie-break, mixed votes or none keep the narrower width,
+  2026-11-10 correction #35).  Records tile the facet region
+  header-to-header.
 
   Index space.  Refs index the store's vertex pool by LEXICOGRAPHIC RANK
   of the coordinates (x, then y, then z), NOT by walk order (correction
@@ -160,15 +163,18 @@ def scan_pool_groups(mm, body_lo, body_hi):
     return pools, kinds
 
 
-def parse_facet_record(mm, o, body_hi, nxt):
+def parse_facet_record(mm, o, body_hi, nxt, prefer_width=1):
     """Parse one facet record at header offset o under the tiling law.
 
     Header: 4-byte form `01 <mk> <ty> ff` or 5-byte form (markers 0x43/
     0x45/0x4b/0x4e observed: `01 <mk> <ty> 01 ff`).  Then u32le n, the
     12-byte normal for normal markers, k count bytes summing to n, and
     n refs of u8 or u16be width.  The (width, k) combo must end at or
-    before the next header; exact tiling wins, then the narrower width.
-    Returns a dict or None.
+    before the next header; exact tiling wins, then the narrower width —
+    except on a gap edge (end < nxt), where prefer_width (the
+    store-width context derived by scan_store, default 1 = the
+    historical narrower width) wins the tie-break.  Returns a dict or
+    None.
     """
     mk = mm[o + 1]
     ty = mm[o + 2]
@@ -191,7 +197,13 @@ def parse_facet_record(mm, o, body_hi, nxt):
             end = base + k + width * n
             if end > nxt:
                 continue
-            rank = (0 if end == nxt else 1, width)
+            if end == nxt:
+                rank = (0, width)  # exact tiling wins; narrower on exact ties
+            else:
+                # Gap edge: the store-width context wins the tie-break
+                # (P3-B, #35 2026-11-10); the default context of 1 keeps
+                # the historical narrower-width preference.
+                rank = (1, 0 if width == prefer_width else 1)
             if best is None or rank < best[0]:
                 refs = [int.from_bytes(
                     mm[base + k + width * j:base + k + width * (j + 1)], "big")
@@ -342,6 +354,19 @@ def scan_store(mm, blk, blocks, d8_outer, rel, ordinal):
     lex = sorted(range(len(pool)),
                  key=lambda i: (pool[i][0], pool[i][1], pool[i][2]))
     hdrs = [m.start() for m in STRIP_RE.finditer(mm, body_lo, body_hi)]
+    # Store-width pre-pass (F1w as corrected 2026-11-10 #35): every
+    # candidate header is parsed under the default tie-break and the
+    # exact-tile records — those whose end equals the next header
+    # position — vote their width; a unanimous vote becomes the gap-edge
+    # tie-break width, mixed votes (or no exact tiles) keep the default
+    # narrower-width preference.  Mirrors scan_facets exactly.
+    exact_widths = set()
+    for i, o in enumerate(hdrs):
+        nxt = hdrs[i + 1] if i + 1 < len(hdrs) else body_hi
+        rec = parse_facet_record(mm, o, body_hi, nxt)
+        if rec is not None and rec["end"] == nxt:
+            exact_widths.add(rec["width"])
+    prefer = exact_widths.pop() if len(exact_widths) == 1 else 1
     recs = []
     n_5byte = 0
     gap_bytes = 0
@@ -350,7 +375,7 @@ def scan_store(mm, blk, blocks, d8_outer, rel, ordinal):
     while i < len(hdrs):
         o = hdrs[i]
         nxt = hdrs[i + 1] if i + 1 < len(hdrs) else body_hi
-        rec = parse_facet_record(mm, o, body_hi, nxt)
+        rec = parse_facet_record(mm, o, body_hi, nxt, prefer_width=prefer)
         if rec is None:
             i += 1
             continue
