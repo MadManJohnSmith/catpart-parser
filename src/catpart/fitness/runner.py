@@ -23,20 +23,33 @@ Implements the fitness protocol of ADR-0001 for ticket #14. Per run,
    all repos except Motor-V6, held-out = Motor-V6); the runner consumes
    it as-is and fails closed on any other value, keeping the grouping in
    one place (the manifest) instead of forking it into code;
-4. writes the full report to ``fitness/reports/<run_id>.json`` — per
+4. measures the L2 geometry-sanity scalar per split over the manifest's
+   ``kind=part`` rows (ticket #33; products are excluded — the
+   documented negative, 0/37 sampled products carry any geometry store)
+   through the G4 export seam (:func:`catpart.geometry.build_export`,
+   in-process): L2 pass = export success plus the sanity gate (non-empty
+   mesh, manifold, finite plausible bounding box, degenerate triangles
+   at or below the G3 F7 threshold). Failures carry the exporter's
+   machine-readable ``error_class``; the per-part ``l2`` records and the
+   per-split component signals (closed-volume-where-expected, degenerate
+   counts, open shells) go into the run report, never collapsed into
+   the headline scalar;
+5. writes the full report to ``fitness/reports/<run_id>.json`` — per
    ADR-0001 the committed history is ``fitness/history.jsonl`` plus a
    report per run;
-5. appends exactly one row — accepted or rejected — to the committed
+6. appends exactly one row — accepted or rejected — to the committed
    append-only ``fitness/history.jsonl``, including the corpus digest:
    the SHA-256 of the manifest file bytes (the manifest binds the
    corpus: per-file digests included; re-verifying every binary on each
    run would re-hash ~3.4 GB per run for no extra protection the
    manifest does not already record);
-6. decides acceptance with the no-regret rule against the last accepted
-   row (ADR-0001: Dev rises AND Held-out does not fall). A first run,
-   or a run whose baseline row carries a different corpus digest, has
-   no valid baseline and is accepted as the new baseline with the
-   comparison recorded as void.
+7. decides acceptance with the no-regret rule against the last accepted
+   row (ADR-0001, extended by ticket #33: L1 Dev rises AND Held-out
+   does not fall; L2 does not fall on either split; at least one
+   comparable level's Dev rises). A first run, a run whose baseline row
+   carries a different corpus digest, or a run whose baseline predates
+   the L2 scalar, has no valid baseline and is accepted as the new
+   baseline with the comparison recorded as void.
 
 The corpus itself is measured only on the machine holding ``corpus/``
 (ADR-0003); the test suite runs on synthetic fixtures without it.
@@ -47,7 +60,9 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import math
 import re
+import tempfile
 import uuid
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -60,8 +75,10 @@ from catpart.fitness.history import (
     LEVELS,
     REASON_BASELINE_CORPUS_CHANGED,
     REASON_BASELINE_FIRST,
+    REASON_BASELINE_NO_L2,
     LevelScore,
     NoRegret,
+    PartScore,
     SplitScore,
     append_row,
     evaluate_no_regret,
@@ -70,12 +87,22 @@ from catpart.fitness.history import (
     load_last_accepted_row,
 )
 from catpart.fitness.invariants import check_invariants
+from catpart.geometry import ExportError, build_export
+from catpart.geometry.export import WARN_NO_FACETS, WARN_OPEN_SHELL
 from catpart.schema import load_schema
 from catpart.schema.validate import SchemaError, ValidationError, validate
 
 #: Manifest split values (ADR-0001 author-grouped split as encoded by
 #: the Phase 0 manifest: held-out is the Motor-V6 repo).
 SPLITS: tuple[str, str] = ("dev", "held-out")
+
+#: Manifest kind values (container kind law K1). The L2 population is
+#: the kind=part rows; products are excluded — the documented negative
+#: (docs/evidence/2026-11-08-geometry-payloads.md): 0/37 sampled products
+#: carry any geometry store, so an export share over products would
+#: measure nothing.
+MANIFEST_KINDS: tuple[str, str] = ("part", "product")
+L2_POPULATION_KIND = "part"
 
 #: Per-file classification vocabulary (ticket #14; ``unavailable`` marks
 #: manifest rows whose file is not on disk and is therefore never parsed).
@@ -93,7 +120,8 @@ CLASSIFICATIONS: tuple[str, ...] = (
 )
 
 #: Manifest columns the runner consumes; extra columns are ignored.
-REQUIRED_COLUMNS = ("sha256", "split", "path", "local_path")
+#: ``kind`` gates the L2 population (ticket #33).
+REQUIRED_COLUMNS = ("sha256", "kind", "split", "path", "local_path")
 
 INSPECT_SCHEMA = load_schema("v1")
 REPORT_SCHEMA = load_schema("fitness-report-v0")
@@ -125,9 +153,11 @@ def _read_manifest(manifest_path: Path) -> list[dict[str, str]]:
     """Read and validate the manifest, returning the rows the runner needs.
 
     Fails closed on: unreadable file, missing required columns, a
-    malformed SHA-256, an unknown split value, empty path fields, or a
-    duplicated SHA-256 (a duplicated row would double-count in the rate
-    denominator).
+    malformed SHA-256, an unknown split value, an unknown kind value
+    (the L2 population is defined by the kind column, so an unexpected
+    value must stop the run instead of silently leaving the population),
+    empty path fields, or a duplicated SHA-256 (a duplicated row would
+    double-count in the rate denominator).
     """
     try:
         with manifest_path.open("r", encoding="utf-8", newline="") as fh:
@@ -146,11 +176,17 @@ def _read_manifest(manifest_path: Path) -> list[dict[str, str]]:
             for index, row in enumerate(reader, start=2):
                 where = f"{manifest_path}: row {index}"
                 sha256 = (row.get("sha256") or "").strip()
+                kind = (row.get("kind") or "").strip()
                 split = (row.get("split") or "").strip()
                 path = (row.get("path") or "").strip()
                 local_path = (row.get("local_path") or "").strip()
                 if not _SHA256_RE.fullmatch(sha256):
                     raise FitnessError(f"{where}: sha256 {sha256!r} is not 64 lowercase hex digits")
+                if kind not in MANIFEST_KINDS:
+                    raise FitnessError(
+                        f"{where}: unknown kind {kind!r} (expected one of "
+                        f"{', '.join(MANIFEST_KINDS)})"
+                    )
                 if split not in SPLITS:
                     raise FitnessError(
                         f"{where}: unknown split {split!r} (expected one of {', '.join(SPLITS)})"
@@ -163,7 +199,13 @@ def _read_manifest(manifest_path: Path) -> list[dict[str, str]]:
                     )
                 seen[sha256] = index
                 rows.append(
-                    {"sha256": sha256, "split": split, "path": path, "local_path": local_path}
+                    {
+                        "sha256": sha256,
+                        "kind": kind,
+                        "split": split,
+                        "path": path,
+                        "local_path": local_path,
+                    }
                 )
     except csv.Error as exc:
         raise FitnessError(f"{manifest_path}: malformed CSV: {exc}") from exc
@@ -207,23 +249,197 @@ def _empty_counters() -> dict[str, int]:
     return {name: 0 for name in _COUNTERS}
 
 
+#: L2 per-part statuses (ticket #33). ``unavailable`` marks part rows
+#: whose file is not on disk: never exported, counted as not pass.
+L2_PASS = "pass"
+L2_FAIL = "fail"
+L2_UNAVAILABLE = "unavailable"
+
+#: The L2 sanity gate's failed-check vocabulary (ticket #33): the post-
+#: export checks, in gate order. ``MAX_DEGENERATE_TRIANGLES`` pins the
+#: degenerate threshold at the G3 F7 rate (0 on every clean-store soup),
+#: so any skipped degenerate triangle is anomalous.
+MAX_DEGENERATE_TRIANGLES = 0
+CHECK_EMPTY_MESH = "empty-mesh"
+CHECK_NOT_MANIFOLD = "not-manifold"
+CHECK_NONFINITE_BBOX = "nonfinite-bbox"
+CHECK_DEGENERATE = "degenerate-triangles"
+
+#: error_class recorded when the export seam raises outside its
+#: :class:`ExportError` contract (an exporter bug); the exception type
+#: is preserved in the error string, mirroring the L1 crash
+#: classification.
+L2_EXPORT_CRASH = "export-crash"
+
+
+def _l2_failure(error_class: str | None, error: str | None) -> dict:
+    """A failed (or unmeasurable) part's ``l2`` record: no summary data."""
+    return {
+        "status": L2_FAIL,
+        "error_class": error_class,
+        "error": error,
+        "failed_check": None,
+        "vertex_count": None,
+        "triangle_count": None,
+        "degenerate_triangle_count": None,
+        "mesh": None,
+        "bounding_box": None,
+        "warnings": None,
+    }
+
+
+def _l2_unavailable(detail: str) -> dict:
+    record = _l2_failure(None, detail)
+    record["status"] = L2_UNAVAILABLE
+    return record
+
+
+def _bbox_plausible(bbox: dict) -> bool:
+    """Finite bounds with min <= max on every axis (the "plausible" part
+    of the L2 bounding-box check)."""
+    lo, hi = bbox["min"], bbox["max"]
+    return all(math.isfinite(v) for v in (*lo, *hi)) and all(
+        lo[axis] <= hi[axis] for axis in range(3)
+    )
+
+
+def _score_export(summary: dict) -> dict:
+    """Score a successful export against the L2 sanity gate (ticket #33).
+
+    The gate: non-empty mesh, manifold, finite plausible bounding box,
+    degenerate triangles at or below :data:`MAX_DEGENERATE_TRIANGLES`.
+    The first failed check is recorded as ``failed_check``; every
+    summary component is reported either way (mesh invariants including
+    closed-volume-where-expected, degenerate counts, open shells) and
+    never collapses into the pass/fail headline. A bounding box that
+    fails the plausibility check is recorded as null: non-finite floats
+    must not reach the committed report.
+    """
+    mesh = summary["mesh"]
+    bbox = summary["bounding_box"]
+    if summary["vertex_count"] < 1 or summary["triangle_count"] < 1:
+        failed_check = CHECK_EMPTY_MESH
+    elif not mesh["manifold"]:
+        failed_check = CHECK_NOT_MANIFOLD
+    elif not _bbox_plausible(bbox):
+        failed_check = CHECK_NONFINITE_BBOX
+    elif summary["degenerate_triangle_count"] > MAX_DEGENERATE_TRIANGLES:
+        failed_check = CHECK_DEGENERATE
+    else:
+        failed_check = None
+    return {
+        "status": L2_PASS if failed_check is None else L2_FAIL,
+        "error_class": None,
+        "error": None,
+        "failed_check": failed_check,
+        "vertex_count": summary["vertex_count"],
+        "triangle_count": summary["triangle_count"],
+        "degenerate_triangle_count": summary["degenerate_triangle_count"],
+        "mesh": {
+            "manifold": mesh["manifold"],
+            "closed": mesh["closed"],
+            "oriented": mesh["oriented"],
+            "boundary_edge_count": mesh["boundary_edge_count"],
+        },
+        "bounding_box": bbox if _bbox_plausible(bbox) else None,
+        "warnings": summary["warnings"],
+    }
+
+
+def _measure_l2(file_path: Path, out_path: Path) -> dict:
+    """Export one part through the G4 seam and score the L2 sanity gate.
+
+    Returns the per-part ``l2`` record of the run report. Export failures
+    carry the exporter's machine-readable ``error_class`` (ticket #32);
+    an exception outside that contract is recorded as
+    :data:`L2_EXPORT_CRASH` with the type preserved, mirroring the L1
+    crash classification — one broken file must never abort the run. A
+    returned summary is consumed as-is: the exporter self-checks it
+    against the committed export-summary-v1 schema before returning, so
+    a shape violation there is an exporter bug, not a per-file
+    classification.
+    """
+    try:
+        summary = build_export(file_path, out_path)
+    except ExportError as exc:
+        return _l2_failure(exc.error_class, exc.detail)
+    except Exception as exc:  # noqa: BLE001 - classification boundary, see docstring
+        return _l2_failure(L2_EXPORT_CRASH, f"{type(exc).__name__}: {exc}")
+    return _score_export(summary)
+
+
+def _l2_split_block(l2_records: list[dict]) -> dict:
+    """The ``l2`` detail block of one split's aggregate (ticket #33).
+
+    Population, verdict counts, failure histograms and component signals
+    (closed-volume-where-expected, open shells, degenerate-triangle
+    totals, vertices-only exports) — reported per split, never collapsed
+    into the headline scalar. ``rate`` is null when the split has no
+    part rows: nothing measurable (the headline ``scalars.L2`` is null
+    with it).
+    """
+    total = len(l2_records)
+    passed = sum(1 for record in l2_records if record["status"] == L2_PASS)
+    unavailable = sum(1 for record in l2_records if record["status"] == L2_UNAVAILABLE)
+    failed = [record for record in l2_records if record["status"] == L2_FAIL]
+    error_classes: dict[str, int] = {}
+    failed_checks: dict[str, int] = {}
+    for record in failed:
+        if record["error_class"] is not None:
+            error_classes[record["error_class"]] = (
+                error_classes.get(record["error_class"], 0) + 1
+            )
+        if record["failed_check"] is not None:
+            failed_checks[record["failed_check"]] = (
+                failed_checks.get(record["failed_check"], 0) + 1
+            )
+    summaries = [record for record in l2_records if record["mesh"] is not None]
+    return {
+        "parts": total,
+        "pass": passed,
+        "fail": len(failed),
+        "unavailable": unavailable,
+        "rate": passed / total if total else None,
+        "error_classes": error_classes,
+        "failed_checks": failed_checks,
+        "components": {
+            "closed": sum(1 for record in summaries if record["mesh"]["closed"]),
+            "open_shell": sum(
+                1
+                for record in summaries
+                if any(w["class"] == WARN_OPEN_SHELL for w in record["warnings"])
+            ),
+            "degenerate_triangles": sum(
+                record["degenerate_triangle_count"] or 0 for record in l2_records
+            ),
+            "vertices_only": sum(
+                1
+                for record in summaries
+                if any(w["class"] == WARN_NO_FACETS for w in record["warnings"])
+            ),
+        },
+    }
+
+
 def _aggregate(
-    results: list[tuple[dict[str, str], str, str | None, dict | None]],
+    results: list[tuple[dict[str, str], str, str | None, dict | None, dict | None]],
 ) -> tuple[dict, dict, dict[str, LevelScore | None]]:
     """Aggregate classifications into per-split counters, totals and scalars.
 
     The rate denominator per split is its manifest row count ("share of
     the Corpus", GLOSSARY), so ``unavailable`` rows count as not clean.
     A split with no manifest rows fails closed: without it the no-regret
-    comparison is meaningless.
+    comparison is meaningless. The L2 detail blocks aggregate the
+    kind=part population of each split (ticket #33); the L2 headline
+    scalar exists only when both splits have part rows.
     """
     splits: dict[str, dict] = {}
     for split in SPLITS:
-        rows = [row for row, _, _, _ in results if row["split"] == split]
+        rows = [row for row, _, _, _, _ in results if row["split"] == split]
         if not rows:
             raise FitnessError(f"split {split!r} has no manifest rows; cannot compute a rate")
         counters = _empty_counters()
-        for row, classification, _, _ in results:
+        for row, classification, _, _, _ in results:
             if row["split"] == split:
                 counters[classification] += 1
         splits[split] = {
@@ -235,6 +451,13 @@ def _aggregate(
             "crash": counters[CLASS_CRASH],
             "missing-invariant": counters[CLASS_MISSING_INVARIANT],
             "rate": counters[CLASS_CLEAN] / len(rows),
+            "l2": _l2_split_block(
+                [
+                    l2
+                    for row, _, _, _, l2 in results
+                    if row["split"] == split and row["kind"] == L2_POPULATION_KIND
+                ]
+            ),
         }
     totals = _empty_counters()
     totals["files"] = sum(splits[split]["files"] for split in SPLITS)
@@ -253,10 +476,22 @@ def _aggregate(
             clean=splits["held-out"]["clean"], total=splits["held-out"]["files"]
         ),
     )
+    dev_l2, ho_l2 = splits["dev"]["l2"], splits["held-out"]["l2"]
+    if dev_l2["parts"] > 0 and ho_l2["parts"] > 0:
+        level_scores["L2"] = LevelScore(
+            dev=PartScore(passed=dev_l2["pass"], total=dev_l2["parts"]),
+            held_out=PartScore(passed=ho_l2["pass"], total=ho_l2["parts"]),
+        )
     return splits, totals, level_scores
 
 
-def _per_file_record(row: dict[str, str], classification: str, error: str | None, output: dict | None) -> dict:
+def _per_file_record(
+    row: dict[str, str],
+    classification: str,
+    error: str | None,
+    output: dict | None,
+    l2: dict | None,
+) -> dict:
     # Schema-invalid output may be missing any field, so inspect-derived
     # values use .get() and report whatever the parser actually emitted.
     # container_names carries the names at container level: the parsed
@@ -278,6 +513,7 @@ def _per_file_record(row: dict[str, str], classification: str, error: str | None
         "detected_version": None if output is None else output.get("detected_version"),
         "kind": None if output is None else output.get("kind"),
         "container_names": container_names,
+        "l2": l2,
         "error": error,
     }
 
@@ -360,18 +596,32 @@ def run_fitness(
     rows = _read_manifest(manifest_path)
     corpus_digest = _corpus_digest(manifest_path)
 
-    results: list[tuple[dict[str, str], str, str | None, dict | None]] = []
-    for row in rows:
-        file_path = corpus_root / row["local_path"]
-        if file_path.is_file():
-            classification, error, output = _classify_file(file_path)
-        else:
-            classification, error, output = (
-                CLASS_UNAVAILABLE,
-                f"missing on disk: {row['local_path']}",
-                None,
-            )
-        results.append((row, classification, error, output))
+    results: list[tuple[dict[str, str], str, str | None, dict | None, dict | None]] = []
+    # The exports' PLY output is a side effect of the seam contract; it is
+    # written to a run-scoped scratch directory and discarded with it.
+    with tempfile.TemporaryDirectory(prefix="catpart-fitness-l2-") as scratch:
+        scratch_dir = Path(scratch)
+        for row in rows:
+            file_path = corpus_root / row["local_path"]
+            if file_path.is_file():
+                classification, error, output = _classify_file(file_path)
+                l2 = (
+                    _measure_l2(file_path, scratch_dir / f"{row['sha256'][:16]}.ply")
+                    if row["kind"] == L2_POPULATION_KIND
+                    else None
+                )
+            else:
+                classification, error, output = (
+                    CLASS_UNAVAILABLE,
+                    f"missing on disk: {row['local_path']}",
+                    None,
+                )
+                l2 = (
+                    _l2_unavailable(f"missing on disk: {row['local_path']}")
+                    if row["kind"] == L2_POPULATION_KIND
+                    else None
+                )
+            results.append((row, classification, error, output, l2))
 
     splits, totals, level_scores = _aggregate(results)
 
@@ -386,13 +636,23 @@ def run_fitness(
         no_regret = NoRegret(True, None, None, REASON_BASELINE_CORPUS_CHANGED)
     else:
         baseline_scores = level_scores_from_json(baseline["scalars"], "baseline row scalars")
-        try:
-            verdict = evaluate_no_regret(baseline_scores, level_scores)
-        except ValueError as exc:
-            raise FitnessError(f"cannot evaluate the no-regret rule: {exc}") from exc
-        accepted = verdict.accepted
-        baseline_run_id = baseline["run_id"]
-        no_regret = verdict
+        if baseline_scores.get("L2") is None and level_scores.get("L2") is not None:
+            # The first L2-bearing run against a pre-G5 baseline has no L2
+            # baseline to compare against; the corpus-change precedent
+            # applies (a baseline that cannot support the comparison
+            # accepts the run as the new baseline, reason recorded) — the
+            # ticket's "first accepted L2 row is the baseline".
+            accepted = True
+            baseline_run_id = baseline["run_id"]
+            no_regret = NoRegret(True, None, None, REASON_BASELINE_NO_L2)
+        else:
+            try:
+                verdict = evaluate_no_regret(baseline_scores, level_scores)
+            except ValueError as exc:
+                raise FitnessError(f"cannot evaluate the no-regret rule: {exc}") from exc
+            accepted = verdict.accepted
+            baseline_run_id = baseline["run_id"]
+            no_regret = verdict
 
     instant = clock()
     scalars_json = level_scores_to_json(level_scores)
@@ -410,7 +670,7 @@ def run_fitness(
         "accepted": accepted,
         "baseline_run_id": baseline_run_id,
         "no_regret": no_regret.to_json(),
-        "files": [_per_file_record(row, c, err, out) for row, c, err, out in results],
+        "files": [_per_file_record(row, c, err, out, l2) for row, c, err, out, l2 in results],
     }
     history_row = {
         "schema_version": 0,

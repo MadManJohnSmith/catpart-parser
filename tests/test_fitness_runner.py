@@ -49,11 +49,11 @@ def sha256_of(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def manifest_row(name: str, split: str, data: bytes) -> dict[str, str]:
+def manifest_row(name: str, split: str, data: bytes, kind: str = "part") -> dict[str, str]:
     """One manifest row in the real corpus-manifest.csv column layout."""
     return {
         "sha256": sha256_of(data),
-        "kind": "part",
+        "kind": kind,
         "size_bytes": str(len(data)),
         "split": split,
         "reported_version": "",
@@ -165,7 +165,13 @@ def test_first_run_writes_report_and_single_baseline_row(
     }
     assert row["scalars"]["L1"]["dev"] == {"rate": 2 / 3, "clean": 2, "total": 3}
     assert row["scalars"]["L1"]["held-out"] == {"rate": 1.0, "clean": 2, "total": 2}
-    assert row["scalars"]["L2"] is None
+    # The L2 population is the manifest's kind=part rows (all five here);
+    # the fixture files carry no geometry store, so every export fails
+    # classified — the honest 0-rate L2 measurement, not a null.
+    assert row["scalars"]["L2"] == {
+        "dev": {"rate": 0.0, "pass": 0, "total": 3},
+        "held-out": {"rate": 0.0, "pass": 0, "total": 2},
+    }
     assert row["scalars"]["L3"] is None
 
 
@@ -237,6 +243,13 @@ def test_report_classifies_clean_and_crash_files(
     assert crash["detected_version"] is None
     assert crash["container_names"] is None
 
+    # The L2 seam runs independently of the L1 classification: the clean
+    # part's export fails classified (fixtures carry no geometry store).
+    assert clean["l2"]["status"] == "fail"
+    assert clean["l2"]["error_class"] == "missing-geometry-store"
+    assert clean["l2"]["failed_check"] is None
+    assert crash["l2"]["error_class"] == "missing-geometry-store"
+
 
 def test_row_and_report_carry_the_inspect_schema_version(
     tmp_path: Path, build_catpart, capsys
@@ -283,6 +296,21 @@ def test_missing_invariant_classification(tmp_path: Path, build_catpart, capsys)
     assert record["container_names"] is not None  # the parse itself succeeded
     assert report["splits"]["dev"]["missing-invariant"] == 1
     assert report["splits"]["dev"]["rate"] == 0.0
+    assert report["splits"]["dev"]["l2"] == {
+        "parts": 1,
+        "pass": 0,
+        "fail": 1,
+        "unavailable": 0,
+        "rate": 0.0,
+        "error_classes": {"missing-geometry-store": 1},
+        "failed_checks": {},
+        "components": {
+            "closed": 0,
+            "open_shell": 0,
+            "degenerate_triangles": 0,
+            "vertices_only": 0,
+        },
+    }
 
 
 def test_schema_invalid_classification(tmp_path: Path, build_catpart, capsys, monkeypatch) -> None:
@@ -348,6 +376,21 @@ def test_unavailable_file_counts_against_rate(tmp_path: Path, build_catpart, cap
         "crash": 1,
         "missing-invariant": 0,
         "rate": 1 / 3,
+        "l2": {
+            "parts": 3,
+            "pass": 0,
+            "fail": 2,
+            "unavailable": 1,
+            "rate": 0.0,
+            "error_classes": {"missing-geometry-store": 2},
+            "failed_checks": {},
+            "components": {
+                "closed": 0,
+                "open_shell": 0,
+                "degenerate_triangles": 0,
+                "vertices_only": 0,
+            },
+        },
     }
     assert report["totals"]["files"] == 5
     assert report["totals"]["available"] == 4
@@ -381,15 +424,14 @@ def test_second_run_appends_exactly_one_row_and_never_rewrites(
     assert second_row["run_id"] != first_row["run_id"]
     assert second_row["accepted"] is False
     assert second_row["baseline_run_id"] == first_row["run_id"]
-    # L2 is not comparable yet (the runner still emits scalars.L2 null at
-    # this stage of the history), so the l2_* verdict fields stay null.
+    # Same corpus, same parser: L1 and L2 are both flat, so nothing rose.
     assert second_row["no_regret"] == {
         "dev_rose": False,
         "held_out_fell": False,
         "reason": "dev did not rise",
-        "l2_dev_rose": None,
-        "l2_dev_fell": None,
-        "l2_held_out_fell": None,
+        "l2_dev_rose": False,
+        "l2_dev_fell": False,
+        "l2_held_out_fell": False,
     }
     assert history_path.read_text(encoding="utf-8") == "\n".join(lines) + "\n"
 
@@ -423,9 +465,9 @@ def test_no_regret_flags_dev_rise_with_held_out_fall_as_rejected(
         "dev_rose": True,
         "held_out_fell": True,
         "reason": "held-out fell",
-        "l2_dev_rose": None,
-        "l2_dev_fell": None,
-        "l2_held_out_fell": None,
+        "l2_dev_rose": False,
+        "l2_dev_fell": False,
+        "l2_held_out_fell": False,
     }
 
 
@@ -447,9 +489,9 @@ def test_accepted_when_dev_rises_and_held_out_stable(
         "dev_rose": True,
         "held_out_fell": False,
         "reason": "dev rose and held-out did not fall",
-        "l2_dev_rose": None,
-        "l2_dev_fell": None,
-        "l2_held_out_fell": None,
+        "l2_dev_rose": False,
+        "l2_dev_fell": False,
+        "l2_held_out_fell": False,
     }
     assert second_row["baseline_run_id"] == json.loads(out1)["run_id"]
 
