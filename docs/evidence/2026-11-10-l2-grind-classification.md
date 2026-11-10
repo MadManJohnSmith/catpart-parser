@@ -56,7 +56,7 @@ undecoded-variant: composite-gate 939, no-pool 55, refs-beyond 30.
 - **The populations compose exactly.** G1 scanned 1,377 dev parts
   (manifest `magic_ok=yes`); the fitness L2 population is manifest
   `kind=part` without the magic filter = 1,381. The 4 excluded parts
-  (230b0591, 521f08e3, 6cab1344, bafb33e5 — `magic_ok=no`) are all
+  (230b0591, 521f08e3, 6cab134d, bafb33e5 — `magic_ok=no`) are all
   **missing-store / no_stdcont** here (region survey: no CATStdCont
   block), so G1's tables need no correction — its scope was 4 parts
   narrower.
@@ -72,9 +72,12 @@ undecoded-variant: composite-gate 939, no-pool 55, refs-beyond 30.
 - **What G1 actually measured on presence** (its claims CSV): 1,068 /
   1,173 = **0.910 of CATStdCont-carrying dev parts** carry a store =
   1,068/1,377 = **0.776 of all dev parts**; header variant 1,056/1,173 =
-  0.900; per-release among-CATStdCont rates 0.64 (R23, 7/11) - 1.00,
-  with the main lines R15-R21 at 0.848 (R17, 39/46) - 0.974 (R20) and
-  R19 504/538 = 0.937.
+  0.900; per-release presence splits by denominator (2026-11-10
+  correction (#34 review): the first wording mixed denominators under
+  one label): among-all-dev (N1) 0.250 (R16) - 0.974 (R20); among-
+  CATStdCont (N1h) 0.636 (R23, 7/11) - 1.000 (R17 39/39, R20 151/151);
+  R19 among-stdcont 504/538 = 0.937 is hand-derived (the CSV's N1 R19
+  row is 504/544 among-all).
 - **The handoff's ~0.82-0.93 presence band: unknown provenance** — no
   single committed number equals it. Closest measured candidates: 0.900
   (N1h header variant), 0.910 (N1 among-stdcont), (1,068+95)/1,377 =
@@ -122,11 +125,15 @@ F8). Decomposition:
   the audited stores the non-pool sub-kinds are `0000` (599 store rows
   = 539 composite-space dev + 25 refs-beyond dev + 35 held-out),
   `0001` (59), `0101` (11), `00ff` (11), plus a rare tail (`e700` 6,
-  `7500` 4, `ed00` 3, `9c00` 2, `3f01` 2). **None of these sub-kinds
-  ever appears on a passing store** (0/76) — they are markers of the
-  same undecoded reference space, of which the gate currently knows two
-  members. This extends F8's vocabulary claim (dated addition, section
-  8).
+  `7500` 4, `ed00` 3, `9c00` 2, `3f01` 2). 2026-11-10 correction (#34
+  review): the first wording claimed these never appear on a passing
+  store (0/76) — a claim made from unaudited pass rows, falsified by
+  the completed census: **every one of the 76 passing stores carries
+  `0000`/`0001`/`00ff`** (plus `0106`) — they are universal store
+  vocabulary, not composite markers. Only `0101` is composite-exclusive
+  (11/878 composite, zero in every other class) — too rare to serve as
+  a signpost. The composite gate remains structural: the
+  `0102`/ff-opener triggers with refs-beyond-pool (C4-C6).
 - **Content variants, labeled (fact):** B4's "float64 store"
   086a4effaab7 (R20, 4.58 MB store) is a member of this class: kinds
   `0106, ff70`, pool 916 vertices, **zero facet records**, opener
@@ -231,23 +238,34 @@ regions — containers the locator never visits):
     (header d12n=2,690, wrappers `0106, 0001`).
   - Case 152159176ca8d58d (no_stdcont): seebody region 291,111 B,
     wrappers `0102, 0106, 0000` — a large composite recovery.
-- **178/313 are genuinely store-less for this architecture** (fact):
-  112 no_stdcont + 58 none_in_region + 8 embedded_doc with no
-  V5_CFV2/CB0001 marker in any CATStdCont/seebody/xdoc region. The
-  whole-file V5_CFV2 hit on 174 of them is the **outer header's own
-  magic at offset 0** (the outer file header shares `V5_CFV2\0`) — not
-  evidence of a missed store. Cases: 009cc605 (region 903 B, empty
+- **178/313 are genuinely store-less for the probed architecture**
+  (fact, scoped 2026-11-10 per review): 112 no_stdcont + 58
+  none_in_region + 8 embedded_doc with no V5_CFV2/CB0001 marker in any
+  CATStdCont/seebody/xdoc region. The whole-file V5_CFV2 hit on **121
+  of them is the outer header's own magic at offset 0** (the outer file
+  header shares `V5_CFV2\0`) — not evidence of a missed store. The
+  other **53 carry a second whole-file V5_CFV2 hit with the full
+  header signature (`ff`×8 + zeros×8) inside containers this census
+  does not probe as store regions** (CATBRepModeContainer 39,
+  CameraStartupContainer 8, contmeasure 2, four others 1 each — e.g.
+  022523b4's second hit at 326,030): candidate upside for the recovery
+  lever, unprobed. Cases: 009cc605 (region 903 B, empty
   signature); cb3c7762 (region 795,072 B with no marker — large raw
   content, undecoded); 022523b4 (embedded_doc: an outer-style catalog
   at 176,966 inside the CATStdCont region, N10's CAA family); 084841b3
   (no_stdcont with an 8,648 B seebody region carrying no store).
-- **G1's 95-store seebody claim, refined (correction, section 8):** G1
-  counted `CATSeeBodyCont` regions carrying a nested header store on
-  95/1,377 parts (first-seebody-block probe). This census probes every
-  seebody block per part: **100 parts** carry V5_CFV2 in some seebody
-  region (29+67 no_stdcont + 4 none_in_region), of which 33 locate
-  under the shipped law, 67 reject as overshoot/padded (recoverable),
-  and 0 are absent. Plus 1 xdoclink-flagged none_in_region part whose
+- **G1's 95-store seebody claim, refined (correction, restated
+  2026-11-10 per review):** G1 counted `CATSeeBodyCont` regions
+  carrying a nested header store on 95/1,377 parts (first-seebody-block
+  probe). This census probes every seebody block per part and **G1's 95
+  reproduces exactly** (the census's header-store set has G1's
+  identical per-release split — no first-block undercount). The new
+  finding is **5 R19 parts whose seebody store is headerless** (located
+  via the headerless-store law, no V5_CFV2 header in the region) — so
+  **100 parts carry a seebody store of either variant** (29+67
+  no_stdcont + 4 none_in_region), of which 33 locate under the shipped
+  law, 67 reject as overshoot/padded (recoverable), and 0 are absent.
+  Plus 1 xdoclink-flagged none_in_region part whose
   store rejects (overshoot/padded family). The G1 number was a
   first-block undercount, not a wrong model.
 - **Embedded-doc 8 and none_in_region 58: genuinely not stores** (fact
@@ -267,8 +285,12 @@ Dev population 1,381; bar = 1,105 passes (80.01%). Located caps: **A =
 1,039** (75.2%, today), **B = 1,068** (77.3%, + the 29 malformed via
 the relaxed tail law), **C = 1,203** (87.0%, + the 135 recoveries; the
 178 store-less parts are unreachable for this architecture). 1,203 =
-every V5_CFV2 store corpus-wide (G1's 1,068 + 135), a closed loop with
-G1.
+every V5_CFV2 store in the probed container scope (CATStdCont/seebody/
+xdoc; G1's 1,068 + 135), a closed loop with G1 — 2026-11-10 scoping
+correction (#34 review): 53 of the 178 store-less parts carry a
+header-signature V5_CFV2 hit in unprobed containers (CATBRepModeContainer
+39, CameraStartupContainer 8, contmeasure 2, four others 1 each),
+candidate upside beyond C.
 
 Levers (pass ceiling if fully solved; class pools = located + recovery
 + malformed-postfix):
@@ -276,7 +298,7 @@ Levers (pass ceiling if fully solved; class pools = located + recovery
 | lever | mechanism | class pool | ceiling |
 |---|---|---|---|
 | L1 composite decode | decode the composite reference space (edge tables, opener regions, `0000`/`0001` groups) | 878 + 70 + 11 = 959 | +959 |
-| L2 poolless answer | geometry (if any) in wrapper-less bodies | 55 + 21 + 18 = 94 | +94, **yield uncertain** (0/94 name SurfacicReps; 46 small + 7 large carry no strips at all — they may legitimately have no tessellation) |
+| L2 poolless answer | geometry (if any) in wrapper-less bodies | 55 + 21 + 18 = 94 | +94, **yield uncertain** (2026-11-10 correction: the completed region census shows the SurfacicReps U16 marker in the CATStdCont region of every audited store-carrying row — 55/55 poolless, 18/18 padded — standard stream vocabulary, does not discriminate; the earlier "0/94 name SurfacicReps" was an artifact of the unpopulated census. 46 small + 7 large carry no strips at all — they may legitimately have no tessellation; C15 stays unknown) |
 | L3 refs-beyond decode | widen the composite vocabulary (`0000`, `9c00`, ...) — same problem as L1 | 30 + 8 = 38 | +38 |
 | L4 stdcont-malformed locate fix | G1's two documented variants (section 5) | 29 | 0 alone; +29 via L1/L2 |
 | L5 recovery extension | probe seebody/xdoc containers + relaxed tail law | 135 | +36 alone; +135 via L1/L2/L3 |
@@ -295,7 +317,7 @@ that are on):
 | {L1,L3,L4,L5} | **1,109** | **REACHES (margin 4)** |
 | {L1,L2,L4,L5} | 1,165 | reaches |
 | {L1,L2,L3,L5} | 1,174 | reaches = cap C minus the 29 |
-| {L1,L2,L3,L4,L5} | 1,203 | absolute ceiling (87.0%) |
+| {L1,L2,L3,L4,L5} | 1,203 | ceiling over probed containers (87.0%) |
 
 **Which levers are required (fact, arithmetic):**
 
@@ -366,12 +388,12 @@ that are on):
 | C4 | composite triggers: edge 516 / both 322 / opener 40 (dev) | 878 | fact |
 | C5 | refs-beyond under analysis on composite bodies | 785/878 = 0.894 | fact (analysis-only measurement) |
 | C6 | edge tables: 681 stores walk 02 02 records (154,342); 651/681 endpoints >= pool; 157 other `02 0X` forms | 838 edge-carrying | fact / interior unknown |
-| C7 | sub-kind family `0000`/`0001`/`0101`/`00ff`/rare never on passing stores | 0/76 passes | fact |
+| C7 | sub-kind vocabulary: `0000`/`0001`/`00ff` universal (76/76 passes carry them); `0101` composite-exclusive (11/878) | 76/76 passes | fact (2026-11-10 correction: the first wording — never on passing stores, 0/76 — was falsified by the completed pass-row census) |
 | C8 | refs-beyond 30 all carry non-standard sub-kinds (none pool-only) | 30/30 | fact |
 | C9 | malformed-29 = overshoot 11 + padded 18, both G1-documented; zero pass on locate fix alone (postfix: composite 11, poolless 18) | 29/29 | fact |
 | C10 | missing-313: 135 carry a missed store (67 shipped-law + 68 relaxed-law; composite 70 / clean 36 / poolless 21 / refs-beyond 8) | 135/313 = 0.431 | fact |
-| C11 | 178/313 genuinely store-less (no region markers; whole-file V5_CFV2 = outer magic) | 178/313 | fact |
-| C12 | seebody-store population 100/1,377 (G1 said 95, first-block probe) | 100 parts | fact (correction 1) |
+| C11 | 178/313 genuinely store-less in the probed scope (no region markers; 121 whole-file V5_CFV2 = outer magic, 53 = second header-signature hit in unprobed containers — recovery upside) | 178/313 | fact (scoped 2026-11-10) |
+| C12 | seebody store-carrying parts (either variant) 100/1,377; G1's 95 header-store count reproduces exactly — the +5 are R19 headerless seebody stores | 100 parts | fact (correction 1, restated 2026-11-10) |
 | C13 | located caps A/B/C = 1,039 / 1,068 / 1,203 (75.2% / 77.3% / 87.0%) | — | fact |
 | C14 | required levers: L1, L5, and one of {L2, L3+L4}; minimal reaching sets {L1,L2,L5} = 1,136, {L1,L3,L4,L5} = 1,109 | — | fact (arithmetic on measured pools) |
 | C15 | poolless bodies carry decodable geometry | 0 established | unknown |

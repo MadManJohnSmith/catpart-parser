@@ -473,13 +473,21 @@ def audit_part(mm, rel, fitness_class):
         if span is not None:
             spans.append(span)
     row["n_stores_located"] = len(spans)
+    # region census on EVERY row (2026-11-10 #34 review: was missing-only,
+    # which left the SurfacicReps claims unreproducible off the 313)
+    region_signature(mm, blocks, d8_outer, row)
 
     if rclass == "pass":
         root, detail = "pass", ""
+        if spans:
+            # 2026-11-10 #34 review: audit the exporter's span so the
+            # composite-family claim ("never on a passing store") is
+            # CSV-reproducible instead of empirical
+            aud, _flat = body_audit(mm, spans[0], clean_store=True)
+            row.update(aud)
     elif rclass == "missing-geometry-store":
         root = "missing-store"
         row.update(missing_audit(mm, blocks, d8_outer, g1_class))
-        region_signature(mm, blocks, d8_outer, row)
         detail = f"{row['missing_family']}; recovery={row['recovery_probe']}"
         if row["recovery_store_class"]:
             detail += f" ({row['recovery_store_class']})"
