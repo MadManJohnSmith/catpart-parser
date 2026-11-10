@@ -52,6 +52,43 @@ by ``tests/test_fixturegen.py``):
 
 Valid variants: ``None`` (ff x 8 header) and ``dual-region`` (the
 146-file header generation) — both clean.
+
+Geometry-bearing variants (G4, #32): the payload carries a synthetic
+CATStdCont-shaped nested V5_CFV2 stream store (G1/G2/G3 decode model)
+whose known f32le pool, ``01 06`` count group and 0x4a/0x4c facet
+records mirror the corpus worked example ``10b9ae4a3cd58298`` — the
+20 x 100 x 60 box whose six facet records decode to its six faces only
+under LEXICOGRAPHIC RANK references (G3 claim F2b), here split into 4 x
+0x4a triangle-strip faces and 2 x 0x4c closed-polygon faces (12
+triangles, a closed oriented manifold). The pool's walk order is the
+corpus box's deliberately non-lexicographic order so the export exercises
+the lex-rank mapping (correction C8).
+
+- ``geometry``                  -> valid; exports 12 triangles, closed
+  manifold, no warnings.
+- ``geometry-open-shell``       -> valid-shaped; the x=20 face record is
+  dropped (G3 F6's real sheet-like open shells) and one well-formed
+  0x41 triangle-list record carries a degenerate all-same-rank loop
+  (skipped per F7): exports 10 triangles with the ``open-shell``,
+  ``unresolved-facet-family`` and ``degenerate-triangles-skipped``
+  warning classes.
+- ``geometry-bad-nested-magic`` -> the nested store's V5_CFV2 magic is
+  corrupted in place: no store header, and the CB0001 catalog is not
+  re-validatable as a header-less store either -> ``missing-geometry-
+  store``.
+- ``geometry-truncated-pool``   -> the pool group's count field says 8
+  but only 6 vertex records precede the facet region -> ``malformed-
+  pool-group`` (G2 P2g violation).
+- ``geometry-out-of-range-refs``-> one facet reference points past the
+  pool -> ``undecoded-variant`` (G3 open question 2).
+- ``geometry-nan-coords``       -> one pool vertex carries a NaN f32le
+  coordinate -> ``malformed-pool-vertex`` (G2 P3 violation).
+- ``geometry-missing-facet-payload`` -> every facet record is cut after
+  its count byte, before its references: no parse survives the tiling
+  law -> ``undecoded-variant`` (no exportable facet content).
+- ``geometry-composite-index-space`` -> an ``01 02`` edge-group wrapper
+  (G3 F8's 6-byte ``02 02 (u16be)(u16be)`` records) marks the composite
+  index space -> ``undecoded-variant`` (open question 1).
 """
 
 from __future__ import annotations
@@ -87,7 +124,7 @@ KIND_RECORDS: dict[str, tuple[tuple[str, str], ...]] = {
     ),
 }
 
-VALID_VARIANTS = (None, "dual-region")
+VALID_VARIANTS = (None, "dual-region", "geometry", "geometry-open-shell")
 CORRUPTED_VARIANTS = (
     "bad-magic",
     "truncated-table",
@@ -95,6 +132,63 @@ CORRUPTED_VARIANTS = (
     "junk-payload",
     "oversized-dword",
     "short-file",
+    # Geometry-bearing corrupted variants (G4, #32): nested-store level.
+    "geometry-bad-nested-magic",
+    "geometry-composite-index-space",
+    "geometry-missing-facet-payload",
+    "geometry-nan-coords",
+    "geometry-out-of-range-refs",
+    "geometry-truncated-pool",
+)
+GEOMETRY_VARIANTS = ("geometry", "geometry-open-shell") + (
+    "geometry-bad-nested-magic",
+    "geometry-composite-index-space",
+    "geometry-missing-facet-payload",
+    "geometry-nan-coords",
+    "geometry-out-of-range-refs",
+    "geometry-truncated-pool",
+)
+
+# --- nested-store geometry (G4, #32) -----------------------------------
+# The nested V5_CFV2 store's byte vocabulary (G1/G2/G3 evidence notes).
+NESTED_CB0001 = b"CATIA_V5 CB0001\x00"
+NESTED_FULL_WRAP = b"\x10\x24\x04\xff\xff\x00\x00\x00"  # G2 P1g wrapper
+NESTED_VREC = b"\x05\x08\x01"  # 15-byte vertex record prefix (G2 P1)
+NESTED_POOL_SUBKIND = b"\x01\x06"  # vertex pool group (G2 P1g)
+NESTED_EDGE_SUBKIND = b"\x01\x02"  # edge group (G3 F8: composite space)
+NESTED_CATALOG_LEN = 52  # CB0001 magic (16 B) + 36 B trailer
+
+#: The corpus box 10b9ae4a3cd58298's pool in walk order (G2 worked
+#: example): the 8 corners of the 20 x 100 x 60 mm box, deliberately NOT
+#: in lexicographic order.
+GEOMETRY_POOL_WALK = (
+    (0.0, 0.0, 0.0),
+    (20.0, 0.0, 0.0),
+    (0.0, 100.0, 0.0),
+    (20.0, 100.0, 0.0),
+    (0.0, 100.0, 60.0),
+    (20.0, 100.0, 60.0),
+    (0.0, 0.0, 60.0),
+    (20.0, 0.0, 60.0),
+)
+
+#: lex[rank] = walk position: the lexicographic ranks of (x, y, z) over
+#: GEOMETRY_POOL_WALK (G3 claim F2 / correction C8). Facet references
+#: are ranks into this map.
+GEOMETRY_LEX = (0, 6, 2, 4, 1, 7, 3, 5)
+
+#: The six box faces as facet records: (marker, outward normal, lex-rank
+#: refs). The four 0x4a strip faces reuse the corpus box's verified
+#: reference tuples (G2 worked example / G3 F2b, 12/12 sign-positive);
+#: the two x-faces are 0x4c closed polygons in ring order (G3 F4: the
+#: Newell normal equals the stored normal, sign +).
+GEOMETRY_FACES = (
+    (0x4A, (0.0, 0.0, -1.0), (4, 0, 6, 2)),
+    (0x4A, (0.0, 1.0, 0.0), (6, 2, 7, 3)),
+    (0x4A, (0.0, 0.0, 1.0), (7, 3, 5, 1)),
+    (0x4A, (0.0, -1.0, 0.0), (5, 1, 4, 0)),
+    (0x4C, (-1.0, 0.0, 0.0), (0, 1, 3, 2)),
+    (0x4C, (1.0, 0.0, 0.0), (4, 6, 7, 5)),
 )
 
 
@@ -143,24 +237,31 @@ def registration_block(tag: int = 0x4E) -> bytes:
     )
 
 
-def catia_identity_block(name2: bytes = b"") -> bytes:
-    """One CATStorageProperty identity block (C3 phase A claims D1/D2).
+def storage_property_block(name1: bytes, name2: bytes = b"") -> bytes:
+    """One CATStorageProperty block with the given name1/name2 (B3/C3).
 
     Byte layout observed in the corpus (docs/evidence/
     2026-11-08-units-names-probe.md): the B3 block header, name1
-    ``CATIA`` tag34-framed and 0x9f-terminated, then the name2 field
+    tag34-framed and 0x9f-terminated, then the name2 field
     ``a0 02 00 00 00 00 34 <len> <ascii> 9f`` (empty: ``34 00 9f``),
-    then the ``3b 10`` marker with the identity block's 16 zero bytes
-    (null GUID) and a trailing ``9f``.
+    then the ``3b 10`` marker with the block's 16 zero bytes (null GUID)
+    and a trailing ``9f``. The G1 nested-store probe (decode_nested_
+    store.valid_blocks) recognizes a block by this header.
     """
     block = b"\x34\x12" + b"CATStorageProperty"
     block += b"\x80\x01\x00\x00\x00\x00\x22\x0c\x00\x00\x00"
     block += b"\x34\x01\x01\x00" + b"\x34\x10" + b"CATUnicodeString"
-    block += b"\xa0\x02\x00\x00\x00\x00\x34\x05" + b"CATIA" + b"\x9f"
+    block += b"\xa0\x02\x00\x00\x00\x00\x34" + bytes([len(name1)]) + name1 + b"\x9f"
     block += b"\xa0\x02\x00\x00\x00\x00\x34"
     block += bytes([len(name2)]) + name2 + b"\x9f"
     block += b"\x3b\x10" + bytes(16) + b"\x9f"
     return block
+
+
+def catia_identity_block(name2: bytes = b"") -> bytes:
+    """One CATStorageProperty identity block named CATIA (C3 phase A
+    claims D1/D2) — :func:`storage_property_block` with name1 CATIA."""
+    return storage_property_block(b"CATIA", name2)
 
 
 def build_catpart(
@@ -254,6 +355,113 @@ def build_catpart(
     return data
 
 
+def _facet_record(marker: int, normal, refs: tuple[int, ...]) -> bytes:
+    """One facet record in the G3 grammar (F1): 4-byte header ``01 <mk>
+    <ty=1> ff``, u32le n, the 12-byte normal when the marker carries
+    one, one loop-count byte (k=1, summing to n — the tiling law needs
+    count bytes for n > 0, as the corpus 0x41 records show), then the
+    u8 lexicographic-rank references."""
+    rec = bytes([0x01, marker, 0x01, 0xFF]) + struct.pack("<I", len(refs))
+    if normal is not None:
+        rec += struct.pack("<fff", *normal)
+    return rec + bytes([len(refs)]) + bytes(refs)
+
+
+def _geometry_box_edges_lex() -> tuple[tuple[int, int], ...]:
+    """The box's 12 edges as lex-rank pairs (F8: the 01 02 edge table's
+    endpoints are lex-adjacent pool vertices)."""
+    return (
+        (0, 1), (0, 2), (0, 4), (1, 3), (1, 5), (2, 3),
+        (2, 6), (3, 7), (4, 5), (4, 6), (5, 7), (6, 7),
+    )
+
+
+def _geometry_store(variant: str) -> bytes:
+    """The nested V5_CFV2 stream store: 32-byte header (big-endian
+    dword8 = catalog offset, dword12 = catalog tail length, N2), body,
+    minimal catalog (CB0001 magic + 36 B trailer satisfying the G1 N6
+    laws: CB__END, C == D, G == tail length) and the 126 B inter-block
+    tail with the writer registration block (N9)."""
+    faces = list(GEOMETRY_FACES)
+    if variant == "geometry-out-of-range-refs":
+        marker, normal, refs = faces[0]
+        faces[0] = (marker, normal, (4, 0, 6, 200))  # 200 >= pool size 8
+    if variant == "geometry-open-shell":
+        faces = faces[:5]  # drop the x=20 face: real sheet-like shell (F6)
+
+    pool_walk = list(GEOMETRY_POOL_WALK)
+    if variant == "geometry-nan-coords":
+        # G2 P3 violation: NaN f32le coordinate in the 4th walked vertex.
+        x, y, z = pool_walk[3]
+        pool_walk[3] = (float("nan"), y, z)
+    vertices = pool_walk
+    if variant == "geometry-truncated-pool":
+        # G2 P2g violation: count field 8, only 6 records before facets.
+        vertices = pool_walk[:6]
+
+    body_parts = [
+        NESTED_FULL_WRAP
+        + NESTED_POOL_SUBKIND
+        + bytes([8])
+        + b"".join(NESTED_VREC + struct.pack("<fff", *v) for v in vertices)
+    ]
+    if variant == "geometry-composite-index-space":
+        # G3 F8's edge-table sketch: 6-byte `02 02 (u16be)(u16be)`
+        # records — the composite index-space marker (open question 1).
+        body_parts.append(
+            NESTED_FULL_WRAP
+            + NESTED_EDGE_SUBKIND
+            + b"".join(
+                b"\x02\x02" + struct.pack(">HH", a, b)
+                for a, b in _geometry_box_edges_lex()
+            )
+        )
+    for marker, normal, refs in faces:
+        if variant == "geometry-missing-facet-payload":
+            # Cut after the count byte, before the references: no
+            # (width, k) parse survives the tiling law.
+            rec = bytes([0x01, marker, 0x01, 0xFF]) + struct.pack("<I", len(refs))
+            rec += struct.pack("<fff", *normal) + bytes([len(refs), 0, 0])
+            body_parts.append(rec)
+        else:
+            body_parts.append(_facet_record(marker, normal, refs))
+    if variant == "geometry-open-shell":
+        # A well-formed 0x41 triangle-list record (F9 byte law n == 3*ty)
+        # whose single loop repeats one rank: the strip reading is
+        # degenerate and skipped (F7), the marker surfaces as an
+        # unresolved facet family.
+        body_parts.append(_facet_record(0x41, None, (0, 0, 0)))
+    body = b"".join(body_parts)
+
+    catalog_len = NESTED_CATALOG_LEN
+    d8n = 32 + len(body)
+    nested_magic = b"V5_CFV3\x00" if variant == "geometry-bad-nested-magic" else MAGIC
+    header = (
+        nested_magic
+        + struct.pack(">II", d8n, catalog_len)
+        + b"\xff" * 8
+        + b"\x00" * 8
+    )
+    catalog = NESTED_CB0001 + struct.pack(
+        ">7I", 1, 0, 0xE7, 0xE7, 0, 0, catalog_len
+    ) + TRAILER_MARKER
+    tail126 = registration_block() + b"\x00" * (126 - 41)
+    return header + body + catalog + tail126
+
+
+def _geometry_payload(variant: str) -> bytes:
+    """The CATStdCont block + property preamble + nested store.
+
+    The preamble lands the store origin at block + 250 (G1 N1h: the
+    248..268 window covers 1,051/1,056 corpus header stores)."""
+    preamble = 250 - len(storage_property_block(b"CATStdCont", b"CATContainer"))
+    return (
+        storage_property_block(b"CATStdCont", b"CATContainer")
+        + b"\x00" * preamble
+        + _geometry_store(variant)
+    )
+
+
 def build_fixture(
     kind: str = "part",
     *,
@@ -267,15 +475,28 @@ def build_fixture(
     ``kind`` selects the record table ("part" or "product", kind-law
     K1). The seed drives GUIDs, payload filler and table padding only —
     the structural skeleton is fixed. ``variant`` selects a valid shape
-    (``None`` or ``"dual-region"``) or one named corrupted variant (see
-    the module docstring for the expected fitness classification of
-    each). ``document_name`` stores a save-time name in the identity
-    block (the C3 ``document_name`` claim; ``None`` omits the block).
+    (``None``, ``"dual-region"``, or a geometry-bearing nested-store
+    variant) or one named corrupted variant (see the module docstring
+    for the expected fitness/export classification of each).
+    ``document_name`` stores a save-time name in the identity block
+    (the C3 ``document_name`` claim; ``None`` omits the block).
     """
     if kind not in KIND_RECORDS:
         raise ValueError(f"unknown kind: {kind!r}")
     if variant not in VALID_VARIANTS + CORRUPTED_VARIANTS:
         raise ValueError(f"unknown variant: {variant!r}")
+
+    if variant in GEOMETRY_VARIANTS:
+        # Nested-store payload (G4 #32): the seed drives only the table
+        # padding, as in A2; the store bytes are a pure function of the
+        # variant so the expected pool/facet decode stays fixed. The
+        # small plausible header dword keeps the H1 chain (A2's choice).
+        return build_catpart(
+            header_dword=0x0000_0100,
+            payload=_geometry_payload(variant),
+            pad_before_table=0x600 + (seed % 8) * 8,
+            identity_name2=document_name,
+        )
 
     rng = random.Random(seed)
     records = KIND_RECORDS[kind]
