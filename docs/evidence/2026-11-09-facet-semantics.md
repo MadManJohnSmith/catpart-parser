@@ -65,6 +65,14 @@ forms, both byte-measured:
   law — small stores use u8 (the 8-vertex box: 4-byte tails), large
   stores u16be (70b59f2a: 9-byte tails for n=4).  G2's "u8 on every
   facet the committed decoder accepts" is a special case.
+  2026-11-10 correction (#35, third re-scope): the tiling law's
+  gap-edge tie-break is class-bounded — on a clean store (no `01 02`
+  group, no trailer opener) the store's exact-tile records vote their
+  width and a unanimous vote wins the gap-edge tie-break, so a
+  cluster-final u16be record keeps its width; composite stores keep
+  the narrower-width preference.  Corpus A/B: exactly 115 records
+  across the 16 mixed-width clean stores decode u16be that previously
+  half-read as u8; all 889 composite stores byte-identical.
 
 ## 2. The index mapping: lexicographic ranks (F2, correction C8)
 
@@ -80,9 +88,12 @@ for bounds but the ORDER is not the walk order.  The functional test:
   0.059; lex (z,y,x) 0.272 (the alternative-order rates are
   approximate — method-sensitive on small samples) — every alternative
   mapping fails.  On the full 179-clean-store scope the rate is
-  1,299/1,349 = 0.9629, with exceptions on 5 further stores (below);
-  the composite-space stores are excluded by F2c's own analysis either
-  way.
+  1,297/1,345 = 0.9643 (2026-11-10 correction #35: was
+  1,299/1,349 = 0.9629 before the clean-store width-context fix —
+  the 16 mixed-width stores' flipped u16be records carry out-of-pool
+  loops that leave the measured scope), with exceptions on 5 further
+  stores (below); the composite-space stores are excluded by F2c's
+  own analysis either way.
 - **F2b (fact, one store):** the 8-vertex box `10b9ae4a3cd58298`
   makes the mapping explicit: its walked pool order is
   `(0,0,0), (20,0,0), (0,100,0), (20,100,0), (0,100,60), (20,100,60),
@@ -135,11 +146,21 @@ and the closure test (section 5):
   record with refs (0, 1, 2, 3): both strip triangles exactly parallel
   to the stored normal but sign-negative (a reversed-normal writer
   variant).  Five further souped-scope loops are off-plane, all on
-  `b9b887db0d516d88` (R17).  On the full 179-clean scope: 3 stores
-  carry anti-parallel triangles (`6888b9868df81c00`, `aa84a202df09ed45`,
-  `bd79fa8e39e8fab2` — 5 sign-negative triangles) and 6 stores carry
-  off-plane triangles (adding `1ffad5964894f1ff`, `38e7359df7a82d35`,
-  `a6d450edd4a8ff17` — 50 off-plane triangles, 3.7%).
+  `b9b887db0d516d88` (R17).  On the full 179-clean scope: 1 store
+  carries anti-parallel triangles (`6888b9868df81c00` — 2
+  sign-negative triangles) and 6 stores carry off-plane triangles
+  (`aa84a202df09ed45`, `bd79fa8e39e8fab2`, `1ffad5964894f1ff`,
+  `a6d450edd4a8ff17`, `0ae8c3e7dd3e74ad`, plus `b9b887db0d516d88`'s
+  five exactly-perpendicular loops — 48 off-plane triangles, 3.6%).
+  2026-11-10 correction #35: before the clean-store width-context fix
+  the anti-parallel set was 3 stores / 5 triangles (`aa84a202df09ed45`
+  1, `bd79fa8e39e8fab2` 2 — their anti-parallel dots sat on
+  cluster-final u16be records that half-read as u8) and the off-plane
+  set was 50 triangles / 3.7% with `38e7359df7a82d35` (2) in place of
+  `0ae8c3e7dd3e74ad` (1); the flipped records' loops leave the
+  measured scope (out-of-pool refs), and `0ae8c3e7dd3e74ad`'s
+  formerly-degenerate polygon dot now measures off-plane
+  sign-negative.
 
 ## 4. The winding law (F5)
 
@@ -147,7 +168,10 @@ and the closure test (section 5):
 stored normal (right-hand rule), i.e. the OBJ convention.** Measured:
 1,288 sign-positive vs 2 sign-negative triangles on the 76-soup scope
 (1,290 parallel of 1,300; the 10 off-plane are the counterexamples
-above; full-179 scope: 1,294+/5- of 1,299 parallel).  Concretely: for
+above; full-179 scope: 1,295+/2- of 1,297 parallel — 2026-11-10
+correction #35: was 1,294+/5- of 1,299, the three anti-parallel dots
+on `aa84a202df09ed45`/`bd79fa8e39e8fab2` left the measured scope with
+the width fix).  Concretely: for
 strip loops the consistent triangle sequence
 is (r_t, r_{t+1}, r_{t+2}) with the flip on odd t (phase reset per
 loop); for polygon loops the ring order has positive Newell normal.
@@ -301,13 +325,13 @@ faces — consistent with the closed-manifold invariants.
 | claim | statement | rate | label |
 |---|---|---|---|
 | F1 | facet records tile their region header-to-header under the (width, k) tiling law; two header forms (4-byte, 5-byte variant) | 516/1,068 = 0.483 stores tile completely (composite-space stores carry gap content); per-file 0.0-1.000 | established (observed) |
-| F1w | reference width is per-record u8 or u16be (big-endian), chosen by the tiling law | every accepted record | established (observed) |
-| F2 | facet references are lexicographic ranks of (x, y, z) into the pool | souped stores 1,290/1,300 = 0.9923 winding triangles parallel (walk-order control 0.2746; other axis orders <= 0.38, approximate); full 179-clean scope 1,299/1,349 = 0.9629; box 12/12 with 12 sign+ | established (souped-store scope) |
+| F1w | reference width is per-record u8 or u16be (big-endian), chosen by the tiling law; on a clean store's gap edge a unanimous exact-tile width vote wins the tie-break (2026-11-10, #35: 115 records across the 16 mixed-width clean stores; composite stores keep the narrower-width preference) | every accepted record | established (observed) |
+| F2 | facet references are lexicographic ranks of (x, y, z) into the pool | souped stores 1,290/1,300 = 0.9923 winding triangles parallel (walk-order control 0.2746; other axis orders <= 0.38, approximate); full 179-clean scope 1,297/1,345 = 0.9643 (2026-11-10 #35: was 1,299/1,349 = 0.9629); box 12/12 with 12 sign+ | established (souped-store scope) |
 | F2b | the box worked example decodes to its six faces only under lex ranks | 1 store, 12/12 triangles | established (one store) |
 | F2c | the lex mapping validates end-to-end on pool-only stores | 76/1,068 = 0.071 parts (the souped stores) | candidate (scope-limited) |
-| F3 | 0x4a loops are triangle-strip segments (flip phase, reset per loop) | souped stores 1,274/1,284 strip triangles parallel (1,272 sign+); full-179 all-families 1,299/1,349 = 0.9629 (strips only: 1,282/1,348 = 0.9510); box 12/12 | established (souped-store scope) |
+| F3 | 0x4a loops are triangle-strip segments (flip phase, reset per loop) | souped stores 1,274/1,284 strip triangles parallel (1,272 sign+); full-179 all-families 1,297/1,345 = 0.9643 (2026-11-10 #35: was 1,299/1,349 = 0.9629); strips only: 1,280/1,327 = 0.9646 (2026-11-10 #35 correction: was quoted 1,282/1,348 = 0.9510 — the old denominator did not compose from the loops CSV either; the CSV's 0x4a rows give 1,282/1,332 before the fix, 1,280/1,327 after); box 12/12 | established (souped-store scope) |
 | F4 | 0x4c loops are closed polygons in ring order (Newell == stored normal) | 16/16 souped-store loops sign+; strip reading 16/16 sign-mixed (rejected) | established (souped-store scope) |
-| F5 | winding law: CCW seen from the stored normal (RH rule) | souped stores 1,288 sign+ vs 2 sign- of 1,290 parallel (0.9984); full-179 1,294+/5- of 1,299; counterexamples named | established (souped-store scope) |
+| F5 | winding law: CCW seen from the stored normal (RH rule) | souped stores 1,288 sign+ vs 2 sign- of 1,290 parallel (0.9984); full-179 1,295+/2- of 1,297 (2026-11-10 #35: was 1,294+/5- of 1,299); counterexamples named | established (souped-store scope) |
 | F6 | clean-store soups are manifolds; closed solids 66/76; oriented 66/66 closed | 76/76 = 1.000 manifold; 0.868 closed | established (clean-store scope) |
 | F7 | zero degenerate triangles in the soups (skip convention applied) | 1,354/1,354 | established (clean-store scope) |
 | F8 | composite index space: `01 02` edge groups + `ff`-opener trailer region; refs beyond pool | 889/1,068 = 0.832 stores; 793/889 refs beyond pool | candidate (numbering open) |
@@ -317,8 +341,9 @@ faces — consistent with the closed-manifold invariants.
 Version scope: F1-F10 measured on the 1,068 decoded stores of the
 1,377 dev parts; the established winding/semantics scopes are the
 **76 in-pool souped stores** (0.9923 parallel; the full 179
-clean-store scope measures 0.9629 with exceptions on 5 further
-stores — see section 3 and the loops CSV), per-release rows in
+clean-store scope measures 0.9643 with exceptions on 5 further
+stores — see section 3 and the loops CSV; 2026-11-10 #35: was
+0.9629), per-release rows in
 `facet-semantics-claims.csv`.
 
 ## Unknowns / next questions (G4 pointers)

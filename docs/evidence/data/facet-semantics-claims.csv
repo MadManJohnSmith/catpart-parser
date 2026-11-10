@@ -33,7 +33,7 @@ F2_lex_mapping,R17,39,4,0.103
 F2_lex_mapping,R18,29,1,0.034
 F2_lex_mapping,R19,504,16,0.032
 F2_lex_mapping,R20,151,23,0.152
-F2_lex_mapping,R21,238,24,0.101
+F2_lex_mapping,R21,238,23,0.097
 F2_lex_mapping,R23,7,1,0.143
 F2_lex_mapping,R24,16,0,0.000
 F2_lex_mapping,R25,1,0,0.000
@@ -47,7 +47,7 @@ F2w_walk_control,R17,39,1,0.026
 F2w_walk_control,R18,29,0,0.000
 F2w_walk_control,R19,504,0,0.000
 F2w_walk_control,R20,151,2,0.013
-F2w_walk_control,R21,238,2,0.008
+F2w_walk_control,R21,238,1,0.004
 F2w_walk_control,R23,7,0,0.000
 F2w_walk_control,R24,16,0,0.000
 F2w_walk_control,R25,1,0,0.000
@@ -61,7 +61,7 @@ F3_strip_law_4a42,R17,39,4,0.103
 F3_strip_law_4a42,R18,29,1,0.034
 F3_strip_law_4a42,R19,504,16,0.032
 F3_strip_law_4a42,R20,151,23,0.152
-F3_strip_law_4a42,R21,238,24,0.101
+F3_strip_law_4a42,R21,238,23,0.097
 F3_strip_law_4a42,R23,7,1,0.143
 F3_strip_law_4a42,R24,16,0,0.000
 F3_strip_law_4a42,R25,1,0,0.000
@@ -75,7 +75,7 @@ F4_polygon_law_4c,R17,39,0,0.000
 F4_polygon_law_4c,R18,29,0,0.000
 F4_polygon_law_4c,R19,504,2,0.004
 F4_polygon_law_4c,R20,151,0,0.000
-F4_polygon_law_4c,R21,238,1,0.004
+F4_polygon_law_4c,R21,238,0,0.000
 F4_polygon_law_4c,R23,7,0,0.000
 F4_polygon_law_4c,R24,16,0,0.000
 F4_polygon_law_4c,R25,1,0,0.000
@@ -89,7 +89,7 @@ F5_winding_ccw,R17,39,5,0.128
 F5_winding_ccw,R18,29,1,0.034
 F5_winding_ccw,R19,504,16,0.032
 F5_winding_ccw,R20,151,23,0.152
-F5_winding_ccw,R21,238,25,0.105
+F5_winding_ccw,R21,238,23,0.097
 F5_winding_ccw,R23,7,1,0.143
 F5_winding_ccw,R24,16,0,0.000
 F5_winding_ccw,R25,1,0,0.000
