@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/MadManJohnSmith/catpart-parser/main/src/catpart/schema/export-summary-v1.json",
+  "title": "catpart-export output, schema v1",
+  "description": "Version-1 summary emitted by `catpart-export <file>` on success (ticket #32), alongside the binary little-endian PLY it writes. The summary describes the decoded CATStdCont nested-store geometry (docs/evidence/2026-11-09-nested-store.md G1, 2026-11-09-vertex-pool.md G2, 2026-11-09-facet-semantics.md G3): the vertex pool in walk order, the triangles decoded under G3's pinned primitive semantics (0x4a/0x42 triangle strips with the alternating flip and phase reset per loop, 0x4c closed polygons fan-triangulated from the first corner, lexicographic-rank references, CCW winding preserved as decoded). Failure is not a summary: classified errors exit nonzero with an error_class JSON line on stderr (missing-geometry-store / undecoded-variant / malformed-*). Evolution is additive within a schema version: consumers must ignore properties they do not know.",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1,
+      "description": "Version of this schema. Bumped only by a breaking output change; additive changes keep the version."
+    },
+    "vertex_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of PLY vertices: the decoded pool (all 01 06 pool groups flattened in body order, G2 P1g/P2g; 15-byte records [05 08 01][f32le xyz])."
+    },
+    "triangle_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of PLY faces: the decoded triangles after G3's degenerate-skip convention (F7). 0 for a vertices-only export (the G2 P7 pool-without-connectivity family, warning class no-facet-records)."
+    },
+    "bounding_box": {
+      "type": "object",
+      "properties": {
+        "min": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 3,
+          "maxItems": 3,
+          "description": "Pool coordinate minimum per axis (x, y, z)."
+        },
+        "max": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 3,
+          "maxItems": 3,
+          "description": "Pool coordinate maximum per axis (x, y, z)."
+        }
+      },
+      "required": ["min", "max"],
+      "additionalProperties": true,
+      "description": "The pool's coordinate extents (G2 P10: every pool-carrying part has a non-degenerate bbox)."
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "class": {
+            "type": "string",
+            "enum": [
+              "unresolved-facet-family",
+              "degenerate-triangles-skipped",
+              "open-shell",
+              "unused-pool-vertices",
+              "no-facet-records"
+            ],
+            "description": "Warning class. unresolved-facet-family: facet records outside the pinned families (0x41/0x44/0x49/0x4b/0x4e, G3 open questions 3-5) or unparseable header candidates were skipped. degenerate-triangles-skipped: the G3 F7 skip convention fired (0 on every clean-store soup). open-shell: the mesh is a manifold with boundary edges (G3 F6's sheet-like open shells, legitimate geometry). unused-pool-vertices: pool positions no triangle references. no-facet-records: pool without any facet header candidate (G2 P7), exported vertices-only."
+          },
+          "detail": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Human-readable explanation citing the evidence claim."
+          }
+        },
+        "required": ["class", "detail"],
+        "additionalProperties": true
+      },
+      "description": "Non-fatal decode observations, in a fixed order (degenerate-triangles-skipped, no-facet-records, open-shell, unused-pool-vertices, unresolved-facet-family). Empty on a fully clean decode."
+    },
+    "store_ordinal": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "0-based ordinal of the exported CATStdCont block among the file's CATStdCont blocks. With several CATStdCont blocks, the first store passing the export gate wins."
+    },
+    "origin_kind": {
+      "type": "string",
+      "enum": ["v5header", "block"],
+      "description": "G1's store-origin variant: v5header for the 32-byte V5_CFV2 header variant (N1h, 1,056/1,173), block for the header-less variant (N1l, origin = block start, 12 R19 parts)."
+    },
+    "pool_group_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of decoded 01 06 pool groups in the store body (G2 P1g). The pool is flattened across groups in body order, G3's soup convention."
+    },
+    "facet_candidate_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of facet header candidates (the 01 [41-4f] . ff regex positions) in the store body."
+    },
+    "facet_record_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Number of facet records accepted by the (width, k) tiling law (G3 F1/F1w)."
+    },
+    "degenerate_triangle_count": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Degenerate strip triangles skipped at decode (repeated vertex or zero cross product, G3 F7; 0 on every clean-store soup)."
+    },
+    "mesh": {
+      "type": "object",
+      "properties": {
+        "edge_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Distinct undirected edges of the decoded triangles."
+        },
+        "manifold": {
+          "type": "boolean",
+          "description": "No edge used more than twice (G3 F6: 76/76 clean-store soups). Vacuously true at 0 faces."
+        },
+        "closed": {
+          "type": "boolean",
+          "description": "Every edge used exactly twice (G3 F6: 66/76 clean-store soups; false marks the sheet-like open shells, warning class open-shell). Vacuously true at 0 faces."
+        },
+        "oriented": {
+          "type": "boolean",
+          "description": "Each edge used once per direction (G3 F6: 66/66 of the closed soups; the winding law F5 preserved). Vacuously true at 0 faces."
+        },
+        "boundary_edge_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Edges used exactly once (0 on closed solids)."
+        }
+      },
+      "required": ["edge_count", "manifold", "closed", "oriented", "boundary_edge_count"],
+      "additionalProperties": true,
+      "description": "Mesh invariants over the decoded triangles (G3 soup_stats measures)."
+    }
+  },
+  "required": [
+    "schema_version",
+    "vertex_count",
+    "triangle_count",
+    "bounding_box",
+    "warnings",
+    "store_ordinal",
+    "origin_kind",
+    "pool_group_count",
+    "facet_candidate_count",
+    "facet_record_count",
+    "degenerate_triangle_count",
+    "mesh"
+  ],
+  "additionalProperties": true
+}

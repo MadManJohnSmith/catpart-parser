@@ -32,6 +32,7 @@ Issues = "https://github.com/MadManJohnSmith/catpart-parser/issues"
 [project.scripts]
 catpart-inspect = "catpart.cli:main_inspect"
 catpart-fitness = "catpart.cli:main_fitness"
+catpart-export = "catpart.cli:main_export"
 
 [project.optional-dependencies]
 test = ["pytest>=8.0"]

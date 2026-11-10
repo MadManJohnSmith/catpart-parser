@@ -4,9 +4,10 @@ The schemas ship as package data inside this subpackage; tests and the
 fitness runner load them through :func:`load_schema` so every consumer
 validates against the same committed file. Names are ``v1`` (the current
 ``catpart-inspect`` output, ticket #23; ``v0`` stays committed as the
-contract for previously emitted reports) and ``fitness-report-v0`` /
+contract for previously emitted reports), ``fitness-report-v0`` /
 ``fitness-history-row-v0`` (the two ``catpart-fitness`` artifacts,
-ticket #14).
+ticket #14) and ``export-summary-v1`` (the ``catpart-export`` summary,
+ticket #32).
 
 Evolution rule: output changes are additive within a schema version —
 consumers must ignore properties they do not know. That is why every

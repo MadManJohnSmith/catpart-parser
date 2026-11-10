@@ -24,6 +24,17 @@ exit 2 via argparse convention.
 catpart-fitness follows the same convention: exit 0 for a completed run
 (the acceptance verdict is data on the history row, not a process
 status), 1 on runtime failures, 2 on usage errors.
+catpart-export (ticket #32, the Phase 4 vertical build slice) writes a
+binary little-endian PLY of the CATStdCont nested store's decoded
+geometry (G1/G2/G3 model, :mod:`catpart.geometry`) and emits a
+schema-versioned JSON summary (``export-summary-v1``) to stdout. Every
+failure exits 1 with one machine-readable JSON line on stderr —
+``{"error_class": ..., "detail": ...}`` — whose classes follow the
+fitness classification convention (kebab-case classes, evidence-citing
+detail): ``missing-geometry-store``, ``undecoded-variant``,
+``malformed-store-header`` / ``malformed-pool-group`` /
+``malformed-pool-vertex``, plus ``unreadable-file`` / ``io-error`` for
+path-level failures; usage errors exit 2.
 """
 
 from __future__ import annotations
@@ -35,6 +46,7 @@ import sys
 from pathlib import Path
 
 from catpart.containers import detect_kind, parse_container_table
+from catpart.geometry import ExportError, build_export
 from catpart.header import HEADER_SIZE, parse_header
 from catpart.identity import parse_document_name
 from catpart.trailer import parse_trailer
@@ -167,5 +179,53 @@ def main_fitness(argv: list[str] | None = None) -> int:
         print(f"catpart-fitness: error: {exc}", file=sys.stderr)
         return 1
     json.dump(row, sys.stdout, indent=2)
+    sys.stdout.write("\n")
+    return 0
+
+
+def main_export(argv: list[str] | None = None) -> int:
+    """Entry point of the ``catpart-export`` console script (ticket #32).
+
+    Exports the CATStdCont nested store's geometry as a binary
+    little-endian PLY (default output path: the input file with the
+    ``.ply`` suffix, overridable with ``-o``) and prints the
+    schema-versioned summary JSON to stdout. Exit codes: 0 on success,
+    1 on classified export failures (one JSON ``{"error_class": ...,
+    "detail": ...}`` line on stderr), 2 on usage errors (argparse).
+    """
+    parser = argparse.ArgumentParser(
+        prog="catpart-export",
+        description=(
+            "Export the CATStdCont nested store's decoded geometry of a "
+            "CATIA V5 .CATPart/.CATProduct file as a binary little-endian "
+            "PLY (vertex pool + triangles, G1/G2/G3 decode model) and emit "
+            "a schema-versioned JSON summary (export-summary-v1) to "
+            "stdout. Classified failures (missing-geometry-store, "
+            "undecoded-variant, malformed-*) exit 1 with a machine-"
+            "readable error_class JSON line on stderr."
+        ),
+    )
+    parser.add_argument(
+        "file", type=Path, help="path to a .CATPart/.CATProduct file"
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        type=Path,
+        default=None,
+        help="output PLY path (default: the input file with the .ply suffix)",
+    )
+    args = parser.parse_args(argv)
+    out_path = args.output if args.output is not None else args.file.with_suffix(".ply")
+    try:
+        summary = build_export(args.file, out_path)
+    except ExportError as exc:
+        json.dump(
+            {"error_class": exc.error_class, "detail": exc.detail},
+            sys.stderr,
+        )
+        sys.stderr.write("\n")
+        return 1
+    json.dump(summary, sys.stdout, indent=2)
     sys.stdout.write("\n")
     return 0
