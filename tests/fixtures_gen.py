@@ -124,7 +124,13 @@ KIND_RECORDS: dict[str, tuple[tuple[str, str], ...]] = {
     ),
 }
 
-VALID_VARIANTS = (None, "dual-region", "geometry", "geometry-open-shell")
+VALID_VARIANTS = (
+    None,
+    "dual-region",
+    "geometry",
+    "geometry-open-shell",
+    "geometry-composite-law",
+)
 CORRUPTED_VARIANTS = (
     "bad-magic",
     "truncated-table",
@@ -139,6 +145,8 @@ CORRUPTED_VARIANTS = (
     "geometry-nan-coords",
     "geometry-out-of-range-refs",
     "geometry-truncated-pool",
+    # Composite-law variants (G6 stage 2c, #34).
+    "geometry-composite-law-nonplanar",
 )
 GEOMETRY_VARIANTS = ("geometry", "geometry-open-shell") + (
     "geometry-bad-nested-magic",
@@ -147,6 +155,10 @@ GEOMETRY_VARIANTS = ("geometry", "geometry-open-shell") + (
     "geometry-nan-coords",
     "geometry-out-of-range-refs",
     "geometry-truncated-pool",
+)
+COMPOSITE_VARIANTS = (
+    "geometry-composite-law",
+    "geometry-composite-law-nonplanar",
 )
 
 # --- nested-store geometry (G4, #32) -----------------------------------
@@ -376,6 +388,171 @@ def _geometry_box_edges_lex() -> tuple[tuple[int, int], ...]:
     )
 
 
+# --- composite-store fixtures (G6 stage 2c, #34) -------------------------
+#
+# A synthetic composite store (small form) whose list node carries a
+# point region encoded under the refined suffix-after-LCP law (implicit
+# initial x = 0.0, 2-bit table of ceil(elem/4)+1 bytes) and whose facet
+# records reference the merged element space — the pool re-listed
+# verbatim plus the extras, sorted lexicographically.  curve entries =
+# 0 (element_count == node points), so the shift profile is forced and
+# the mapping is unique.
+
+COMPOSITE_POOL_WALK = (
+    (0.0, 10.0, 0.0),
+    (20.0, 10.0, 0.0),
+    (0.0, 110.0, 0.0),
+    (20.0, 110.0, 0.0),
+    (0.0, 110.0, 60.0),
+    (20.0, 110.0, 60.0),
+    (0.0, 10.0, 60.0),
+    (20.0, 10.0, 60.0),
+)
+
+#: The merged element space: the pool corners plus the four z-edge
+#: midpoints, lexicographically sorted (the node list itself — the
+#: pool is absorbed, re-listed verbatim, curve entries 0).
+COMPOSITE_POINTS = (
+    (0.0, 10.0, 0.0),
+    (0.0, 10.0, 30.0),
+    (0.0, 10.0, 60.0),
+    (0.0, 110.0, 0.0),
+    (0.0, 110.0, 30.0),
+    (0.0, 110.0, 60.0),
+    (20.0, 10.0, 0.0),
+    (20.0, 10.0, 30.0),
+    (20.0, 10.0, 60.0),
+    (20.0, 110.0, 0.0),
+    (20.0, 110.0, 30.0),
+    (20.0, 110.0, 60.0),
+)
+
+#: The six box faces as facet records over the merged positions (the
+#: same record shapes as the clean box: 4 x 0x4a strips + 2 x 0x4c
+#: polygons, 12 triangles, a closed oriented manifold; every triangle
+#: winds CCW against its outward normal).
+COMPOSITE_FACES = (
+    (0x4A, (0.0, 0.0, -1.0), (6, 0, 9, 3)),
+    (0x4A, (0.0, 1.0, 0.0), (11, 9, 5, 3)),
+    (0x4A, (0.0, 0.0, 1.0), (2, 8, 5, 11)),
+    (0x4A, (0.0, -1.0, 0.0), (6, 8, 0, 2)),
+    (0x4C, (-1.0, 0.0, 0.0), (0, 2, 5, 3)),
+    (0x4C, (1.0, 0.0, 0.0), (6, 9, 11, 8)),
+)
+
+COMPOSITE_EDGES = (
+    (0, 3), (3, 9), (9, 6), (6, 0),
+    (2, 5), (5, 11), (11, 8), (8, 2),
+    (0, 2), (3, 5), (6, 8), (9, 11),
+)
+
+
+def _composite_point_region(points) -> bytes:
+    """Suffix-after-LCP encoding of a lex-nondecreasing point list with
+    the implicit initial x = 0.0 (the first point writes [x][y][z] only
+    when its x differs from 0, else [y][z])."""
+    words: list[bytes] = []
+    px: float | None = 0.0
+    py: float | None = None
+    for x, y, z in points:
+        if px is None or x != px:
+            words.append(struct.pack("<fff", x, y, z))
+        elif py is None or y != py:
+            words.append(struct.pack("<ff", y, z))
+        else:
+            words.append(struct.pack("<f", z))
+        px, py = x, y
+    return b"".join(words)
+
+
+def _composite_node_payload(elem_decl: int, points) -> bytes:
+    """The list node's payload: 29-B header + token + declared counts
+    (P1g) + zero block + the 2-bit table (ceil(elem/4)+1 B) + the point
+    region + a trailing region closed by the tail mark."""
+    header = (
+        struct.pack("<I", 1)  # 00 00 00 01
+        + struct.pack("<I", 7)  # node id
+        + struct.pack("<I", 0)  # flags
+        + struct.pack("<fff", 10.0, 60.0, 30.0)  # origin
+        + struct.pack("<I", 3)  # kind
+        + b"\x00"  # trailing header byte (the 29-B corpus header)
+    )
+    body = header
+    body += LIST_TOKEN_MARKER
+    counts = bytes([elem_decl]) if elem_decl < 0xFF else b"\xff" + struct.pack(
+        "<I", elem_decl
+    )
+    counts2 = bytes([elem_decl]) if elem_decl < 0xFF else b"\xff" + struct.pack(
+        "<I", elem_decl
+    )
+    body += counts + counts2
+    body += b"\x00\x00\x00\x00"  # the zero block
+    body += b"\x00" * ((elem_decl + 3) // 4 + 1)  # the 2-bit table (U1)
+    body += _composite_point_region(points)
+    body += b"\x00\x00\x00\x00" + b"\x00\x04\x02\x0a" + b"\x02"  # trailing
+    return body
+
+
+LIST_TOKEN_MARKER = b"\xff\xff\x02\x00\x01"
+
+
+def _composite_store(variant: str) -> bytes:
+    """A small-form composite store: pool + edge group + the list node
+    (point region under the refined law) + facet records over the
+    merged element space."""
+    faces = list(COMPOSITE_FACES)
+    if variant == "geometry-composite-law-nonplanar":
+        # The law does not hold: the z=0 record's normal says (0, 0, -1)
+        # but its refs span z = 0 and z = 60 — no shift profile makes
+        # every normal-carrying loop planar.
+        faces[0] = (0x4A, (0.0, 0.0, -1.0), (11, 0, 6, 3))
+    points = COMPOSITE_POINTS
+    node_payload = _composite_node_payload(len(points), points)
+    body_parts = [
+        NESTED_FULL_WRAP
+        + NESTED_POOL_SUBKIND
+        + bytes([len(COMPOSITE_POOL_WALK)])
+        + b"".join(
+            NESTED_VREC + struct.pack("<fff", *v) for v in COMPOSITE_POOL_WALK
+        ),
+        # The composite marker: an 01 02 edge group whose records are
+        # the box's 12 edges as merged-space positions (F8/E2).
+        NESTED_FULL_WRAP
+        + NESTED_EDGE_SUBKIND
+        + bytes([len(COMPOSITE_EDGES)])
+        + b"".join(
+            b"\x02\x02" + struct.pack(">BB", a, b) for a, b in COMPOSITE_EDGES
+        ),
+        b"\x04\x04\xfd\xff" + node_payload,
+    ]
+    for marker, normal, refs in faces:
+        body_parts.append(_facet_record(marker, normal, refs))
+    body = b"".join(body_parts)
+
+    catalog_len = NESTED_CATALOG_LEN
+    d8n = 32 + len(body)
+    header = (
+        MAGIC
+        + struct.pack(">II", d8n, catalog_len)
+        + b"\xff" * 8
+        + b"\x00" * 8
+    )
+    catalog = NESTED_CB0001 + struct.pack(
+        ">7I", 1, 0, 0xE7, 0xE7, 0, 0, catalog_len
+    ) + TRAILER_MARKER
+    tail126 = registration_block() + b"\x00" * (126 - 41)
+    return header + body + catalog + tail126
+
+
+def _composite_payload(variant: str) -> bytes:
+    preamble = 250 - len(storage_property_block(b"CATStdCont", b"CATContainer"))
+    return (
+        storage_property_block(b"CATStdCont", b"CATContainer")
+        + b"\x00" * preamble
+        + _composite_store(variant)
+    )
+
+
 def _geometry_store(variant: str) -> bytes:
     """The nested V5_CFV2 stream store: 32-byte header (big-endian
     dword8 = catalog offset, dword12 = catalog tail length, N2), body,
@@ -485,6 +662,17 @@ def build_fixture(
         raise ValueError(f"unknown kind: {kind!r}")
     if variant not in VALID_VARIANTS + CORRUPTED_VARIANTS:
         raise ValueError(f"unknown variant: {variant!r}")
+
+    if variant in COMPOSITE_VARIANTS:
+        # Composite-store payload (G6 stage 2c #34): the store bytes are
+        # a pure function of the variant; the same nesting as the
+        # geometry fixtures.
+        return build_catpart(
+            header_dword=0x0000_0100,
+            payload=_composite_payload(variant),
+            pad_before_table=0x600 + (seed % 8) * 8,
+            identity_name2=document_name,
+        )
 
     if variant in GEOMETRY_VARIANTS:
         # Nested-store payload (G4 #32): the seed drives only the table

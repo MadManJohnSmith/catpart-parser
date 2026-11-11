@@ -227,14 +227,15 @@ def test_composite_store_keeps_width1_gap_behavior() -> None:
 
 # --- the exporter plumbing (the flag through the export seam) ---------------
 
-#: The composite-space classification, captured verbatim at main
-#: 781d1fa (2026-11-10): the exporter's undecoded-variant raise
-#: precedes the facet scan, so the class bound cannot move it.
+#: The composite-space classification.  At main 781d1fa (2026-11-10)
+#: the exporter's undecoded-variant raise preceded the facet scan; the
+#: stage-2c integration (#34, 2026-11-11) decodes composite stores
+#: under the recovered merge law instead, so a composite body without a
+#: token-bearing list node fails with the node gap (the store this
+#: body builds carries no node).
 COMPOSITE_DETAIL = (
-    "composite index space: an 01 02 edge group and/or a trailer-opener "
-    "wrapper is present, so facet references run beyond the pool (G3 "
-    "claim F8, open question 1 \u2014 the composite numbering is not "
-    "decoded; no guessing)"
+    "composite store without a token-bearing list node "
+    "(N1: 939/939 composite stores carry one)"
 )
 
 

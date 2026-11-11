@@ -30,6 +30,7 @@ import mmap
 
 from catpart.geometry.errors import ExportError
 from catpart.geometry import facets, mesh, pool, ply, store
+from catpart.geometry import composite
 
 EXPORT_SCHEMA_VERSION = 1
 
@@ -118,13 +119,13 @@ def _export_store(data, span, ordinal: int) -> tuple[dict, list, list]:
     """Decode one store span through G3's export gate."""
     groups, kinds = pool.scan_pool_groups(data, span.body_lo, span.body_hi)
     if pool.has_composite_space(kinds):
-        raise ExportError(
-            "undecoded-variant",
-            "composite index space: an 01 02 edge group and/or a "
-            "trailer-opener wrapper is present, so facet references run "
-            "beyond the pool (G3 claim F8, open question 1 — the "
-            "composite numbering is not decoded; no guessing)",
-        )
+        # G6 stage 2c (#34): composite stores decode under the recovered
+        # merge law (the pool + the list node's decoded points, M2b).
+        # The decode is fail-closed: a store the law does not cover
+        # keeps its undecoded-variant classification with the specific
+        # gap named (small-form-only; big-form = U3, unabsorbed pools,
+        # law-failing records).
+        return _export_composite_store(data, span, ordinal, groups, kinds)
     flat = [v for g in groups for v in g.vertices]
     if not flat:
         raise ExportError(
@@ -134,14 +135,14 @@ def _export_store(data, span, ordinal: int) -> tuple[dict, list, list]:
         )
     lex = facets.lex_rank_map(flat)
     # The store-width context is bounded to the clean store class (#35,
-    # 2026-11-10): pass the class knowledge this decode already performed
-    # (the composite-space gate above) down to the scanner. Composite
-    # stores never reach this line — they raised undecoded-variant.
+    # 2026-11-10): composite stores never reach this line — they took
+    # the composite path above — so the class knowledge this decode
+    # already performed is always "clean" here.
     scan = facets.scan_facets(
         data,
         span.body_lo,
         span.body_hi,
-        clean_store=not pool.has_composite_space(kinds),
+        clean_store=True,
     )
     beyond = max((max(rec.refs, default=-1) for rec in scan.records), default=-1)
     if beyond >= len(flat):
@@ -244,6 +245,102 @@ def _export_store(data, span, ordinal: int) -> tuple[dict, list, list]:
     }
     _self_check(summary)
     return summary, flat, list(soup.triangles)
+
+
+def _export_composite_store(data, span, ordinal: int, groups, kinds):
+    """Decode one composite store span under the recovered merge law.
+
+    The G6 stage-2c integration (#34, M2b): the element space is the
+    lex-sorted merge of the pool and the list node's decoded point
+    region; facet references resolve through the monotone-shift loop
+    mapping the stage-2b plane law operationalizes.  Vertices are the
+    decoded node points (the pool is re-listed verbatim on every store
+    the law decodes).  Fail-closed: any law gap raises
+    ``undecoded-variant`` with the specific reason from
+    :func:`composite.decode_composite_store`.
+    """
+    points, triangles, degenerate, info = composite.decode_composite_store(
+        data, span, groups, kinds
+    )
+    stats = mesh.mesh_stats(list(triangles))
+    warnings = []
+    if degenerate:
+        warnings.append(
+            {
+                "class": WARN_DEGENERATE,
+                "detail": f"{degenerate} degenerate strip triangles "
+                "skipped (G3 F7 export convention, composite decode)",
+            }
+        )
+    skipped_markers: dict[int, int] = {}
+    for rec in composite.parse_composite_facets(data, span.body_lo, span.body_hi)[0]:
+        if rec[1] not in facets.EXPORTED_MARKERS:
+            skipped_markers[rec[1]] = skipped_markers.get(rec[1], 0) + 1
+    if skipped_markers:
+        warnings.append(
+            {
+                "class": WARN_UNRESOLVED_FAMILY,
+                "detail": "facet records of families whose primitive "
+                "reading G3 has not pinned: "
+                f"{_marker_names(skipped_markers)} (G3 open questions "
+                "3-5, composite body)",
+            }
+        )
+    if not triangles:
+        warnings.append(
+            {
+                "class": WARN_NO_FACETS,
+                "detail": "composite element space decoded without "
+                "exportable facet records; vertices exported without "
+                "faces (the node point region decodes under the "
+                "recovered law, the facet loops do not map)",
+            }
+        )
+    if triangles and stats.boundary_edges:
+        warnings.append(
+            {
+                "class": WARN_OPEN_SHELL,
+                "detail": f"{stats.boundary_edges} boundary edges: the "
+                "mesh is a manifold but not closed (G3 F6: sheet-like "
+                "open shells are legitimate geometry)",
+            }
+        )
+    if triangles:
+        unused = len(points) - mesh.used_vertex_count(list(triangles), len(points))
+        if unused:
+            warnings.append(
+                {
+                    "class": WARN_UNUSED_VERTICES,
+                    "detail": f"{unused} of {len(points)} element-space "
+                    "vertices are not referenced by any exported triangle",
+                }
+            )
+
+    bbox_min, bbox_max = mesh.bounding_box(points)
+    summary = {
+        "schema_version": EXPORT_SCHEMA_VERSION,
+        "vertex_count": len(points),
+        "triangle_count": len(triangles),
+        "bounding_box": {"min": bbox_min, "max": bbox_max},
+        "warnings": warnings,
+        "store_ordinal": ordinal,
+        "origin_kind": span.origin_kind,
+        "pool_group_count": len(groups),
+        "facet_candidate_count": info["facet_candidates"],
+        "facet_record_count": info["facet_records"],
+        "degenerate_triangle_count": degenerate,
+        "mesh": {
+            "edge_count": stats.edge_count,
+            "manifold": stats.manifold,
+            "closed": stats.closed,
+            "oriented": stats.oriented,
+            "boundary_edge_count": stats.boundary_edges,
+        },
+        # additive, composite-only (consumers ignore unknown properties):
+        "composite": info,
+    }
+    _self_check(summary)
+    return summary, points, list(triangles)
 
 
 def _marker_names(skipped: dict[int, int]) -> str:

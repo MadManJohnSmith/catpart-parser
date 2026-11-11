@@ -251,16 +251,23 @@ def test_corrupted_variants_classified(
 
 
 def test_undecoded_variants_name_the_open_question(tmp_path: Path, capsys) -> None:
-    # The composite-space and refs-beyond-pool classes cite G3's open
-    # items 1-2 in the detail (the ticket's "no guessing" rule).
-    for variant in ("geometry-composite-index-space", "geometry-out-of-range-refs"):
+    # The refs-beyond-pool class cites G3's open item 2 in the detail
+    # (the ticket's "no guessing" rule).  The composite-space class
+    # cites its own gap since the stage-2c integration (#34,
+    # 2026-11-11): this fixture's edge group carries no list node, so
+    # the failure names the missing N1 node — the law decodes composite
+    # stores that DO carry one.
+    for variant, marker in (
+        ("geometry-composite-index-space", "token-bearing list node"),
+        ("geometry-out-of-range-refs", "open question"),
+    ):
         code, captured, _, _ = run_export(
             tmp_path, capsys, build_fixture("part", seed=5, variant=variant)
         )
         assert code == 1
         error = json.loads(captured.err)
         assert error["error_class"] == "undecoded-variant"
-        assert "open question" in error["detail"]
+        assert marker in error["detail"]
 
 
 def test_plain_fixture_has_no_geometry_store(tmp_path: Path, capsys) -> None:
