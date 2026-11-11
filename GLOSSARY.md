@@ -90,3 +90,27 @@ comparable level's Dev rose, so an L2-only improvement with a flat
 headline is acceptable (reason recorded); the first L2-bearing run
 against a pre-L2 baseline keeps L1's protection.
 _Avoid_: acceptance test, gate
+
+### Viewer
+
+**Viewer**:
+The web application that parses and renders CATIA V5 files entirely
+client-side (the Port plus a render layer), hosted static on gh-pages.
+_Avoid_: web app, frontend
+
+**Port**:
+The Rust→WASM implementation of the decode pipeline. The Python package
+stays the reference implementation and the fitness seam (ADR-0001).
+_Avoid_: rewrite, translation
+
+**Fidelity**:
+The property that the Port's decode output is identical to the Python
+reference's over the Corpus (mesh + JSON); measured locally on the
+corpus machine, never in CI (ADR-0003).
+_Avoid_: parity, equivalence
+
+**Documented negative**:
+A recorded finding that something is absent or unreachable in the
+Corpus, with byte evidence and a reproduction command; it closes a
+claim or a Construct as definitively as a decode does.
+_Avoid_: known limitation, TODO
