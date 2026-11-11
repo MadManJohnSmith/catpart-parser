@@ -71,6 +71,9 @@ files:
   CATIA installers. Every claim traces to byte evidence with a
   reproduction command.
 - Corpus binaries never committed; evidence notes + CSVs are.
+- Before every push, run `scripts/check.sh` (ruff + pytest -q, the
+  local copy of ci.yml; ticket #38, retro 2026-11-11). CI remains the
+  authority; the gate keeps a red run from reaching main post-hoc.
 - Decisions are final (ADRs + issue map #1). If evidence contradicts a
   documented assumption, record the correction (precedent: B1's
   +12 -> +18) instead of massaging.
