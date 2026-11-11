@@ -8,6 +8,8 @@ dist/
 build/
 
 # Corpus binaries are never committed — only their manifests.
+# (the bare form covers the read-only symlink some checkouts use)
+corpus
 corpus/
 *.CATPart
 *.CATProduct

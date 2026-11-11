@@ -47,6 +47,7 @@ WARN_DEGENERATE = "degenerate-triangles-skipped"
 WARN_OPEN_SHELL = "open-shell"
 WARN_UNUSED_VERTICES = "unused-pool-vertices"
 WARN_NO_FACETS = "no-facet-records"
+WARN_CURVE_ENTRY = "curve-entry-loops-unexported"
 
 
 def build_export(path, out_path) -> dict:
@@ -327,16 +328,21 @@ def _export_store(data, span, ordinal: int) -> tuple[dict, list, list]:
 
 
 def _export_composite_store(data, span, ordinal: int, groups, kinds):
-    """Decode one composite store span under the recovered merge law.
+    """Decode one composite store span under the identity law.
 
-    The G6 stage-2c integration (#34, M2b): the element space is the
-    lex-sorted merge of the pool and the list node's decoded point
-    region; facet references resolve through the monotone-shift loop
-    mapping the stage-2b plane law operationalizes.  Vertices are the
-    decoded node points (the pool is re-listed verbatim on every store
-    the law decodes).  Fail-closed: any law gap raises
+    The G6 stage-3d integration (#34, 2026-11-11): the list node's
+    point region decodes through the deterministic 2-bit table walk
+    (both forms), facet/edge references resolve as 0-based element
+    indices in region order (M2b identity — no sigma search; the
+    stage-2c shift-profile solver is superseded), and vertices are the
+    written points (the pool is re-listed verbatim on every store the
+    law decodes).  Fail-closed: any law gap raises
     ``undecoded-variant`` with the specific reason from
-    :func:`composite.decode_composite_store`.
+    :func:`composite.decode_composite_store` (layout, walk-exact,
+    non-finite coordinates, unabsorbed pool, references beyond the
+    element space).  Loops referencing skip slots (curve entries, U4)
+    are not exported — their coordinates are not pinned — and surface
+    as the ``curve-entry-loops-unexported`` warning.
     """
     points, triangles, degenerate, info = composite.decode_composite_store(
         data, span, groups, kinds
@@ -351,10 +357,18 @@ def _export_composite_store(data, span, ordinal: int, groups, kinds):
                 "skipped (G3 F7 export convention, composite decode)",
             }
         )
-    skipped_markers: dict[int, int] = {}
-    for rec in composite.parse_composite_facets(data, span.body_lo, span.body_hi)[0]:
-        if rec[1] not in facets.EXPORTED_MARKERS:
-            skipped_markers[rec[1]] = skipped_markers.get(rec[1], 0) + 1
+    if info.get("loops_curve_entry"):
+        warnings.append(
+            {
+                "class": WARN_CURVE_ENTRY,
+                "detail": f"{info['loops_curve_entry']} facet loops "
+                "reference skip slots (curve entries): their coordinates "
+                "live in the curve records (U4, open) so those loops are "
+                "not exported — no guessing; the store's other loops "
+                "export under the identity mapping",
+            }
+        )
+    skipped_markers = info.get("skipped_markers") or {}
     if skipped_markers:
         warnings.append(
             {

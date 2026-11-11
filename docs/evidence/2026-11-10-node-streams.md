@@ -438,6 +438,80 @@ are the known unabsorbed variant (the node list misses pool
 vertices); U4 (curve-entry coordinates) stays open with the skip-slot
 bracketing as the new handle.
 
+## Stage 3d: the exporter re-integrated under the identity law (2026-11-11, #34)
+
+Stage 3d replaces the stage-2c exporter integration
+(`src/catpart/geometry/composite.py`, `export.py`) with the stage-3b
+law.  The deterministic table walk decodes BOTH forms (the big-form
+size rejection is gone — one table covers small and big), facet/edge
+references resolve as 0-based element indices in region order, and
+triangles index the written points (the exported vertex list) through
+the written rank.  The stage-2c sigma solver
+(`solve_shift_profile`, the monotone shift-profile CSP) and its
+ambiguity path are REMOVED, with the dated supersession note in the
+module docstring (M2b-element-index): the profiles were artifacts of
+matching refs onto written-point indices.  The stage-2c fail-closed
+ladder is refined, not abandoned — a store exports only when the walk
+is exact (layout fits, the walk consumes exactly the declared write
+count, every coordinate finite and plausible), the pool is absorbed,
+and the gated families' references resolve in-bounds; everything else
+keeps `undecoded-variant` with the specific gap named (layout,
+walk-exact — the U3-variant family's signature, non-finite
+coordinates, unabsorbed pool, refs beyond the element space, no
+token-bearing list node).
+
+Corpus-free fixtures pin the law's shapes (tests/fixtures_gen.py,
+both forms with real 2-bit tables): a 1,000-element grid exercising
+the ff-escape write count and u16be refs; a slanted corner quad
+(coplanar vs the stored normal — no axis-constant coordinate; the
+axis-constant reading rejected exactly this shape); loops referencing
+skip slots; and the no-repeated-refs width rule (a u8 misread that
+tiles exactly but repeats refs inside the loop loses to u16be).
+
+- **Curve entries are not guessed (U4):** a loop referencing a skip
+  slot cannot triangulate exactly (the entry's coordinates live in
+  the curve records, open), so the exporter skips exactly those loops
+  and names the gap — the new `curve-entry-loops-unexported` warning
+  class (additive schema extension); the store's other loops export.
+- **The stage-2c/3a explosion dissolves.**  The sigma-search hotspots
+  of the stage-2c exporter — 5e5e9258 45.3 s, 5f63b708 36.1 s,
+  29a1c8de/b6a5ecc5/4a325539/688f51d2 29.5-30.6 s, all failing
+  undecoded-variant after the burn — resolve in <= 0.003 s under the
+  identity decode (fail-closed at the absorption gate, unabsorbed
+  variant with the specific gap).  05208403 (the >300 s sigma-search
+  observation of the stage-2c/3a analysis) carries NO validated
+  nested store in its CATStdCont region under the shipped code:
+  `missing-geometry-store` in 0.000 s, the sigma search never runs —
+  the identity decode cannot explode on it either.  Corpus-wide the
+  slowest export is 1.37 s (a 236,385-element store).
+- **Corpus A/B (export seam, both censuses at this base's locator
+  state; `scripts/triage/ab_identity_export.py` →
+  `docs/evidence/data/identity-export-files.csv`):** the decode
+  reproduces the stage-3b rates exactly through the seam — big 464/654
+  decoded (451 with exported records + 13 vertices-only; 98
+  walk-exact + 92 unabsorbed fail closed) and small 213/285 (211 + 2;
+  17 walk-exact + 55 unabsorbed; the stage-3b note's audited
+  denominators 650/283 exclude the 28 audit-error stores this seam's
+  locator reaches).  Zero refs beyond the element space and zero
+  missing list nodes on every decoded store (in-bounds holds by
+  construction).  Exports 110 → 753 (composite 34 → 677); L2 gate
+  pass 109 → 686: **dev 638/1,381 (46.20%), held-out 48/61 (78.69%)**
+  — held-out L2 moves for the first time, UP.  The 76 baseline passes
+  untouched (all 109 stage-2c passes kept), and all **34 stage-2c
+  exports are preserved** (33 with identical gate outcomes, of which
+  26 identical triangle counts; 8 stores' triangle counts change —
+  the sigma mapping was the artifact the law corrects; 144cad57's
+  degenerate-gate fail resolves, fail → pass).
+- **Projected fitness arithmetic (the coordinator runs the combined
+  row; this branch does not):** dev L2 = 109 accepted + 36 stage-3a
+  recovery-clean (disjoint — those stores are among the 313
+  missing-geometry-store on this base) + 529 newly passing composite
+  stores that pass sanity = **674/1,381 (48.8%)** post-rebase;
+  measured on this base alone: 638/1,381.  Held-out: 0 → **48/61**
+  (the 61 composite stores may now decode — measured: 50 export, 48
+  pass the gate).  No-regret: held-out does not fall (it rises); L1
+  untouched (no locator or inspect change in this stage).
+
 ## Reproduction
 
 ```
@@ -452,6 +526,12 @@ row per L2 part).  Since stage 2c the decode machinery lives in
 `src/catpart/geometry/composite.py` (the exporter's integration); this
 script is its corpus runner and reports the small-form decode rates.
 Corpus binaries are not committed (corpus symlinked read-only).
+Correction (2026-11-11, stage 3d): the committed
+node-streams-files.csv is the stage-2c HISTORICAL measurement — the
+script was re-based onto the identity law (its sigma-era shift columns
+retired) and the current rates live in big-form-points-files.csv
+(stage 3b) and identity-export-files.csv (stage 3d); the historical
+CSV is not regenerated.
 
 Stage 3b adds the table-driven decode (both forms; U1/U3, 2026-11-11):
 
@@ -469,5 +549,19 @@ row per composite store: layout, walk, pool containment, N2, loop
 battery) and, with `--planes`, `big-form-planes-loops.csv` (one row
 per nonplanar loop of the walk-exact big stores: family, triangle
 count, direction classes d, class, cos1000 — deterministic,
-byte-identical across runs).  `src/` untouched — the exporter
-integration of big form is a later stage.
+byte-identical across runs).  Since stage 3d the exporter runs the
+same law in `src/catpart/geometry/composite.py` (both forms); this
+script stays the decode-level corpus runner.
+
+Stage 3d adds the export-seam A/B (2026-11-11):
+
+```
+.venv/bin/python -I scripts/triage/ab_identity_export.py
+```
+
+Outputs `docs/evidence/data/identity-export-files.csv` (committed; one
+row per part: export outcome, the runner's L2 gate verdict, the
+composite counters).  The decode rates and the fail-closed ladder
+histogram cited in the stage-3d section come from this runner plus
+the decode-level audit above; the fitness row itself stays with the
+coordinator.

@@ -53,9 +53,10 @@
               "degenerate-triangles-skipped",
               "open-shell",
               "unused-pool-vertices",
-              "no-facet-records"
+              "no-facet-records",
+              "curve-entry-loops-unexported"
             ],
-            "description": "Warning class. unresolved-facet-family: facet records of families whose primitive reading G3 has not pinned (0x41/0x44/0x49/0x4b/0x4e, open questions 3-5) and/or unparseable header candidates; where such records produce in-pool loops they still decode under the structural strip reading (G3's soup convention). degenerate-triangles-skipped: the G3 F7 skip convention fired (0 on every clean-store soup). open-shell: the mesh is a manifold with boundary edges (G3 F6's sheet-like open shells, legitimate geometry). unused-pool-vertices: pool positions no triangle references. no-facet-records: pool without any facet header candidate (G2 P7), exported vertices-only."
+            "description": "Warning class. unresolved-facet-family: facet records of families whose primitive reading G3 has not pinned (0x41/0x44/0x49/0x4b/0x4e, open questions 3-5) and/or unparseable header candidates; where such records produce in-pool loops they still decode under the structural strip reading (G3's soup convention). degenerate-triangles-skipped: the G3 F7 skip convention fired (0 on every clean-store soup). open-shell: the mesh is a manifold with boundary edges (G3 F6's sheet-like open shells, legitimate geometry). unused-pool-vertices: pool positions no triangle references. no-facet-records: pool without any facet header candidate (G2 P7), exported vertices-only. curve-entry-loops-unexported: composite loops referencing skip slots (curve entries) — their coordinates live in the curve records (U4, open, stage-3d #34 2026-11-11) so those loops are not exported; the store's other loops export."
           },
           "detail": {
             "type": "string",

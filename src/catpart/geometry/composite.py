@@ -1,71 +1,95 @@
-"""The composite index space decoded under the recovered law (G6, #34 stage 2c).
+"""The composite index space decoded under the recovered identity law (G6, #34).
 
-Integrates the stage-2b decode of the scene-graph list nodes' point
-streams into the exporter (docs/evidence/2026-11-10-node-streams.md;
-stage-2c refinements dated 2026-11-11, byte-measured on the corpus):
+Integrates the stage-3b/3d decode of the scene-graph list nodes' point
+regions into the exporter (docs/evidence/2026-11-10-node-streams.md;
+stage-3b table law dated 2026-11-11, byte-measured on the corpus):
 
-- Layout (P1, refined): the list node's payload = header + token
-  ``ff ff 02 00 01`` + the declared counts (element_count,
-  edge_ref_bound, P1g) + a zero block + a 2-bit per-element table of
-  ``ceil(element_count / 4) + 1`` bytes (U1, length measured: 32 B for
-  124 declared on 026d6726, 41 B for 160 on 0313b53d) + **the point
-  region** + a trailing region (semantics open, U2).
-- Point stream (P1, refined): a suffix-after-LCP coded point list
-  (f32le) whose initial LCP state carries **x = 0.0 implicitly** — the
-  first point is written ``[x][y][z]`` only when its x differs from 0,
-  else ``[y][z]`` (0313b53d: the region opens with the pool lex-min's
-  ``[y][z]``; 026d6726: a full write, x != 0 — one law, both forms).
-  The stream is a concatenation of **lex-nondecreasing runs**; each run
-  starts with a full ``[x][y][z]`` write and may reset x (1b1e69cd: run
-  A covers x 98980.95..99032.89, run B restarts at x 98873.89 — the
-  stream is not globally lex-sorted; the merge law's global sort is).
-- Element space (M2b): the lex-sorted merge of the pool vertices and
-  the node's decoded points (plus the curve-record points, values open
-  U4); facet and edge references are 0-based positions in that
-  sequence.  On every store the law decodes, the node list re-lists the
-  pool verbatim (pool absorbed), so the decoded points carry the
-  merge's known coordinates; the curve entries surface only as the
-  monotone shift of the loop mapping (their count is pinned:
-  element_count minus node points).
-- Loop mapping law (M2b, the validator): a facet loop's distinct refs
-  map order-preservingly onto an ascending run of decoded points
-  sharing one constant coordinate (the plane named by the record
-  normal's dominant axis, or any axis when the record carries no
-  normal), with a monotone non-negative shift (the curve entries
-  inserted before each plane point).  The shift profile is built
-  incrementally across the store's records and must stay consistent
-  (one monotone profile).  A store exports only when every
-  exported-family record decodes under this law; anything else keeps
-  its ``undecoded-variant`` classification with the specific reason
-  (fail-closed, no guessing).
+- Layout (P1t, corrected 2026-11-11 stage 3b): the list node's payload
+  = header + token ``ff ff 02 00 01`` + the declared counts
+  (element_count, edge_ref_bound, P1g) + a zero block + **the 2-bit
+  per-element table of exactly ``ceil(element_count / 4)`` bytes** + a
+  **P1g count of the region's f32 words** (1 B, ``ff`` escapes to
+  u32le) + **the point region** (count x f32) + a trailing region
+  (semantics open, U2).  The stage-2c ``+1 byte`` table span was the
+  count byte miscounted into the table.
+- Table semantics (U1, solved 2026-11-11 stage 3b): 2 bits per
+  element, LSB-first within each byte, one slot per element in region
+  order; the value is the element's write shape in f32 words:
+  **0 = ``[x][y][z]``** (3 words, an x-write/run start), **1 = skip**
+  (0 words — the curve entries: no coordinates in the region, U4),
+  **2 = ``[z]``** (1 word), **3 = ``[y][z]``** (2 words).  The initial
+  LCP state is the origin (P1i subsumed: the first write's shape comes
+  from the table like every other element's).  The walk is
+  deterministic — no DP, no probe — and consumes exactly the declared
+  write count on every store the law decodes.
+- Segments (U3, resolved for the single-table family): there are no
+  per-segment tables and no segment headers — ONE table + ONE write
+  count cover the whole region; value-0 slots delimit the x-groups,
+  and corner groups sit out of x order at their element slots.  One
+  table covers both forms (small and big differ only in size).
+- Element space (M2b, refined 2026-11-11 stage 3b): facet and edge
+  references are **0-based element indices in region order — the
+  identity**.  The element space IS the region's element sequence
+  (written points + skip slots); there is no sigma search.
 
-The decode is deterministic: a value-DP over (position, last-point)
-states maximises pool containment (then the point count) with a fixed
-branch order; ties resolve to the first parent in that order.  Big-form
-stores stay undecoded (U3 segment bookkeeping open); unabsorbed pools
-(node list missing pool vertices) stay undecoded with the gap named.
+  REVISED 2026-11-11 (stage 3d, #34): the stage-2c sigma solver
+  (:func:`solve_shift_profile`, the monotone shift-profile CSP) and its
+  ambiguity path are REMOVED.  The stage-3b corpus decode established
+  the identity reading directly (elem_decl == max_ref + 1 on the
+  ref-carrying decoded family; every normal-carrying loop's refs
+  resolve to points sharing the loop's plane), so the shift profiles
+  were artifacts of matching refs onto WRITTEN-point indices — the
+  shift equalled the skip slots before each point and was
+  automatically monotone.  Curve entries ARE referenced by loops (the
+  stage-2c "never referenced" inference is corrected in the claims
+  ledger); a loop referencing a skip slot cannot triangulate exactly
+  (U4: the entry's coordinates live in the curve records, open), so
+  the exporter skips exactly those loops and names the gap — the rest
+  of the store exports.
+- Loop plane law: coplanarity against the record's stored 12-B normal
+  (the corner quads are slanted planes; the axis-constant reading was
+  too strict).  It is the law's validation battery, not an export
+  gate: multi-plane fillet/bevel strips are legitimate geometry where
+  whole-loop coplanarity does not apply (stage-3b loop battery:
+  coplanar + skip-ref + multi-plane = 98.3% of testable loops).
+- Record width (stage-3b rule): per-record u8/u16be chosen by
+  end-alignment onto the next header, ranked exact tiling first, then
+  **no-repeated-refs-within-a-loop** (a u8 misread of a u16be record
+  repeats refs inside the loop), then no out-of-range refs, then the
+  narrower width.
+
+Fail-closed ladder (refined 2026-11-11 stage 3d, not abandoned): a
+store exports only when its table walk is exact (layout fits, the walk
+consumes exactly the declared write count, every coordinate finite and
+plausible), the pool is re-listed verbatim in the decoded points
+(absorbed), and the exported-family references resolve in-bounds.
+Stores outside the law keep the ``undecoded-variant`` classification
+with the specific gap named: a layout that does not fit, a walk-exact
+failure (the U3-variant second layout family, ~14% of big-form
+stores), non-finite coordinates, an unabsorbed pool, references
+beyond the element space, or a store without a token-bearing list
+node.  There is no guessing.
 """
 
 from __future__ import annotations
 
-import heapq
 import struct
 
 from catpart.geometry.errors import ExportError
-from catpart.geometry.facets import NORMAL_MARKERS_ALL
+from catpart.geometry.facets import NORMAL_MARKERS_ALL, STRIP_RE
 
 NODE_MAGIC = b"\x04\x04\xfd\xff"
 LIST_TOKEN = b"\xff\xff\x02\x00\x01"
-TAIL_MARK = b"\x00\x04\x02\x0a"
 
 MAX_ELEMENT_COUNT = 10_000_000
 MAX_TABLE_BYTES = 1 << 20
-MAX_STATES = 400_000
 MAX_LOOP_COUNTS = 16
 
 _F32 = struct.Struct("<f")
 
-WARN_COMPOSITE = "composite-law-decode"
+# Table value -> f32 words written (0 = skip: the element carries no
+# coordinates in the region — the curve entries, U4).
+SHAPES = {0: 3, 1: 0, 2: 1, 3: 2}
 
 
 def _f32(data, pos: int) -> float:
@@ -73,10 +97,14 @@ def _f32(data, pos: int) -> float:
 
 
 def _nice(v: float) -> bool:
-    """A plausible coordinate (the stage-2b probe's predicate, widened
-    2026-11-11: an exact 0.0 is a legitimate coordinate — origin-placed
-    geometry writes it — while sub-normal noise stays rejected)."""
-    return v == v and abs(v) < 1e9 and (v == 0.0 or 1e-6 < abs(v))
+    """Finite coordinate check (the stage-3b walk's predicate).
+
+    The table-driven walk needs no pruning predicate (the table fixes
+    the parse), so the stage-2c probe's 1e-6 floor is dropped (dated
+    2026-11-11): real tessellation coordinates reach ~1e-15 around
+    zero, and junk detection falls to the walk-exact / pool / in-bounds
+    checks."""
+    return v == v and abs(v) < 1e9
 
 
 def read_count(data, pos: int) -> tuple[int, int]:
@@ -92,7 +120,9 @@ def find_list_node(data, lo: int, hi: int):
     Returns ``(payload, element_count, edge_ref_bound)`` or ``None``.
     Every composite store's node territory carries the token (N1,
     939/939); the LIST node is the one whose payload carries the point
-    region — the largest payload (the stage-2b census).
+    region — the largest payload (the stage-2b census; the stage-3b
+    residue notes that on the U3-variant family this payload is a
+    multi-part container — those stores fail the walk below, named).
     """
     best = None
     pos = lo
@@ -116,427 +146,249 @@ def find_list_node(data, lo: int, hi: int):
     return best
 
 
-def predict_region_start(payload: bytes, element_count: int) -> int:
-    """Payload offset the point region opens at (P1 refined layout).
+def layout(payload: bytes, element_count: int):
+    """Region layout after the zero block (P1t corrected, stage 3b).
 
-    The 2-bit per-element table spans ``ceil(element_count / 4) + 1``
-    bytes after the zero block (32 B for 124 declared, 41 B for 160 —
-    the +1 byte measured on both anchors; U1's semantics stay open).
+    The 2-bit table spans exactly ``ceil(element_count / 4)`` bytes
+    after the zero block, then the P1g write count, then the region.
+
+    Returns ``(table_start, table_len, count_pos, region_start,
+    write_count)``; raises :class:`ExportError` (``undecoded-variant``)
+    when the layout does not fit the payload.
     """
-    q = payload.find(LIST_TOKEN)
-    if q < 0:
-        return -1
-    p = q + 5
+    tok = payload.find(LIST_TOKEN)
+    if tok < 0:
+        raise ExportError("undecoded-variant", "list node payload without the list token")
+    p = tok + 5
     _, p = read_count(payload, p)
     _, p = read_count(payload, p)
     while p + 4 <= len(payload) and payload[p : p + 4] == b"\x00\x00\x00\x00":
         p += 4
-    table = (element_count + 3) // 4 + 1
-    if table > MAX_TABLE_BYTES:
-        return -1
-    return p + table
-
-
-def _pool_pair_anchors(payload: bytes, pool_sorted):
-    """Payload offsets opening a pool vertex's contiguous [y][z] write.
-
-    The region opens at the list's first point: a full write whose
-    (y, z) words match a pool vertex when the pool is re-listed
-    verbatim.  Anchors give the candidate starts ``a - 4`` (full-write
-    form) and ``a`` (implicit-x0 form); the value-DP scores them.
-    """
-    if not pool_sorted:
-        return []
-    pairs = {(v[1], v[2]) for v in pool_sorted}
-    anchors = []
-    seen = set()
-    for off in range(0, len(payload) - 8):
-        key = (
-            _F32.unpack_from(payload, off)[0],
-            _F32.unpack_from(payload, off + 4)[0],
+    table_len = (element_count + 3) // 4
+    if table_len > MAX_TABLE_BYTES:
+        raise ExportError(
+            "undecoded-variant",
+            f"declared element count {element_count} implies a "
+            f"{table_len} B table, above the {MAX_TABLE_BYTES} B sanity cap",
         )
-        if key in pairs and key not in seen:
-            seen.add(key)
-            anchors.append(off)
-            if len(anchors) >= 6:
-                break
-    return anchors
-
-
-def decode_stream(data, start: int, bound: int, pool_set, allow_reset: bool = False,
-                  max_points: int | None = None):
-    """Max pool-containment parse of [start, bound) under the point law.
-
-    Value-DP over ``(position, last point, point count)`` states; the
-    score is the pool-hit count (containment first), ties resolving to
-    the fuller reading (more points) through the final selection.
-    ``max_points`` prunes parses beyond the count law (the declared
-    element count bounds the node points: element_count = node points
-    + curve entries, curve entries >= 0).  Branch order per state:
-    ``[x][y][z]`` (full write, lex-ascending; or run-reset when
-    ``allow_reset``), ``[y][z]``, ``[z]``.  The initial state carries
-    x = 0.0 implicitly: the first write may be ``[x][y][z]``, ``[y][z]``
-    (x_first == 0), or ``[z]`` (x_first == y_first == 0).
-
-    Returns ``(hits, points, end_pos, path)`` for the best parse, or
-    ``None`` when no state exists.  ``end_pos`` is where the best
-    parse's states die — the region's natural end (the trailing region
-    does not encode points under the law).
-    """
-    scores: dict = {}
-    parent: dict = {}
-    heap: list = []
-
-    def relax(st, val, par, pt):
-        cur = scores.get(st)
-        if cur is None or val > cur:
-            scores[st] = val
-            parent[st] = (par, pt)
-            if len(scores) > MAX_STATES:
-                return False
-            heapq.heappush(heap, (st[0], st))
-            return True
-        return False
-
-    init = []
-    if bound - start >= 12:
-        x0, y0, z0 = _f32(data, start), _f32(data, start + 4), _f32(data, start + 8)
-        if _nice(x0) and _nice(y0) and _nice(z0):
-            init.append(((start + 12, x0, y0, z0, 1), (x0, y0, z0)))
-    if bound - start >= 8:
-        y0, z0 = _f32(data, start), _f32(data, start + 4)
-        if _nice(y0) and _nice(z0):
-            init.append(((start + 8, 0.0, y0, z0, 1), (0.0, y0, z0)))
-    if bound - start >= 4:
-        z0 = _f32(data, start)
-        if _nice(z0):
-            init.append(((start + 4, 0.0, 0.0, z0, 1), (0.0, 0.0, z0)))
-    for st, pt in init:
-        relax(st, 1 if pt in pool_set else 0, None, pt)
-
-    while heap:
-        pos, st = heapq.heappop(heap)
-        base = scores[st]
-        if pos >= bound:
-            continue
-        px, py, pz, k = st[1], st[2], st[3], st[4]
-        if max_points is not None and k >= max_points:
-            continue
-        cands = []
-        if pos + 12 <= bound:
-            x, y, z = _f32(data, pos), _f32(data, pos + 4), _f32(data, pos + 8)
-            if _nice(x) and _nice(y) and _nice(z):
-                lex_ok = (
-                    x >= px
-                    and (x > px or y >= py)
-                    and (x > px or y > py or z >= pz)
-                )
-                if lex_ok or allow_reset:
-                    cands.append(((pos + 12, x, y, z, k + 1), (x, y, z)))
-        if pos + 8 <= bound:
-            y, z = _f32(data, pos), _f32(data, pos + 4)
-            if _nice(y) and _nice(z) and y >= py and (y > py or z >= pz):
-                cands.append(((pos + 8, px, y, z, k + 1), (px, y, z)))
-        if pos + 4 <= bound:
-            z = _f32(data, pos)
-            if _nice(z) and z >= pz:
-                cands.append(((pos + 4, px, py, z, k + 1), (px, py, z)))
-        for nst, pt in cands:
-            relax(nst, base + (1 if pt in pool_set else 0), st, pt)
-
-    if not scores:
-        return None
-    max_hits = max(scores.values())
-    # candidate parses: the fuller readings among equally-containing
-    # parses, one per distinct point count (the count law and the loop
-    # mapping law arbitrate between them downstream)
-    best_states = [
-        st for st in scores
-        if scores[st] == max_hits
-        and (max_points is None or st[4] <= max_points)
-    ]
-    if not best_states:
-        return None
-    best_states.sort(key=lambda s: (-s[4], s[0]))
-    parses = []
-    seen_k = set()
-    for st in best_states:
-        if st[4] in seen_k:
-            continue
-        seen_k.add(st[4])
-        path = []
-        cur = st
-        while cur is not None:
-            par, pt = parent[cur]
-            path.append(pt)
-            cur = par
-        path.reverse()
-        parses.append((max_hits, len(path), st[0], path))
-        if len(parses) >= 3:
-            break
-    return parses
-
-
-def decode_node_points(payload: bytes, element_count: int, pool_sorted):
-    """Decode the list node's point region (small form, refined P1 law).
-
-    The predicted region start (the measured table layout) is tried
-    first and wins outright when its parse contains every pool vertex
-    (the pool is re-listed verbatim, absorbed) — other offsets only
-    risk reading the 2-bit table as point writes.  Only when the
-    prediction fails does the probe widen: the pool (y, z) pair
-    anchors and a window around the prediction, the value-DP scoring
-    each; a run-reset stage retries (the stream is a concatenation of
-    lex-ascending runs).
-
-    Returns a list of ``(points, stage, region_end)`` candidate parses,
-    best containment first (the count law and the loop mapping law
-    arbitrate; the caller validates).  Empty when the law does not
-    decode the region.
-    """
-    pool_set = set(pool_sorted)
-    predicted = predict_region_start(payload, element_count)
-    tail = payload.rfind(TAIL_MARK)
-    bound_raw = (tail - 4) if tail > 0 else len(payload)
-    bound = min(len(payload), bound_raw + 8)
-
-    # 1. the predicted start, alone: a full-containment parse here is
-    # the law's reading (the table layout is byte-measured on both
-    # anchors); wider probes would only add table-byte misreads.
-    if 0 <= predicted and predicted + 12 <= len(payload):
-        parses = decode_stream(
-            payload, predicted, bound, pool_set,
-            allow_reset=False, max_points=element_count,
+    count_pos = p + table_len
+    if count_pos >= len(payload):
+        raise ExportError(
+            "undecoded-variant",
+            f"the {table_len} B 2-bit table runs past the payload "
+            f"(count position {count_pos} >= payload length {len(payload)}); "
+            "the store's layout does not fit the P1t law",
         )
-        if parses and parses[0][0] == len(pool_set):
-            out = []
-            seen = set()
-            for _h, _k, end, path in parses:
-                key = tuple(path)
-                if key not in seen:
-                    seen.add(key)
-                    out.append((path, "lex", end))
-            return out
+    write_count, region_start = read_count(payload, count_pos)
+    region_end = region_start + 4 * write_count
+    if region_end > len(payload):
+        raise ExportError(
+            "undecoded-variant",
+            f"declared write count {write_count} overruns the payload "
+            f"(region end {region_end} > {len(payload)})",
+        )
+    return p, table_len, count_pos, region_start, write_count
 
-    # 2. widen: anchors + window, lex stage then run-reset stage.
-    cands = []
-    if 0 <= predicted:
-        cands.extend(range(max(0, predicted - 16), predicted + 17))
-    for a in _pool_pair_anchors(payload, pool_sorted):
-        cands.extend((a - 4, a))
-    seen_start = set()
-    starts = []
-    for c in cands:
-        if c in seen_start or c < 0 or c + 12 > len(payload):
+
+def table_slots(payload: bytes, table_start: int, table_len: int, element_count: int):
+    """The 2-bit table: LSB-first slots, one per element."""
+    slots = []
+    for i in range(table_start, table_start + table_len):
+        b = payload[i]
+        slots += [(b >> 0) & 3, (b >> 2) & 3, (b >> 4) & 3, (b >> 6) & 3]
+    return slots[:element_count]
+
+
+def decode_region(payload: bytes, element_count: int):
+    """Deterministic table-driven decode of the point region (U1, stage 3b).
+
+    Returns ``(elements, info)`` where ``elements[i] = (slot_value,
+    point_or_None)`` in region order (the point is ``None`` for skip
+    slots — the curve entries) and ``info`` carries the layout.  The
+    walk is bounded by the declared region: a slot needing words past
+    ``region_start + 4 * write_count``, a walk ending short of it, or a
+    non-finite/implausible coordinate each raise :class:`ExportError`
+    (``undecoded-variant``) with the specific gap — the walk-exact
+    failures are the U3-variant second layout family's signature.
+    """
+    table_start, table_len, count_pos, region_start, write_count = layout(
+        payload, element_count
+    )
+    if write_count > 3 * element_count:
+        raise ExportError(
+            "undecoded-variant",
+            f"declared write count {write_count} exceeds the table's word "
+            f"budget (3 x {element_count} elements): the region does not "
+            "decode under the table law",
+        )
+    slots = table_slots(payload, table_start, table_len, element_count)
+    region_end = region_start + 4 * write_count
+    pos = region_start
+    x = y = z = 0.0  # the initial LCP state is the origin (P1i subsumed)
+    elements = []
+    for i, v in enumerate(slots):
+        shape = SHAPES[v]
+        if shape == 0:
+            elements.append((v, None))
             continue
-        seen_start.add(c)
-        starts.append(c)
-    if not starts:
-        return []
-
-    candidates = []
-    seen_paths = set()
-    for allow_reset, stage in ((False, "lex"), (True, "reset")):
-        stage_parses = []
-        for s in starts:
-            parses = decode_stream(
-                payload, s, bound, pool_set,
-                allow_reset=allow_reset, max_points=element_count,
+        if pos + 4 * shape > region_end:
+            raise ExportError(
+                "undecoded-variant",
+                f"table walk exceeds the declared region at element {i} "
+                f"(shape {v} needs {shape} f32 words, {region_end - pos} left "
+                f"of the declared {write_count}): walk-exact failure — the "
+                "store's layout family does not decode under the stage-3b "
+                "table law (U3-variant residue)",
             )
-            stage_parses.extend(parses or [])
-        if not stage_parses:
-            continue
-        max_hits = max(h for h, _k, _e, _p in stage_parses)
-        # only equally-containing parses are candidates; among them the
-        # fuller readings first (the count law arbitrates)
-        picked = sorted(
-            (p for p in stage_parses if p[0] == max_hits),
-            key=lambda p: (-p[1], p[2]),
+        if shape == 3:
+            x, y, z = _f32(payload, pos), _f32(payload, pos + 4), _f32(payload, pos + 8)
+            vals = (x, y, z)
+        elif shape == 2:
+            y, z = _f32(payload, pos), _f32(payload, pos + 4)
+            vals = (y, z)
+        else:
+            z = _f32(payload, pos)
+            vals = (z,)
+        if not all(_nice(c) for c in vals):
+            raise ExportError(
+                "undecoded-variant",
+                f"non-finite or implausible coordinate at element {i} "
+                f"(write shape {v}): {vals!r}",
+            )
+        pos += 4 * shape
+        elements.append((v, (x, y, z)))
+    if pos != region_end:
+        raise ExportError(
+            "undecoded-variant",
+            f"table walk consumed {pos - region_start} of the declared "
+            f"{4 * write_count} region words (write count {write_count}): "
+            "walk-exact failure — the store's layout family does not decode "
+            "under the stage-3b table law (U3-variant residue)",
         )
-        seen_k = set()
-        for h, k, e, path in picked:
-            if k in seen_k:
-                continue
-            seen_k.add(k)
-            key = tuple(path)
-            if key in seen_paths:
-                continue
-            seen_paths.add(key)
-            candidates.append((path, stage, e))
-            if len(candidates) >= 8:
-                return candidates
-        if max_hits == len(pool_set):
-            break
-    return candidates
+    info = {
+        "table_bytes": table_len,
+        "write_count": write_count,
+        "region_bytes": 4 * write_count,
+        "walk_end": pos,
+    }
+    return elements, info
 
 
-def parse_composite_facets(data, body_lo: int, body_hi: int):
-    """Parse the facet records of a composite store body (counts law).
+def decode_node_points(payload: bytes, element_count: int):
+    """Decode the list node's point region (both forms, identity law).
 
-    Composite records carry up to ``MAX_LOOP_COUNTS`` count bytes
-    summing to n (the clean-store grammar's k <= 4 does not hold here —
-    026d6726's ``01 4a`` record carries 7); the reference width is
-    per-record u8/u16be chosen by end-alignment onto the next header
-    (or the body end), the exact-tiling parse winning, then the
-    narrower width (the composite gap behavior the stage-2b validator
-    used; the clean-store width-vote context does not apply here).
-    Returns ``(records, candidates)`` where each record is
-    ``(offset, marker, normal, counts, refs)``; header positions no
-    parse accepts are dropped (they surface as the gap between
-    candidates and records).
+    Returns ``(points, skip_count, info)``: ``points`` is the written
+    point list in region order (the skip slots — the curve entries —
+    carry no coordinates, U4), ``skip_count`` the number of skip slots,
+    ``info`` the layout block from :func:`decode_region`.  Raises
+    :class:`ExportError` (``undecoded-variant``) when the layout does
+    not fit or the walk is not exact.
     """
-    import re
+    elements, info = decode_region(payload, element_count)
+    points = [pt for _v, pt in elements if pt is not None]
+    return points, len(elements) - len(points), info
 
-    strip_re = re.compile(rb"\x01[\x41-\x4f].\xff", re.DOTALL)
-    hdrs = [m.start() for m in strip_re.finditer(data, body_lo, body_hi)]
-    records = []
+
+def parse_strip_records(data, lo: int, hi: int, element_count: int):
+    """Every strip record with the width disambiguated (stage-3b rule).
+
+    Candidate parses: width u8/u16be x count-byte k (0..16) summing to
+    n, ending at or before the next header.  Rank: exact tiling, then
+    no-repeated-refs-within-a-loop, then no out-of-range refs, then the
+    narrower width (the tiling law first; the no-repeat rule resolves
+    the u8-misread of u16be records whose next header is not adjacent —
+    stage-3b, 2026-11-11).  Returns ``(records, n_headers)`` where each
+    record is ``(offset, marker, normal, counts, refs, width)``.
+    """
+    hdrs = [m.start() for m in STRIP_RE.finditer(data, lo, hi)]
+    out = []
     for i, o in enumerate(hdrs):
+        nxt = hdrs[i + 1] if i + 1 < len(hdrs) else hi
         mk = data[o + 1]
-        nxt = hdrs[i + 1] if i + 1 < len(hdrs) else body_hi
-        header_len = 4 if data[o + 3] == 0xFF else 5
-        if o + header_len + 4 > body_hi:
+        hlen = 4 if data[o + 3] == 0xFF else 5
+        if o + hlen + 4 > nxt:
             continue
-        n = int.from_bytes(data[o + header_len : o + header_len + 4], "little")
+        n = int.from_bytes(data[o + hlen : o + hlen + 4], "little")
         if not (0 <= n <= 1_000_000):
             continue
         has_normal = mk in NORMAL_MARKERS_ALL
-        base = o + header_len + 4 + (12 if has_normal else 0)
-        if base > body_hi:
-            continue
+        base = o + hlen + 4 + (12 if has_normal else 0)
         normal = None
         if has_normal:
-            normal = struct.unpack(
-                "<fff", data[o + header_len + 4 : o + header_len + 16]
-            )
+            if base > hi:
+                continue
+            normal = struct.unpack("<fff", data[o + hlen + 4 : o + hlen + 16])
         best = None
         for width in (1, 2):
             for k in range(0, MAX_LOOP_COUNTS + 1):
-                if base + k > body_hi:
+                if base + k > nxt:
                     break
                 counts = [data[base + j] for j in range(k)]
-                if not ((n > 0 and sum(counts) == n) or (n == 0 and k == 0)):
+                if sum(counts) != n:
                     continue
                 end = base + k + width * n
                 if end > nxt:
                     continue
-                rank = (0, width) if end == nxt else (1, 0 if width == 1 else 1)
+                refs = [
+                    int.from_bytes(
+                        data[base + k + width * j : base + k + width * (j + 1)],
+                        "big",
+                    )
+                    for j in range(n)
+                ]
+                repeats = False
+                off = 0
+                for c in counts:
+                    loop = refs[off : off + c]
+                    if c > 0 and len(set(loop)) < c:
+                        repeats = True
+                    off += c
+                oob = any(r >= element_count for r in refs)
+                rank = (
+                    0 if end == nxt else 1,
+                    1 if repeats else 0,
+                    1 if oob else 0,
+                    width,
+                    k,
+                )
                 if best is None or rank < best[0]:
-                    refs = [
-                        int.from_bytes(
-                            data[base + k + width * j : base + k + width * (j + 1)],
-                            "big",
-                        )
-                        for j in range(n)
-                    ]
-                    best = (rank, counts, refs, end)
+                    best = (rank, tuple(counts), tuple(refs), width)
         if best is None:
             continue
-        _rank, counts, refs, _end = best
-        records.append((o, mk, normal, tuple(counts), tuple(refs)))
-    return records, len(hdrs)
+        _rank, counts, refs, width = best
+        out.append((o, mk, normal, counts, refs, width))
+    return out, len(hdrs)
 
 
-def _loop_planarity_sets(records):
-    """The planarity constraints: (axis, distinct refs) per normal-carrying
-    loop; the exported-marker records' refs (all of them) are the
-    node-mandatory positions."""
-    loops_c = []
-    refs_all = set()
-    for _off, mk, normal, counts, refs in records:
-        if mk not in (0x42, 0x49, 0x4A, 0x4C):
-            continue
-        refs_all.update(refs)
-        if mk not in NORMAL_MARKERS_ALL:
-            continue
-        loops = []
-        o = 0
-        for c in counts:
-            loops.append(refs[o : o + c])
-            o += c
-        axis = max(range(3), key=lambda k: abs(normal[k]))
-        for loop in loops:
-            if loop:
-                loops_c.append((axis, frozenset(set(loop))))
-    return loops_c, refs_all
+def _triangulate(elements, records):
+    """Triangles under the identity mapping (strip/polygon semantics).
 
+    Loop references are 0-based element indices; triangles index the
+    WRITTEN points (the exported vertex list), so referenced elements
+    are remapped through the written rank.  Loops referencing skip
+    slots (curve entries — their coordinates live in the curve records,
+    U4, open) are skipped and counted: the exporter names the gap
+    instead of guessing coordinates.  Strip triangles (0x42/0x4a) skip
+    the degenerate ones (repeated coordinates or exactly-zero cross
+    product, G3 F7); polygon fans (0x4c) skip repeated coordinates.
 
-def solve_shift_profile(points, elem_decl, records, max_solutions=64):
-    """The element-mapping CSP (M2b, the sigma form).
-
-    The merged space = the decoded node points + the curve entries,
-    lex-sorted, positions 0..element_count-1.  A solution assigns each
-    merged position to a node point (in list order — positions ascend
-    with the point index) or a curve entry, i.e. the monotone shift
-    profile sigma(idx) = curve entries before node point idx:
-
-    - every facet/edge reference resolves to a node point (curve
-      entries are construction geometry; the facet loops never
-      reference them — measured on 026d6726: the profile that satisfies
-      all loops plus this rule reproduces the anchor's planarity);
-    - every normal-carrying record's loop maps onto points sharing one
-      constant coordinate on the normal's dominant axis (the plane
-      law);
-    - the counts hold: npts node positions + (elem - npts) curve
-      entries.
-
-    Returns the list of solutions, each ``{idx: position}``; empty when
-    the store admits none.  Deterministic (positions walked in order,
-    node branch first).
+    Returns ``(triangles, degenerate, stats)`` where ``stats`` carries
+    the loop counters for the summary's composite block.
     """
-    npts = len(points)
-    curves = elem_decl - npts
-    if curves < 0:
-        return []
-    loops_c, refs_all = _loop_planarity_sets(records)
-    if any(r >= elem_decl for r in refs_all):
-        return []
-    ref_loops: dict[int, list[int]] = {}
-    for li, (_axis, fs) in enumerate(loops_c):
-        for r in fs:
-            ref_loops.setdefault(r, []).append(li)
-    elem = elem_decl
-    solutions: list[dict[int, int]] = []
-    assign: dict[int, int] = {}
+    written_rank: dict[int, int] = {}
+    skips: set[int] = set()
+    for i, (_v, pt) in enumerate(elements):
+        if pt is None:
+            skips.add(i)
+        else:
+            written_rank[i] = len(written_rank)
+    points = [pt for _v, pt in elements if pt is not None]
 
-    def walk(p, idx, nc, loop_state):
-        if len(solutions) >= max_solutions:
-            return
-        if p == elem:
-            if idx == npts and nc == curves:
-                solutions.append(dict(assign))
-            return
-        if (elem - p) != (npts - idx) + (curves - nc):
-            return
-        if idx < npts:
-            pt = points[idx]
-            ls2 = list(loop_state)
-            ok = True
-            for r in ref_loops.get(p, ()):
-                rem, vals = ls2[r]
-                axis, _fs = loops_c[r]
-                nv = vals | {pt[axis]}
-                if len(nv) > 1:
-                    ok = False
-                    break
-                ls2[r] = (rem - 1, nv)
-            if ok:
-                assign[idx] = p
-                walk(p + 1, idx + 1, nc, ls2)
-                del assign[idx]
-        if nc < curves and p not in refs_all:
-            walk(p + 1, idx, nc + 1, loop_state)
-
-    st0 = [(len(fs), frozenset()) for _a, fs in loops_c]
-    walk(0, 0, 0, st0)
-    return solutions
-
-
-def _triangulate(points, records, pos_to_idx):
-    """Triangles under one position assignment (strip/polygon semantics)."""
     triangles = []
     degenerate = 0
-    unresolved = 0
-    for _off, mk, _normal, counts, refs in records:
+    loops_exported = 0
+    loops_curve_entry = 0
+    for _off, mk, _normal, counts, refs, _w in records:
         if mk not in (0x42, 0x4A, 0x4C):
             continue
         loops = []
@@ -547,10 +399,11 @@ def _triangulate(points, records, pos_to_idx):
         for loop in loops:
             if not loop:
                 continue
-            if any(r not in pos_to_idx for r in loop):
-                unresolved += 1
+            if any(r in skips for r in loop):
+                loops_curve_entry += 1
                 continue
-            idxs = [pos_to_idx[r] for r in loop]
+            loops_exported += 1
+            idxs = [written_rank[r] for r in loop]
             lp = [points[i] for i in idxs]
             if mk == 0x4C:
                 for t in range(1, len(lp) - 1):
@@ -573,23 +426,26 @@ def _triangulate(points, records, pos_to_idx):
                         degenerate += 1
                         continue
                     triangles.append(tri)
-    return triangles, degenerate, unresolved
+    stats = {
+        "loops_exported": loops_exported,
+        "loops_curve_entry": loops_curve_entry,
+    }
+    return triangles, degenerate, stats
 
 
 def decode_composite_store(data, span, groups, kinds):
-    """Decode one composite store span under the recovered law.
+    """Decode one composite store span under the identity law (stage 3d).
 
     Returns ``(points, triangles, degenerate, info)`` where ``points``
-    is the decoded node point list (the merged space's known
-    coordinates; the pool is re-listed verbatim on every store the law
-    decodes) and ``triangles`` are index triples into it.  Raises
+    is the written point list in region order (the exported vertices)
+    and ``triangles`` are index triples into it.  Raises
     :class:`ExportError` (``undecoded-variant``) with the specific gap
-    when the law does not cover the store: a big-form node (U3), a
-    point region that does not decode, an unabsorbed pool, a count-law
-    violation, a store with no consistent shift profile, or an
-    ambiguous one (several profiles with distinct meshes — the
-    unreferenced positions' node/curve choices are not pinned by the
-    facet law there).
+    when the law does not cover the store: no token-bearing list node
+    (N1), a layout that does not fit the P1t law, a walk-exact failure
+    (the U3-variant second layout family), non-finite coordinates, an
+    unabsorbed pool (the node list missing pool vertices), facet
+    references beyond the element space, or no exportable facet
+    records' families at all.
     """
     lo, hi = span.body_lo, span.body_hi
     if not any(k == b"\x01\x02" or k[:1] == b"\xff" for k in kinds):
@@ -598,8 +454,6 @@ def decode_composite_store(data, span, groups, kinds):
             "composite decode invoked on a store without composite markers",
         )
     poolv = [v for g in groups for v in g.vertices]
-    from catpart.geometry.facets import STRIP_RE
-
     hdrs = [m.start() for m in STRIP_RE.finditer(data, lo, hi)]
     node_hi = hdrs[0] if hdrs else hi
     ln = find_list_node(data, lo, node_hi)
@@ -610,95 +464,57 @@ def decode_composite_store(data, span, groups, kinds):
             "(N1: 939/939 composite stores carry one)",
         )
     payload, elem_decl, _edge_bound = ln
-    if len(payload) > 4096:
-        raise ExportError(
-            "undecoded-variant",
-            f"big-form list node ({len(payload)} B): the point region is "
-            "segmented and the segment bookkeeping is open (U3); labeled, "
-            "not forced",
-        )
-    candidate_parses = decode_node_points(payload, elem_decl, sorted(poolv))
-    if not candidate_parses:
-        raise ExportError(
-            "undecoded-variant",
-            "small-form point region does not decode under the refined "
-            "suffix-after-LCP law (start probe + lex runs, value-DP on "
-            "pool containment); no parse covering the pool",
-        )
-    records, candidates = parse_composite_facets(data, lo, hi)
+    elements, region_info = decode_region(payload, elem_decl)
+    points = [pt for _v, pt in elements if pt is not None]
+    skip_slots = len(elements) - len(points)
 
-    first_error: ExportError | None = None
-    for points, stage, _end in candidate_parses:
-        try:
-            pool_set = set(poolv)
-            if len(pool_set & set(points)) != len(pool_set):
-                missing = len(pool_set) - len(pool_set & set(points))
-                raise ExportError(
-                    "undecoded-variant",
-                    f"node list does not re-list the pool: {missing} of "
-                    f"{len(pool_set)} pool vertices absent from the "
-                    "decoded point region (unabsorbed variant; the merge "
-                    "law's pool absorption is not established there)",
-                )
-            curve_count = elem_decl - len(points)
-            if curve_count < 0:
-                raise ExportError(
-                    "undecoded-variant",
-                    f"decoded {len(points)} points exceed the declared "
-                    f"element count {elem_decl} (count law violated)",
-                )
-            sols = solve_shift_profile(points, elem_decl, records)
-            if not sols:
-                raise ExportError(
-                    "undecoded-variant",
-                    "no consistent element mapping: the facet records' "
-                    "references cannot all resolve to node points with "
-                    "the normal-carrying loops planar under one monotone "
-                    "shift profile (M2b sigma CSP; the store's element "
-                    "space disagrees with the recovered law)",
-                )
-            tri_sets: dict[tuple, tuple] = {}
-            best_info = None
-            for sol in sols[:8]:
-                pos_to_idx = {p: i for i, p in sol.items()}
-                tris, degen, unres = _triangulate(points, records, pos_to_idx)
-                if unres:
-                    raise ExportError(
-                        "undecoded-variant",
-                        f"{unres} facet loops reference curve-entry "
-                        "positions under the shift profile (the loops "
-                        "must reference node points; profile rejected)",
-                    )
-                sigma = sorted(sol.items())
-                info = {
-                    "stage": stage,
-                    "element_decl": elem_decl,
-                    "node_points": len(points),
-                    "curve_entries": curve_count,
-                    "facet_candidates": candidates,
-                    "facet_records": len(records),
-                    "profile_top_shift": sigma[-1][1] if sigma else 0,
-                    "sigma_solutions": len(sols),
-                }
-                key = tuple(sorted(tris))
-                if key not in tri_sets:
-                    tri_sets[key] = (tris, degen, info)
-                if best_info is None:
-                    best_info = info
-            if len(tri_sets) > 1:
-                raise ExportError(
-                    "undecoded-variant",
-                    f"ambiguous element mapping: {len(tri_sets)} distinct "
-                    f"meshes over {len(sols)} consistent shift profiles — "
-                    "the unreferenced positions' node/curve choices are "
-                    "not pinned by the facet law (fail-closed)",
-                )
-            tris, degen, info = next(iter(tri_sets.values()))
-            return points, tris, degen, info
-        except ExportError as exc:
-            if first_error is None:
-                first_error = exc
-    raise first_error
+    pool_set = set(poolv)
+    missing = pool_set - set(points)
+    if missing:
+        raise ExportError(
+            "undecoded-variant",
+            f"node list does not re-list the pool: {len(missing)} of "
+            f"{len(pool_set)} pool vertices absent from the decoded "
+            "point region (unabsorbed variant; the merge law's pool "
+            "absorption is not established there)",
+        )
+
+    records, n_hdrs = parse_strip_records(data, lo, hi, elem_decl)
+    # Refs are 0-based element indices: every gated family's references
+    # must resolve inside the element space (the exported markers plus
+    # the normal-carrying 0x49, the stage-2c gate set).
+    gated = (0x42, 0x49, 0x4A, 0x4C)
+    all_refs = [r for _o, mk, _n, _c, refs, _w in records if mk in gated for r in refs]
+    if all_refs:
+        mx = max(all_refs)
+        if mx >= elem_decl:
+            raise ExportError(
+                "undecoded-variant",
+                f"facet references beyond the element space: max ref {mx} "
+                f">= element count {elem_decl} (refs are 0-based element "
+                "indices in region order, M2b identity; G3 open question 2)",
+            )
+
+    triangles, degenerate, loop_stats = _triangulate(elements, records)
+
+    skipped_markers: dict[int, int] = {}
+    for _o, mk, _n, _c, _refs, _w in records:
+        if mk not in (0x42, 0x4A, 0x4C):
+            skipped_markers[mk] = skipped_markers.get(mk, 0) + 1
+
+    info = {
+        "stage": "identity-table-walk",
+        "element_decl": elem_decl,
+        "node_points": len(points),
+        "curve_entries": skip_slots,
+        "write_count": region_info["write_count"],
+        "table_bytes": region_info["table_bytes"],
+        "facet_candidates": n_hdrs,
+        "facet_records": len(records),
+        "skipped_markers": skipped_markers,
+        **loop_stats,
+    }
+    return points, triangles, degenerate, info
 
 
 def _cross_zero(a, b, c):

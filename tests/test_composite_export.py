@@ -1,17 +1,22 @@
-"""Composite-law export (G6 stage 2c, #34).
+"""Composite-law export (G6 stages 2c->3d, #34).
 
-The synthetic composite fixture (small form, curve entries 0) through
-the CLI export seam: the merged element space decodes, the PLY carries
-the merged coordinates, the mesh invariants hold, the ``composite``
-info block rides the summary additively, and the store where the law
-does NOT hold keeps its ``undecoded-variant`` classification with the
-specific gap named (fail-closed).  Determinism: same inputs,
-byte-identical fixtures.
+The synthetic composite fixtures (small + big form, both with a 2-bit
+table) through the CLI export seam: the point region decodes through
+the deterministic table walk, the facet references resolve as 0-based
+element indices in region order (the identity — no sigma search), the
+PLY carries the written coordinates, the mesh invariants hold, and
+every law gap keeps its ``undecoded-variant`` classification with the
+specific gap named (fail-closed).  The law's shapes have their own
+fixtures: slanted corner quads (coplanar vs the stored normal, not
+axis-constant), loops referencing skip slots (curve entries, U4), and
+the no-repeated-refs width rule.  Determinism: same inputs,
+byte-identical fixtures and PLY.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import struct
 from pathlib import Path
 
@@ -21,8 +26,19 @@ from catpart.schema import load_schema
 from catpart.schema.validate import validate
 from fixtures_gen import (
     COMPOSITE_FACES,
+    COMPOSITE_GRID_SIDE,
     COMPOSITE_POINTS,
     build_fixture,
+)
+
+COMPOSITE_VARIANTS = (
+    "geometry-composite-law",
+    "geometry-composite-law-big",
+    "geometry-composite-law-slanted",
+    "geometry-composite-law-curve-entries",
+    "geometry-composite-law-u16be",
+    "geometry-composite-law-walk-mismatch",
+    "geometry-composite-law-unabsorbed",
 )
 
 
@@ -68,6 +84,10 @@ def parse_ply(path: Path):
     return vertices, faces
 
 
+def _warning_classes(summary) -> list[str]:
+    return [w["class"] for w in summary["warnings"]]
+
+
 @pytest.mark.parametrize("seed", [7, 0])
 def test_composite_fixture_exports_closed_manifold(tmp_path, capsys, seed):
     code, captured, ply_path = run_export(tmp_path, capsys, "geometry-composite-law")
@@ -80,15 +100,20 @@ def test_composite_fixture_exports_closed_manifold(tmp_path, capsys, seed):
     assert summary["mesh"]["manifold"] is True
     assert summary["mesh"]["closed"] is True
     assert summary["mesh"]["oriented"] is True
-    # the composite info block rides the summary additively; the merged
-    # space is the pool re-listed plus the extras, curve entries 0, and
-    # the shift profile is forced (unique solution)
+    # the composite info block rides the summary additively: the
+    # identity decode's counters (element space == written points,
+    # curve entries 0, the walk's declared count 17 f32 words)
     info = summary["composite"]
+    assert info["stage"] == "identity-table-walk"
     assert info["element_decl"] == len(COMPOSITE_POINTS)
     assert info["node_points"] == len(COMPOSITE_POINTS)
     assert info["curve_entries"] == 0
-    assert info["sigma_solutions"] == 1
-    # the PLY carries the merged coordinates in decoded order
+    assert info["write_count"] == 17
+    assert info["loops_curve_entry"] == 0
+    assert info["loops_exported"] == 6
+    assert info["facet_candidates"] == 6
+    assert info["facet_records"] == 6
+    # the PLY carries the written coordinates in region order
     vertices, faces = parse_ply(ply_path)
     assert len(vertices) == len(COMPOSITE_POINTS)
     assert len(faces) == 12
@@ -98,36 +123,169 @@ def test_composite_fixture_exports_closed_manifold(tmp_path, capsys, seed):
         assert all(0 <= i < len(COMPOSITE_POINTS) for i in tri)
 
 
-def test_composite_vertex_order_is_the_decoded_node_list(tmp_path, capsys):
-    """The PLY vertex order is the decoded point list: the pool's lex-min
-    opens the region under the implicit-x0 first write ([y][z] when the
-    first point's x is 0) — the fixture's list opens (0, 10, 30), not the
-    pool's (0, 10, 0) walk head."""
+def test_composite_vertex_order_is_the_region_order(tmp_path, capsys):
+    """The PLY vertex order is the region order: the table's first slot
+    opens [y][z] on the origin LCP state (the fixture's list opens
+    (0, 10, 0), not the pool's (0, 10, 0) walk head — the pool walk is
+    deliberately non-lex) and the writes reconstruct the lex list."""
     code, captured, ply_path = run_export(tmp_path, capsys, "geometry-composite-law")
     assert code == 0, captured.err
     vertices, _ = parse_ply(ply_path)
     assert vertices[0] == pytest.approx((0.0, 10.0, 0.0), abs=1e-6)
     assert vertices[1] == pytest.approx((0.0, 10.0, 30.0), abs=1e-6)
+    assert vertices[6] == pytest.approx((20.0, 10.0, 0.0), abs=1e-6)
 
 
-def test_composite_nonplanar_loop_stays_undecoded(tmp_path, capsys):
-    """The law does not hold (a normal-carrying loop spans two planes):
-    classified undecoded-variant with the sigma-CSP gap named, no PLY."""
+def test_composite_big_form_exports_closed_manifold(tmp_path, capsys):
+    """The big form decodes under the same single-table law: 1,000
+    elements, the write count 1,108 riding the ff-escape P1g count,
+    u16be references, the pool absorbed, the box closed."""
+    code, captured, ply_path = run_export(tmp_path, capsys, "geometry-composite-law-big")
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    n = COMPOSITE_GRID_SIDE**3
+    assert summary["vertex_count"] == n
+    assert summary["triangle_count"] == 12
+    assert summary["degenerate_triangle_count"] == 0
+    assert summary["mesh"]["manifold"] is True
+    assert summary["mesh"]["closed"] is True
+    info = summary["composite"]
+    assert info["element_decl"] == n
+    assert info["node_points"] == n
+    assert info["curve_entries"] == 0
+    assert info["write_count"] == 1108
+    assert info["table_bytes"] == n // 4
+    # the 8 grid corners are pool vertices (absorbed) and land at their
+    # lex positions; the unused grid interior warns
+    vertices, _ = parse_ply(ply_path)
+    for x in (0.0, 9.0):
+        for y in (0.0, 9.0):
+            for z in (0.0, 9.0):
+                assert (x, y, z) in vertices
+    assert "unused-pool-vertices" in _warning_classes(summary)
+
+
+def test_composite_slanted_quad_exports_under_coplanar_normal_law(tmp_path, capsys):
+    """The plane law is coplanarity against the stored normal: the
+    slanted corner quad (normal (120, -1200, -40), no axis-constant
+    coordinate) exports — the axis-constant reading rejected exactly
+    this shape (stage-3b correction, 2026-11-11)."""
+    code, captured, ply_path = run_export(tmp_path, capsys, "geometry-composite-law-slanted")
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    assert summary["triangle_count"] == 12
+    assert summary["mesh"]["closed"] is True
+    vertices, _ = parse_ply(ply_path)
+    quad = [
+        v for v in vertices
+        if v in (
+            (20.0, 12.0, 0.0), (20.0, 10.0, 60.0),
+            (0.0, 10.0, 0.0), (0.0, 8.0, 60.0),
+        )
+    ]
+    assert len(quad) == 4
+    # no axis-constant coordinate: the old dominant-axis law fails here
+    assert len({p[1] for p in quad}) > 1
+    # coplanarity against the stored normal (normalized residual ~ 0)
+    normal = (120.0, -1200.0, -40.0)
+    nn = math.sqrt(sum(c * c for c in normal))
+    p0 = quad[0]
+    residuals = [
+        abs(sum((p[i] - p0[i]) * normal[i] for i in range(3))) / nn
+        for p in quad[1:]
+    ]
+    assert max(residuals) < 2e-3
+
+
+def test_composite_curve_entry_loops_named_not_guessed(tmp_path, capsys):
+    """Loops referencing skip slots (curve entries) are not exported —
+    the entries' coordinates live in the curve records (U4, open) —
+    and the gap is named; the store's other loops export."""
     code, captured, ply_path = run_export(
-        tmp_path, capsys, "geometry-composite-law-nonplanar"
+        tmp_path, capsys, "geometry-composite-law-curve-entries"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    info = summary["composite"]
+    assert info["element_decl"] == 15
+    assert info["node_points"] == 12
+    assert info["curve_entries"] == 3
+    assert info["loops_curve_entry"] == 1
+    assert info["loops_exported"] == 6
+    assert "curve-entry-loops-unexported" in _warning_classes(summary)
+    # the box's 12 triangles export; the curve-entry loop adds none
+    assert summary["triangle_count"] == 12
+    assert summary["mesh"]["closed"] is True
+
+
+def test_composite_u16be_no_repeat_width_rule(tmp_path, capsys):
+    """The stage-3b no-repeated-refs rule: the fixture record's u8
+    misread (k=5, counts 4,0,0,0,0, refs (3,1,3,2)) tiles exactly but
+    repeats refs inside the loop; the u16be parse (refs (1, 258, 769,
+    770), distinct) wins, and the fan triangulates from the true
+    references."""
+    code, captured, ply_path = run_export(tmp_path, capsys, "geometry-composite-law-u16be")
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    # 12 box triangles + the u16be record's 2-triangle fan
+    assert summary["triangle_count"] == 14
+    assert summary["degenerate_triangle_count"] == 0
+    _, faces = parse_ply(ply_path)
+    assert (1, 258, 769) in faces
+    assert (1, 769, 770) in faces
+
+
+def test_composite_walk_mismatch_stays_undecoded(tmp_path, capsys):
+    """The declared write count exceeds what the table encodes: the
+    walk is not exact — classified undecoded-variant with the
+    walk-exact gap named, no PLY (fail-closed)."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-walk-mismatch"
     )
     assert code == 1
     error = json.loads(captured.err)
     assert error["error_class"] == "undecoded-variant"
-    assert "shift profile" in error["detail"]
+    assert "walk-exact" in error["detail"]
     assert not ply_path.exists()
 
 
-@pytest.mark.parametrize("variant", ["geometry-composite-law", "geometry-composite-law-nonplanar"])
+def test_composite_unabsorbed_pool_stays_undecoded(tmp_path, capsys):
+    """A pool vertex the node list does not re-list: the pool
+    absorption is not established there — classified
+    undecoded-variant, no PLY."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-unabsorbed"
+    )
+    assert code == 1
+    error = json.loads(captured.err)
+    assert error["error_class"] == "undecoded-variant"
+    assert "unabsorbed" in error["detail"]
+    assert not ply_path.exists()
+
+
+@pytest.mark.parametrize("variant", COMPOSITE_VARIANTS)
 def test_composite_fixtures_deterministic(variant):
     a = build_fixture("part", seed=3, variant=variant)
     b = build_fixture("part", seed=3, variant=variant)
     assert a == b
+
+
+def test_composite_export_determinism(tmp_path):
+    """Two exports of the same composite fixture: byte-identical PLY."""
+    import os
+
+    from catpart.geometry import build_export
+
+    ply_a = tmp_path / "a.ply"
+    ply_b = tmp_path / "b.ply"
+    fixture = build_fixture("part", seed=5, variant="geometry-composite-law")
+    fa, fb = tmp_path / "a.CATPart", tmp_path / "b.CATPart"
+    fa.write_bytes(fixture)
+    fb.write_bytes(fixture)
+    build_export(fa, ply_a)
+    build_export(fb, ply_b)
+    assert ply_a.read_bytes() == ply_b.read_bytes()
+    assert os.stat(ply_a).st_size > 0
 
 
 def test_composite_face_records_exercise_both_families():
