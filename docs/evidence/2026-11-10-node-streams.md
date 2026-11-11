@@ -240,9 +240,14 @@ Coverage (2026-11-11, this stage): small-form point-region decode with
 pool fully contained rises from **5/285 to 70/285** (38 lex + 32
 run-reset; the widened probe + count-law pruning recovers the implicit-x0
 openers and the run-split streams); the composite export (decode + loop
-law + unambiguous mapping) covers **24/285** small-form stores (the rest
-fail closed: big-form U3, unabsorbed pools, no-parse, or ambiguous
-mappings — each with its specific reason in the exporter's error
+law + unambiguous mapping) covers **34/285** small-form stores (24
+lex-stage + 10 run-reset; 2026-11-11 correction (#34 stage-2c review):
+the first wording said 24/285 — a pre-reset-stage gate number; the
+committed code and the fitness run both measure 34, mapping 1:1 onto
+the fitness movement; 2026-11-11 relabel: the fail-closed census is
+236 unabsorbed-pool + 12 no-consistent-profile + 2 ambiguous
+(026d6726, e254a37e) + 1 no-parse + 34 exported) — each with its
+specific reason in the exporter's error
 detail).  Big-form stays undecoded (U3).
 
 ## Reproduction

@@ -238,9 +238,10 @@ The answer to "where do the >= pool refs resolve":
    point" is superseded — the edge table's first record references
    position 0, so the profile opens at shift 0.  Small-form coverage
    after the hardening: 70/285 point-region decodes with the pool fully
-   contained, 24/285 full composite exports (fail-closed elsewhere); see
-   the stage-2c section of
-   [2026-11-10-node-streams.md](2026-11-10-node-streams.md).
+   contained, 34/285 full composite exports (fail-closed elsewhere;
+   2026-11-11 correction (#34 stage-2c review): the first wording said
+   24/285 — see the stage-2c section of
+   [2026-11-10-node-streams.md](2026-11-10-node-streams.md)).
 
 ## Claims
 
