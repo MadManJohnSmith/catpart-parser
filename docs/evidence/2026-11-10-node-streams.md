@@ -239,6 +239,12 @@ anchor's planarity end-to-end and pins σ(97) = 26 = element_count − 98.
 Stores where several solutions produce distinct meshes (the
 unreferenced positions' node/curve choices unpinned) fail closed.
 Stores with curve entries = 0 force σ ≡ 0 and export directly.
+Superseded on skip-carrying stores (2026-11-11, #34 stage-3b review
+F1, stage-3b item 7): the identity reading pins every position's
+node/curve type off the decoded 2-bit table — the "2 ambiguous"
+fail-closed entries (026d6726, e254a37e) dissolve and condition (a)
+("curve entries are never referenced") is corrected (loops DO
+reference skip slots); what blocks those stores now is U4.
 
 Coverage (2026-11-11, this stage): small-form point-region decode with
 pool fully contained rises from **5/285 to 70/285** (38 lex + 32
@@ -321,37 +327,105 @@ no DP — once the table's extent is corrected.
    7 loops = 4/2 coplanar + 3/5 skip-ref + 0 nonplanar.  Record
    reference width: u16be on all 292 normal-carrying records of
    70b59f2a; the width disambiguation adds a **no-repeated-refs rule**
-   (a u8 misread of a u16be record repeats refs inside the loop —
-   the 13 `counts=(8,)` records of 70b59f2a decode 0/13 coplanar as
-   u8, 13/13 as u16be).
-6. **Corpus rates (fact, 933 composite stores audited; 28 audit
-   errors: 22 layout overruns + 6 without strip headers):**
-   - the walk consumes exactly the declared write count on **556/650
-     big-form (0.855) and 268/283 small-form (0.947)** stores;
-   - the pool is fully re-listed in the decoded points on **464/556
-     decoded big (0.835) and 213/268 decoded small (0.795)** —
-     the headline: **464/650 big-form stores decode end-to-end**
+   (a u8 misread of a u16be record repeats refs inside the loop).
+   Correction (2026-11-11, #34 stage-3b review F4a): 70b59f2a carries
+   **26 `counts=(8,)` records, occurring as 13 adjacent 37-B pairs**
+   (the first member's u16be parse tiles exactly to the second's
+   header); "the 13" of the stage-3b wording are the width-ambiguous
+   (non-exact-tiling) half — the pairs' second members — and the
+   13/13-coplanar-as-u16be figure holds on the WRITTEN (non-skip)
+   refs: the battery itself classes those 13 loops skip-ref (each
+   carries skip slots whose coordinates live in the curve records,
+   U4).
+6. **Corpus rates (fact, 950 composite stores audited; 22 audit
+   errors, all layout: 21 region overruns + 1 table overrun).
+   Correction (2026-11-11, #34 stage-3b review F2): the first wording
+   said 933 audited / 28 errors with "6 without strip headers" — the
+   6 crashing stores (88ad0be6, a7aef50e, ac9483aa, ae85fae7,
+   bad44bdf, fd4201aa) carry 16-177,122 strip headers and crashed
+   because the loop battery read refs in [len(elements), elem_decl)
+   after the walk broke early on second-family stores (unguarded
+   `elements[ref]`); guarded, they get real battery rows (2,408 of
+   their 5,761 normal-carrying loops reference the unwalked window
+   and class `beyond`, untestable here), and 11 further stores the
+   committed CSV recorded as empty rows although the committed script
+   decodes them are restored by the rerun (CSV regenerated against
+   its script):**
+   - the walk consumes exactly the declared write count on **557/661
+     big-form (0.843) and 272/289 small-form (0.941)** stores;
+   - the pool is fully re-listed in the decoded points on **465/557
+     decoded big (0.835) and 216/272 decoded small (0.794)** —
+     the headline: **465/661 big-form stores decode end-to-end**
      (walk + finite words + pool absorbed); big-form was 0/654
      before this stage;
    - the small-form pool-containment rate rises from the stage-2c
-     DP probe's 70/285 to **213/283** under the table-driven walk
+     DP probe's 70/285 to **216/272** under the table-driven walk
      (deterministic, no probe);
-   - elem_decl == max_ref + 1 on 421/532 decoded big (0.791) and
-     221/266 decoded small (0.831) ref-carrying stores;
-   - the loop battery over decoded stores: big 32,512 loops =
-     16,884 coplanar (0.519) + 12,646 skip-ref (0.389) + 2,982
-     nonplanar (0.092); of the nonplanar, the dominant class (84%,
-     2,421 of 2,571 0x4A strips sampled over 60 stores) is
-     **multi-plane strips** — fillet/bevel tessellations whose
-     per-triangle normals take 2-3 distinct values — where the
-     whole-loop coplanarity does not apply and the per-triangle
-     strip law (6.3.1 GE-F3/F5) is the applicable test; the rest:
-     0x49 loops (primitive reading open, GE-F9), 0x4C polygons, and
-     a uniform-parallel residue.  Coplanar + skip-ref + multi-plane
-     strips = 98.3% of testable loops on the sampled stores.
+   - elem_decl == max_ref + 1 on 422/533 decoded big (0.792) and
+     225/270 decoded small (0.833) ref-carrying stores;
+   - the loop battery over decoded stores: big 32,541 loops =
+     16,912 coplanar (0.520) + 12,646 skip-ref (0.389) + 2,983
+     nonplanar (0.092) on 425 walk-exact big stores with loops;
+   - **the nonplanar decomposition (2026-11-11, #34 stage-3b review
+     F3; committed criterion, replaces the unreproducible 60-store
+     sample):** every nonplanar loop of the walk-exact big-form
+     stores — 2,983 loops on 425 stores — is classified by
+     normal-direction clustering with unsigned cosine >= 0.999
+     (`decode_big_form_points.py --planes`; committed per-loop run
+     in `docs/evidence/data/big-form-planes-loops.csv`): **multi-plane
+     (d = 2-3 distinct triangle-normal directions) 1,595/2,983 =
+     0.535** — fillet/bevel strips where the whole-loop coplanarity
+     does not apply and the per-triangle strip law (6.3.1 GE-F3/F5)
+     is the applicable test; single-plane-uniform (d = 1) 1,072 —
+     the loop's own triangles agree on one direction, and on 651 of
+     them the stored normal disagrees grossly (cos1000 < 500: the
+     battery's nonplanarity there is a stored-normal disagreement,
+     not multi-plane geometry; 123 have the stored normal agreeing,
+     cos1000 >= 999 — flat loops mis-tested against a foreign
+     normal); a 4+-plane tail 301; 15 loops with no measurable
+     (non-degenerate) triangle.  Families: 0x4A 2,653, 0x4C 285
+     (210 of them 4+-plane — curved ring fans), 0x49 45 (primitive
+     reading open, GE-F9).  Correction (2026-11-11, review F4b): the
+     earlier "84%" was the multi-plane share of the SAMPLE's
+     nonplanar (2,421/2,895 over 60 stores), not of its 2,571 0x4A
+     strips (that would be 94%); the committed-census denominator is
+     the 2,983 nonplanar loops of the 425 walk-exact big stores with
+     loops.  The review's band (multi-plane ~1,900-2,150 of
+     ~2,2xx-2,895 depending on criterion) sat higher than the
+     committed criterion's 1,595 — recorded, not massaged: the
+     single-plane-uniform residue the committed criterion isolates
+     (stored-normal disagreements) is a real class the sample's
+     reading folded into multi-plane.
+   - the battery share restated under the committed criterion
+     (review F3): **coplanar + skip-ref + multi-plane = 31,153/32,541
+     = 0.957 of the testable loops** — below the 0.98 house bar, so
+     the M2b-element-index battery clause is relabeled **candidate**
+     (the review's honest full-census band 0.972-0.978 was
+     criterion-dependent; the committed criterion's figure stands
+     until a criterion establishes itself above the bar).
 
-**Residue (open, named):** ~14% of big-form stores (94 walk-mismatch +
-22 layout overruns + some audit errors) carry a SECOND layout family:
+7. **Exporter consequence (2026-11-11, #34 stage-3b review F1;
+   inference from the identity law and the decoded table — no export
+   run was executed):** the identity reading (item 4) dissolves the
+   stage-2c mapping ambiguity on 026d6726/e254a37e — the fail-closed
+   census's "2 ambiguous": once the 2-bit table is decoded, every
+   position's node/curve type is read off the table (slot value 1 =
+   curve entry, else node point) — no sigma search, no unpinned
+   choices.  The remaining blocker on those two stores is U4: 3/7 and
+   5/7 of their loops reference skip slots whose coordinates are not
+   in the region (the curve records remain the candidate source).
+   The zero-skip stores (0313b53d, 1b1e69cd) decode and would export
+   directly under identity.  The shipped `composite.py` sigma
+   validator — including its "curve entries are never referenced" CSP
+   condition (M2c's corrected inference) — is superseded on
+   skip-carrying stores; the exporter integration of big form is a
+   later stage (src/ untouched here).
+
+**Residue (open, named):** ~16% of big-form stores (104 walk-mismatch +
+22 layout overruns; 2026-11-11 stage-3b review F2 correction: was ~14%,
+94 walk-mismatch — the rerun restores 10 more walk-mismatch big stores:
+the 4 previously-crashing big stores plus 7 CSV-stale rows, one of them
+walk-exact) carry a SECOND layout family:
 the largest token-bearing node's payload is a multi-part container —
 the list header + counts, then float-pair data (no zero block, no
 table at the predicted offsets), then `02 02` edge-record sub-nodes
@@ -386,9 +460,14 @@ Stage 3b adds the table-driven decode (both forms; U1/U3, 2026-11-11):
 # anchor subset:
 .venv/bin/python -I scripts/triage/decode_big_form_points.py \
   --include-sha16 026d6726007381a9,70b59f2a0eb60c1c,e254a37e2ba6902c
+# the multi-plane decomposition over the full census (F3 criterion):
+.venv/bin/python -I scripts/triage/decode_big_form_points.py --planes
 ```
 
 Outputs `docs/evidence/data/big-form-points-files.csv` (committed; one
 row per composite store: layout, walk, pool containment, N2, loop
-battery).  `src/` untouched — the exporter integration of big form is
-a later stage.
+battery) and, with `--planes`, `big-form-planes-loops.csv` (one row
+per nonplanar loop of the walk-exact big stores: family, triangle
+count, direction classes d, class, cos1000 — deterministic,
+byte-identical across runs).  `src/` untouched — the exporter
+integration of big form is a later stage.
