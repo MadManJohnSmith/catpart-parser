@@ -89,6 +89,35 @@ the lex-rank mapping (correction C8).
 - ``geometry-composite-index-space`` -> an ``01 02`` edge-group wrapper
   (G3 F8's 6-byte ``02 02 (u16be)(u16be)`` records) marks the composite
   index space -> ``undecoded-variant`` (open question 1).
+
+Recovery variants (G6 stage 3a, #34 — the locator recovery extension;
+each is the fixture twin of a stage-1 census recovery family):
+
+- ``geometry-seebody-store``    -> the store sits in a ``CATSeeBodyCont``
+  block and no ``CATStdCont`` block exists (census case 03efd608,
+  no_stdcont family): the container probe recovers it -> exports 12
+  triangles, summary ``store_recovery`` = seebody/shipped.
+- ``geometry-xdoclink-store``   -> a store-less ``CATStdCont`` block and
+  the store in a ``CATXDocLinkCont`` block (census case 01f2a48c,
+  next_block_store family, R19) -> exports via the xdoclink probe,
+  ``store_recovery`` = xdoclink/shipped.
+- ``geometry-overshoot-tail``   -> the stdcont store's ``dword8``
+  overshoots the catalog magic by 9 B (G1 correction C3; the shipped
+  tail runs past ``CB__END``) -> the relaxed tail law recovers it,
+  ``store_recovery`` = stdcont/overshoot.
+- ``geometry-padded-tail``      -> the stdcont store's catalog trailer
+  sits inside the tail, zero-padded to dword12 = 128 (G1 padded-tail
+  variant) -> relaxed tail law ends the tail at its ``CB__END``,
+  ``store_recovery`` = stdcont/padded.
+- ``geometry-seebody-composite``-> a seebody store carrying the ``01 02``
+  edge group: recovered, then the composite gate fires ->
+  ``undecoded-variant`` with the recovery named on the error detail.
+- ``geometry-seebody-empty``    -> a ``CATSeeBodyCont`` block carrying no
+  store (census case 084841b3): the probe matches nothing, fail-closed
+  -> ``missing-geometry-store``.
+- ``geometry-overshoot-bad-tail`` -> an overshoot store whose corrected
+  tail also violates N6 (C != D): neither tail family recovers,
+  fail-closed -> ``malformed-store-header``.
 """
 
 from __future__ import annotations
@@ -130,6 +159,11 @@ VALID_VARIANTS = (
     "geometry",
     "geometry-open-shell",
     "geometry-composite-law",
+    # Stage-3a recovery variants (#34): valid-shaped, export pass.
+    "geometry-seebody-store",
+    "geometry-xdoclink-store",
+    "geometry-overshoot-tail",
+    "geometry-padded-tail",
 )
 CORRUPTED_VARIANTS = (
     "bad-magic",
@@ -147,14 +181,29 @@ CORRUPTED_VARIANTS = (
     "geometry-truncated-pool",
     # Composite-law variants (G6 stage 2c, #34).
     "geometry-composite-law-nonplanar",
+    # Stage-3a fail-closed negatives (#34): recovered-then-failing,
+    # probe-matches-nothing, and neither-tail-family-recovers.
+    "geometry-seebody-composite",
+    "geometry-seebody-empty",
+    "geometry-overshoot-bad-tail",
 )
-GEOMETRY_VARIANTS = ("geometry", "geometry-open-shell") + (
+GEOMETRY_VARIANTS = (
+    "geometry",
+    "geometry-open-shell",
+    "geometry-seebody-store",
+    "geometry-xdoclink-store",
+    "geometry-overshoot-tail",
+    "geometry-padded-tail",
+) + (
     "geometry-bad-nested-magic",
     "geometry-composite-index-space",
     "geometry-missing-facet-payload",
     "geometry-nan-coords",
     "geometry-out-of-range-refs",
     "geometry-truncated-pool",
+    "geometry-seebody-composite",
+    "geometry-seebody-empty",
+    "geometry-overshoot-bad-tail",
 )
 COMPOSITE_VARIANTS = (
     "geometry-composite-law",
@@ -558,7 +607,14 @@ def _geometry_store(variant: str) -> bytes:
     dword8 = catalog offset, dword12 = catalog tail length, N2), body,
     minimal catalog (CB0001 magic + 36 B trailer satisfying the G1 N6
     laws: CB__END, C == D, G == tail length) and the 126 B inter-block
-    tail with the writer registration block (N9)."""
+    tail with the writer registration block (N9).
+
+    Stage-3a tail variants (#34): ``geometry-overshoot-tail`` overshoots
+    dword8 by 9 B (G1 C3 — the shipped tail end runs past ``CB__END``);
+    ``geometry-padded-tail`` zero-pads the 52-B catalog to dword12 =
+    128 (G1 padded-tail — the trailer sits inside the tail);
+    ``geometry-overshoot-bad-tail`` breaks C == D on top of the
+    overshoot, so neither tail family recovers (fail-closed)."""
     faces = list(GEOMETRY_FACES)
     if variant == "geometry-out-of-range-refs":
         marker, normal, refs = faces[0]
@@ -582,7 +638,7 @@ def _geometry_store(variant: str) -> bytes:
         + bytes([8])
         + b"".join(NESTED_VREC + struct.pack("<fff", *v) for v in vertices)
     ]
-    if variant == "geometry-composite-index-space":
+    if variant in ("geometry-composite-index-space", "geometry-seebody-composite"):
         # G3 F8's edge-table sketch: 6-byte `02 02 (u16be)(u16be)`
         # records — the composite index-space marker (open question 1).
         body_parts.append(
@@ -612,25 +668,69 @@ def _geometry_store(variant: str) -> bytes:
 
     catalog_len = NESTED_CATALOG_LEN
     d8n = 32 + len(body)
+    d12n = NESTED_CATALOG_LEN
+    after_catalog = b""
+    if variant in ("geometry-overshoot-tail", "geometry-overshoot-bad-tail"):
+        # G1 C3: dword8 overshoots the catalog magic by k = 9 (a corpus
+        # family value); the shipped tail window inherits the same
+        # overshoot and runs k B past CB__END.
+        d8n += OVERSHOOT_K
+        after_catalog = b"\x00" * OVERSHOOT_K
+    elif variant == "geometry-padded-tail":
+        # G1 padded-tail: the trailer sits inside the tail; dword12 is
+        # rounded up and the difference is zero padding.
+        d12n = PADDED_TAIL_LEN
     nested_magic = b"V5_CFV3\x00" if variant == "geometry-bad-nested-magic" else MAGIC
-    header = (
-        nested_magic
-        + struct.pack(">II", d8n, catalog_len)
-        + b"\xff" * 8
-        + b"\x00" * 8
-    )
+    header = nested_magic + struct.pack(">II", d8n, d12n) + b"\xff" * 8 + b"\x00" * 8
     catalog = NESTED_CB0001 + struct.pack(
-        ">7I", 1, 0, 0xE7, 0xE7, 0, 0, catalog_len
+        ">7I", 1, 0, 0xE7, 0xE8 if variant == "geometry-overshoot-bad-tail" else 0xE7, 0, 0, catalog_len
     ) + TRAILER_MARKER
     tail126 = registration_block() + b"\x00" * (126 - 41)
-    return header + body + catalog + tail126
+    if variant == "geometry-padded-tail":
+        padding = b"\x00" * (PADDED_TAIL_LEN - NESTED_CATALOG_LEN)
+        return header + body + catalog + padding + tail126
+    return header + body + catalog + after_catalog + tail126
+
+
+#: Stage-3a tail-variant constants (#34): the dword8 overshoot k (the
+#: census family spans 5..28, mode 13; 9 appears twice) and the padded
+#: dword12 (corpus rounds to 3,072/4,096; the fixture uses a small one).
+OVERSHOOT_K = 9
+PADDED_TAIL_LEN = 128
+
+
+def _nested_store_block(name: bytes, store_bytes: bytes | None) -> bytes:
+    """One storage block carrying (or not carrying) a nested store.
+
+    With a store, the preamble lands its origin at block + 250 (G1 N1h:
+    the 248..268 window covers 1,051/1,056 corpus header stores); with
+    ``None`` the block region is marker-free filler (G1 N10's
+    store-less family)."""
+    block = storage_property_block(name, b"CATContainer")
+    if store_bytes is None:
+        return block + b"\x00" * 96
+    preamble = 250 - len(block)
+    return block + b"\x00" * preamble + store_bytes
 
 
 def _geometry_payload(variant: str) -> bytes:
-    """The CATStdCont block + property preamble + nested store.
+    """The storage blocks + property preambles + nested store(s).
 
-    The preamble lands the store origin at block + 250 (G1 N1h: the
-    248..268 window covers 1,051/1,056 corpus header stores)."""
+    Default: one ``CATStdCont`` block carrying the store. The stage-3a
+    recovery variants place the store per its census family (#34):
+    ``geometry-seebody-store``/``-seebody-composite``/``-seebody-empty``
+    in a ``CATSeeBodyCont`` block (no ``CATStdCont`` block at all — the
+    no_stdcont family), ``geometry-xdoclink-store`` in a
+    ``CATXDocLinkCont`` block behind a store-less ``CATStdCont`` block
+    (the next_block_store family)."""
+    if variant in ("geometry-seebody-store", "geometry-seebody-composite"):
+        return _nested_store_block(b"CATSeeBodyCont", _geometry_store(variant))
+    if variant == "geometry-seebody-empty":
+        return _nested_store_block(b"CATSeeBodyCont", None)
+    if variant == "geometry-xdoclink-store":
+        return _nested_store_block(b"CATStdCont", None) + _nested_store_block(
+            b"CATXDocLinkCont", _geometry_store(variant)
+        )
     preamble = 250 - len(storage_property_block(b"CATStdCont", b"CATContainer"))
     return (
         storage_property_block(b"CATStdCont", b"CATContainer")

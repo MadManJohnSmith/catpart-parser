@@ -22,6 +22,14 @@ summary (:data:`EXPORT_SCHEMA_VERSION`, committed as
 self-checked against the committed schema like the fitness runner's
 artifacts. Every failure raises :class:`ExportError` with a
 machine-readable class (see :mod:`catpart.geometry.errors`).
+
+Store search is the stage-3a locator recovery extension (#34, the L5
+lever): after the shipped ``CATStdCont`` law finds nothing,
+``CATXDocLinkCont`` then ``CATSeeBodyCont`` regions are probed with the
+same law, and the two G1-documented catalog-tail variants (dword8-
+overshoot, padded) recover under a relaxed tail law — all fail-closed,
+with the recovery named on the span, the success summary
+(``store_recovery``) or the failure detail.
 """
 
 from __future__ import annotations
@@ -70,22 +78,28 @@ def build_export(path, out_path) -> dict:
 
 
 def _export_data(data) -> tuple[dict, list, list]:
-    """Decode ``data``'s first exportable CATStdCont store.
+    """Decode ``data``'s first exportable nested store.
 
-    Returns ``(summary, vertices, triangles)``. With several CATStdCont
+    Returns ``(summary, vertices, triangles)``. With several candidate
     blocks the first store passing G3's export gate wins; when all of
     them fail, the first classification is re-raised.
+
+    Store search (stage 3a #34): the ``CATStdCont`` regions carry the
+    shipped law; when no ``CATStdCont`` region located a store, the
+    ``CATXDocLinkCont`` regions (G1's next_block_store family) and then
+    the ``CATSeeBodyCont`` regions are probed with the same law — the
+    stage-3a locator recovery extension. Probing is fail-closed: a
+    region probed and not matching stays as-is (``missing-geometry-
+    store``), a region that matches names its probe on the span, and a
+    part whose ``CATStdCont`` store located (passing or failing decode)
+    never reaches the probes.
     """
     size = len(data)
     d8_outer = int.from_bytes(data[8:12], "big") if size >= 12 else 0
     blocks = store.valid_blocks(data)
     stdcont = [b for b, nm in blocks if nm == "CATStdCont"]
-    if not stdcont:
-        raise ExportError(
-            "missing-geometry-store",
-            "no CATStdCont storage block in the file "
-            "(G1 N1: 204/1,377 dev parts carry none)",
-        )
+    xdoclink = [b for b, nm in blocks if nm == "CATXDocLinkCont"]
+    seebody = [b for b, nm in blocks if nm == "CATSeeBodyCont"]
     first_error: ExportError | None = None
     located = False
     for ordinal, blk in enumerate(stdcont):
@@ -102,17 +116,74 @@ def _export_data(data) -> tuple[dict, list, list]:
             summary, vertices, triangles = _export_store(data, span, ordinal)
         except ExportError as exc:
             if first_error is None:
-                first_error = exc
+                first_error = _recovered_error(exc, span)
             continue
         return summary, vertices, triangles
     if not located and first_error is None:
-        raise ExportError(
-            "missing-geometry-store",
-            "no validated nested stream store in any CATStdCont region "
-            "(G1 N10 miss taxonomy: none_in_region / embedded_doc / "
-            "next_block_store families)",
-        )
+        # Stage 3a recovery extension (#34): probe the non-CATStdCont
+        # containers, xdoclink first (G1's next_block_store family is
+        # xdoc-carrying, R19), then seebody. Parts whose CATStdCont
+        # store located — or whose CATStdCont header raised — never
+        # reach these probes, so every pre-stage-3a classification
+        # except missing-geometry-store is unchanged.
+        for tag, cands in (
+            (store.CONTAINER_XDOCLINK, xdoclink),
+            (store.CONTAINER_SEEBODY, seebody),
+        ):
+            for ordinal, blk in enumerate(cands):
+                try:
+                    span = store.locate_store(
+                        data, blk, blocks, d8_outer, container=tag
+                    )
+                except ExportError as exc:
+                    if first_error is None:
+                        first_error = exc
+                    continue
+                if span is None:
+                    continue
+                located = True
+                try:
+                    summary, vertices, triangles = _export_store(data, span, ordinal)
+                except ExportError as exc:
+                    if first_error is None:
+                        first_error = _recovered_error(exc, span)
+                    continue
+                return summary, vertices, triangles
+        if not located and first_error is None:
+            if not stdcont:
+                raise ExportError(
+                    "missing-geometry-store",
+                    "no CATStdCont storage block in the file and no "
+                    "validated nested stream store in any "
+                    "CATXDocLinkCont/CATSeeBodyCont region (G1 N1: "
+                    "204/1,377 dev parts carry no CATStdCont; stage-3a "
+                    "probes exhausted)",
+                )
+            raise ExportError(
+                "missing-geometry-store",
+                "no validated nested stream store in any CATStdCont/"
+                "CATXDocLinkCont/CATSeeBodyCont region (G1 N10 miss "
+                "taxonomy: none_in_region / embedded_doc families; "
+                "stage-3a probes exhausted)",
+            )
     raise first_error  # all located stores failed classification
+
+
+def _recovered_error(exc: ExportError, span: store.StoreSpan) -> ExportError:
+    """Record the recovery provenance on a recovered store's failure.
+
+    A store recovered by the stage-3a extension (a non-``CATStdCont``
+    probe, or a relaxed tail law) that then fails the decode keeps its
+    classification with the probe/law named in the detail; a store the
+    shipped law located passes through unchanged.
+    """
+    if span.container == store.CONTAINER_STDCONT and span.tail_law == store.TAIL_LAW_SHIPPED:
+        return exc
+    return ExportError(
+        exc.error_class,
+        f"{exc.detail} [store recovered via the {span.container} probe, "
+        f"{span.tail_law} tail law]",
+    )
 
 
 def _export_store(data, span, ordinal: int) -> tuple[dict, list, list]:
@@ -243,6 +314,14 @@ def _export_store(data, span, ordinal: int) -> tuple[dict, list, list]:
             "boundary_edge_count": stats.boundary_edges,
         },
     }
+    if span.container != store.CONTAINER_STDCONT or span.tail_law != store.TAIL_LAW_SHIPPED:
+        # Stage 3a (#34): the store was recovered — name the probe and
+        # the tail law on the summary (additive; absent on stores the
+        # shipped law located).
+        summary["store_recovery"] = {
+            "container": span.container,
+            "tail_law": span.tail_law,
+        }
     _self_check(summary)
     return summary, flat, list(soup.triangles)
 

@@ -30,6 +30,20 @@ Model (docs/evidence/2026-11-09-nested-store.md):
   sufficient structural check for the body extent. The body is
   ``origin + 32 .. catalog_start`` (header variant) or
   ``origin + 64 .. catalog_start`` (header-less).
+- Recovery extension (stage 3a #34, the L5 lever). Two additions, both
+  fail-closed, measured on the corpus in
+  docs/evidence/2026-11-10-l2-grind-classification.md sections 5-6:
+  (a) the relaxed tail law recovers the two G1-documented tail
+  variants the shipped window rejects — the dword8-overshoot tail
+  (C3: read ``[cb, cb + dword12)`` from the true catalog magic) and
+  the padded tail (end the tail at its ``CB__END``, N4w); a tail
+  neither family recovers keeps the shipped ``malformed-store-header``
+  rejection. (b) the caller may probe ``CATXDocLinkCont`` and
+  ``CATSeeBodyCont`` regions with the same law (``container`` records
+  the probing family on the span) — containers the locator never
+  visited before stage 3a; the exporter does this only when no
+  ``CATStdCont`` region located a store. Every recovered store names
+  how it was recovered (``StoreSpan.container``/``StoreSpan.tail_law``).
 
 ``data`` is any bytes-like buffer supporting slicing, ``find()`` and
 ``len()`` (``bytes`` or a read-only :class:`mmap.mmap`).
@@ -53,6 +67,16 @@ TAIL126 = 126  # inter-block tail after the container (N3b/N9)
 
 ORIGIN_KIND_HEADER = "v5header"
 ORIGIN_KIND_BLOCK = "block"
+
+# Stage 3a recovery provenance (#34): which container family located the
+# store and which catalog-tail law validated it. ``stdcont``/``shipped``
+# is the pre-stage-3a behavior; every other combination is a recovery.
+CONTAINER_STDCONT = "stdcont"
+CONTAINER_XDOCLINK = "xdoclink"
+CONTAINER_SEEBODY = "seebody"
+TAIL_LAW_SHIPPED = "shipped"
+TAIL_LAW_OVERSHOOT = "overshoot"
+TAIL_LAW_PADDED = "padded"
 
 
 def find_all(data, needle: bytes, start: int, end: int) -> list[int]:
@@ -127,6 +151,10 @@ class StoreSpan:
 
     ``body_lo``/``body_hi`` bound the store body (the pool and facet
     territory the exporter reads); ``body_hi`` is the catalog start.
+    ``container``/``tail_law`` carry the stage-3a recovery provenance
+    (#34): how the store was located — which container family and which
+    catalog-tail law. ``stdcont``/``shipped`` is the default (the
+    pre-stage-3a law).
     """
 
     block_start: int
@@ -135,16 +163,81 @@ class StoreSpan:
     body_lo: int
     body_hi: int
     catalog_len: int
+    container: str = CONTAINER_STDCONT
+    tail_law: str = TAIL_LAW_SHIPPED
 
 
-def locate_store(data, blk: int, blocks: list[tuple[int, str]], d8_outer: int) -> StoreSpan | None:
-    """Bound one CATStdCont block region's nested store (G1 analyze_region).
+def _relaxed_tail_span(
+    data, blk: int, j: int, d8n: int, d12n: int, cb: int, container: str
+) -> StoreSpan | None:
+    """The two G1-documented catalog-tail variants (stage 3a #34).
+
+    Applies only after the shipped tail law rejected ``[cb, j+d8n+d12n)``:
+
+    - dword8-overshoot (G1 correction C3, k = 5..28 B): ``dword8``
+      overshoots the catalog magic by ``k`` and the shipped tail end
+      inherits the same overshoot, running ``k`` bytes past the
+      catalog's ``CB__END``; the true tail is ``[cb, cb + d12n)``.
+    - padded-tail (G1): the catalog's trailer sits *inside* the tail,
+      ``CB__END`` followed by zero padding up to the round dword12;
+      the tail ends at its ``CB__END`` (N4w: the trailer's ``G`` names
+      the true catalog length).
+
+    Both recover only when the corrected tail satisfies the same N6
+    trailer laws (:func:`validate_catalog_tail`); otherwise ``None`` is
+    returned and the shipped rejection stands (fail-closed).
+    """
+    k = j + d8n - cb
+    if k > 0:
+        tail = bytes(data[cb : cb + d12n])
+        if validate_catalog_tail(tail):
+            return StoreSpan(
+                block_start=blk,
+                origin=j,
+                origin_kind=ORIGIN_KIND_HEADER,
+                body_lo=j + HEADER_LEN,
+                body_hi=cb,
+                catalog_len=d12n,
+                container=container,
+                tail_law=TAIL_LAW_OVERSHOOT,
+            )
+    ship_tail = bytes(data[cb : j + d8n + d12n])
+    pos = ship_tail.find(CB_END)
+    if pos >= 0:
+        tail = ship_tail[: pos + 8]
+        if validate_catalog_tail(tail):
+            return StoreSpan(
+                block_start=blk,
+                origin=j,
+                origin_kind=ORIGIN_KIND_HEADER,
+                body_lo=j + HEADER_LEN,
+                body_hi=cb,
+                catalog_len=len(tail),
+                container=container,
+                tail_law=TAIL_LAW_PADDED,
+            )
+    return None
+
+
+def locate_store(
+    data,
+    blk: int,
+    blocks: list[tuple[int, str]],
+    d8_outer: int,
+    container: str = CONTAINER_STDCONT,
+) -> StoreSpan | None:
+    """Bound one block region's nested store (G1 analyze_region).
 
     Returns ``None`` when the region carries no store (G1's
     ``none_in_region`` / ``embedded_doc`` families) and raises
     ``malformed-store-header`` when a ``V5_CFV2`` header is present but
-    fails the N2 validation (G1's ``header_invalid`` family, 0 corpus
-    hits — every failure mode is a real defect, not a variant).
+    fails both the N2 validation and the stage-3a relaxed tail law
+    (#34: G1's two documented tail variants, applied fail-closed — a
+    tail neither family recovers keeps the shipped rejection).
+
+    ``container`` records the probing family on the returned span (the
+    exporter probes ``CATXDocLinkCont``/``CATSeeBodyCont`` regions too,
+    stage 3a); the tail laws themselves are container-independent.
     """
     size = len(data)
     rend = probe_region(data, blk, blocks, d8_outer)
@@ -176,10 +269,21 @@ def locate_store(data, blk: int, blocks: list[tuple[int, str]], d8_outer: int) -
             )
         tail = bytes(data[cb : j + d8n + d12n])
         if not validate_catalog_tail(tail):
+            # Stage 3a (#34): the shipped tail window is wrong for two
+            # G1-documented families — the dword8-overshoot tail (the
+            # end inherits the dword8 overshoot, C3) and the padded
+            # tail (the trailer sits inside the zero padding). Try the
+            # corrected windows fail-closed; an unrecognized tail keeps
+            # the shipped malformed-store-header classification.
+            span = _relaxed_tail_span(data, blk, j, d8n, d12n, cb, container)
+            if span is not None:
+                return span
             raise ExportError(
                 "malformed-store-header",
                 f"catalog tail at {cb} (length {d12n}) violates the G1 N6 "
-                "trailer laws (CB__END, C == D, G == tail length)",
+                "trailer laws (CB__END, C == D, G == tail length) and "
+                "matches neither stage-3a recovery family (dword8-"
+                "overshoot, padded-tail)",
             )
         return StoreSpan(
             block_start=blk,
@@ -188,6 +292,7 @@ def locate_store(data, blk: int, blocks: list[tuple[int, str]], d8_outer: int) -
             body_lo=j + HEADER_LEN,
             body_hi=cb,
             catalog_len=d12n,
+            container=container,
         )
 
     # ---- header-less variant / embedded document
@@ -205,6 +310,7 @@ def locate_store(data, blk: int, blocks: list[tuple[int, str]], d8_outer: int) -
                 body_lo=blk + HDRLESS_BODY,
                 body_hi=cb,
                 catalog_len=tail_len,
+                container=container,
             )
     # A CB0001 that validates as neither tail form is an embedded
     # document's own outer-style catalog (G1 N10), not a stream store.

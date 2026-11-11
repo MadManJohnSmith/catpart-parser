@@ -10,15 +10,19 @@ Error classes (ticket #32, consistent with the fitness classification
 convention of kebab-case classes plus evidence-citing detail):
 
 - ``missing-geometry-store``: no ``CATStdCont`` block, or no validated
-  nested stream store in any ``CATStdCont`` region (G1's miss taxonomy,
-  docs/evidence/2026-11-09-nested-store.md section 6).
+  nested stream store in any ``CATStdCont``/``CATXDocLinkCont``/
+  ``CATSeeBodyCont`` region (G1's miss taxonomy,
+  docs/evidence/2026-11-09-nested-store.md section 6; the non-stdcont
+  probes are the stage-3a recovery extension, #34).
 - ``undecoded-variant``: a store is present but its geometry is not
   exportable under the pinned decode model — composite index space
   (G3 claim F8, open question 1), facet references beyond the pool
   (G3 open question 2), or no exportable facet content at all
   (0x41/0x44/0x4b/0x4e-only stores, G3 open questions 3-5).
 - ``malformed-store-header``: a ``V5_CFV2`` header is present but fails
-  the G1 N2 validation (ff x 8, zeros x 8, sane dwords, catalog magic).
+  the G1 N2 validation (ff x 8, zeros x 8, sane dwords, catalog magic),
+  or its catalog tail matches neither the N6 trailer laws nor the two
+  stage-3a relaxed-tail recovery families (dword8-overshoot, padded).
 - ``malformed-pool-group``: a ``01 06`` pool group's walked vertex-record
   count does not equal its count field (G2 claim P2g violation; 2,090/
   2,090 corpus groups walk exactly, so a mismatch is broken structure).
