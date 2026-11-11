@@ -95,6 +95,16 @@ files:
   hosts only coordinator-executed work. A failed child's worktree is
   usually clean — check before re-dispatching, and re-dispatch as a NEW
   delegate_task (both 3008 and 1005 recovered on retry).
+  Observed 2026-11-11: the owner re-authorized 2-parallel (session
+  retro), and 3008 recurred the SAME day with two overlapping child
+  turns (stage 4b died while stage 4a ran) — the provider's effective
+  limit is one child turn in flight regardless of policy. Operating
+  rule: dispatch two only when their turns will not overlap (e.g. a
+  short gate pass against a long analysis); on 3008, serialize until
+  the in-flight child completes, then re-dispatch fresh. The provider
+  also handed the session off between backends mid-day (one fallback
+  died on an out-of-balance account) — recover thread state via
+  `t3_thread_read`, not memory.
 - Adopting an external changeset (precedent: ticket #35, 2026-11-10):
   state the expected per-store/per-part delta BEFORE running the corpus
   A/B, and treat any unexplained delta as a stop-and-re-root-cause gate.
