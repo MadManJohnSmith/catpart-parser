@@ -565,3 +565,52 @@ composite counters).  The decode rates and the fail-closed ladder
 histogram cited in the stage-3d section come from this runner plus
 the decode-level audit above; the fitness row itself stays with the
 coordinator.
+
+## Stage 4a-residue: the walk-mismatch families split — a raw-array law (2026-11-11, coordinator-executed)
+
+Dispatch note: this stage was dispatched twice to subagents and both
+turns died with the provider's 3008 user-concurrency limit (the parallel
+coordinator session's U4 curve-entry child held the slot); executed
+coordinator-side per the documented fallback (handoff-2026-11-09
+precedent).  Analysis only — src/ untouched.
+
+**Census (fact, `residue-family-census.csv`):** the walk-mismatch
+population is 121 composite stores — 83 walk-end-mismatch big + 16
+small (walk runs but does not end at the declared region end) plus 22
+where the P1t layout itself raises.  All 83 big mismatches are OVERRUNS
+(delta_words > 0, range 19..415,192); the declared P1g write count
+reads 1 byte in 99/99 (walk-OK big stores: count_bytes=5 on 656/829);
+elem/write_count median 19.9 (walk-OK: 0.57).  Inference: the single
+[zero block + table + count] P1t prefix does not describe these
+payloads.
+
+**Raw-array family (fact on 3 anchors; start rule pinned in 32/39):**
+the payload continues past the header as RAW f32 triples —
+`[token][count1][count2][tail][elem_decl x [x][y][z] stride 12, x
+ascending][FF][count3 u32le][trail]`.  Anchors 278015fe (start 40),
+92b9ef17 and 0280c202 (start 48) decode nice=1.000 / x-ascending=1.000
+for the full elem_decl span; the trail opens with a 0xFF escape count.
+The start is NOT discriminated by nice-rate alone (a +4 shift reads
+(y,z,x') triples, also all-nice) — the arbiter is the trail-escape
+condition `payload[start + 12*elem_decl] == 0xFF`, which selects a
+unique start in 32/39 scan-fit stores.  Anchors byte-verified through
+`scripts/triage/probe_residue_anchor.py`.
+
+**Rates (fact, `residue-raw-scan.csv`, 121 walk-mismatch stores):**
+strong raw-fit (nice >= 0.98 AND x-asc >= 0.98): **35 (31 big + 4
+small)**, pool absorbed in **29/35**; weak-fit 45; no-fit 41.
+Projected if integrated: ~29-31 additional passes (dev 734 -> ~763-765,
+~55.3%) — an honest range, not a wish.
+
+**Open, named:** (1) the tail field's semantics (4B `00 00 00 01`
+observed; abacf110 shows a 3B variant `01 00 01`); (2) count3's
+semantics (observed 480 / 1,848 / 2,764 — not the trail byte length);
+(3) the 45 weak-fit stores; (4) the 41 no-fit stores — ccbb7862 (elem
+245,621) exceeds 12*elem_decl against a 2.5 MB payload: a different
+packing; and the stage-3b second-layout probe (P1t repeating after a
+zero block) fits structurally on 41 stores — the multi-part-container
+hypothesis holds for part of the rest.
+
+Repro: `python3 -I scripts/triage/classify_residue_family.py`
+(census) / `--raw` (raw scan) / `scripts/triage/probe_residue_anchor.py
+<sha16>`.
