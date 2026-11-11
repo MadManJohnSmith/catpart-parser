@@ -164,6 +164,10 @@ VALID_VARIANTS = (
     "geometry-xdoclink-store",
     "geometry-overshoot-tail",
     "geometry-padded-tail",
+    # Stage-3d walk-law variants (#34): the point region under the 2-bit
+    # table law; small and big form both export through the walk.
+    "geometry-composite-walk-law",
+    "geometry-composite-walk-big",
 )
 CORRUPTED_VARIANTS = (
     "bad-magic",
@@ -181,6 +185,9 @@ CORRUPTED_VARIANTS = (
     "geometry-truncated-pool",
     # Composite-law variants (G6 stage 2c, #34).
     "geometry-composite-law-nonplanar",
+    # Stage-3d walk-law negative (#34): the declared write count
+    # disagrees with the table's shapes — big form fails labeled.
+    "geometry-composite-walk-count-mismatch",
     # Stage-3a fail-closed negatives (#34): recovered-then-failing,
     # probe-matches-nothing, and neither-tail-family-recovers.
     "geometry-seebody-composite",
@@ -208,6 +215,11 @@ GEOMETRY_VARIANTS = (
 COMPOSITE_VARIANTS = (
     "geometry-composite-law",
     "geometry-composite-law-nonplanar",
+    # Stage-3d walk-law variants (#34): the point region encoded under
+    # the 2-bit table law (U1), curve entries as skip slots.
+    "geometry-composite-walk-law",
+    "geometry-composite-walk-big",
+    "geometry-composite-walk-count-mismatch",
 )
 
 # --- nested-store geometry (G4, #32) -----------------------------------
@@ -545,6 +557,116 @@ def _composite_node_payload(elem_decl: int, points) -> bytes:
 LIST_TOKEN_MARKER = b"\xff\xff\x02\x00\x01"
 
 
+# --- stage-3d walk-law composite fixture (#34) ---------------------------
+#
+# The same box as the stage-2c composite fixture, but the list node's
+# point region is encoded under the 2-bit table law (U1, stage 3b): a
+# table of exactly ceil(elem/4) bytes (LSB-first slots), a P1g write
+# count, and the region the slots' shapes describe.  Two of the 14
+# elements are skip slots (curve entries, U4); one 0x4a strip loop
+# references one of them, so the identity decode exports the box minus
+# that face and warns.
+
+#: Per-element table values in region order (U1: 0 = [x][y][z],
+#: 1 = skip curve entry, 2 = [z], 3 = [y][z]); the 12 written points
+#: are COMPOSITE_POINTS in order.
+COMPOSITE_WALK_VALUES = (
+    3, 2, 2, 3, 1, 2, 2, 0, 2, 2, 3, 1, 2, 2,
+)
+
+#: The element-index space: written points at their region slots, skip
+#: slots at 4 and 11 (element_decl = 14).  ``COMPOSITE_WALK_ELEM[v]``
+#: is the element index of vertex ``v``.
+COMPOSITE_WALK_ELEM = (
+    0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 12, 13,
+)
+
+#: The six box faces as element-index refs (the stage-2c faces mapped
+#: through COMPOSITE_WALK_ELEM); the z=0 strip references skip slot 4,
+#: so the identity decode drops that loop (U4) — 10 triangles remain.
+COMPOSITE_WALK_FACES = (
+    (0x4A, (0.0, 0.0, -1.0), (7, 0, 4, 3)),
+    (0x4A, (0.0, 1.0, 0.0), (13, 10, 6, 3)),
+    (0x4A, (0.0, 0.0, 1.0), (2, 9, 6, 13)),
+    (0x4A, (0.0, -1.0, 0.0), (7, 9, 0, 2)),
+    (0x4C, (-1.0, 0.0, 0.0), (0, 2, 6, 3)),
+    (0x4C, (1.0, 0.0, 0.0), (7, 10, 13, 9)),
+)
+
+COMPOSITE_WALK_EDGES = tuple(
+    (COMPOSITE_WALK_ELEM[a], COMPOSITE_WALK_ELEM[b]) for a, b in COMPOSITE_EDGES
+)
+
+
+def _walk_table(values) -> bytes:
+    """The 2-bit table: LSB-first slots, exactly ceil(elem/4) bytes."""
+    out = bytearray()
+    for i in range(0, len(values), 4):
+        byte = 0
+        for j, v in enumerate(values[i : i + 4]):
+            byte |= v << (2 * j)
+        out.append(byte)
+    return bytes(out)
+
+
+def _walk_point_region(values, points) -> bytes:
+    """The region the table's shapes describe (the walk's inverse).
+
+    The LCP state carries x/y/z across skip slots and suffix writes:
+    value 0 writes [x][y][z], 3 writes [y][z] (x carried), 2 writes
+    [z] (x, y carried), 1 writes nothing.
+    """
+    words: list[bytes] = []
+    x = y = 0.0
+    pi = 0
+    for v in values:
+        if v == 1:
+            continue
+        px, py, pz = points[pi]
+        pi += 1
+        if v == 0:
+            words.append(struct.pack("<fff", px, py, pz))
+        elif v == 3:
+            assert px == x, (px, x)
+            words.append(struct.pack("<ff", py, pz))
+        elif v == 2:
+            assert (px, py) == (x, y), ((px, py), (x, y))
+            words.append(struct.pack("<f", pz))
+        x, y = px, py
+    assert pi == len(points)
+    return b"".join(words)
+
+
+def _walk_node_payload(values, points, write_count: int | None = None, pad: int = 0) -> bytes:
+    """The stage-3b list-node payload: header + token + declared counts
+    + zero block + the ceil(elem/4)-byte table + the P1g write count +
+    the region + a trailing region (optionally padded, for the big-form
+    variants)."""
+    header = (
+        struct.pack("<I", 1)  # 00 00 00 01
+        + struct.pack("<I", 7)  # node id
+        + struct.pack("<I", 0)  # flags
+        + struct.pack("<fff", 10.0, 60.0, 30.0)  # origin
+        + struct.pack("<I", 3)  # kind
+        + b"\x00"  # trailing header byte (the 29-B corpus header)
+    )
+    elem_decl = len(values)
+    body = header
+    body += LIST_TOKEN_MARKER
+    counts = bytes([elem_decl]) if elem_decl < 0xFF else b"\xff" + struct.pack(
+        "<I", elem_decl
+    )
+    body += counts + counts
+    body += b"\x00\x00\x00\x00"  # the zero block
+    body += _walk_table(values)
+    wc = sum({0: 3, 1: 0, 2: 1, 3: 2}[v] for v in values) if write_count is None else write_count
+    body += bytes([wc]) if wc < 0xFF else b"\xff" + struct.pack("<I", wc)
+    body += _walk_point_region(values, points)
+    body += b"\x00" * pad
+    body += b"\x00\x00\x00\x00" + b"\x00\x04\x02\x0a" + b"\x02"  # trailing
+    return body
+
+
 def _composite_store(variant: str) -> bytes:
     """A small-form composite store: pool + edge group + the list node
     (point region under the refined law) + facet records over the
@@ -557,6 +679,29 @@ def _composite_store(variant: str) -> bytes:
         faces[0] = (0x4A, (0.0, 0.0, -1.0), (11, 0, 6, 3))
     points = COMPOSITE_POINTS
     node_payload = _composite_node_payload(len(points), points)
+    edges = COMPOSITE_EDGES
+    if variant in (
+        "geometry-composite-walk-law",
+        "geometry-composite-walk-big",
+        "geometry-composite-walk-count-mismatch",
+    ):
+        # Stage 3d (#34): the point region under the 2-bit table law;
+        # the facet records reference ELEMENT indices (M2b identity),
+        # and the pool walk is the written points verbatim (absorbed).
+        faces = list(COMPOSITE_WALK_FACES)
+        if variant == "geometry-composite-walk-count-mismatch":
+            # The declared write count disagrees with the slots' shapes:
+            # the walk ends 4 B short of the declared region end — the
+            # big-form labeled walk-failure classification.
+            node_payload = _walk_node_payload(
+                COMPOSITE_WALK_VALUES, points, write_count=18, pad=4100
+            )
+        else:
+            node_payload = _walk_node_payload(
+                COMPOSITE_WALK_VALUES, points,
+                pad=4100 if variant == "geometry-composite-walk-big" else 0,
+            )
+        edges = COMPOSITE_WALK_EDGES
     body_parts = [
         NESTED_FULL_WRAP
         + NESTED_POOL_SUBKIND
@@ -568,9 +713,9 @@ def _composite_store(variant: str) -> bytes:
         # the box's 12 edges as merged-space positions (F8/E2).
         NESTED_FULL_WRAP
         + NESTED_EDGE_SUBKIND
-        + bytes([len(COMPOSITE_EDGES)])
+        + bytes([len(edges)])
         + b"".join(
-            b"\x02\x02" + struct.pack(">BB", a, b) for a, b in COMPOSITE_EDGES
+            b"\x02\x02" + struct.pack(">BB", a, b) for a, b in edges
         ),
         b"\x04\x04\xfd\xff" + node_payload,
     ]

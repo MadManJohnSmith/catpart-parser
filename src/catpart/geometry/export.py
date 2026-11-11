@@ -329,18 +329,21 @@ def _export_store(data, span, ordinal: int) -> tuple[dict, list, list]:
 def _export_composite_store(data, span, ordinal: int, groups, kinds):
     """Decode one composite store span under the recovered merge law.
 
-    The G6 stage-2c integration (#34, M2b): the element space is the
-    lex-sorted merge of the pool and the list node's decoded point
-    region; facet references resolve through the monotone-shift loop
-    mapping the stage-2b plane law operationalizes.  Vertices are the
-    decoded node points (the pool is re-listed verbatim on every store
-    the law decodes).  Fail-closed: any law gap raises
+    The G6 integration (#34): stage 3d puts the 2-bit table walk (U1)
+    in front of the decode on both forms — a region that walks
+    byte-exact decodes under the M2b identity law (refs are 0-based
+    element indices in region order, no sigma search); stores that do
+    not walk keep the stage-2c DP + sigma path (small form) or a
+    labeled walk-failure classification (big form).  Vertices are the
+    decoded points in region order (the pool is re-listed verbatim on
+    every store the law decodes).  Fail-closed: any law gap raises
     ``undecoded-variant`` with the specific reason from
     :func:`composite.decode_composite_store`.
     """
     points, triangles, degenerate, info = composite.decode_composite_store(
         data, span, groups, kinds
     )
+    walk_path = info.get("mapping") == "identity"
     stats = mesh.mesh_stats(list(triangles))
     warnings = []
     if degenerate:
@@ -351,10 +354,14 @@ def _export_composite_store(data, span, ordinal: int, groups, kinds):
                 "skipped (G3 F7 export convention, composite decode)",
             }
         )
-    skipped_markers: dict[int, int] = {}
-    for rec in composite.parse_composite_facets(data, span.body_lo, span.body_hi)[0]:
-        if rec[1] not in facets.EXPORTED_MARKERS:
-            skipped_markers[rec[1]] = skipped_markers.get(rec[1], 0) + 1
+    if walk_path:
+        # the stage-3b width law resolved the records; re-parse under it
+        skipped = _composite_skipped_markers(
+            data, span, composite.WALK_LAW, info["element_decl"]
+        )
+    else:
+        skipped = _composite_skipped_markers(data, span, composite.STAGE2C_LAW)
+    skipped_markers: dict[int, int] = skipped
     if skipped_markers:
         warnings.append(
             {
@@ -363,6 +370,16 @@ def _export_composite_store(data, span, ordinal: int, groups, kinds):
                 "reading G3 has not pinned: "
                 f"{_marker_names(skipped_markers)} (G3 open questions "
                 "3-5, composite body)",
+            }
+        )
+    if walk_path and info["skipref_loops"]:
+        warnings.append(
+            {
+                "class": WARN_UNRESOLVED_FAMILY,
+                "detail": f"{info['skipref_loops']} facet loops reference "
+                "curve entries (skip slots) whose coordinates are not in "
+                "the point region (U4 open); the loops contribute no "
+                "triangles (labeled, not forced)",
             }
         )
     if not triangles:
@@ -420,6 +437,22 @@ def _export_composite_store(data, span, ordinal: int, groups, kinds):
     }
     _self_check(summary)
     return summary, points, list(triangles)
+
+
+def _composite_skipped_markers(data, span, width_law: str, element_bound: int | None = None) -> dict[int, int]:
+    """The parsed composite records outside the exported families.
+
+    Re-parsed under the width law the decode used, so the unresolved-
+    family warning counts the same record set the decode validated.
+    """
+    skipped: dict[int, int] = {}
+    for rec in composite.parse_composite_facets(
+        data, span.body_lo, span.body_hi, width_law=width_law,
+        element_bound=element_bound,
+    )[0]:
+        if rec[1] not in facets.EXPORTED_MARKERS:
+            skipped[rec[1]] = skipped.get(rec[1], 0) + 1
+    return skipped
 
 
 def _marker_names(skipped: dict[int, int]) -> str:

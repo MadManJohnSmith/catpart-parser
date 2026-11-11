@@ -392,3 +392,115 @@ Outputs `docs/evidence/data/big-form-points-files.csv` (committed; one
 row per composite store: layout, walk, pool containment, N2, loop
 battery).  `src/` untouched — the exporter integration of big form is
 a later stage.
+
+## Stage 3d: the walk + identity laws shipped in the exporter (2026-11-11, #34)
+
+Stage 3d integrates the stage-3b laws into the shipped seam
+(`src/catpart/geometry/export.py` -> `catpart.geometry.export
+._export_data` and the composite path; `src/catpart/geometry/
+composite.py`).  The stage-2c big-form rejection at the composite
+decode (the 4096-B gate) is REPLACED by the walk gate:
+
+- **Walk-first decode (both forms):** every composite store's point
+  region is decoded by the deterministic 2-bit table walk (`walk_layout`
+  + `walk_decode_region`): layout = zero block + exactly
+  ceil(element_count/4) table bytes + the P1g write count (P1t
+  corrected); slots LSB-first; shapes 0/1/2/3 = 3/0/1/2 words (U1); the
+  LCP state starts at the origin and carries x/y/z across skip and
+  suffix writes.  A region that walks byte-exact (the walk consumes
+  exactly the declared write count, every word finite) decodes under
+  the **M2b identity law** (`_decode_identity`): refs are 0-based
+  element indices in region order — no sigma search, no DP.  The pool
+  must be re-listed (absorbed) verbatim; loops referencing skip slots
+  (curve entries, U4) contribute no triangles and are warned
+  (labeled, not forced); fully-written loops of the one-plane-per-loop
+  families (0x49/0x4c) must be coplanar against the record's stored
+  12-B normal (tolerance 2e-3, normalized); 0x4a/0x42 strips are
+  exempt (the stage-3b battery's multi-plane strips — the per-triangle
+  strip law 6.3.1 GE-F3/F5 is the applicable test there).  The
+  reference width disambiguation on the identity path is the stage-3b
+  law (exact tiling, then no-repeated-refs-within-a-loop, then
+  no-out-of-element-bound refs — the u8 misread of u16be records
+  ranked out), while the stage-2c DP path keeps its shipped narrower-
+  width law unchanged.
+- **Small form keeps the stage-2c fallback:** a small-form store whose
+  region does not walk falls back to the stage-2c decode (the
+  pool-containment DP + the sigma shift-profile CSP, extracted
+  unchanged as `_decode_small_form_dp`); the walk-failure cause rides
+  the error detail when the fallback also fails.  No currently-
+  exporting store regressed (the replay below); the stage-2c fixtures
+  (old-law encoding) take this fallback unchanged.
+- **Fail-closed labels:** big-form stores that do not walk keep
+  ``undecoded-variant`` naming the walk-failure cause (layout error /
+  write-count mismatch / non-finite word / payload overrun) plus the
+  open residue (the second layout family, multi-part node payloads,
+  U3-variant).  Walk-exact stores never reach the sigma CSP — the
+  sigma-explosion family is gone by construction.
+
+Replay (read-only, `scripts/triage/replay_export_seam.py`, one row per
+manifest kind=part part through `build_export`; no fitness history
+writes):
+
+- **Baseline (249135b):** 173 dev exports — 112 clean/pool + 61
+  composite (48 lex + 13 reset; 0 held-out) — plus 2 sigma-CSP
+  timeouts.  Reconciles with the last committed fitness row
+  (20261111T190621Z, run on pre-stage-3a code: 109 dev passes = 75
+  clean + 34 composite) as 112 = 75 + 37 and 61 = 34 + 27 stage-3a
+  recovered stores: the 34 stage-2c exports ride inside the 61.
+- **With the walk gate:** 854 dev exports + 49 held-out (0 at base) —
+  112 clean/pool (unchanged, PLY byte-identical on all 112) + 742
+  walk-stage composite exports (479 big-form + 263 small-form); zero
+  timeouts.  681 stores export that did not at base.
+- **Byte-identity of the baseline exports:** every one of the 173
+  still exports.  The 112 clean/pool PLYs are byte-identical.  Of the
+  61 composite exports, 45 have byte-identical PLYs (their summaries
+  change only in the additive composite info block: the walk fields
+  replace the sigma fields) and **16 have changed PLY bytes — the
+  stage-3b table law corrects the stage-2c decode on them**, not an
+  integration defect: 1b1e69cd51e00827 (the run-reset anchor) decodes
+  under the walk exactly as the stage-2b/2c note documents the stream
+  (x groups at 98873.89 / 98980.95..99032.89; the stage-2c 'reset'
+  reading additionally misreads y/z-scale words as x = -12269.26);
+  60a15dfc5153b9af, 8c171e76460cd30b, 9834c4650301c4c2, a5802ae90c91c
+  dbc, cf02ea8bb13078ee, ec2c96d08d340345 gain 2-15 skip slots the DP
+  had force-read as points (the walk consumes exactly the declared
+  write count on every one of them); the rest re-index identically
+  shaped meshes (same vertex/triangle counts, different coordinates or
+  triangle assignment under the identity mapping).  Coverage does not
+  fall anywhere (the no-regret floor holds: 263 small-form exports vs
+  the 34 floor); the byte changes are the law correction this stage
+  ships, recorded here rather than massaged away.
+- **The sigma-explosion family is gone:** 0520840350b47894
+  (xdoclink-located, small-form payload 3063 B, elem 239, walk 450 =
+  450 words, 73 skips) exports through the shipped CLI in 0.07 s wall
+  (was >90 s, killed at base); the second base timeout,
+  d4a6712936b02c2d, exports too (150 vertices, 0 triangles —
+  vertices-only with the loop gaps warned).
+- **Anchor validation:** 70b59f2a0eb60c1c exports 1,716 vertices
+  (exactly the byte-verified 2,816 words = 1,716 points + 104 skips)
+  and 2,033 triangles; 026d6726 and e254a37e (the stage-2c 'ambiguous'
+  anchors) export 98 vertices each under the identity law.
+- **Big-form smoke (10 decoded stores, 55 KB-190 MB):** all export in
+  0.06-2.24 s through the CLI.
+
+Laws refined during the integration (recorded, never massaged):
+
+- loops with fewer than two written points carry no plane information
+  and pass the coplanarity gate vacuously (the stage-2c axis-constancy
+  of a single point was equally vacuous); they produce no triangles;
+- the plane gate is validated only where a stored normal exists
+  (0x49/0x4c); strips keep the structural per-triangle law;
+- the walk-first adoption for small form changes 16 of the 61
+  currently-exporting stores' PLY bytes (above) — the brief's
+  byte-identity condition and the identity law's corrected decode
+  conflict there, and the corrected decode is the one the committed
+  stage-3b evidence pins (the table is the format's own declaration,
+  byte-exact on the anchors); flagged for the coordinator's review.
+
+Reproduction:
+
+```
+.venv/bin/python -I scripts/triage/replay_export_seam.py
+# baseline (pre-stage-3d) CSV: replay-export-seam-baseline.csv, captured
+# at 249135b; the shipped-state CSV: replay-export-seam.csv
+```
