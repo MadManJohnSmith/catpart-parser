@@ -35,7 +35,7 @@ at z = 2.1 — all 7 loops, with the curve entries inserting a monotone
 shift totaling exactly element_count − node points (26 = 124 − 98).
 M1's outstanding confirmation is delivered on the anchors; M1 stays
 candidate pending corpus-wide automation (the DP start-selection
-currently full-decodes 5/284 small-form stores — the failure mode is
+currently full-decodes 5/285 small-form stores — the failure mode is
 the automated region-start selection, not the law; every store where
 the decode completes validates, 5/5).
 
@@ -74,14 +74,31 @@ the decode completes validates, 5/5).
   026d/70b59f2a segmentation bookkeeping is open, U3). The stage-2a
   "compressed-stream statistics" (runs of `77`/`bb`/`ff`) are the
   per-node 2-bit tables and segment tables — not a different encoding.
-- **Form census (fact, 938 composite stores):** the list node =
+- **Form census (fact, 939 composite stores; 2026-11-10 correction
+  (#34 review F1): the first wording said 938/284 — a zero-count loop
+  crashed `plane_test` and silently dropped 8be9434a from the CSV;
+  guarded, rerun, the census covers all 939 = 285 small / 654 big):**
+  the list node =
   the LARGEST token-bearing node (every node carries
   `ff ff 02 00 01` + the declared counts — the stage-2a "list-node"
-  census counted all of them). 284 small-form (108-4,096 B, median
-  1,335), 654 big-form (4,144-2,516,042 B, median 19,334); 5 stores
+  census counted all of them). 285 small-form (108-4,096 B, median
+  1,335), 654 big-form (4,144-2,516,042 B, median 19,295 —
+  2026-11-10 correction (#34 review F2): 19,334 was never
+  CSV-composable); 5 stores
   have element_count == pool_size (the empty-list degenerate, N4
-  refined: 5/938, not 4/939); element_count > pool on 872, < pool on
-  61 (the stage-2a residue, re-measured).
+  refined: 5/939, not 4/939); element_count > pool on 873, < pool on
+  61 (the stage-2a residue, re-measured under the largest-node
+  reading).
+- **Reading note (2026-11-10, #34 review F3):** stage-2a's
+  `element_count_declared` took the max count over ALL token-bearing
+  nodes; this stage takes the largest-payload node's counts — the two
+  disagree on 50 stores (same pool). The arbiter is N2 itself: the
+  largest-node reading satisfies element_count == max_ref_all + 1 on
+  35/50 disputed stores, the max reading on 0/50 (10 more carry no
+  refs) — the stage-2b reading stands, and stage-2a's GE-N2N3 rates
+  rest on the superseded reading (strict == 713/916 = 0.778 ->
+  748/916 = 0.817 re-measured; the degenerate 4->5 and residue
+  59->61 bucket changes follow).
 
 ## 2. The merge law (M1 confirmation, fact on the anchors)
 
@@ -97,13 +114,21 @@ the decode completes validates, 5/5).
   element_count 124, shift total 26 = 124 − 98. Loop 0
   (17, 2, 27, 1, 18, 3) maps to node points 0, 1, 2, 12, 13, 20
   (the shift profile 1,1,1,5,5,7 — the first curve entry sorts before
-  the list's first point).
+  the list's first point; the loop-0 refs and profile are
+  026d6726-specific — on e254a37e loop 0 = (17, 1, 28, 0, 18, 2) with
+  shifts starting at 0, 2026-11-10 #34 review F5).
 - **M2c (inference, strong):** the curve entries are the curve
-  records' points. On 026d6726 the 22 curve records decode as circle
+  records' points. On 026d6726 the curve records (24-25 by
+  composition: 12 x `33 37` + 2 x `33 38` + 4 x `33 33` + 2 x
+  `33 32` + 4-5 x `33 36` — 2026-11-10 correction (#34 review F5):
+  the first wording said 22, which does not compose; the `33 36`'s
+  record-boundary bookkeeping is fuzzy) decode as circle
   definitions matching the node's circles exactly — `33 37` = (cx, cy,
-  z, r) BE f32 + 2-B trailer (12 records: the six circles, some twice,
+  z, r) BE f32 + 2-B trailer (12 records: FIVE of the six circles x2
   plus two slot arcs r=0.81 at (391.83, 435.5, 2.81) / (398.17, 435.5,
-  2.81) — an obround slot whose tangent points ARE pool v0/v3);
+  2.81) — an obround slot whose tangent points ARE pool v0/v3; the
+  (z=2.3975, r=2.47) circle is not a `33 37` record — 2026-11-10
+  correction (#34 review F5));
   `33 38` = 3 BE f32 + zeros + params (-3.17, 0.81) + a 38-B LE block;
   `33 33` = same shape with one negative-radius param (-2.36 / -1.55)
   and z = 2.855 / 1.855 (the mid-plane circles);
@@ -120,7 +145,7 @@ the decode completes validates, 5/5).
   re-listing, curve entries interleaved, global lex sort, no dedup
   between curve and node entries). It stays **candidate** — the
   corpus-wide automation (the DP start-selection) full-decodes only
-  5/284 small-form stores; every completed decode validates (5/5:
+  5/285 small-form stores; every completed decode validates (5/5:
   026d6726, e254a37e with the 7-loop planarity + shift law; 0710a58b,
   fa779a78, ff842b8a with pool fully contained and
   element_count == node points). The winding re-run on 70b59f2a is

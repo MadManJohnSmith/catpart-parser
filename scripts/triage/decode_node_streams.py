@@ -324,6 +324,10 @@ def plane_test(data, pts, lo, hi, pool_sorted):
         for c in counts:
             loop = sorted(set(refs[off : off + c]))
             off += c
+            if not loop:
+                # degenerate zero-count loop: no refs to match (2026-11-10
+                # #34 review F1 — the crash that dropped 8be9434a)
+                continue
             loops += 1
             from collections import Counter
 
@@ -351,9 +355,10 @@ def plane_test(data, pts, lo, hi, pool_sorted):
                     if not states:
                         break
                 feasible = bool(states)
-                if feasible:
+                svals = [s for _li, s in states if s >= 0]
+                if feasible and svals:
                     ok = True
-                    shift_total = min(s for _li, s in states if s >= 0)
+                    shift_total = min(svals)
                     break
             if ok:
                 loops_ok += 1
