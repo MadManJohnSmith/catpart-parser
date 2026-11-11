@@ -45,9 +45,20 @@ Outputs docs/evidence/data/big-form-points-files.csv (one row per
 composite store) and a summary on stdout.  Deterministic: sorted
 manifest order; no wall-clock value enters the CSV.
 
+With ``--planes`` the script instead commits the multi-plane
+decomposition (stage-3b review F3, 2026-11-11): every nonplanar loop
+(battery class, stage-3b item 5) on the walk-exact big-form stores is
+triangulated per its family reading and classified by normal-direction
+clustering — the criterion is declared in ``classify_loop_planes`` —
+into single-plane-uniform (d = 1), multi-plane (d = 2-3), 4+-plane
+(d >= 4) or no-triangles (fewer than 3 measurable points), with the
+marker family broken out per row.  Output:
+docs/evidence/data/big-form-planes-loops.csv (one row per nonplanar
+loop; integers only, byte-identical across runs).
+
 Read-only over the corpus; run with the worktree venv:
   .venv/bin/python -I scripts/triage/decode_big_form_points.py
-  [--include-sha16 HEX16,...]
+  [--include-sha16 HEX16,...] [--planes]
 """
 
 import argparse
@@ -55,6 +66,7 @@ import csv
 import mmap
 import struct
 import sys
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -76,7 +88,7 @@ FIELDS = [
     "pool_in_list", "pool_coverage", "pool_absorbed",
     "max_ref", "elem_eq_maxref1", "records_parsed", "width2_records",
     "norm_records", "loops", "loops_coplanar", "loops_skipref",
-    "loops_nonplanar", "max_plane_residual", "audit_error",
+    "loops_beyond", "loops_nonplanar", "max_plane_residual", "audit_error",
 ]
 
 # table value -> f32 writes (0 = skip: the element carries no coordinates)
@@ -251,64 +263,303 @@ def parse_strip_records(data, lo, hi, elem_count):
     return out, len(hdrs)
 
 
+def normal_loops(records):
+    """Yield (marker, normal, loop, record_off, loop_idx) for every
+    non-empty sub-loop of the normal-carrying records, in record/count
+    order — the exact loop stream the battery and the --planes
+    classifier both consume (one source: the two cannot split loops
+    differently)."""
+    for o, mk, normal, counts, refs, _w in records:
+        if normal is None:
+            continue
+        off = 0
+        for j, c in enumerate(counts):
+            loop = refs[off : off + c]
+            off += c
+            if loop:
+                yield mk, normal, loop, o, j
+
+
+def loop_plane_status(loop, normal, elements, skips, elem_count):
+    """One loop's battery status against its stored normal.
+
+    'skipref' = the committed union class — a skip slot (curve entry,
+    U4: coordinates live in the curve records) or a ref at/after
+    elem_count — not testable here; 'beyond' = F2 (2026-11-11): a ref
+    in the UNWALKED window [len(elements), elem_count) on second-family
+    stores whose walk broke early — the class the unguarded
+    ``elements[ref]`` used to crash on (IndexError); 'coplanar' /
+    'nonplanar' = the coplanarity test at PLANE_TOL (the residual walk
+    stops at the first failing point, as committed).
+    Returns (status, max_residual_up_to_the_stop).
+    """
+    if any(r in skips or r >= elem_count for r in loop):
+        return "skipref", 0.0
+    if any(r >= len(elements) for r in loop):
+        return "beyond", 0.0
+    nn = (normal[0] ** 2 + normal[1] ** 2 + normal[2] ** 2) ** 0.5
+    if nn == 0:
+        return "nonplanar", 0.0
+    pts = [elements[r][1] for r in loop]
+    p0 = pts[0]
+    max_res = 0.0
+    for p in pts[1:]:
+        d = (
+            (p[0] - p0[0]) * normal[0]
+            + (p[1] - p0[1]) * normal[1]
+            + (p[2] - p0[2]) * normal[2]
+        ) / nn
+        res = abs(d)
+        if res > max_res:
+            max_res = res
+        if res > PLANE_TOL:
+            return "nonplanar", max_res
+    return "coplanar", max_res
+
+
 def plane_battery(records, elements, elem_count):
     """Coplanarity of every normal-carrying loop against its stored normal.
 
-    Loops referencing skip slots are counted separately (curve entries:
-    coordinates live in the curve records, U4 — not testable here).
-    Returns (norm_records, loops, coplanar, skipref, nonplanar, max_residual).
+    Loops referencing skip slots (or refs at/after elem_count — the
+    committed union class) are counted separately (curve entries:
+    coordinates live in the curve records, U4 — not testable here), as
+    are loops referencing the UNWALKED window [len(elements),
+    elem_count) on second-family stores (stage-3b review F2,
+    2026-11-11: the walk breaks early there, elements is shorter than
+    elem_decl, and the unguarded ``elements[ref]`` crashed the battery —
+    the 6 stores 88ad0be6, a7aef50e, ac9483aa, ae85fae7, bad44bdf,
+    fd4201aa now get real battery rows instead of an IndexError).
+    Returns (norm_records, loops, coplanar, skipref, beyond, nonplanar,
+    max_residual).
     """
     skips = {i for i, (v, pt) in enumerate(elements) if pt is None}
-    norm_records = 0
-    loops = coplanar = skipref = nonplanar = 0
+    norm_records = sum(
+        1 for _o, _mk, normal, _c, _r, _w in records if normal is not None
+    )
+    loops = coplanar = skipref = beyond = nonplanar = 0
     max_res = 0.0
-    for _o, mk, normal, counts, refs, _w in records:
-        if normal is None:
+    for _mk, normal, loop, _o, _j in normal_loops(records):
+        loops += 1
+        status, res = loop_plane_status(
+            loop, normal, elements, skips, elem_count
+        )
+        if res > max_res:
+            max_res = res
+        if status == "coplanar":
+            coplanar += 1
+        elif status == "nonplanar":
+            nonplanar += 1
+        elif status == "beyond":
+            beyond += 1
+        else:
+            skipref += 1
+    return norm_records, loops, coplanar, skipref, beyond, nonplanar, max_res
+
+
+COS_TOL = 0.999  # direction-cluster tolerance: |cos| >= 0.999 (~2.56 deg)
+
+
+def _unit_normal(p0, p1, p2):
+    """Unit normal of the triangle (p0, p1, p2); None when degenerate."""
+    ux, uy, uz = p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]
+    vx, vy, vz = p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]
+    nx, ny, nz = uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx
+    n2 = nx * nx + ny * ny + nz * nz
+    if n2 <= 0.0:
+        return None
+    s = n2**0.5
+    return (nx / s, ny / s, nz / s)
+
+
+def loop_triangles(loop, marker):
+    """Point-index triangles of one sub-loop, per the shipped family
+    readings (``facets.STRIP_MARKERS`` / ``facets.POLY_MARKERS``).
+
+    Strips (0x41/0x42/0x49/0x4A): consecutive triples with the flip on
+    odd t (GE-F3, 6.3.1) — for 0x49 this is the declared working
+    reading, its primitive semantics stay open per GE-F9.  Polygons
+    (0x4C per GE-F4; also the open 0x4B/0x4E): fan from the first
+    corner.  Degenerate triangles (repeated coordinates / zero cross
+    product) are dropped by ``classify_loop_planes``, as in the shipped
+    soup decoder.
+    """
+    if marker in facets.STRIP_MARKERS:
+        for i in range(len(loop) - 2):
+            tri = (loop[i], loop[i + 1], loop[i + 2])
+            yield tri[::-1] if i % 2 else tri
+    else:
+        for i in range(1, len(loop) - 1):
+            yield loop[0], loop[i], loop[i + 1]
+
+
+def classify_loop_planes(loop, marker, elements, normal, cos_tol=COS_TOL):
+    """The multi-plane criterion (stage-3b review F3, 2026-11-11).
+
+    Normal-direction clustering: the loop's triangles (``loop_triangles``)
+    each contribute a unit triangle normal; two normals sit in the same
+    direction class iff their unsigned cosine |n1 . n2| >= 0.999
+    (~2.56 deg) — unsigned because a plane's orientation is defined up
+    to sign — clustered greedily in triangle order.  d = the number of
+    direction classes; class = single-plane-uniform (d == 1), multi-plane
+    (2 <= d <= 3), 4-plus-plane (d >= 4), or no-triangles when no
+    triangle survives degeneracy.  Deterministic: the cluster order is
+    the fixed triangle order; integers only enter the output CSV.
+    Returns (n_tri, d, plane_class, cos1000) where cos1000 rounds
+    1000 x |dot(first_representative, stored_unit_normal)| to an int
+    (0 when the stored normal is zero-length) — the auxiliary that
+    separates a single-plane-uniform loop the stored normal agrees with
+    (cos1000 >= 999: flat but mis-tested) from one it disagrees with.
+    """
+    normals = []
+    for tri in loop_triangles(loop, marker):
+        pts = [elements[r][1] for r in tri]
+        n = _unit_normal(*pts)
+        if n is not None:
+            normals.append(n)
+    if not normals:
+        return 0, 0, "no-triangles", 0
+    reps = []
+    for n in normals:
+        for rep in reps:
+            if abs(rep[0] * n[0] + rep[1] * n[1] + rep[2] * n[2]) >= cos_tol:
+                break
+        else:
+            reps.append(n)
+    d = len(reps)
+    nn = (normal[0] ** 2 + normal[1] ** 2 + normal[2] ** 2) ** 0.5
+    cos1000 = (
+        round(1000 * abs(reps[0][0] * normal[0] + reps[0][1] * normal[1]
+                         + reps[0][2] * normal[2]) / nn)
+        if nn
+        else 0
+    )
+    if d == 1:
+        return len(normals), d, "single-plane-uniform", cos1000
+    if d <= 3:
+        return len(normals), d, "multi-plane", cos1000
+    return len(normals), d, "4-plus-plane", cos1000
+
+
+PLANES_FIELDS = [
+    "sha256", "split", "release", "record_off", "loop_idx", "marker",
+    "n_refs", "n_tri", "d", "plane_class", "cos1000",
+]
+
+
+def run_planes(rows_in, out_dir: Path):
+    """--planes mode: the full-census multi-plane decomposition (F3).
+
+    For every walk-exact big-form store (walk consumes exactly the
+    declared write count — the battery's decoded scope) each battery-
+    nonplanar loop is classified by ``classify_loop_planes``; one CSV
+    row per nonplanar loop.  A per-store cross-check asserts the
+    classified loop set equals the battery's nonplanar count (both
+    share ``normal_loops`` / ``loop_plane_status``, so a divergence
+    cannot pass silently).
+    """
+    out_rows = []
+    stores = 0
+    mism = 0
+    for r in rows_in:
+        path = ROOT / r["local_path"]
+        with path.open("rb") as fh:
+            mm = mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ)
+            try:
+                row, records, elements = audit_part(mm, r, with_internals=True)
+            except Exception:  # noqa: BLE001 - audit errors have no battery
+                continue
+            finally:
+                mm.close()
+        if row.get("node_form") != "big" or row.get("walk_end_ok") is not True:
             continue
-        norm_records += 1
-        nn = (normal[0] ** 2 + normal[1] ** 2 + normal[2] ** 2) ** 0.5
-        off = 0
-        for c in counts:
-            loop = refs[off : off + c]
-            off += c
-            if not loop:
+        stores += 1
+        skips = {i for i, (v, pt) in enumerate(elements) if pt is None}
+        elem_count = int(row["elem_decl"])
+        classified = 0
+        for mk, normal, loop, o, j in normal_loops(records):
+            status, _res = loop_plane_status(
+                loop, normal, elements, skips, elem_count
+            )
+            if status != "nonplanar":
                 continue
-            loops += 1
-            if any(r in skips or r >= elem_count for r in loop):
-                skipref += 1
-                continue
-            pts = [elements[r][1] for r in loop]
-            ok = True
-            if nn == 0:
-                ok = False
-            else:
-                p0 = pts[0]
-                for p in pts[1:]:
-                    d = (
-                        (p[0] - p0[0]) * normal[0]
-                        + (p[1] - p0[1]) * normal[1]
-                        + (p[2] - p0[2]) * normal[2]
-                    ) / nn
-                    res = abs(d)
-                    if res > max_res:
-                        max_res = res
-                    if res > PLANE_TOL:
-                        ok = False
-                        break
-            if ok:
-                coplanar += 1
-            else:
-                nonplanar += 1
-    return norm_records, loops, coplanar, skipref, nonplanar, max_res
+            n_tri, d, plane_class, cos1000 = classify_loop_planes(
+                loop, mk, elements, normal
+            )
+            classified += 1
+            out_rows.append({
+                "sha256": r["sha256"],
+                "split": r["split"],
+                "release": row["release"],
+                "record_off": o,
+                "loop_idx": j,
+                "marker": f"0x{mk:02x}",
+                "n_refs": len(loop),
+                "n_tri": n_tri,
+                "d": d,
+                "plane_class": plane_class,
+                "cos1000": cos1000,
+            })
+        if classified != int(row["loops_nonplanar"]):
+            print(
+                f"CROSS-CHECK FAILED: {r['sha256'][:16]} classified "
+                f"{classified} nonplanar loops, battery counted "
+                f"{row['loops_nonplanar']}",
+                file=sys.stderr,
+            )
+            mism += 1
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_path = out_dir / "big-form-planes-loops.csv"
+    with out_path.open("w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=PLANES_FIELDS)
+        w.writeheader()
+        w.writerows(out_rows)
+    summarize_planes(out_rows, stores, mism)
+    return 0
 
 
-def audit_part(mm, rel):
-    """One part: table-driven point-region audit. Returns the CSV row."""
+def summarize_planes(rows, stores, mism):
+    """The decomposition figures the note restates (F3/F4b)."""
+    by_class = Counter(r["plane_class"] for r in rows)
+    by_fam = Counter(r["marker"] for r in rows)
+    multi = by_class["multi-plane"]
+    total = len(rows)
+    print(f"== planes: {total} nonplanar loops on {stores} walk-exact big "
+          f"stores (cross-check failures: {mism})")
+    print(f"   classes: single-plane-uniform {by_class['single-plane-uniform']}, "
+          f"multi-plane (d=2-3) {multi} [d=2 {sum(1 for r in rows if r['d'] == 2)}, "
+          f"d=3 {sum(1 for r in rows if r['d'] == 3)}], "
+          f"4-plus-plane {by_class['4-plus-plane']}, "
+          f"no-triangles {by_class['no-triangles']}")
+    fams = ", ".join(f"{k} {v}" for k, v in sorted(by_fam.items()))
+    print(f"   families: {fams}")
+    spu = [r for r in rows if r["plane_class"] == "single-plane-uniform"]
+    if spu:
+        agree = sum(1 for r in spu if int(r["cos1000"]) >= 999)
+        disagree = sum(1 for r in spu if int(r["cos1000"]) < 500)
+        print(f"   single-plane-uniform vs its stored normal: cos1000 >= 999 "
+              f"(flat, stored normal agrees) {agree}; cos1000 < 500 "
+              f"(stored normal disagrees grossly) {disagree}; total {len(spu)}")
+    if total:
+        print(f"   multi-plane share of the nonplanar loops: "
+              f"{multi}/{total} = {multi / total:.3f}")
+
+
+def audit_part(mm, rel, with_internals=False):
+    """One part: table-driven point-region audit. Returns the CSV row —
+    or, with ``with_internals`` (the --planes classifier), the triple
+    (row, records, elements) so the classifier consumes the exact
+    records/elements the battery saw."""
     row = {k: "" for k in FIELDS}
     row["sha256"] = rel["sha256"]
     row["split"] = rel["split"]
     row["release"] = release_of(rel["detected_version"])
     row["size_bytes"] = mm.size()
+    records: list = []
+    elements: list = []
+
+    def finish():
+        return (row, records, elements) if with_internals else row
+
     d8_outer = int.from_bytes(mm[8:12], "big") if mm.size() >= 12 else 0
     blocks = store.valid_blocks(mm)
     for blk in [b for b, nm in blocks if nm == "CATStdCont"]:
@@ -331,7 +582,7 @@ def audit_part(mm, rel):
         node_hi = hdrs[0] if hdrs else hi
         ln = composite.find_list_node(mm, lo, node_hi)
         if ln is None:
-            return row
+            return finish()
         payload, c1, c2 = ln
         row["list_node_bytes"] = len(payload)
         row["elem_decl"] = c1
@@ -343,7 +594,7 @@ def audit_part(mm, rel):
             )
         except ValueError as exc:
             row["audit_error"] = f"layout: {exc}"
-            return row
+            return finish()
         row["table_bytes"] = info["table_len"]
         row["write_count"] = info["write_count"]
         row["count_bytes"] = info["count_bytes"]
@@ -366,21 +617,30 @@ def audit_part(mm, rel):
         row["elem_eq_maxref1"] = (
             (c1 == max(all_refs) + 1) if all_refs else ""
         )
-        nr, loops, cop, skp, non, max_res = plane_battery(records, elements, c1)
+        nr, loops, cop, skp, bey, non, max_res = plane_battery(
+            records, elements, c1
+        )
         row["norm_records"] = nr
         row["loops"] = loops
         row["loops_coplanar"] = cop
         row["loops_skipref"] = skp
+        row["loops_beyond"] = bey
         row["loops_nonplanar"] = non
         row["max_plane_residual"] = round(max_res, 6) if max_res else 0.0
-        return row
-    return row
+        return finish()
+    return finish()
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--include-sha16", default="")
     ap.add_argument("--out-dir", default=str(OUT_DIR))
+    ap.add_argument(
+        "--planes",
+        action="store_true",
+        help="write the multi-plane decomposition CSV (big-form-planes-"
+        "loops.csv) over the full census instead of the per-store audit",
+    )
     args = ap.parse_args()
     rows_in = [
         r
@@ -391,6 +651,9 @@ def main():
         want = {h for h in args.include_sha16.split(",") if h}
         rows_in = [r for r in rows_in if r["sha256"][:16] in want]
     rows_in.sort(key=lambda r: r["sha256"])
+    out_dir = Path(args.out_dir)
+    if args.planes:
+        return run_planes(rows_in, out_dir)
     out_rows = []
     for r in rows_in:
         path = ROOT / r["local_path"]
@@ -406,7 +669,6 @@ def main():
             finally:
                 mm.close()
         out_rows.append(row)
-    out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "big-form-points-files.csv"
     with out_path.open("w", newline="") as fh:
@@ -455,9 +717,11 @@ def summarize(rows):
         tot_loops = sum(int(r["loops"]) for r in lp)
         tot_cop = sum(int(r["loops_coplanar"]) for r in lp)
         tot_skp = sum(int(r["loops_skipref"]) for r in lp)
+        tot_bey = sum(int(r["loops_beyond"]) for r in lp)
         tot_non = sum(int(r["loops_nonplanar"]) for r in lp)
         print(f"   normal-carrying loops: {tot_loops} across {len(lp)} stores —"
               f" coplanar {tot_cop}, skip-ref (curve entries, U4) {tot_skp},"
+              f" beyond the walked element space (F2) {tot_bey},"
               f" nonplanar {tot_non}")
         print(f"   stores with zero nonplanar loops: {len(cp)}/{len(lp)};"
               f" skip-ref-free stores fully coplanar: "
