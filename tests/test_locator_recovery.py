@@ -132,12 +132,13 @@ def test_recovered_composite_keeps_its_class_with_provenance(
 ) -> None:
     # A recovered seebody store carrying the 01 02 edge group fails the
     # composite gate exactly as a stdcont composite store would; the
-    # error detail names the probe (stage-3a recording rule).
+    # error detail names the stage-2c N1 reason AND the probe (the
+    # integrated stack: stage-2c classification + stage-3a provenance).
     code, captured = run_export(tmp_path, capsys, "geometry-seebody-composite")
     assert code == 1
     error = json.loads(captured.err)
     assert error["error_class"] == "undecoded-variant"
-    assert "open question" in error["detail"]
+    assert "composite store without a token-bearing list node" in error["detail"]
     assert "recovered via the seebody probe, shipped tail law" in error["detail"]
 
 
