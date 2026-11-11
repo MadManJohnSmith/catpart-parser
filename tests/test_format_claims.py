@@ -499,3 +499,67 @@ def test_drift_flags_winding_note_vs_csv_arithmetic(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert run_drift_check(tmp_path, "--check-drift").returncode == 0
+
+
+# --- Generic note-figure arithmetic (ticket #37) ----------------------------
+#
+# The mechanical layer under the hand-wired note-vs-CSV tripwires: rate
+# triples, sum expressions, and table total rows over every evidence note
+# and format doc. Repo-shaped roots (the drift pass auto-runs there) with
+# failure injection, plus a no-false-positive control.
+
+
+def test_drift_flags_rate_triple_mismatch(tmp_path: Path) -> None:
+    _write_docs(tmp_path, {"README.md": README_PAGES_ROW.format(status="parsed")})
+    _make_repo_shaped(tmp_path, "__init__.py")
+    note = tmp_path / "docs" / "evidence" / "2027-01-01-sample.md"
+    note.write_text("The class covers 785/878 = 0.500 of stores.\n", encoding="utf-8")
+    proc = run_drift_check(tmp_path)
+    assert proc.returncode != 0
+    assert "composes 0.894" in proc.stdout
+    note.write_text("The class covers 785/878 = 0.894 of stores.\n", encoding="utf-8")
+    assert run_drift_check(tmp_path).returncode == 0
+
+
+def test_drift_flags_sum_expression_mismatch(tmp_path: Path) -> None:
+    _write_docs(tmp_path, {"README.md": README_PAGES_ROW.format(status="parsed")})
+    _make_repo_shaped(tmp_path, "__init__.py")
+    note = tmp_path / "docs" / "evidence" / "2027-01-01-sample.md"
+    note.write_text("The families partition it: 208+63+34+9 = 313.\n", encoding="utf-8")
+    proc = run_drift_check(tmp_path)
+    assert proc.returncode != 0
+    assert "does not add up" in proc.stdout and "sum to 314" in proc.stdout
+    note.write_text("The families partition it: 208+63+34+8 = 313.\n", encoding="utf-8")
+    assert run_drift_check(tmp_path).returncode == 0
+
+
+def test_drift_flags_table_total_row(tmp_path: Path) -> None:
+    _write_docs(tmp_path, {"README.md": README_PAGES_ROW.format(status="parsed")})
+    _make_repo_shaped(tmp_path, "__init__.py")
+    note = tmp_path / "docs" / "evidence" / "2027-01-01-sample.md"
+    note.write_text(
+        "| class | dev |\n|---|---|\n| a | 5 |\n| b | 6 |\n| total | 12 |\n",
+        encoding="utf-8",
+    )
+    proc = run_drift_check(tmp_path)
+    assert proc.returncode != 0
+    assert "body rows sum to 11" in proc.stdout
+    note.write_text(
+        "| class | dev |\n|---|---|\n| a | 5 |\n| b | 6 |\n| total | 11 |\n",
+        encoding="utf-8",
+    )
+    assert run_drift_check(tmp_path).returncode == 0
+
+
+def test_drift_allows_paren_sum_rate_and_prose_fragments(tmp_path: Path) -> None:
+    """No false positives: parenthesized sum rates, comma-grouped
+    fragments, and bare pairs stay out of the generic checks (#37)."""
+    _write_docs(tmp_path, {"README.md": README_PAGES_ROW.format(status="parsed")})
+    _make_repo_shaped(tmp_path, "__init__.py")
+    note = tmp_path / "docs" / "evidence" / "2027-01-01-sample.md"
+    note.write_text(
+        "Recomposed on the wider probe: (1,068+100)/1,377 = 0.848; among the\n"
+        "fragments, sizes run 4-168 with pairs 5, 9 and bare 651/681 unquoted.\n",
+        encoding="utf-8",
+    )
+    assert run_drift_check(tmp_path).returncode == 0
