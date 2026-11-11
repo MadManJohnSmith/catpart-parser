@@ -155,23 +155,27 @@ the decode completes validates, 5/5).
 
 ## Unknowns carried forward
 
-1. **U1 — the per-node 2-bit table** (payload[40, 72) on 026d; ~460 B
-   on 70b59f2a before the point region): 2 bits per element for
-   element_count entries (026d: 128 slots for 124 declared + pad;
-   70b59f2a: 1,840 slots for 1,820) — value histogram {0: 38, 1: 26,
-   2: 31, 3: 33} on 026d; the write-count sums do NOT match the point
-   region's f32 count under any of the 8 mappings tried; semantics
-   open.
+1. **U1 — the per-node 2-bit table**: SOLVED 2026-11-11 (stage 3b,
+   below) — 2 bits per element, LSB-first: 0 = `[x][y][z]`, 1 = skip
+   (curve entry), 2 = `[z]`, 3 = `[y][z]`; the table spans exactly
+   ceil(element_count / 4) bytes and is followed by a P1g count of the
+   region's f32 words.
 2. **U2 — the trailing region** of each list node (026d: payload[884,
    1452), 568 B of nibble-ish runs + floats ~10.88 + the tail
    signature): present on every anchor, per-store size varies; open.
-3. **U3 — segment bookkeeping on big stores** (per-segment tables,
-   the corner-group tail segment, the extras' placement inside
-   x-groups): blocks the 70b59f2a winding re-run.
-4. **U4 — curve-point participation**: which points each `33 3X`
-   record contributes (26 entries' sort positions pinned by the shift
-   profile; values consistent with the circle geometry but not
-   byte-pinned).
+3. **U3 — segment bookkeeping on big stores**: RESOLVED for the
+   single-table family 2026-11-11 (stage 3b, below) — one table + one
+   write count cover the whole region, no per-segment tables; the
+   corner groups sit at their element slots.  A second layout family
+   (~14% of big-form stores) stays open (multi-node payloads).
+4. **U4 — curve-point participation**: refined 2026-11-11 (stage 3b):
+   the curve entries are the table's skip slots (value 1) — they are
+   IN the element space at known indices and ARE referenced by facet
+   loops (M2c's "never referenced" inference corrected); their
+   coordinates are still not in the region (the curve records remain
+   the candidate source; 100/104 skip slots on 70b59f2a have both
+   written neighbours sharing 2 coordinates, bracketing the missing
+   values).
 
 ## Stage 2c: the decode hardened and integrated (2026-11-11, #34)
 
@@ -250,6 +254,116 @@ the fitness movement; 2026-11-11 relabel: the fail-closed census is
 specific reason in the exporter's error
 detail).  Big-form stays undecoded (U3).
 
+## Stage 3b: the 2-bit table decoded, big form unblocked (2026-11-11, #34)
+
+Stage 3b attacked U1 and U3 on the big-form point region.  Analysis +
+decoder only — `src/` untouched; the committed decoder is
+`scripts/triage/decode_big_form_points.py` (corpus runner, one row per
+store in `docs/evidence/data/big-form-points-files.csv`).  The
+breakthrough: the 2-bit table's semantics fall out of a DIRECT walk —
+no DP — once the table's extent is corrected.
+
+1. **P1t corrected (fact, all anchors + corpus):** the per-element
+   2-bit table spans **exactly ceil(element_count / 4) bytes** after
+   the zero block, followed by a **P1g count of the region's f32
+   words** (1 B, `ff` escapes to u32le on big regions), then the
+   region.  The stage-2c "+1 byte" was the count byte miscounted into
+   the table span (026d: table [40, 71) = 31 B for 124 elements +
+   count `cb` = 203 at [71, 72); 70b59f2a: table [48, 503) = 455 B
+   for 1,820 + count `ff 00 0b 00 00` = 2,816 at [503, 508) —
+   508 + 4·2,816 = 11,772 exactly where the trailing region begins).
+2. **U1 solved (fact, byte-exact on 4 anchors, corpus-measured):** the
+   table is 2 bits per element, **LSB-first within each byte**, one
+   slot per element in region order; the value is the element's write
+   shape in f32 words: **0 = `[x][y][z]` (3, an x-write/run start),
+   1 = skip (0 — the curve entries: no coordinates in the region),
+   2 = `[z]` (1), 3 = `[y][z]` (2)**.  The stage-2b "8 mappings 0/8"
+   dead-end came from summing over 128 slots on 026d (the count byte's
+   bits included) and from reading the 460 B before 70b59f2a's region
+   as table-only.  The walk is deterministic and consumes exactly the
+   declared write count on the anchors (026d/e254a37e: 203 words = 98
+   points + 26 skips; 70b59f2a: 2,816 words = 1,716 points + 104
+   skips; 0313b53d: 247 = 160 + 0; 1b1e69cd: 100 = 44 + 0).  P1i is
+   subsumed: the initial LCP state is the origin, and the table
+   encodes the first write's shape like any element's (0313b53d opens
+   `[y][z]` with table slot 3; 70b59f2a opens `[x][y][z]` with slot 0).
+3. **U3 resolved for the single-table family (fact on the anchors,
+   corpus-measured):** there are NO per-segment tables and no segment
+   headers on the decoded family — ONE table + ONE write count cover
+   the whole region.  The x-groups/runs are delimited by the value-0
+   slots (P1r's runs); the big-store corner groups sit OUT of x order
+   at their element slots (70b59f2a: elements 1,812-1,819 = two
+   4-point groups at x = 5210/5900, table pattern 0,2,3,2 each =
+   `[x][y][z],[z],[y][z],[z]` byte-exact as stage-2b traced, with ONE
+   x-break at element 1,812; all 8 are pool vertices).  The stage-2b
+   reading "the tail segment has its own table" is corrected: the
+   single table's slots 1,812-1,819 carry the corner patterns.
+4. **M2b refined (fact on the anchors, corpus-measured):** facet and
+   edge references are **0-based element indices in region order**
+   (identity — the element space IS the region's element sequence;
+   no sigma search).  Evidence: on 70b59f2a max_ref = 1,819 =
+   element_count − 1 (N2 exact) and every normal-carrying loop's
+   refs resolve to points sharing the loop's plane.  The stage-2b/2c
+   "monotone shift profile" was the search artifact of matching refs
+   onto WRITTEN-point indices; the shift = the number of skip slots
+   before the point, automatically monotone.  The M2c inference
+   "curve entries are never referenced" is CORRECTED: loops reference
+   skip slots on every anchor with skips (3 of 7 loops on 026d, 26 of
+   316 on 70b59f2a) — curve entries are loop vertices whose
+   coordinates live in the curve records (U4).
+5. **The loop plane law is coplanarity against the record's stored
+   normal (fact on the anchors):** all (p − p0)·n ≈ 0 (max residual
+   5.4e-05 on 70b59f2a, f32 rounding scale).  The stage-2b
+   axis-constant reading was too strict: the big store's corner quads
+   are slanted planes (e.g. the x = 5210/5900 corner quad's normal
+   (-0.083, -0.997, 0)).  On 70b59f2a: 316 normal-carrying loops =
+   **290 coplanar + 26 skip-ref + 0 nonplanar**; on 026d/e254a37e:
+   7 loops = 4/2 coplanar + 3/5 skip-ref + 0 nonplanar.  Record
+   reference width: u16be on all 292 normal-carrying records of
+   70b59f2a; the width disambiguation adds a **no-repeated-refs rule**
+   (a u8 misread of a u16be record repeats refs inside the loop —
+   the 13 `counts=(8,)` records of 70b59f2a decode 0/13 coplanar as
+   u8, 13/13 as u16be).
+6. **Corpus rates (fact, 933 composite stores audited; 28 audit
+   errors: 22 layout overruns + 6 without strip headers):**
+   - the walk consumes exactly the declared write count on **556/650
+     big-form (0.855) and 268/283 small-form (0.947)** stores;
+   - the pool is fully re-listed in the decoded points on **464/556
+     decoded big (0.835) and 213/268 decoded small (0.795)** —
+     the headline: **464/650 big-form stores decode end-to-end**
+     (walk + finite words + pool absorbed); big-form was 0/654
+     before this stage;
+   - the small-form pool-containment rate rises from the stage-2c
+     DP probe's 70/285 to **213/283** under the table-driven walk
+     (deterministic, no probe);
+   - elem_decl == max_ref + 1 on 421/532 decoded big (0.791) and
+     221/266 decoded small (0.831) ref-carrying stores;
+   - the loop battery over decoded stores: big 32,512 loops =
+     16,884 coplanar (0.519) + 12,646 skip-ref (0.389) + 2,982
+     nonplanar (0.092); of the nonplanar, the dominant class (84%,
+     2,421 of 2,571 0x4A strips sampled over 60 stores) is
+     **multi-plane strips** — fillet/bevel tessellations whose
+     per-triangle normals take 2-3 distinct values — where the
+     whole-loop coplanarity does not apply and the per-triangle
+     strip law (6.3.1 GE-F3/F5) is the applicable test; the rest:
+     0x49 loops (primitive reading open, GE-F9), 0x4C polygons, and
+     a uniform-parallel residue.  Coplanar + skip-ref + multi-plane
+     strips = 98.3% of testable loops on the sampled stores.
+
+**Residue (open, named):** ~14% of big-form stores (94 walk-mismatch +
+22 layout overruns + some audit errors) carry a SECOND layout family:
+the largest token-bearing node's payload is a multi-part container —
+the list header + counts, then float-pair data (no zero block, no
+table at the predicted offsets), then `02 02` edge-record sub-nodes
+and `05 08 01` vertex sub-nodes INSIDE the payload, alongside small
+per-rep list nodes (86-element nodes with cumulative edge bounds 1,
+39, 77 on 38d6596733).  Whether the element space splits across those
+sub-nodes or the aggregate node's floats encode a different block
+structure is open (U3-variant).  The 92 decoded-but-unabsorbed stores
+are the known unabsorbed variant (the node list misses pool
+vertices); U4 (curve-entry coordinates) stays open with the skip-slot
+bracketing as the new handle.
+
 ## Reproduction
 
 ```
@@ -264,3 +378,17 @@ row per L2 part).  Since stage 2c the decode machinery lives in
 `src/catpart/geometry/composite.py` (the exporter's integration); this
 script is its corpus runner and reports the small-form decode rates.
 Corpus binaries are not committed (corpus symlinked read-only).
+
+Stage 3b adds the table-driven decode (both forms; U1/U3, 2026-11-11):
+
+```
+.venv/bin/python -I scripts/triage/decode_big_form_points.py
+# anchor subset:
+.venv/bin/python -I scripts/triage/decode_big_form_points.py \
+  --include-sha16 026d6726007381a9,70b59f2a0eb60c1c,e254a37e2ba6902c
+```
+
+Outputs `docs/evidence/data/big-form-points-files.csv` (committed; one
+row per composite store: layout, walk, pool containment, N2, loop
+battery).  `src/` untouched — the exporter integration of big form is
+a later stage.
