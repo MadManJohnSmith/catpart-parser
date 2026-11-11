@@ -37,7 +37,15 @@ committed CSVs:
      ``2026-11-09-vertex-pool.md`` (P6u) and in
      ``2026-11-09-facet-semantics.md`` / ``geometry.md`` (the full-scope
      winding rate) must compose from the committed CSVs under
-     ``docs/evidence/data/``.
+     ``docs/evidence/data/``;
+   - generic note-figure arithmetic (#37): every ``A/B = 0.X`` rate
+     triple must divide to the quoted precision, every ``A + B = N``
+     sum expression must add up, and every table ``total`` row must
+     equal its integer columns' body sum — over all of
+     ``docs/evidence/*.md`` and ``docs/format/*.md``. This is the
+     mechanical layer under the hand-wired note-vs-CSV tripwires: it
+     shrinks what a review must eyeball; it does not replace
+     derivations that need CSV semantics.
 
 Output: per-page claim inventory (established / candidate / open), the
 evidence-link count, drift checks, and any violations. Exit 1 when a
@@ -102,6 +110,21 @@ FULL_SCOPE_TRIGGERS = ("179-clean", "full 179", "full-179")
 P6U_FIGURE_RE = re.compile(r"(\d[\d,]*)\s*/\s*(\d[\d,]*)")
 #: A "= 0.ZZZ" rate on a P6u line.
 P6U_RATE_RE = re.compile(r"=\s*(0\.\d{3})\b")
+
+#: An "A/B = 0.X" rate triple as evidence notes and format docs quote
+#: them (thousands comma-grouping allowed). The lookbehind keeps the
+#: numerator of parenthesized sum rates like "(1,068+100)/1,377" out of
+#: the pair (that figure belongs to the whole parenthesized sum, not to
+#: its last addend) and keeps fragments of grouped numbers ("5, 9") out.
+RATE_TRIPLE_RE = re.compile(
+    r"(?<![\w+.,])(\d[\d,]*)\s*/\s*(\d[\d,]*)\s*=\s*(0\.\d{2,6})\b"
+)
+#: An "A + B (+ C ...) = N" sum expression, in prose or a table cell.
+SUM_EXPR_RE = re.compile(
+    r"(?<![\w.,])(\d[\d,]*(?:\s*\+\s*\d[\d,]*)+)\s*=\s*(\d[\d,]*)\b"
+)
+#: A plain integer cell (thousands comma-grouping allowed).
+INT_CELL_RE = re.compile(r"-?\d[\d,]*\Z")
 
 
 def repo_root() -> Path:
@@ -314,6 +337,124 @@ def _check_vertex_pool_note(root: Path, violations: list[str]) -> None:
                 )
 
 
+def _as_int_cell(cell: str) -> int | None:
+    """The cell as an int, or None when it is not a plain integer."""
+    text = cell.strip()
+    if not INT_CELL_RE.fullmatch(text):
+        return None
+    return int(text.replace(",", ""))
+
+
+def _check_rate_triples(text: str, rel: str, violations: list[str]) -> None:
+    """Every ``A/B = 0.X`` triple must divide to the quoted precision (#37).
+
+    This is the generic layer of the 2026-11-10 review-fix class ("count
+    figures fixed"): a rate whose own pair contradicts it needs no CSV
+    semantics to be caught.
+    """
+    for n, line in enumerate(text.splitlines(), 1):
+        for m in RATE_TRIPLE_RE.finditer(line):
+            num = int(m.group(1).replace(",", ""))
+            den = int(m.group(2).replace(",", ""))
+            quoted = m.group(3)
+            if den == 0:
+                violations.append(
+                    f"{rel}: line {n}: quotes {m.group(1)}/{m.group(2)} = {quoted} "
+                    "over a zero denominator"
+                )
+                continue
+            expected = f"{num / den:.{len(quoted.partition('.')[2])}f}"
+            if expected != quoted:
+                violations.append(
+                    f"{rel}: line {n}: quotes {m.group(1)}/{m.group(2)} = {quoted}, "
+                    f"but the pair composes {expected}"
+                )
+
+
+def _check_sum_expressions(text: str, rel: str, violations: list[str]) -> None:
+    """Every ``A + B (+ C ...) = N`` expression must add up (#37)."""
+    for n, line in enumerate(text.splitlines(), 1):
+        for m in SUM_EXPR_RE.finditer(line):
+            parts = [
+                int(p.strip().replace(",", "")) for p in m.group(1).split("+")
+            ]
+            total = int(m.group(2).replace(",", ""))
+            if sum(parts) != total:
+                violations.append(
+                    f"{rel}: line {n}: sum expression {m.group(1)} = {total} "
+                    f"does not add up (the parts sum to {sum(parts)})"
+                )
+
+
+def _check_table_total_rows(text: str, rel: str, violations: list[str]) -> None:
+    """Every table ``total`` row must equal its integer columns' sum (#37).
+
+    Only purely integer columns are checked: a column holding text or
+    float rates is skipped (rates carry their own rounding, see
+    ``_check_rate_triples``), so a rounding artifact can never fail the
+    run.
+    """
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        if table_cells(lines[i]) is None:
+            i += 1
+            continue
+        table_start = i
+        header = table_cells(lines[i])
+        i += 1
+        if i >= len(lines) or table_cells(lines[i]) is None or not all(
+            set(cell) <= set("-: ") for cell in table_cells(lines[i])
+        ):
+            continue
+        i += 1
+        body: list[list[str]] = []
+        while i < len(lines) and table_cells(lines[i]) is not None:
+            body.append(table_cells(lines[i]))
+            i += 1
+        total_idx = next(
+            (
+                j
+                for j, row in enumerate(body)
+                if row and row[0].strip().lower() == "total"
+            ),
+            None,
+        )
+        if total_idx is None:
+            continue
+        total_row = body[total_idx]
+        others = body[:total_idx] + body[total_idx + 1 :]
+        for c in range(1, min(len(header), len(total_row))):
+            total_val = _as_int_cell(total_row[c])
+            if total_val is None:
+                continue
+            column = [
+                _as_int_cell(row[c]) if c < len(row) else None for row in others
+            ]
+            if any(v is None for v in column):
+                continue
+            if sum(column) != total_val:
+                violations.append(
+                    f"{rel}: table at line {table_start + 1}: total row column "
+                    f"'{header[c]}' states {total_val:,}, but its body rows "
+                    f"sum to {sum(column):,}"
+                )
+
+
+def _check_note_figure_arithmetic(root: Path, violations: list[str]) -> None:
+    """Generic figure arithmetic over evidence notes and format docs (#37)."""
+    for directory in ("evidence", "format"):
+        docs_dir = root / "docs" / directory
+        if not docs_dir.is_dir():
+            continue
+        for page in sorted(docs_dir.glob("*.md")):
+            text = page.read_text(encoding="utf-8")
+            rel = str(page.relative_to(root))
+            _check_rate_triples(text, rel, violations)
+            _check_sum_expressions(text, rel, violations)
+            _check_table_total_rows(text, rel, violations)
+
+
 def check_spec_drift(root: Path, total_counts: dict[str, int]) -> list[str]:
     """Run the spec-to-code and spec-to-data drift checks under ``root`` (#36)."""
     violations: list[str] = []
@@ -502,6 +643,10 @@ def check_spec_drift(root: Path, total_counts: dict[str, int]) -> list[str]:
             )
 
     _check_winding_note(root, violations)
+
+    # 5. Generic note-figure arithmetic (rate triples, sum expressions,
+    #    table total rows) — #37.
+    _check_note_figure_arithmetic(root, violations)
 
     return violations
 
