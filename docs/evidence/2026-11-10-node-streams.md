@@ -173,6 +173,78 @@ the decode completes validates, 5/5).
    profile; values consistent with the circle geometry but not
    byte-pinned).
 
+## Stage 2c: the decode hardened and integrated (2026-11-11, #34)
+
+Stage 2c moved the decode into `src/catpart/geometry/composite.py`
+(the exporter's path, fail-closed) and hardened the automation.  The
+DP start-selection that full-decoded 5/285 small-form stores is
+replaced; the failure census (272/280 failures produced no parse, 8
+partial) resolved into five byte-measured refinements of P1, each
+verified on the anchors and the corpus:
+
+1. **P1t (fact, 2 anchors + corpus):** the per-node 2-bit table (U1)
+   spans `ceil(element_count / 4) + 1` bytes after the zero block —
+   32 B for 124 declared on 026d6726, 41 B for 160 on 0313b53d
+   (region starts payload[72] and payload[81] respectively).  U1's
+   semantics stay open; the length is what the start prediction needs.
+2. **P1i (fact):** the stream's initial LCP state carries **x = 0.0
+   implicitly** — the first point writes `[x][y][z]` only when its x
+   differs from 0, else `[y][z]`.  On 0313b53d the region opens with
+   the pool lex-min's `[y][z]` (its x = 0 is never written); 026d6726
+   opens with a full write (x = 392.2 ≠ 0).  One law, both forms.
+   This single rule dissolves most of the "extras-before-lex-min"
+   residue the stage-2b dispatch named: those lists open with the
+   pool's x = 0 vertices, not with extras.
+3. **P1r (fact, 1b1e69cd):** the stream is a concatenation of
+   **lex-nondecreasing runs**; each run starts with a full `[x][y][z]`
+   write and may reset x (1b1e69cd: run A covers x 98980.95..99032.89,
+   run B restarts at x 98873.89 — 44 points = element_count, pool
+   24/24).  **Correction (2026-11-11):** stage-2b's "the point region
+   is a lex-nondecreasing point list" holds per run, not globally;
+   the merge law's global sort is what makes the space lex-ordered.
+4. **P1n (fact):** the region ends where the law's content ends — no
+   parse extends into the trailing region under the lex law (verified
+   on 0313b53d: every end past the pool lex-max's write fails).
+5. **The decode is a value-DP** over (position, last point, point
+   count) states maximising pool containment, the count law
+   (element_count = node points + curve entries ≥ 0) pruning
+   over-parses, and the predicate widened to accept an exact 0.0
+   coordinate (origin-placed geometry writes it; sub-normal noise
+   stays rejected).
+
+**Correction (2026-11-11, #34 stage 2c):** the stage-2b reading
+"the first curve entry sorts before the list's first point" (loop-0
+shifts starting at 1) is superseded — the edge table's first record
+references position 0, so merged position 0 is the list's first node
+point and the profile opens at shift 0 (M2b's σ form below).  The
+stage-2b loop mappings were per-loop greedy matchings; the joint
+constraint (one monotone profile + every facet reference resolving to
+a node point + the normal-carrying loops planar) is the stronger law
+and changes those per-loop shift figures.
+
+**M2b's σ form (fact on 026d6726, the exporter's validator):** the
+merged space is positions 0..element_count-1, each position a node
+point (in list order) or a curve entry.  A solution = the assignment
+satisfying (a) every facet reference resolves to a node point (curve
+entries are never referenced — they are construction geometry; on
+026d6726 the 84 distinct facet references all resolve), (b) every
+normal-carrying record's loop maps onto points sharing one constant
+coordinate on the normal's dominant axis, (c) the counts hold
+(npts node positions + curves).  On 026d6726 the CSP reproduces the
+anchor's planarity end-to-end and pins σ(97) = 26 = element_count − 98.
+Stores where several solutions produce distinct meshes (the
+unreferenced positions' node/curve choices unpinned) fail closed.
+Stores with curve entries = 0 force σ ≡ 0 and export directly.
+
+Coverage (2026-11-11, this stage): small-form point-region decode with
+pool fully contained rises from **5/285 to 70/285** (38 lex + 32
+run-reset; the widened probe + count-law pruning recovers the implicit-x0
+openers and the run-split streams); the composite export (decode + loop
+law + unambiguous mapping) covers **24/285** small-form stores (the rest
+fail closed: big-form U3, unabsorbed pools, no-parse, or ambiguous
+mappings — each with its specific reason in the exporter's error
+detail).  Big-form stays undecoded (U3).
+
 ## Reproduction
 
 ```
@@ -183,6 +255,7 @@ the decode completes validates, 5/5).
 ```
 
 Outputs `docs/evidence/data/node-streams-files.csv` (committed; one
-row per L2 part). Corpus binaries are not committed (corpus symlinked
-read-only). No exporter/runner code is touched; `catpart.geometry` is
-imported read-only.
+row per L2 part).  Since stage 2c the decode machinery lives in
+`src/catpart/geometry/composite.py` (the exporter's integration); this
+script is its corpus runner and reports the small-form decode rates.
+Corpus binaries are not committed (corpus symlinked read-only).

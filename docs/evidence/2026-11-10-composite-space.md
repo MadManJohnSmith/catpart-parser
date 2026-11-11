@@ -224,6 +224,23 @@ The answer to "where do the >= pool refs resolve":
    rates reproduce unchanged.
 3. **New evidence (not a correction):** the un-wrapped `01 01` polyline
    lists (E3) — stage-1's edge census walked only the wrapped groups.
+4. **2026-11-11, stage 2c (#34):** M1's merge construction is
+   operationalized in `src/catpart/geometry/composite.py` as the
+   shift-profile CSP ("M2b σ form"): merged positions 0..element_count-1
+   split into node points (list order) and curve entries such that every
+   facet reference resolves to a node point (curve entries are never
+   referenced by facets; the edge-table refs that do land on curve
+   positions belong to the curve polylines themselves) and every
+   normal-carrying loop maps onto points sharing one constant
+   coordinate.  On 026d6726 this reproduces the anchor's 7-loop planarity
+   end-to-end with σ(97) = 26 = element_count − 98 node points, and the
+   stage-2b reading "the first curve entry sorts before the list's first
+   point" is superseded — the edge table's first record references
+   position 0, so the profile opens at shift 0.  Small-form coverage
+   after the hardening: 70/285 point-region decodes with the pool fully
+   contained, 24/285 full composite exports (fail-closed elsewhere); see
+   the stage-2c section of
+   [2026-11-10-node-streams.md](2026-11-10-node-streams.md).
 
 ## Claims
 
