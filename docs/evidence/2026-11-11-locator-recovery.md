@@ -79,7 +79,11 @@ field-identical (detected_version, kind, container_names) to both the
 committed baseline report and a baseline-interpreter run (pre-stage-3a
 code at 14486db) — the locate law does not touch container inventory.
 (The comparison mirrors the runner's container_names derivation:
-unique, first-occurrence order.)
+unique, first-occurrence order — 2026-11-11 correction (#34 stage-3a
+review): the gate script's baseline probe now applies the same dedup;
+before the fix the stronger `--inspect-baseline-python` mode exited 1
+on 12 corpus parts whose container tables genuinely repeat names —
+raw interpreter output verified identical on all 12.)
 
 ## Projected L2 arithmetic (not run — the coordinator runs the combined row)
 

@@ -28,10 +28,10 @@ stability — with ``--inspect-baseline-python`` (a venv python whose
 editable install), the live ``build_inspect_report`` fields
 (detected_version, kind, container_names) must equal the baseline
 interpreter's over the same parts: the locate law does not touch
-container inventory. Without it the check is skipped (the committed
-baseline report predates unrelated container-table parse refinements,
-so comparing live inspect against it shows pre-existing drift, not
-stage-3a deltas).
+container inventory. Without it the check compares live inspect
+against the committed baseline report instead (the committed report
+predates unrelated container-table parse refinements, so that path
+can show pre-existing drift, not stage-3a deltas).
 
 Run: .venv/bin/python -I scripts/triage/check_locator_recovery_ab.py
 [--corpus-root PATH] [--census PATH] [--inspect-baseline-python PY]
@@ -178,7 +178,8 @@ _INSPECT_PROBE = (
     "    out[r['sha256'][:16]] = {\n"
     "        'detected_version': rep['detected_version'],\n"
     "        'kind': rep['kind'],\n"
-    "        'container_names': [c['name'] for c in rep['containers']],\n"
+    "        'container_names': list(dict.fromkeys(\n"
+    "            c['name'] for c in rep['containers'])),\n"
     "    }\n"
     "print(json.dumps(out))\n"
 )
@@ -360,10 +361,21 @@ def main():
                   f"!= {n}")
             failed = True
     if failed:
-        print(f"\n  GATE FAIL: {len(deltas)} unexplained classification "
-              f"delta(s)")
+        # name the actual cause(s) — 2026-11-11 #34 stage-3a review: the
+        # first wording always said "unexplained classification delta(s)"
+        # even when the failure was L1 or provenance mismatches
+        parts = []
+        if deltas:
+            parts.append(f"{len(deltas)} unexplained classification delta(s)")
+        if prov_bad:
+            parts.append(f"{len(prov_bad)} provenance mismatch(es)")
+        if insp_bad:
+            parts.append(f"{len(insp_bad)} L1 inspect mismatch(es)")
+        print("\n  GATE FAIL: " + "; ".join(parts))
         for d in deltas[:40]:
             print("   ", d)
+        for item in insp_bad[:40]:
+            print("   ", item)
         sys.exit(1)
     print("\n  GATE PASS: every part matches the stage-3a stated delta")
 
