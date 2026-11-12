@@ -311,3 +311,20 @@ change can only move a store from fail to pass (or leave it failing) —
     # default would overwrite the committed corpus CSV):
     python3 -I scripts/triage/decode_curve_entries.py \
       --include-sha16 026d6726007381a9,e254a37e2ba6902c --out-dir /tmp/u4-anchors
+
+## 2026-11-12 stage-5-baseline recompute (coordinator, dated)
+
+E0 re-derived against the stage-5 baseline
+(`stage5-identity-export-files.csv`, the 1,011-export row): **24
+stores — membership unchanged** vs the list above (21 candidates
+incl. the 4 battery-supported + 3 census-scope blind). The newly
+exported per-rep stores contribute no empty-mesh-with-dropped-loops
+members. The stage-6 raw-array integration is the next mover of the
+fail-closed set; E0 stays gated on that recompute per
+`U4-stage5-recommendation`. Join (both CSVs committed):
+
+```
+python3 -I -c "import csv; ab={r['sha256']:r for r in csv.DictReader(open('docs/evidence/data/stage5-identity-export-files.csv'))}; print(sum(1 for r in ab.values() if r['export_ok']=='1' and 'empty-mesh' in (r['failed_check'] or '') and int(r['loops_curve_entry'] or 0)>0))"
+```
+
+-> 24.
