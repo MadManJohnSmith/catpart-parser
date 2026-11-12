@@ -120,8 +120,69 @@ NO-fit store; the 28's elem_decl range is bounded by their payloads);
 the plane tiebreak applies unchanged.  A baseline-exported row regressing
 to fail, or any D8 digest change, = STOP (D7/D8).
 
-## Observed A/B (filled AFTER the run)
+## Observed A/B (2026-11-12, post-declaration run)
 
-Pending: the corpus run (`ab_identity_export.py --out-name
-stage6-identity-export-files.csv` + the two-end replay) follows this
-commit; this section records declared-vs-observed per D-row.
+Corpus: 1,442 parts, dev + held-out.  Runs: `ab_identity_export.py`
+(→ `stage6-identity-export-files.csv`, committed; the harness gained
+the additive `stage`/`raw_start` columns) and `replay_export_seam.py`
+at BOTH ends (baseline end = the `cd5dc44` src extracted to a staging
+tree; → replay-baseline/stage6 CSVs, committed).  The baseline replay
+reproduces the committed baseline exactly: 1,011 exported = 747
+identity-table-walk + 152 identity-per-rep + 112 clean; 253
+undecoded-variant + 178 missing-geometry-store (fact).
+
+**Declared vs observed:**
+
+| # | declared | observed | verdict |
+|---|---|---|---|
+| D1 | +28..+30 composite exports (all dev) | **+28: exports 1,011 -> 1,039, composite 899 -> 927** — all 28 stage `identity-raw-array` (27 big + 1 small; raw_start 48 x26 / 40 x2; elem_decl 146..20,976), all dev, all baseline-undecoded rows; no census-scope-blind extras materialized | met (lower bound) |
+| D2 | L2 split unknown, a strict subset | **15 pass + 13 empty-mesh, 0 not-manifold**: the 13 export vertices-only (0 triangles — the stores' facet records produce no pinned-family triangles, the no-facet-records warning); L2 926 -> 941 (+15) | met |
+| D3 | held-out 0 movement | 55/61 steady; dev 871 -> 886 (64.16%) | met |
+| D4 | 93 fail-closed trigger stores keep undecoded-variant | 0 error_class changes on the other 403 error rows; 42 recorded first-error details gained the raw-array suffix (the replay's 200-char detail cap and earlier-span errors hide the rest — the probe CSV names all 93 per store) | met |
+| D5 | walk-OK + per-rep + unabsorbed rows unchanged | 0 v/t changes, 0 failed_check changes on baseline rows; stages unchanged (747/152/112) | met |
+| D6 | undecoded 253 -> 225, missing 178 | exact (225 / 178) | met |
+| D7 | 0 lost exports, 0 lost passes; clean 112; stage-5 gains unchanged | **0 lost exports, 0 lost passes**; clean 112 unchanged; the 152 per-rep + 747 table-walk rows (the stage-5 gains among them) byte-identical | met |
+| D8 | replay digests identical on every baseline-exported row | **1,011/1,011 byte-identical on BOTH digests** (PLY sha256 + L2-fields sha256); the 28 new exports carry both digests | met |
+| D9 | no explosion | 0 timeouts both ends; runs complete in minutes | met |
+
+**Accounting (every changed row mapped):**
+
+- exports 1,011 -> 1,039 (+28 = the 28 escape-pinned raw-export
+  stores; 0 lost); composite 899 -> 927; L2 pass 926 -> 941 = 926
+  preserved + 15 (of the 28: 15 pass / 13 empty-mesh).
+- error classes: undecoded-variant 253 -> 225 (-28 = the new
+  exports); missing 178 unchanged; every other row byte-identical.
+- Dev pass 871 -> 886/1,381 = 64.16% (from 63.07%); the grind
+  continues — the next levers named by the handoff (U3-variant
+  multi-container, 0000-family, E0 recomputation) are untouched here.
+
+**Residual / open (named):** (1) the 13 empty-mesh raw exports: their
+facet records parse but produce no pinned-family triangles — the
+record-reading question joins the family's named opens (tail, count3);
+(2) the 93 fail-closed trigger stores stay named per store in the
+probe CSV (84 start-unpinned / 6 weak / 3 pool-unabsorbed); (3) the
+4a note's 39 denominator does not reproduce (32 does) — dated in
+`stage6-claims.csv`.
+
+## Reproduction
+
+```
+ln -s /home/alan/Documents/Repos/catpart-parser/corpus corpus   # gitignored, read-only
+.venv/bin/python -I scripts/triage/raw_array_trigger_probe.py        # store-level probe (pre-declaration)
+.venv/bin/python -I scripts/triage/ab_identity_export.py --out-name stage6-identity-export-files.csv
+# replay at both ends (baseline end = the cd5dc44 src in a staging tree):
+mkdir -p /tmp/stage6-base/scripts/triage && cd /tmp/stage6-base
+git -C <worktree> archive cd5dc44 src manifests | tar -x
+ln -s /home/alan/Documents/Repos/catpart-parser/corpus corpus
+cp <worktree>/scripts/triage/replay_export_seam.py scripts/triage/
+python3 -I scripts/triage/replay_export_seam.py --out-dir /tmp/stage6-ab --out-name replay-baseline.csv
+cd <worktree>
+.venv/bin/python -I scripts/triage/replay_export_seam.py --out-dir /tmp/stage6-ab --out-name replay-stage6.csv
+# per-row joins: the committed stage6-claims.csv rows
+```
+
+Committed artifacts: `stage6-raw-trigger-probe.csv` (the store-level
+pre-declaration probe, 1,442 rows), `stage6-identity-export-files.csv`
+(the seam A/B, 1,442 rows), `stage6-replay-baseline.csv` /
+`stage6-replay-stage6.csv` (PLY + L2-fields digests at both ends,
+1,442 rows each), `stage6-claims.csv`.
