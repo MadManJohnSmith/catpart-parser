@@ -28,6 +28,7 @@ from catpart.schema.validate import validate
 from fixtures_gen import (
     COMPOSITE_FACES,
     COMPOSITE_GRID_SIDE,
+    COMPOSITE_POOL_WALK,
     COMPOSITE_POINTS,
     build_fixture,
 )
@@ -489,27 +490,52 @@ def test_composite_raw_array_exports(tmp_path, capsys):
         assert got == pytest.approx(want, abs=1e-6)
 
 
-def test_composite_raw_array_wrong_offset_stays_fail_closed(tmp_path, capsys):
+def test_composite_raw_array_wrong_offset_exports_via_flat_law(tmp_path, capsys):
     """The trail-escape byte one past every candidate start's array end:
-    the start rule pins nothing (0 selections) — the store stays
-    ``undecoded-variant`` with the triggering walk failure AND the raw
-    gap both named, no PLY."""
+    the stage-4a start rule pins nothing (0 selections — the raw law's
+    fail-closed arm, pinned at unit level by
+    test_composite_raw_array_start_rule_uniqueness).  DATED CORRECTION
+    (stage 9, 2026-11-12): under the stage-8 composition the store no
+    longer fails closed — the raw law declines it, and the flat law
+    (start pinned by counts_end, NO escape required) decodes the same
+    region, so the store exports with stage
+    ``identity-mixedwrite-reps``.  The escape placement is irrelevant
+    to the flat law by design (stage-8 artifact 3)."""
     code, captured, ply_path = run_export(
         tmp_path, capsys, "geometry-composite-law-raw-array-wrong-offset"
     )
-    assert code == 1
-    error = json.loads(captured.err)
-    assert error["error_class"] == "undecoded-variant"
-    assert "walk-exact" in error["detail"]
-    assert "raw-array start not pinned" in error["detail"]
-    assert "selects 0 of the 9 candidate starts" in error["detail"]
-    assert not ply_path.exists()
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    validate(summary, load_schema("export-summary-v1"))
+    info = summary["composite"]
+    assert info["stage"] == "identity-mixedwrite-reps"
+    assert info["rep_laws"] == {"table": 0, "raw": 0, "flat": 1}
+    assert summary["vertex_count"] == 12
+    assert summary["triangle_count"] == 12
+    assert summary["mesh"]["closed"] is True
+    # the composition's raw arm still ran first and was declined: the
+    # unit-level start rule stays fail-closed on this payload
+    from catpart.geometry.composite import decode_raw_array
+    from catpart.geometry.errors import ExportError
+    from fixtures_gen import _composite_raw_node_payload
+
+    with pytest.raises(ExportError) as exc:
+        decode_raw_array(
+            _composite_raw_node_payload(COMPOSITE_POINTS, escape="wrong"),
+            12,
+            COMPOSITE_POOL_WALK,
+        )
+    assert "raw-array start not pinned" in exc.value.detail
+    assert "selects 0 of the 9 candidate starts" in exc.value.detail
 
 
 def test_composite_raw_array_unabsorbed_stays_fail_closed(tmp_path, capsys):
     """Strong fit at the pinned start, but a 9th pool vertex the raw
     triples do not re-list: absorption is not established — fail-closed
-    (the scan's 6/35 non-absorbed strong-fit stores)."""
+    (the scan's 6/35 non-absorbed strong-fit stores).  Stage 9: the
+    mixed-write composition runs after the raw decline and fails on the
+    same ground — the 9th vertex is in no decoded rep region (the
+    sub-node route's residue named, element indices unpinned)."""
     code, captured, ply_path = run_export(
         tmp_path, capsys, "geometry-composite-law-raw-array-unabsorbed"
     )
@@ -518,6 +544,8 @@ def test_composite_raw_array_unabsorbed_stays_fail_closed(tmp_path, capsys):
     assert error["error_class"] == "undecoded-variant"
     assert "raw-array pool not absorbed" in error["detail"]
     assert "1 of 9 pool vertices" in error["detail"]
+    assert "absent from every decoded rep region" in error["detail"]
+    assert "05 08 01 sub-node records" in error["detail"]
     assert not ply_path.exists()
 
 
@@ -667,3 +695,219 @@ def test_walk_mismatch_signature():
     truncated = _composite_node_payload(elements)[:-10]
     profile = _walk_mismatch(truncated, len(COMPOSITE_POINTS))
     assert profile is not None and "overruns" in profile["layout_error"]
+
+
+# --- stage 9: the stage-8 mixed-write locator/predicate artifacts ------
+
+
+def test_composite_strip_false_match_exports_via_full_body_scan(tmp_path, capsys):
+    """Stage-8 artifact 1 (the mass's root cause): the 13th triple's
+    (y, z) bytes contain the STRIP_RE sequence ``01 45 00 ff`` (two
+    adjacent NICE floats, 2064.0 and ~35.97), so the single-rep window
+    truncates the node mid-region: the primary walk raises, the raw
+    law's 12*elem_decl span no longer fits the truncated payload (0
+    escape candidates — the ccbb7862 start-unpinned shape) and the
+    store stays fail-closed WITHOUT the fix.  The stage-8 composition's
+    full-body per-rep scan recovers the region: on the FULL payload the
+    flat law decodes (the raw escape rule finds TWO candidates — the
+    facet record's own ``01 4A 01 FF`` header pins a second one — so
+    the census law order falls through to flat), the pool absorbs, the
+    store exports closed with stage ``identity-mixedwrite-reps``."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-raw-array-strip-false-match"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    validate(summary, load_schema("export-summary-v1"))
+    info = summary["composite"]
+    assert info["stage"] == "identity-mixedwrite-reps"
+    assert info["rep_laws"] == {"table": 0, "raw": 0, "flat": 1}
+    assert info["element_decl"] == 13
+    assert summary["vertex_count"] == 13
+    assert summary["triangle_count"] == 12
+    assert summary["mesh"]["manifold"] is True
+    assert summary["mesh"]["closed"] is True
+    # the truncated-window locator really does cut the node mid-region
+    # (the false match sits inside the 13th triple), and the raw law
+    # really is declined on the truncated payload
+    from catpart.geometry import composite
+    from catpart.geometry.errors import ExportError
+    from fixtures_gen import (
+        STRIP_FALSE_MATCH_Y,
+        STRIP_FALSE_MATCH_Z,
+        _composite_raw_node_payload,
+    )
+
+    payload = _composite_raw_node_payload(
+        list(COMPOSITE_POINTS) + [(30.0, STRIP_FALSE_MATCH_Y, STRIP_FALSE_MATCH_Z)]
+    )
+    match = composite.STRIP_RE.search(payload, 40)
+    assert match is not None and 40 < match.start() < 40 + 12 * 13
+    with pytest.raises(ExportError) as exc:
+        composite.decode_raw_array(payload[: match.start()], 13, COMPOSITE_POOL_WALK)
+    assert "raw-array start not pinned" in exc.value.detail
+
+
+def test_composite_table_overshoot_exports_via_extent_law(tmp_path, capsys):
+    """Stage-8 artifact 2: the region opens with 20 full-write slots, so
+    the 2-bit table's own leading bytes are zero and the committed
+    layout() zero-group skip overshoots INTO the table — the count
+    reads a region byte and the walk fails ("0 left of the declared 0",
+    the 221df959 shape).  The stage-8 extent law selects the unique
+    walk-exact extent (the true table at counts_end + 4; the shifted
+    extent overruns) -> the store exports with stage
+    ``identity-mixedwrite-reps`` and a table rep."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-table-overshoot"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    validate(summary, load_schema("export-summary-v1"))
+    info = summary["composite"]
+    assert info["stage"] == "identity-mixedwrite-reps"
+    assert info["rep_laws"] == {"table": 1, "raw": 0, "flat": 0}
+    assert info["element_decl"] == 20
+    assert summary["vertex_count"] == 20
+    assert summary["triangle_count"] == 12
+    assert summary["mesh"]["closed"] is True
+
+
+def test_table_decode_extents_both_directions():
+    """The extent law in both directions: on a NO-overshoot payload
+    (the table's first group non-zero) the unique extent equals the
+    committed skip position and the decode matches decode_region's; on
+    the overshoot payload the committed position is misaligned (the
+    primary walk raises) and the law recovers the true extent.  The
+    ambiguity arm (several walk-exact extents stay fail-closed) is
+    measured corpus-vacuous by the stage-8 census (all 133 table reps
+    resolve at a unique extent) and is not synthesizable without
+    crafting a shifted-nice region — the census measurement is the
+    pin."""
+    from fixtures_gen import _composite_elements, _composite_node_payload
+
+    from catpart.geometry.composite import (
+        _table_decode_extents,
+        decode_region,
+    )
+    from catpart.geometry.errors import ExportError
+
+    # no overshoot: the standard 12-point table store
+    elements = _composite_elements(list(COMPOSITE_POINTS))
+    payload = _composite_node_payload(elements)
+    td = _table_decode_extents(payload, 12, 36)
+    assert td is not None and td[0] != "ambiguous"
+    _e, td_elements, _skips, region_end, wc = td
+    assert _e == 1
+    ref_elements, ref_info = decode_region(payload, 12)
+    assert td_elements == ref_elements
+    assert region_end == ref_info["walk_end"]
+    assert wc == ref_info["write_count"]
+
+    # overshoot: the 20-full-write store's node payload — the primary
+    # walk raises, the extent law recovers the true table
+    corner_idx = (0, 2, 3, 5, 6, 8, 9, 11)
+    points = []
+    for i in range(20):
+        if i in corner_idx:
+            k = corner_idx.index(i)
+            y = 10.0 if k in (0, 1, 4, 5) else 110.0
+            z = 0.0 if k in (0, 1, 2, 3) else 60.0
+            points.append((1.0 + 3.0 * i, y, z))
+        else:
+            points.append((1.0 + 3.0 * i, 50.0, 30.0))
+    big = _composite_node_payload(_composite_elements(points))
+    with pytest.raises(ExportError):
+        decode_region(big, 20)
+    td = _table_decode_extents(big, 20, 36)
+    assert td is not None and td[0] != "ambiguous"
+    e, td_elements, skips, region_end, wc = td
+    assert e == 1  # the TRUE table (the committed skip ate it + the table)
+    assert len(td_elements) == 20
+    assert skips == 0
+    assert all(pt is not None for _v, pt in td_elements)
+    assert wc == 60
+
+
+def test_composite_flat_law_near_zero_coordinates(tmp_path, capsys):
+    """Stage-8 artifact 3: the four non-pool triples carry near-zero
+    coordinates (|v| ~ 1e-14, the note's measured 7d27c73d/dd610ca5
+    values) — the raw law's 1e-6 floor weak-fits (nice 8/12 = 0.667 <
+    0.98, the d51eb38c shape) and declines; the flat law (start pinned
+    by counts_end, NO escape required, the exporter predicate) decodes
+    the same region and the store exports with stage
+    ``identity-mixedwrite-reps``."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-flat-near-zero"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    validate(summary, load_schema("export-summary-v1"))
+    info = summary["composite"]
+    assert info["stage"] == "identity-mixedwrite-reps"
+    assert info["rep_laws"] == {"table": 0, "raw": 0, "flat": 1}
+    assert summary["vertex_count"] == 12
+    assert summary["triangle_count"] == 12
+    assert summary["mesh"]["closed"] is True
+    # the raw law really does weak-fit at the pinned start while the
+    # exporter predicate accepts every coordinate
+    from catpart.geometry.composite import _nice, _raw_nice, decode_raw_array
+    from catpart.geometry.errors import ExportError
+    from fixtures_gen import NEAR_ZERO_A, _composite_raw_node_payload
+
+    assert not _raw_nice(NEAR_ZERO_A)
+    assert _nice(NEAR_ZERO_A)
+    points = list(COMPOSITE_POINTS)
+    points[1] = (points[1][0], NEAR_ZERO_A, points[1][2])
+    payload = _composite_raw_node_payload(points)
+    with pytest.raises(ExportError) as exc:
+        decode_raw_array(payload, 12, COMPOSITE_POOL_WALK)
+    assert "weak fit" in exc.value.detail
+    assert "nice 0.9167" in exc.value.detail
+
+
+def test_composite_mixedwrite_multi_rep_exports_merged(tmp_path, capsys):
+    """The stage-9 composition on a multi-part store: two raw-layout
+    reps (the single-rep walk raises; the raw-array law declines the
+    store — the concatenated pool spans both groups and no single
+    region re-lists it all); the composition decodes both nodes on the
+    full-body window, absorbs each pool group by its diagonal rep's
+    region and exports both boxes merged (24 vertices, 24 triangles,
+    closed — the stage-5 merge shape on the walk-mismatch path)."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-mixedwrite-multi-rep"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    validate(summary, load_schema("export-summary-v1"))
+    info = summary["composite"]
+    assert info["stage"] == "identity-mixedwrite-reps"
+    assert info["rep_laws"] == {"table": 0, "raw": 0, "flat": 2}
+    assert info["reps_decoded"] == 2
+    assert info["reps_exported"] == 2
+    assert info["reps_unexported"] == 0
+    assert info["element_decl"] == 24
+    assert summary["vertex_count"] == 24
+    assert summary["triangle_count"] == 24
+    assert summary["mesh"]["manifold"] is True
+    assert summary["mesh"]["closed"] is True
+    _, faces = parse_ply(ply_path)
+    assert sum(1 for f in faces if all(i < 12 for i in f)) == 12
+    assert sum(1 for f in faces if all(i >= 12 for i in f)) == 12
+
+
+def test_composite_mixedwrite_subnode_stays_fail_closed(tmp_path, capsys):
+    """The stage-8 note's integration item (e): rep 1's pool carries a
+    9th vertex no decoded region re-lists (the 05 08 01 sub-node
+    records' residue) — its element index is unpinned, so the store
+    stays fail-closed for export with the gap named (the corpus
+    bad44bdf class; the composition never guesses coordinates)."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-mixedwrite-multi-rep-subnode"
+    )
+    assert code == 1
+    error = json.loads(captured.err)
+    assert error["error_class"] == "undecoded-variant"
+    assert "does not establish pool absorption" in error["detail"]
+    assert "1 of 17 pool vertices" in error["detail"]
+    assert "05 08 01 sub-node records" in error["detail"]
+    assert not ply_path.exists()
