@@ -69,6 +69,29 @@ stage-3b table law dated 2026-11-11, byte-measured on the corpus):
   tiebreak inside the width rank, not an export gate (the multi-plane
   fillet/bevel strips stay legitimate geometry, stage-3d decision).
 
+- Raw-array law (stage 4a-residue, integrated 2026-11-12 stage 6, #34):
+  a walk-mismatch composite payload continues past the header as RAW
+  f32 triples — ``[token][count1][count2][tail][elem_decl x [x][y][z]
+  stride 12, x ascending][FF][count3 u32le][trail]``
+  (docs/evidence/2026-11-10-node-streams.md section "Stage 4a-residue";
+  rates in residue-raw-scan.csv).  The start is pinned by the
+  **trail-escape condition** ``payload[start + 12*elem_decl] == 0xFF``
+  over the committed scan's 4-aligned candidate range 32..64 — the
+  law applies only when exactly one candidate satisfies it.  Strong
+  fit = nice >= 0.98 AND x-ascending >= 0.98 over the full elem_decl
+  span (the committed scan criteria, ported verbatim including the
+  scan's coordinate predicate) AND the pool re-listed verbatim in the
+  triples (absorption, exact f32 — the scan's ``pool_absorbed_raw``).
+  It triggers ONLY where the table walk fails with the census family
+  signature (the layout raises, or the probe-semantics walk — all
+  slots, bounded only by the payload, no coordinate aborts — does not
+  end at the declared region end): a store the table walk handles is
+  never routed here, and a walk-exact store with junk coordinates is
+  not the family (its own failure is re-raised).  Everything else
+  stays fail-closed with the gap named on top of the triggering walk
+  failure.  Named opens stay open: the tail field's semantics, count3's
+  semantics (recorded, unvalidated), the weak-fit and no-fit stores.
+
 Fail-closed ladder (refined 2026-11-11 stage 3d, not abandoned): a
 store exports only when its table walk is exact (layout fits, the walk
 consumes exactly the declared write count, every coordinate finite and
@@ -536,6 +559,14 @@ def decode_composite_store(data, span, groups, kinds):
     rep).  Fail-closed per rep: a rep whose pool does not absorb, or
     whose gated references leave its own element space, stays
     unexported with the reason named in ``info`` — no guessing.
+
+    Stage-6 raw-array fallback (stage-4a law, 2026-11-12, #34): when
+    the table walk fails with the walk-mismatch family signature, the
+    payload may continue past the header as raw f32 triples
+    (:func:`decode_raw_array`); a store it covers exports with stage
+    ``identity-raw-array``, one it does not cover keeps the
+    ``undecoded-variant`` classification with the triggering walk
+    failure AND the raw gap both named.
     """
     lo, hi = span.body_lo, span.body_hi
     if not any(k == b"\x01\x02" or k[:1] == b"\xff" for k in kinds):
@@ -554,7 +585,27 @@ def decode_composite_store(data, span, groups, kinds):
             "(N1: 939/939 composite stores carry one)",
         )
     payload, elem_decl, _edge_bound = ln
-    elements, region_info = decode_region(payload, elem_decl)
+    try:
+        elements, region_info = decode_region(payload, elem_decl)
+    except ExportError as exc:
+        # Stage-6 (2026-11-12, #34): the walk-mismatch residue's
+        # raw-array law runs ONLY where the table walk fails with the
+        # census family signature (layout raise, or the probe-semantics
+        # walk not ending at the declared region end).  A store the
+        # table walk handles never reaches this branch; a walk-exact
+        # store with junk coordinates is not the family (its own
+        # failure is re-raised).  When the raw reading does not cover
+        # the store either, both gaps are named (fail-closed).
+        if _walk_mismatch(payload, elem_decl) is None:
+            raise
+        try:
+            return _decode_raw_array(data, lo, hi, groups, payload, elem_decl)
+        except ExportError as raw_exc:
+            raise ExportError(
+                "undecoded-variant",
+                f"{exc.detail}; the stage-4a raw-array law does not "
+                f"cover the store either ({raw_exc.detail})",
+            ) from raw_exc
     points = [pt for _v, pt in elements if pt is not None]
     skip_slots = len(elements) - len(points)
 
@@ -809,6 +860,228 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool):
         "reps_exported": len(decoded) - len(reps_unexported),
         "reps_unexported": len(reps_unexported),
         "rep_reasons": reps_unexported,
+        **loop_stats,
+    }
+    return points, triangles, degenerate, info
+
+
+# --- stage-6: the walk-mismatch residue's raw-array law (stage 4a,
+# integrated 2026-11-12, #34) -------------------------------------------
+#
+# The law as committed (docs/evidence/2026-11-10-node-streams.md section
+# "Stage 4a-residue" + residue-raw-scan.csv + the reference
+# implementations classify_residue_family.py --raw / probe_residue_anchor.py):
+# a walk-mismatch payload continues past the header as raw f32 triples;
+# the start is pinned by the trail-escape condition; strong fit = nice
+# AND x-ascending over the full span (the scan's criteria and predicate,
+# ported verbatim — not re-derived); the pool must re-list verbatim.
+# The tail field's and count3's semantics stay open (named).
+
+# The committed scan's candidate bound: 4-aligned starts 32..64
+# (classify_residue_family.py RAW_MAX_START).
+RAW_MAX_START = 64
+
+# The committed strong-fit bar (residue-raw-scan.csv: strong = nice >=
+# 0.98 AND x-ascending >= 0.98 over the full elem_decl span).
+RAW_FIT_RATE = 0.98
+
+
+def _raw_nice(v: float) -> bool:
+    """The raw scan's coordinate predicate (the stage-2c probe's
+    predicate, kept verbatim: the raw array has no table to fix the
+    parse, so the rate IS the parse validation — :func:`_nice`'s
+    dropped 1e-6 floor was never the measured criterion here)."""
+    return v == v and (v == 0.0 or 1e-6 < abs(v) < 1e7)
+
+
+def _walk_mismatch(payload: bytes, elem_decl: int):
+    """The walk-mismatch family signature (the census probe's walk
+    semantics, ``decode_big_form_points.decode_region``: all elem_decl
+    slots walked bounded ONLY by the payload, no coordinate aborts).
+
+    Returns the mismatch profile (dict) when the declared P1t prefix
+    does not describe the payload — the layout raises, or the walk does
+    not end exactly at the declared region end — and ``None`` when the
+    walk is exact (a walk-exact store with junk coordinates is not the
+    family; the caller re-raises the original failure).
+    """
+    tok = payload.find(LIST_TOKEN)
+    if tok < 0:  # unreachable behind find_list_node, kept total
+        return {"layout_error": "no list token"}
+    p = tok + 5
+    try:
+        _, p = read_count(payload, p)
+        _, p = read_count(payload, p)
+    except (IndexError, struct.error):
+        return {"layout_error": "unreadable declared counts"}
+    while p + 4 <= len(payload) and payload[p : p + 4] == b"\x00\x00\x00\x00":
+        p += 4
+    table_len = (elem_decl + 3) // 4
+    count_pos = p + table_len
+    if count_pos >= len(payload):
+        return {
+            "layout_error": f"the {table_len} B 2-bit table runs past "
+            f"the payload (count position {count_pos} >= {len(payload)})"
+        }
+    try:
+        write_count, region_start = read_count(payload, count_pos)
+    except (IndexError, struct.error):
+        return {"layout_error": "unreadable write count"}
+    region_end = region_start + 4 * write_count
+    if region_end > len(payload):
+        return {
+            "layout_error": f"declared write count {write_count} "
+            f"overruns the payload (region end {region_end} > "
+            f"{len(payload)})"
+        }
+    pos = region_start
+    for v in table_slots(payload, p, table_len, elem_decl):
+        shape = SHAPES[v]
+        if pos + 4 * shape > len(payload):
+            break  # the probe's clean stop: bounded by the payload only
+        pos += 4 * shape
+    if pos != region_end:
+        return {
+            "walk_end": pos,
+            "region_end": region_end,
+            "delta_words": (pos - region_end) // 4,
+        }
+    return None
+
+
+def decode_raw_array(payload: bytes, elem_decl: int, poolv):
+    """The raw-array reading of a walk-mismatch list-node payload
+    (stage-4a law, ported from ``classify_residue_family.py --raw`` and
+    the committed start rule — not re-derived).
+
+    ``[token][count1][count2][tail][elem_decl x [x][y][z] stride 12, x
+    ascending][FF][count3 u32le][trail]``: the array start is the
+    UNIQUE 4-aligned start in ``[32, RAW_MAX_START]`` whose full
+    elem_decl span fits and whose trail-escape byte
+    ``payload[start + 12*elem_decl]`` is ``0xFF`` (the committed start
+    rule — it selected a unique start in 32/39 scan-fit stores; zero or
+    several candidates stay fail-closed).  Strong fit = the scan's
+    criteria at the pinned start: nice >= :data:`RAW_FIT_RATE` AND
+    x-ascending >= :data:`RAW_FIT_RATE` (the scan's predicate and 1e-6
+    pair tolerance).  Pool absorption = every distinct pool vertex
+    re-listed verbatim in the triples (exact f32 — the scan's
+    ``pool_absorbed_raw`` criterion).
+
+    Returns ``(points, info)`` with ``points`` the elem_decl raw
+    triples in array order (the element space — no skip slots, every
+    element written) and ``info`` the raw anatomy for the composite
+    summary block.  Raises :class:`ExportError` (``undecoded-variant``)
+    with the specific gap otherwise: the start not pinned, a weak fit,
+    or an unabsorbed pool.  The tail field's and count3's semantics are
+    OPEN: count3 is recorded (``raw_count3``) when readable, never
+    validated.
+    """
+    candidates = [
+        s
+        for s in range(32, RAW_MAX_START + 1, 4)
+        if s + 12 * elem_decl < len(payload)
+        and payload[s + 12 * elem_decl] == 0xFF
+    ]
+    n_cand = (RAW_MAX_START - 32) // 4 + 1
+    if len(candidates) != 1:
+        raise ExportError(
+            "undecoded-variant",
+            f"raw-array start not pinned: the trail-escape condition "
+            f"payload[start + 12*{elem_decl}] == 0xFF selects "
+            f"{len(candidates)} of the {n_cand} candidate starts "
+            f"(4-aligned 32..{RAW_MAX_START}, the committed scan bound) "
+            "— fail-closed (the law's start rule)",
+        )
+    start = candidates[0]
+    if elem_decl < 2:
+        raise ExportError(
+            "undecoded-variant",
+            f"raw-array fit undefined: elem_decl {elem_decl} leaves the "
+            "scan's x-ascending rate without a consecutive pair (no-fit)",
+        )
+    ps = set(poolv)
+    xs = []
+    points = []
+    nicec = 0
+    span = payload[start : start + 12 * elem_decl]
+    for x, y, z in struct.iter_unpack("<fff", span):
+        if _raw_nice(x) and _raw_nice(y) and _raw_nice(z):
+            nicec += 1
+        xs.append(x)
+        points.append((x, y, z))
+    rate = nicec / elem_decl
+    asc = sum(1 for a, b in zip(xs, xs[1:]) if b >= a - 1e-6) / (elem_decl - 1)
+    if rate < RAW_FIT_RATE or asc < RAW_FIT_RATE:
+        raise ExportError(
+            "undecoded-variant",
+            f"raw-array weak fit at the pinned start {start}: nice "
+            f"{rate:.4f} / x-ascending {asc:.4f} below the "
+            f"{RAW_FIT_RATE} strong-fit bar (the committed criteria; "
+            "weak-fit family, fail-closed)",
+        )
+    missing = ps - set(points)
+    if missing:
+        raise ExportError(
+            "undecoded-variant",
+            f"raw-array pool not absorbed: {len(missing)} of {len(ps)} "
+            f"pool vertices absent from the {elem_decl} raw triples "
+            "(exact-f32 absorption, the scan's pool_absorbed_raw "
+            "criterion; fail-closed)",
+        )
+    trail_at = start + 12 * elem_decl
+    info = {
+        "raw_start": start,
+        "raw_nice_rate": round(rate, 4),
+        "raw_x_asc_rate": round(asc, 4),
+        "raw_trail_bytes": len(payload) - trail_at,
+    }
+    try:
+        info["raw_count3"], _after = read_count(payload, trail_at)
+    except (IndexError, struct.error):
+        pass  # the escape byte's count runs past the payload: open, named
+    return points, info
+
+
+def _decode_raw_array(data, lo, hi, groups, payload, elem_decl):
+    """Export path of the raw-array law: decode the array, then the
+    committed export ladder on the raw element space — records parsed
+    over the store body, the M2b identity refs gate (gated families'
+    references resolve inside the elem_decl element space), strip/polygon
+    triangulation.  Raises :class:`ExportError` (``undecoded-variant``)
+    with the raw gap when the law does not cover the store."""
+    poolv = [v for g in groups for v in g.vertices]
+    points, raw_info = decode_raw_array(payload, elem_decl, poolv)
+    elements = [(0, pt) for pt in points]
+    records, n_hdrs = parse_strip_records(
+        data, lo, hi, elem_decl, elements=elements
+    )
+    all_refs = [
+        r for _o, mk, _n, _c, refs, _w in records if mk in GATED for r in refs
+    ]
+    if all_refs:
+        mx = max(all_refs)
+        if mx >= elem_decl:
+            raise ExportError(
+                "undecoded-variant",
+                f"facet references beyond the raw-array element space: "
+                f"max ref {mx} >= element count {elem_decl} (M2b "
+                "identity on the raw array; G3 open question 2)",
+            )
+    triangles, degenerate, loop_stats = _triangulate(elements, records)
+    skipped_markers: dict[int, int] = {}
+    for _o, mk, _n, _c, _refs, _w in records:
+        if mk not in (0x42, 0x4A, 0x4C):
+            skipped_markers[mk] = skipped_markers.get(mk, 0) + 1
+    info = {
+        "stage": "identity-raw-array",
+        "element_decl": elem_decl,
+        "node_points": len(points),
+        "curve_entries": 0,
+        "facet_candidates": n_hdrs,
+        "facet_records": len(records),
+        "skipped_markers": skipped_markers,
+        "node_bytes": len(payload),
+        **raw_info,
         **loop_stats,
     }
     return points, triangles, degenerate, info

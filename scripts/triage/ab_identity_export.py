@@ -41,6 +41,12 @@ from the CSV) and ``--out-name`` selects the output file (the stage-5
 run commits under its own name; the 2026-11-12 baseline row stays
 untouched).
 
+Stage-6 (2026-11-12, #34): the CSV gains the additive ``stage`` and
+``raw_start`` columns (the composite decode stage — identity-table-walk
+/ identity-per-rep / identity-raw-array — and the raw array's pinned
+start; empty on non-composite and failed rows) so every changed row
+maps to its decode path.
+
 Deterministic: sorted manifest order; no wall-clock value enters the
 CSV.  Read-only over the corpus; run with the worktree venv:
 
@@ -67,7 +73,7 @@ FIELDS = [
     "sha256", "split", "export_ok", "error_class", "l2_status",
     "failed_check", "vertex_count", "triangle_count", "manifold",
     "closed", "element_decl", "node_points", "curve_entries",
-    "loops_curve_entry", "node_bytes",
+    "loops_curve_entry", "node_bytes", "stage", "raw_start",
 ]
 
 
@@ -115,6 +121,8 @@ def main():
             row["curve_entries"] = comp.get("curve_entries", "")
             row["loops_curve_entry"] = comp.get("loops_curve_entry", "")
             row["node_bytes"] = comp.get("node_bytes", "")
+            row["stage"] = comp.get("stage", "")
+            row["raw_start"] = comp.get("raw_start", "")
             out_rows.append(row)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
