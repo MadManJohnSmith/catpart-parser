@@ -608,6 +608,42 @@ def test_composite_raw_array_start_rule_uniqueness():
     assert "fit undefined" in exc.value.detail
 
 
+def test_composite_raw_nice_boundaries_and_asc_tolerance():
+    """The stage-6 review N2 pins (corpus-vacuous micro-arms): the
+    scan's coordinate predicate boundaries — 0.0 is nice, the 1e-6
+    floor and the 1e7 ceiling themselves are not, NaN is not — and the
+    x-ascending pair tolerance: a 1e-7 regression still counts as
+    ascending (b >= a - 1e-6), a 1e-5 regression drops the pair into
+    the weak-fit arm."""
+    from catpart.geometry.composite import _raw_nice, decode_raw_array
+    from catpart.geometry.errors import ExportError
+
+    assert _raw_nice(0.0)
+    assert _raw_nice(5.0)
+    assert not _raw_nice(float("nan"))
+    assert not _raw_nice(1e-6)  # the floor itself: not nice
+    assert _raw_nice(2e-6)  # just above it: nice
+    assert not _raw_nice(1e7)  # the ceiling itself: not nice
+    assert _raw_nice(1e7 - 1.0)  # just below it: nice
+
+    def dip_payload(dip: float) -> bytes:
+        base = 0.001
+        xs = [base, base - dip, base]  # one regressing pair
+        span = b"".join(struct.pack("<fff", x, 0.0, 0.0) for x in xs)
+        return b"\x00" * 32 + span + b"\xff"  # escape pins start 32
+
+    # f32 near 0.001 has ulp ~1.2e-10, so both dips survive the round
+    # trip as distinct values; the 1e-7 dip sits inside the 1e-6
+    # tolerance, the 1e-5 dip outside it.
+    points, info = decode_raw_array(dip_payload(1e-7), 3, [])
+    assert info["raw_x_asc_rate"] == 1.0
+    assert points[1][0] < points[0][0]
+    with pytest.raises(ExportError) as exc:
+        decode_raw_array(dip_payload(1e-5), 3, [])
+    assert "weak fit" in exc.value.detail
+    assert "x-ascending 0.5000" in exc.value.detail
+
+
 def test_walk_mismatch_signature():
     """The census probe's walk semantics (the trigger's signature test):
     a walk-exact payload is NOT the family (None — junk coordinates do
