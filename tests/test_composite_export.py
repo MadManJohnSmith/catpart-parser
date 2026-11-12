@@ -239,7 +239,10 @@ def test_composite_u16be_no_repeat_width_rule(tmp_path, capsys):
 def test_composite_walk_mismatch_stays_undecoded(tmp_path, capsys):
     """The declared write count exceeds what the table encodes: the
     walk is not exact — classified undecoded-variant with the
-    walk-exact gap named, no PLY (fail-closed)."""
+    walk-exact gap named, no PLY (fail-closed).  The stage-6 raw-array
+    fallback runs on this signature and names its own gap too: a
+    table-law payload is not a raw array (the array cannot even fit in
+    this payload), so the store stays unexported with BOTH gaps."""
     code, captured, ply_path = run_export(
         tmp_path, capsys, "geometry-composite-law-walk-mismatch"
     )
@@ -247,6 +250,7 @@ def test_composite_walk_mismatch_stays_undecoded(tmp_path, capsys):
     error = json.loads(captured.err)
     assert error["error_class"] == "undecoded-variant"
     assert "walk-exact" in error["detail"]
+    assert "raw-array law does not cover" in error["detail"]
     assert not ply_path.exists()
 
 
@@ -271,8 +275,13 @@ def test_composite_fixtures_deterministic(variant):
     assert a == b
 
 
-def test_composite_export_determinism(tmp_path):
-    """Two exports of the same composite fixture: byte-identical PLY."""
+@pytest.mark.parametrize(
+    "variant",
+    ["geometry-composite-law", "geometry-composite-law-raw-array"],
+)
+def test_composite_export_determinism(tmp_path, variant):
+    """Two exports of the same composite fixture: byte-identical PLY
+    (the table-walk and raw-array paths both pinned)."""
     import os
 
     from catpart.geometry import build_export
@@ -439,3 +448,186 @@ def test_composite_u24be_candidate_is_threshold_gated():
     assert records
     assert [w for _o, _mk, _n, _c, _r, w in records] == [3]
     assert all(r < 70_000 for _o, _mk, _n, _c, refs, _w in records for r in refs)
+
+
+# --- stage-6: the walk-mismatch residue's raw-array law (stage-4a,
+# integrated 2026-11-12, #34) -------------------------------------------
+
+def test_composite_raw_array_exports(tmp_path, capsys):
+    """The stage-4a raw-array law through the export seam: the walk
+    overruns (no table, no write count — the declared P1t prefix does
+    not describe the payload), the trail-escape condition pins start 40
+    uniquely, the 12 raw triples are all-nice and x-ascending (strong
+    fit), the pool re-lists verbatim -> the store exports closed with
+    stage ``identity-raw-array`` and the raw anatomy in the info block."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-raw-array"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    validate(summary, load_schema("export-summary-v1"))
+    info = summary["composite"]
+    assert info["stage"] == "identity-raw-array"
+    assert info["element_decl"] == 12
+    assert info["node_points"] == 12
+    assert info["curve_entries"] == 0
+    assert info["raw_start"] == 40
+    assert info["raw_nice_rate"] == 1.0
+    assert info["raw_x_asc_rate"] == 1.0
+    assert info["raw_trail_bytes"] == 9
+    assert info["raw_count3"] == 480  # recorded, semantics open
+    assert summary["vertex_count"] == 12
+    assert summary["triangle_count"] == 12
+    assert summary["degenerate_triangle_count"] == 0
+    assert summary["mesh"]["manifold"] is True
+    assert summary["mesh"]["closed"] is True
+    # the PLY vertices are the raw triples in array order
+    vertices, faces = parse_ply(ply_path)
+    assert len(vertices) == 12
+    assert len(faces) == 12
+    for got, want in zip(vertices, COMPOSITE_POINTS):
+        assert got == pytest.approx(want, abs=1e-6)
+
+
+def test_composite_raw_array_wrong_offset_stays_fail_closed(tmp_path, capsys):
+    """The trail-escape byte one past every candidate start's array end:
+    the start rule pins nothing (0 selections) — the store stays
+    ``undecoded-variant`` with the triggering walk failure AND the raw
+    gap both named, no PLY."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-raw-array-wrong-offset"
+    )
+    assert code == 1
+    error = json.loads(captured.err)
+    assert error["error_class"] == "undecoded-variant"
+    assert "walk-exact" in error["detail"]
+    assert "raw-array start not pinned" in error["detail"]
+    assert "selects 0 of the 9 candidate starts" in error["detail"]
+    assert not ply_path.exists()
+
+
+def test_composite_raw_array_unabsorbed_stays_fail_closed(tmp_path, capsys):
+    """Strong fit at the pinned start, but a 9th pool vertex the raw
+    triples do not re-list: absorption is not established — fail-closed
+    (the scan's 6/35 non-absorbed strong-fit stores)."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-raw-array-unabsorbed"
+    )
+    assert code == 1
+    error = json.loads(captured.err)
+    assert error["error_class"] == "undecoded-variant"
+    assert "raw-array pool not absorbed" in error["detail"]
+    assert "1 of 9 pool vertices" in error["detail"]
+    assert not ply_path.exists()
+
+
+def test_composite_walk_nan_stays_out_of_the_raw_family(tmp_path, capsys):
+    """The trigger-ordering pin: a walk-EXACT store with a non-finite
+    coordinate is not the walk-mismatch family — the walk's own failure
+    is re-raised and the raw-array law is never attempted (the probe
+    walk ends exactly at the declared region, junk coordinates or not)."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-walk-nan"
+    )
+    assert code == 1
+    error = json.loads(captured.err)
+    assert error["error_class"] == "undecoded-variant"
+    assert "non-finite" in error["detail"]
+    assert "raw-array" not in error["detail"]
+    assert not ply_path.exists()
+
+
+def _raw_unit_payload(n, junk_y=(), junk_x=()):
+    """A raw-array node payload of n ascending (x, 10, 30) triples with
+    optional junk coordinates (1e8 y breaks nice; a -5.0 x breaks the
+    ascending pairs around it)."""
+    pts = []
+    for i in range(n):
+        x = -5.0 if i in junk_x else float(i)
+        y = 1e8 if i in junk_y else 10.0
+        pts.append((x, y, 30.0))
+    from fixtures_gen import _composite_raw_node_payload
+
+    return _composite_raw_node_payload(pts), pts
+
+
+def test_composite_raw_array_fit_bar_both_directions():
+    """The committed strong-fit bar (nice >= 0.98 AND x-ascending >=
+    0.98 over the TRIPLES, the scan's per-triple rate) pinned in BOTH
+    directions at the escape-pinned start: 49/50 nice (exactly 0.98) is
+    strong fit, 48/50 (0.96) stays fail-closed — the stage-5 O1 lesson
+    (a threshold guard must go red on removal AND narrowing)."""
+    from catpart.geometry.composite import decode_raw_array
+    from catpart.geometry.errors import ExportError
+
+    payload, pts = _raw_unit_payload(50, junk_y=(3,))
+    pool = [pts[i] for i in (0, 7, 13, 21, 29, 35, 42, 49)]
+    points, info = decode_raw_array(payload, 50, pool)
+    assert info["raw_start"] == 40
+    assert info["raw_nice_rate"] == 0.98
+    assert info["raw_x_asc_rate"] == 1.0
+    assert len(points) == 50
+    payload, pts = _raw_unit_payload(50, junk_y=(3, 4))
+    with pytest.raises(ExportError) as exc:
+        decode_raw_array(payload, 50, [pts[i] for i in (0, 7, 13, 21, 29, 35, 42, 49)])
+    assert "weak fit" in exc.value.detail
+    assert "0.9600" in exc.value.detail
+
+
+def test_composite_raw_array_x_ascending_criterion():
+    """The x-ascending half of the bar: one out-of-order x breaks the
+    pair dropping into it (48/49 = 0.9796 < 0.98) while every
+    coordinate stays nice — fail-closed, named."""
+    from catpart.geometry.composite import decode_raw_array
+    from catpart.geometry.errors import ExportError
+
+    payload, pts = _raw_unit_payload(50, junk_x=(25,))
+    with pytest.raises(ExportError) as exc:
+        decode_raw_array(payload, 50, [pts[i] for i in (0, 7, 13, 21, 29, 35, 42, 49)])
+    assert "weak fit" in exc.value.detail
+    assert "0.9796" in exc.value.detail
+
+
+def test_composite_raw_array_start_rule_uniqueness():
+    """The committed start rule: the trail-escape condition must select
+    EXACTLY ONE candidate start — two pinned starts stay fail-closed;
+    so does elem_decl < 2 (the scan's ascending rate is undefined)."""
+    from catpart.geometry.composite import decode_raw_array
+    from catpart.geometry.errors import ExportError
+
+    payload, pts = _raw_unit_payload(12)
+    bytearray_payload = bytearray(payload)
+    bytearray_payload[188] = 0xFF  # start 44's array end: a second pin
+    with pytest.raises(ExportError) as exc:
+        decode_raw_array(bytes(bytearray_payload), 12, pts)
+    assert "selects 2 of the 9 candidate starts" in exc.value.detail
+
+    payload, pts = _raw_unit_payload(1)
+    with pytest.raises(ExportError) as exc:
+        decode_raw_array(payload, 1, [pts[0]])
+    assert "fit undefined" in exc.value.detail
+
+
+def test_walk_mismatch_signature():
+    """The census probe's walk semantics (the trigger's signature test):
+    a walk-exact payload is NOT the family (None — junk coordinates do
+    not matter to the probe walk), a lying write count mismatches
+    (delta_words != 0), a truncated payload raises the layout_error
+    arm."""
+    from fixtures_gen import (
+        _composite_elements,
+        _composite_node_payload,
+    )
+
+    from catpart.geometry.composite import _walk_mismatch
+
+    elements = _composite_elements(list(COMPOSITE_POINTS))
+    exact = _composite_node_payload(elements)
+    assert _walk_mismatch(exact, len(COMPOSITE_POINTS)) is None
+    lying = _composite_node_payload(elements, write_count_override=19)
+    profile = _walk_mismatch(lying, len(COMPOSITE_POINTS))
+    assert profile is not None and "layout_error" not in profile
+    assert profile["delta_words"] != 0
+    truncated = _composite_node_payload(elements)[:-10]
+    profile = _walk_mismatch(truncated, len(COMPOSITE_POINTS))
+    assert profile is not None and "overruns" in profile["layout_error"]

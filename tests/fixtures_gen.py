@@ -181,6 +181,10 @@ VALID_VARIANTS = (
     "geometry-composite-law-width-plane",
     "geometry-composite-law-multi-rep",
     "geometry-composite-law-multi-rep-partial",
+    # Stage-6 law variant (#34, 2026-11-12): the stage-4a raw-array law
+    # (the walk-mismatch residue exports through the trail-escape-pinned
+    # raw f32 triples).
+    "geometry-composite-law-raw-array",
 )
 CORRUPTED_VARIANTS = (
     "bad-magic",
@@ -208,6 +212,13 @@ CORRUPTED_VARIANTS = (
     # the plane law is the coplanarity battery, not an export gate.
     "geometry-composite-law-walk-mismatch",
     "geometry-composite-law-unabsorbed",
+    # Stage-6 raw-array fail-closed negatives (#34, 2026-11-12): the
+    # start rule cannot pin a trail-escape (wrong offset) / the pool is
+    # not re-listed in the triples / a walk-EXACT non-finite coordinate
+    # is not the raw family (the trigger-ordering pin).
+    "geometry-composite-law-raw-array-wrong-offset",
+    "geometry-composite-law-raw-array-unabsorbed",
+    "geometry-composite-law-walk-nan",
 )
 GEOMETRY_VARIANTS = (
     "geometry",
@@ -239,6 +250,10 @@ COMPOSITE_VARIANTS = (
     "geometry-composite-law-multi-rep-partial",
     "geometry-composite-law-walk-mismatch",
     "geometry-composite-law-unabsorbed",
+    "geometry-composite-law-raw-array",
+    "geometry-composite-law-raw-array-wrong-offset",
+    "geometry-composite-law-raw-array-unabsorbed",
+    "geometry-composite-law-walk-nan",
 )
 
 # --- nested-store geometry (G4, #32) -----------------------------------
@@ -546,6 +561,27 @@ def _geometry_box_edges_lex() -> tuple[tuple[int, int], ...]:
 # - geometry-composite-law-unabsorbed    corrupted: the pool carries a
 #                                        vertex the node list does not
 #                                        re-list -> undecoded-variant.
+# - geometry-composite-law-raw-array     stage-4a raw-array law (stage-6
+#                                        integration): the element space
+#                                        rides as raw f32 triples past
+#                                        the header (no table, no write
+#                                        count); the trail-escape byte
+#                                        pins start 40 -> exports
+#                                        through the raw path.
+# - geometry-composite-law-raw-array-wrong-offset  corrupted: the
+#                                        escape byte sits one past every
+#                                        candidate start's array end ->
+#                                        the start rule pins nothing
+#                                        (fail-closed).
+# - geometry-composite-law-raw-array-unabsorbed  corrupted: a 9th pool
+#                                        vertex the triples do not
+#                                        re-list -> absorption not
+#                                        established (fail-closed).
+# - geometry-composite-law-walk-nan      corrupted: the walk is EXACT
+#                                        but a coordinate is non-finite
+#                                        -> not the raw-array family
+#                                        (trigger-ordering pin: the
+#                                        walk's own failure stands).
 
 COMPOSITE_POOL_WALK = (
     (0.0, 10.0, 0.0),
@@ -880,6 +916,12 @@ def _composite_store(variant: str) -> bytes:
         "geometry-composite-law-multi-rep-partial",
     ):
         return _composite_multi_rep_store(variant)
+    if variant in (
+        "geometry-composite-law-raw-array",
+        "geometry-composite-law-raw-array-wrong-offset",
+        "geometry-composite-law-raw-array-unabsorbed",
+    ):
+        return _composite_raw_store(variant)
     if variant == "geometry-composite-law-big":
         points = _composite_grid_points()
         elements = _composite_elements(points)
@@ -982,6 +1024,13 @@ def _composite_store(variant: str) -> bytes:
             write_count_override = (
                 17 + 2 if variant == "geometry-composite-law-walk-mismatch" else None
             )
+            if variant == "geometry-composite-law-walk-nan":
+                # Walk-exact with a non-finite coordinate (stage-6
+                # trigger-ordering pin): the walk's own failure — the
+                # raw-array law must not swallow it (the probe walk is
+                # exact, so the store is not the walk-mismatch family).
+                slot, (x, y, _z) = elements[5]
+                elements[5] = (slot, (x, y, float("nan")))
     if variant == "geometry-composite-law-unabsorbed":
         # The pool carries a vertex the node list does not re-list:
         # the unabsorbed variant (pool absorption not established).
@@ -1108,6 +1157,114 @@ def _composite_multi_rep_store(variant: str) -> bytes:
     for marker, normal, refs in COMPOSITE_FACES:
         body_parts.append(_facet_record(marker, normal, refs, width=1))
     body_parts.append(b"\x04\x04\xfd\xff" + _composite_node_payload(elements1))
+    for marker, normal, refs in COMPOSITE_FACES:
+        body_parts.append(_facet_record(marker, normal, refs, width=1))
+    body = b"".join(body_parts)
+
+    catalog_len = NESTED_CATALOG_LEN
+    d8n = 32 + len(body)
+    header = (
+        MAGIC
+        + struct.pack(">II", d8n, catalog_len)
+        + b"\xff" * 8
+        + b"\x00" * 8
+    )
+    catalog = NESTED_CB0001 + struct.pack(
+        ">7I", 1, 0, 0xE7, 0xE7, 0, 0, catalog_len
+    ) + TRAILER_MARKER
+    tail126 = registration_block() + b"\x00" * (126 - 41)
+    return header + body + catalog + tail126
+
+
+def _composite_raw_node_payload(points, escape: str = "end") -> bytes:
+    """A walk-mismatch list-node payload carrying the stage-4a raw-array
+    layout (G6 stage 6, #34): ``[token][count1][count2][tail][elem_decl
+    x [x][y][z] stride 12, x ascending][FF][count3 u32le][trail]`` — no
+    zero block, no 2-bit table, no write count: the declared P1t prefix
+    does not describe this payload (the table walk overruns at element
+    0, the raw-array law's trigger signature).
+
+    The array starts at 40 (4-aligned, inside the committed candidate
+    range 32..64); the tail-escape byte ``payload[start + 12*elem_decl]``
+    is ``0xFF`` and no other candidate start's array end carries one
+    (the start rule pins start 40 uniquely — count3 480 = ``e0 01 00
+    00``, then zero trail bytes).
+
+    ``escape="wrong"`` moves the escape byte one past every candidate's
+    array end (offset array_end + 1): the trail-escape condition
+    selects 0 candidate starts -> the start rule stays fail-closed.
+    """
+    header = (
+        struct.pack("<I", 1)  # 00 00 00 01
+        + struct.pack("<I", 7)  # node id
+        + struct.pack("<I", 0)  # flags
+        + struct.pack("<fff", 10.0, 60.0, 30.0)  # origin
+        + struct.pack("<I", 3)  # kind
+        + b"\x00"  # trailing header byte (the 29-B corpus header)
+    )
+    body = header
+    body += LIST_TOKEN_MARKER
+    body += _p1g_count(len(points)) + _p1g_count(len(points))
+    body += b"\x00\x00\x00\x01"  # the tail field (the observed 4-B form)
+    start = 40
+    assert len(body) == start, "the raw array must start 4-aligned at 40"
+    body += b"".join(struct.pack("<fff", *p) for p in points)
+    end = start + 12 * len(points)
+    if escape == "end":
+        body += b"\xff" + struct.pack("<I", 480) + b"\x00\x00\x00\x00"
+    elif escape == "wrong":
+        # one byte of filler, THEN the escape: payload[end] != 0xff for
+        # every candidate start (0 selections, fail-closed)
+        body += b"\x00\xff" + struct.pack("<I", 480) + b"\x00\x00\x00"
+    else:  # pragma: no cover - builder guard
+        raise ValueError(f"unknown escape placement: {escape}")
+    assert len(body) > end
+    return body
+
+
+def _composite_raw_store(variant: str) -> bytes:
+    """A composite store whose list node carries the stage-4a raw-array
+    layout (G6 stage 6, #34).
+
+    ``geometry-composite-law-raw-array``: the 12-point box's element
+    space rides as raw f32 triples (x-ascending, all nice); the pool
+    re-lists verbatim in the triples; the facet records reference the
+    array indices — the store exports through the raw path (stage
+    ``identity-raw-array``, closed manifold).
+
+    ``geometry-composite-law-raw-array-wrong-offset``: the trail-escape
+    byte sits one past every candidate start's array end — the start
+    rule cannot pin a start, the store stays fail-closed
+    (``undecoded-variant``, both gaps named).
+
+    ``geometry-composite-law-raw-array-unabsorbed``: the pool carries a
+    9th vertex the triples do not re-list — strong fit, but absorption
+    is not established -> fail-closed (the scan's 6/35 non-absorbed
+    strong-fit stores).
+    """
+    points = list(COMPOSITE_POINTS)
+    pool_walk = COMPOSITE_POOL_WALK
+    escape = "end"
+    if variant == "geometry-composite-law-raw-array-wrong-offset":
+        escape = "wrong"
+    elif variant == "geometry-composite-law-raw-array-unabsorbed":
+        pool_walk = COMPOSITE_POOL_WALK + ((0.0, 0.0, 999.5),)
+    node_payload = _composite_raw_node_payload(points, escape=escape)
+    body_parts = [
+        NESTED_FULL_WRAP
+        + NESTED_POOL_SUBKIND
+        + bytes([len(pool_walk)])
+        + b"".join(
+            NESTED_VREC + struct.pack("<fff", *v) for v in pool_walk
+        ),
+        NESTED_FULL_WRAP
+        + NESTED_EDGE_SUBKIND
+        + bytes([12])
+        + b"".join(
+            b"\x02\x02" + struct.pack(">BB", a, b) for a, b in COMPOSITE_EDGES
+        ),
+        b"\x04\x04\xfd\xff" + node_payload,
+    ]
     for marker, normal, refs in COMPOSITE_FACES:
         body_parts.append(_facet_record(marker, normal, refs, width=1))
     body = b"".join(body_parts)
