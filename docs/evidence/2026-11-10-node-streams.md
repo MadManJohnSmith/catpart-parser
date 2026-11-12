@@ -614,3 +614,44 @@ hypothesis holds for part of the rest.
 Repro: `python3 -I scripts/triage/classify_residue_family.py`
 (census) / `--raw` (raw scan) / `scripts/triage/probe_residue_anchor.py
 <sha16>`.
+
+## Stage 4b: the per-rep decomposition and the width-law gaps (2026-11-11, #34)
+
+Stage 4b resolves the two decode-class residues this note carries.
+Both are measured in
+[2026-11-11-per-rep-and-width-laws.md](2026-11-11-per-rep-and-width-laws.md)
+(`scripts/triage/unabsorbed_pool_law.py`,
+`scripts/triage/not_manifold_audit.py`, claims rows in
+`stage4b-claims.csv`); the corrections below are dated against this
+note's sections.
+
+1. **The unabsorbed-pool family is the single-rep reading applied to
+   multi-rep stores (stage-3d section correction).**  A composite
+   store body is a sequence of reps — the k-th `01 06` pool wrapper,
+   the k-th walk-exact token-bearing list node, and the strip records
+   in that node's territory — and the k-th pool re-lists VERBATIM in
+   the k-th rep's region (107/148 family stores; 111/148 under a
+   1e-5 noise tolerance for double-rounding deltas <= 1.25e-8).  The
+   stage-3d reader's `find_list_node` window ends at the FIRST strip
+   record, so on multi-rep stores it saw rep 0's node while the pool
+   concatenated every rep's wrapper — that is what "the node list does
+   not re-list the pool" measured.  The stage-3b residue paragraph's
+   "the 92 decoded-but-unabsorbed stores are the known unabsorbed
+   variant" is superseded by the per-rep decomposition; the "known
+   unabsorbed variant" that remains is 37 stores whose unpaired pools
+   belong to walk-failed reps (U3-variant at rep granularity) plus 4
+   genuinely un-re-listed vertices (a real 0.001 x-offset on 2
+   near-duplicate stores).
+2. **The 29 not-manifold composite exports are width-rank artifacts,
+   not strip joins (stage-3b item 5 refinement).**  The width law's
+   candidate enumeration (u8/u16be) misses the u24be family that
+   element_count > 65,535 requires (13bb5c0c: byte-verified exact
+   tiling at u24be; its battery re-validates at 0 nonplanar), and the
+   narrow-width tiebreak needs the loop plane law for records over
+   interleaved non-STRIP_RE families (ef30cb2f rec 261274: the u8 loop
+   is nonplanar, the u16be loop coplanar, u8 won).  A re-test with
+   widths (1, 2, 3) + the plane tiebreak re-measures manifold on
+   21/29 without suppressing a triangle; the residual 8 keep
+   normal-less non-tiling 0x42 records with no in-store arbiter
+   (named, open).  The cross-loop skip convention suppresses the gate
+   symptom on 29/29 but is a degree cap, not the cause.
