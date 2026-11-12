@@ -278,6 +278,43 @@ def test_readme_badge_reads_the_emitted_endpoint_file() -> None:
     assert "ADR-0003" in status
 
 
+# --- the site/ landing page rides along --------------------------------------
+
+
+def test_site_payload_token_replacement_is_byte_exact(tmp_path: Path) -> None:
+    """The token swap touches only the token — no parsing, no spill.
+
+    The committed payload placeholder is null behind a marker comment;
+    the rewrite replaces the exact byte sequence, so a rendered history
+    whose own strings contain ';' or quotes stays inert, and statements
+    around the assignment survive untouched.
+    """
+    runs = publish._accepted_runs(
+        publish.read_history(SCRIPT_PATH.parents[1] / "fitness" / "history.jsonl")
+    )
+    fresh = json.dumps(publish._history_document(runs), separators=(",", ":"))
+    site = tmp_path / publish.SITE_DIRNAME
+    site.mkdir()
+    (site / "fitness.js").write_text(
+        f"x = 1; window.FITNESS_HISTORY = {publish.HISTORY_TOKEN}; y = 2;\n",
+        encoding="utf-8",
+    )
+    text = publish._site_files(tmp_path, runs)["fitness.js"].decode("utf-8")
+    assert text == f"x = 1; window.FITNESS_HISTORY = {fresh}; y = 2;\n"
+    assert publish.HISTORY_TOKEN not in text
+
+
+def test_site_file_without_the_token_publishes_verbatim(tmp_path: Path) -> None:
+    runs = publish._accepted_runs(
+        publish.read_history(SCRIPT_PATH.parents[1] / "fitness" / "history.jsonl")
+    )
+    site = tmp_path / publish.SITE_DIRNAME
+    site.mkdir()
+    (site / "about.html").write_text('<p>fresh; quoted "; "</p>\n', encoding="utf-8")
+    files = publish._site_files(tmp_path, runs)
+    assert files["about.html"] == b'<p>fresh; quoted "; "</p>\n'
+
+
 # --- the branch: plumbing against a scratch bare origin ----------------------
 
 requires_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is not available")
@@ -414,3 +451,87 @@ def test_stale_remote_is_republished_on_a_no_op_run(tmp_path: Path, monkeypatch,
     assert publish.main(["--remote", str(origin)]) == 0
     assert "already up to date" in capsys.readouterr().out
     assert run_git("-C", str(origin), "rev-parse", "refs/heads/gh-pages") == head
+
+
+# --- the site/ landing on the branch (needs git plumbing) ---------------------
+
+
+def write_site(root: Path, fitness_js: str | None = None) -> Path:
+    """A minimal landing tree: one root page, one nested asset, the payload."""
+    site = root / publish.SITE_DIRNAME
+    (site / "assets").mkdir(parents=True, exist_ok=True)
+    (site / "fitness.js").write_text(
+        fitness_js or f"window.FITNESS_HISTORY = {publish.HISTORY_TOKEN};\n",
+        encoding="utf-8",
+    )
+    (site / "index.html").write_text(
+        '<!DOCTYPE html><html><head><script src="fitness.js"></script></head>'
+        "<body>landing</body></html>\n",
+        encoding="utf-8",
+    )
+    (site / "assets" / "note.txt").write_text("verbatim asset\n", encoding="utf-8")
+    return site
+
+
+@requires_git
+def test_site_landing_publishes_with_fresh_history_payload(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """site/ joins the tree; the history token is replaced with fresh data.
+
+    The null token must not survive publication: it is swapped for the
+    freshly rendered history document, while every other site file
+    (including nested assets) publishes verbatim.
+    """
+    origin = tmp_path / "origin.git"
+    run_git("init", "--bare", str(origin))
+    repo = tmp_path / "repo"
+    write_history(repo, synthetic_history())
+    write_site(repo)
+    run_git("init", str(repo))
+    monkeypatch.chdir(repo)
+
+    assert publish.main(["--remote", str(origin)]) == 0
+    names = run_git("-C", str(origin), "ls-tree", "-r", "--name-only", "refs/heads/gh-pages")
+    assert sorted(names.splitlines()) == [
+        ".nojekyll",
+        "assets/note.txt",
+        "fitness-history.json",
+        "fitness-latest.json",
+        "fitness.js",
+        "index.html",
+    ]
+    js = run_git("-C", str(origin), "show", "refs/heads/gh-pages:fitness.js")
+    assert publish.HISTORY_TOKEN not in js
+    payload = json.loads(
+        js.split("window.FITNESS_HISTORY = ", 1)[1].strip().rstrip(";")
+    )
+    # synthetic_history carries one accepted row and two rejections.
+    assert [run["run_id"] for run in payload["runs"]] == ["20261107T205256Z-f4fbe7"]
+    asset = run_git("-C", str(origin), "show", "refs/heads/gh-pages:assets/note.txt")
+    assert asset == "verbatim asset"
+    assert "+ 3 site file(s)" in capsys.readouterr().out
+
+    # Same history + same site: a no-op — the injected tree is deterministic.
+    assert publish.main(["--remote", str(origin)]) == 0
+    assert "already up to date" in capsys.readouterr().out
+
+
+@requires_git
+def test_empty_site_dir_publishes_the_historical_tree(tmp_path: Path, monkeypatch) -> None:
+    """An empty site/ is no signal to fail: the three generated files alone."""
+    origin = tmp_path / "origin.git"
+    run_git("init", "--bare", str(origin))
+    repo = tmp_path / "repo"
+    write_history(repo, synthetic_history())
+    (repo / publish.SITE_DIRNAME).mkdir()
+    run_git("init", str(repo))
+    monkeypatch.chdir(repo)
+
+    assert publish.main(["--remote", str(origin)]) == 0
+    names = run_git("-C", str(origin), "ls-tree", "--name-only", "refs/heads/gh-pages")
+    assert sorted(names.splitlines()) == [
+        ".nojekyll",
+        "fitness-history.json",
+        "fitness-latest.json",
+    ]

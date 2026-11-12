@@ -22,13 +22,20 @@ files, and rebuilds the ``gh-pages`` branch from exactly those files:
   Jekyll processing; the badge itself reads ``raw.githubusercontent.com``,
   which serves ``.json`` as text/plain — accepted by the shields endpoint
   badge, which requires no particular content type.
+- ``site/`` — the GitHub Pages landing page (``index.html`` and friends),
+  copied into the tree verbatim — except that any file carrying the
+  history token (``/*__FITNESS_HISTORY__*/null``) gets that token
+  replaced with the freshly rendered history document, so the page's
+  trend charts publish current without a client-side fetch. A missing or
+  empty ``site/`` publishes the two JSON files alone (the historical
+  shape).
 
 Branch mechanics use git plumbing only (``hash-object`` / ``mktree`` /
 ``commit-tree`` / ``update-ref``): no worktree, no index checkout, the
 current branch and working tree are never touched. The publication commit
-is a pure function of the input history (author, committer and dates are
-fixed; the date is the last accepted run's timestamp), and its message
-names the run it was rendered from.
+is a pure function of the input history and the ``site/`` contents
+(author, committer and dates are fixed; the date is the last accepted
+run's timestamp), and its message names the run it was rendered from.
 
 Idempotence: the branch tree is a pure function of the history file —
 same input history, byte-identical tree. When the freshly rendered tree
@@ -57,10 +64,19 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-#: The exact file set of the gh-pages tree — nothing else is published.
+#: The generated file set of the gh-pages tree; anything else published
+#: comes from the repository's ``site/`` landing directory (see the
+#: module docstring).
 NOJEKYLL_FILENAME = ".nojekyll"
 LATEST_FILENAME = "fitness-latest.json"
 HISTORY_FILENAME = "fitness-history.json"
+
+#: The landing directory riding along to gh-pages, and the exact token
+#: inside ``site/fitness.js`` that is replaced by the fresh history
+#: document at publish time (byte-exact, never parsed — a JSON payload
+#: may itself contain ``;`` or quotes).
+SITE_DIRNAME = "site"
+HISTORY_TOKEN = "/*__FITNESS_HISTORY__*/null"
 
 #: The publication branch (ADR-0003: gh-pages is the fitness visibility surface).
 PUBLISH_BRANCH = "gh-pages"
@@ -295,14 +311,14 @@ def render_latest(runs: list[tuple[dict, tuple[int, int], dict | None]]) -> byte
     return (json.dumps(endpoint, separators=(",", ":")) + "\n").encode("utf-8")
 
 
-def render_history(runs: list[tuple[dict, tuple[int, int], dict | None]]) -> bytes:
-    """The accepted-run trend JSON, oldest to newest (human-readable).
+def _history_document(runs: list[tuple[dict, tuple[int, int], dict | None]]) -> dict:
+    """The trend document (human-readable rendering input), oldest to newest.
 
     Each run carries the L1 Dev trend and, since ticket #33, its L2
     pass/total scalars over the parts-only population (``null`` for runs
     emitted before the L2 baseline).
     """
-    document = {
+    return {
         "schema_version": 1,
         "source": "fitness/history.jsonl",
         "note": (
@@ -330,7 +346,11 @@ def render_history(runs: list[tuple[dict, tuple[int, int], dict | None]]) -> byt
             for row, (clean, total), l2 in runs
         ],
     }
-    return (json.dumps(document, indent=2) + "\n").encode("utf-8")
+
+
+def render_history(runs: list[tuple[dict, tuple[int, int], dict | None]]) -> bytes:
+    """The accepted-run trend JSON, oldest to newest (human-readable)."""
+    return (json.dumps(_history_document(runs), indent=2) + "\n").encode("utf-8")
 
 
 def _files_for(runs: list[tuple[dict, tuple[int, int], dict | None]]) -> dict[str, bytes]:
@@ -346,13 +366,62 @@ def render_files(history_path: Path) -> dict[str, bytes]:
     return _files_for(_accepted_runs(read_history(history_path)))
 
 
+def _site_files(repo: Path, runs: list[tuple[dict, tuple[int, int], dict | None]]) -> dict[str, bytes]:
+    """The landing-page files under ``repo/site``, with the history injected.
+
+    Every file publishes verbatim except any carrying the exact
+    ``HISTORY_TOKEN`` byte sequence: that sequence is replaced with the
+    compact rendered history document, so the page's charts publish the
+    current accepted-run series without a client-side fetch. The
+    replacement is byte-exact — the payload is never parsed, so JSON
+    punctuation inside it is inert. A missing or empty ``site/`` yields
+    nothing (the historical tree).
+    """
+    site = repo / SITE_DIRNAME
+    if not site.is_dir():
+        return {}
+    fresh = json.dumps(_history_document(runs), separators=(",", ":")).encode("utf-8")
+    token = HISTORY_TOKEN.encode("utf-8")
+    files: dict[str, bytes] = {}
+    for path in sorted(p for p in site.rglob("*") if p.is_file()):
+        rel = path.relative_to(site).as_posix()
+        try:
+            blob = path.read_bytes()
+        except OSError as exc:
+            raise PublishError(f"cannot read site file {path}: {exc}") from exc
+        if token in blob:
+            blob = blob.replace(token, fresh)
+        files[rel] = blob
+    return files
+
+
 def build_tree(repo: Path, files: dict[str, bytes]) -> str:
-    """Write blobs and build the gh-pages root tree (deterministic)."""
-    entries = []
+    """Write blobs and build the gh-pages root tree (deterministic).
+
+    Paths may be nested (``assets/x.svg``): the tree is assembled
+    bottom-up with ``mktree``, so a subdirectory becomes a subtree.
+    """
+    blobs: dict[str, str] = {}
     for name in sorted(files):
-        blob = _git(repo, ["hash-object", "-w", "--stdin"], input_bytes=files[name]).strip()
-        entries.append(f"100644 blob {blob}\t{name}")
-    return _git(repo, ["mktree"], input_bytes=("\n".join(entries) + "\n").encode("utf-8")).strip()
+        blobs[name] = _git(repo, ["hash-object", "-w", "--stdin"], input_bytes=files[name]).strip()
+
+    def mktree(entries: dict) -> str:
+        lines = []
+        for name in sorted(entries):
+            node = entries[name]
+            if isinstance(node, dict):
+                lines.append(f"040000 tree {mktree(node)}\t{name}")
+            else:
+                lines.append(f"100644 blob {node}\t{name}")
+        return _git(repo, ["mktree"], input_bytes=("\n".join(lines) + "\n").encode("utf-8")).strip()
+
+    root: dict = {}
+    for name, blob in blobs.items():
+        cursor = root
+        for part in name.split("/")[:-1]:
+            cursor = cursor.setdefault(part, {})
+        cursor[name.split("/")[-1]] = blob
+    return mktree(root)
 
 
 def _commit_tree(repo: Path, tree: str, parent: str | None, last_accepted: dict) -> str:
@@ -366,10 +435,21 @@ def _commit_tree(repo: Path, tree: str, parent: str | None, last_accepted: dict)
     return _git(repo, args, env=env).strip()
 
 
+def _tree_summary(files: dict[str, bytes]) -> str:
+    """One console line describing what the tree carries."""
+    generated = {NOJEKYLL_FILENAME, LATEST_FILENAME, HISTORY_FILENAME}
+    site = sorted(set(files) - generated)
+    out = f"{NOJEKYLL_FILENAME}, {LATEST_FILENAME}, {HISTORY_FILENAME}"
+    if site:
+        out += f", + {len(site)} site file(s)"
+    return out
+
+
 def publish(repo: Path, history_path: Path, remote: str, *, push: bool) -> str:
     """Render, commit and (optionally) force-push ``gh-pages``; returns the head."""
     runs = _accepted_runs(read_history(history_path))
     files = _files_for(runs)
+    files.update(_site_files(repo, runs))
     tree = build_tree(repo, files)
 
     head = _head_commit(repo, f"refs/heads/{PUBLISH_BRANCH}")
@@ -400,7 +480,7 @@ def publish(repo: Path, history_path: Path, remote: str, *, push: bool) -> str:
                 _git(repo, ["push", "--force", remote, PUBLISH_BRANCH])
                 print(
                     f"republished {PUBLISH_BRANCH} {head} (tree {tree}) to {remote}: "
-                    f"{NOJEKYLL_FILENAME}, {HISTORY_FILENAME}, {LATEST_FILENAME}"
+                    f"{_tree_summary(files)}"
                 )
                 return head
             print(f"gh-pages is already up to date (tree {tree}); nothing to publish")
@@ -412,12 +492,12 @@ def publish(repo: Path, history_path: Path, remote: str, *, push: bool) -> str:
         _git(repo, ["push", "--force", remote, PUBLISH_BRANCH])
         print(
             f"published {PUBLISH_BRANCH} {commit} (tree {tree}) to {remote}: "
-            f"{NOJEKYLL_FILENAME}, {HISTORY_FILENAME}, {LATEST_FILENAME}"
+            f"{_tree_summary(files)}"
         )
     else:
         print(
             f"built {PUBLISH_BRANCH} {commit} (tree {tree}); not pushed (--no-push): "
-            f"{NOJEKYLL_FILENAME}, {HISTORY_FILENAME}, {LATEST_FILENAME}"
+            f"{_tree_summary(files)}"
         )
     return commit
 
