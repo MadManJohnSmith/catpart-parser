@@ -21,6 +21,20 @@ Measurements (2026-11-11, #34 stage 3d):
 - the stage-2c sigma-search explosions dissolve (bounded sub-second
   exports; see the note's stage-3d section).
 
+Post-3a regeneration (2026-11-12, #34 stage-5 pre-step; see the
+stage-3d reconciliation note, section 2 — the 2026-11-11 CSV had been
+generated on a pre-3a lineage and understated the recovery's effect):
+
+- exports 753 -> 859 (composite 677 -> 747, clean 76 -> 112); L2 gate
+  pass 686 -> 782 (dev 638 -> 734 — the accepted fitness row's dev
+  figure, now measured on the seam; held-out 48/61 steady);
+- missing-geometry-store 313 -> 178 and malformed-store-header 29 -> 0
+  (the locator recovery), undecoded-variant 347 -> 405 (58 recovered
+  stores fail-closed elsewhere);
+- nothing lost: the 2026-11-11 export/clean/composite/L2-pass sets are
+  subsets of the 2026-11-12 ones (0 v/t mismatches on the 753 common
+  exports). Stage-5 deltas measure against the 2026-11-12 row.
+
 Deterministic: sorted manifest order; no wall-clock value enters the
 CSV.  Read-only over the corpus; run with the worktree venv:
 

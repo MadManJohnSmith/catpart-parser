@@ -566,6 +566,24 @@ histogram cited in the stage-3d section come from this runner plus
 the decode-level audit above; the fitness row itself stays with the
 coordinator.
 
+**2026-11-12 restatement (stage-5 pre-step; the stage-3d
+reconciliation note's section-2 finding):** the committed
+`identity-export-files.csv` had been generated on a pre-3a lineage —
+it predates the locator recovery's effect even though `e86e046` is an
+ancestor of `1a5c4b4`. Regenerated on main @ `53ea4df`
+(3a-inclusive, same code, `ab_identity_export.py` unchanged):
+exports 753 -> 859 (composite 677 -> 747, clean 76 -> 112); L2 gate
+pass 686 -> 782 (dev 638 -> 734 — matching the accepted fitness
+row's dev figure; held-out 48/61 steady); error classes
+missing-geometry-store 313 -> 178 and malformed-store-header 29 -> 0
+(the recovery), undecoded-variant 347 -> 405 (58 recovered stores
+fail-closed elsewhere). Nothing lost: the 2026-11-11
+export/composite/clean/L2-pass sets are subsets of the 2026-11-12
+ones (0 v/t mismatches on the 753 common exports). The 2026-11-11
+figures above stand as the pre-3a measurement; stage-5 deltas
+measure against the 2026-11-12 row
+(`M2b-identity-export-post3a`).
+
 ## Stage 4a-residue: the walk-mismatch families split — a raw-array law (2026-11-11, coordinator-executed)
 
 Dispatch note: this stage was dispatched twice to subagents and both
