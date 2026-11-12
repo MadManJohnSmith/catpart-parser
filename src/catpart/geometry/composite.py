@@ -106,7 +106,7 @@ trigger-ordering discipline; walk-OK rows byte-identical):
   convention).  The single-rep locator keeps the stage-3d window (it
   ends at the first STRIP_RE match, which false-matches INSIDE point
   regions on 8/93 stores); a full-window single-rep locator would
-  re-select the payload on 823/857 walk-OK stores, so the full-body
+  re-select the payload on 823/857 non-trigger composite stores (829 walk-exact + 28 raw-family), so the full-body
   scan is the walk-mismatch path's locator (the artifact's only
   manifestation — a store whose window truncates its node fails the
   primary walk and lands here).

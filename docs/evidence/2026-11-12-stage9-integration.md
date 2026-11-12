@@ -11,9 +11,11 @@ re-derived):
   exporter's own NODE_MAGIC-to-NODE_MAGIC convention).  The single-rep
   locator keeps the stage-3d window (first STRIP_RE match): a
   full-window single-rep locator re-selects the payload on 823/857
-  walk-OK composite stores (the "largest span" heuristic flips to
-  later nodes once spans extend past the records — measured, pre-
-  declaration), so the full-body scan is scoped to the walk-mismatch
+  non-trigger composite stores (829 walk-exact + 28 raw-family;
+  review rewording — the earlier walk-OK wording under-counted the
+  denominator); the "largest span" heuristic flips to later nodes
+  once spans extend past the records — measured, pre-declaration —
+  so the full-body scan is scoped to the walk-mismatch
   path, where the artifact's entire incidence lives (a store whose
   window truncates its node fails the primary walk and lands there).
 - **(b) The zero-block extent** (artifact 2): the walk-mismatch path's
