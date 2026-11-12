@@ -109,8 +109,52 @@ D5 digest change, = STOP.
 
 ## Observed A/B (2026-11-12, post-declaration run)
 
-(filled in after the run — declared-vs-observed table + per-row
-accounting + the claims ledger `stage9-claims.csv`)
+Corpus: 1,442 parts, dev + held-out.  Runs: `ab_identity_export.py`
+(-> `stage9-identity-export-files.csv`, committed) and
+`replay_export_seam.py` at BOTH ends (baseline end = the `4e705a5` src
+extracted to a staging tree; -> `stage9-replay-baseline.csv` /
+`stage9-replay-stage9.csv`, committed).  The baseline replay
+reproduces the committed baseline exactly: 1,039 exported = 747
+identity-table-walk + 152 identity-per-rep + 28 identity-raw-array +
+112 clean; 225 undecoded-variant + 178 missing-geometry-store (fact).
+
+**Declared vs observed:**
+
+| # | declared | observed | verdict |
+|---|---|---|---|
+| D1 (amended) | +81 composite exports (all dev, all baseline undecoded-variant, 0 replacements) | **exactly +81: exports 1,039 -> 1,120, composite 927 -> 1,008** — all 81 stage `identity-mixedwrite-reps` (60 single-rep: 47 table-law + 7 raw-declined + 6 flat; 21 multi-rep 2..17 reps), all dev, all baseline-undecoded rows; corpus-wide EXACTLY 81 rows changed (0 replacements, 0 losses) | met (exact) |
+| D2 | L2 split unknown, measured; passes a strict subset (share inference ~43 pass + ~38 empty) | **62 pass + 13 empty-mesh + 6 not-manifold**: L2 941 -> 1,003 (dev 886 -> 948/1,381 = 68.65% from 64.16%).  The share inference under-counted passes — the table-law and merged multi-rep stores pass at a higher rate than the stage-6 raw family's; the declaration (measured-not-projected, strict subset) holds | met (inference corrected by measurement) |
+| D3 | held-out 0 movement | **0 changed held-out rows**; held-out 57 exports / 55 passes steady | met |
+| D4 (amended) | 12 of the 93 keep undecoded-variant (bad44bdf + 11 UV); undecoded-variant 225 -> 144; missing 178 | exact: undecoded-variant 144 (140 dev + 4 held-out), missing 178; **0 error-class changes** on any row | met |
+| D5 | walk-OK + per-rep + unabsorbed + the 28 raw rows byte-identical; 0 lost exports/passes; replay digests identical on every baseline-exported row | **1,039/1,039 baseline-exported rows byte-identical on BOTH digests** (PLY sha256 + L2-fields sha256); the A/B's other 1,361 rows byte-identical; clean 112 unchanged; stages 747/152/28 unchanged; the 322 still-failing rows' 200-char details identical (the composition's gap suffixes lie beyond the replay's cap — the probe CSV and the fixture tests name them per store); 0 timeouts | met |
+| D6 | no explosion | 0 timeouts both ends; both replays complete in minutes | met |
+
+**Accounting (every changed row mapped):**
+
+- exports 1,039 -> 1,120 (+81 = the 81 region-absorbed stores; 0
+  lost); composite 927 -> 1,008; L2 pass 941 -> 1,003 = 941 preserved
+  + 62 (of the 81: 62 pass / 13 empty-mesh / 6 not-manifold).
+- error classes: undecoded-variant 225 -> 144 (-81 = the new
+  exports); missing 178 unchanged; every other row byte-identical.
+- The 81's mesh figures: 2,362,126 vertices and 92,023 triangles
+  total; rep counts 1 x60 / 2 x8 / 3 x2 / 4 x2 / 5 / 7 x6 / 9 / 17.
+- The 13 empty-mesh exports (vertices-only, 0 triangles): 086a4eff,
+  18bb4ca6, 2c5d2542, 4d2a06a6, 4dfef8f2, 65eb023d, 7d27c73d,
+  81ad336b, 85ceb131, ccbb7862, d696356b, e23423d6, f21255ac — their
+  facet records parse but produce no pinned-family triangles; the
+  record-reading question joins the family's named opens (tail,
+  count3).  The 6 not-manifold: 25aeb5a0, 44e63faa, a61588e5,
+  b912cbef, ef61cfc2, f4a5df2a.
+
+**Residual / open (named):** (1) the 12 fail-closed trigger stores
+(bad44bdf's 1 subnode-index vertex + the 11 UV-family stores) — the
+sub-node element-index law and the UV family's element semantics stay
+open (the census's opens carry; the "22 subnode stores" of the note
+are, post-correction, 1 store with a genuine gap); (2) the 13
+empty-mesh exports' record reading; (3) the census's
+`pool_subnode_only` column overcounts on multi-rep stores (the
+early-break artifact) — its reps-full verdicts stand, the class
+attribution does not (dated in `stage9-claims.csv`).
 
 ## Reproduction
 
