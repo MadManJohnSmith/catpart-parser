@@ -54,6 +54,17 @@ passes, 66 closed volumes + 10 open shells (component signals).
 [#34](https://github.com/MadManJohnSmith/catpart-parser/issues/34) (G6)
 grinds the undecoded variants toward the ≥ 80% bar under no-regret.
 
+**Grind status (2026-11-12):** the latest accepted row (run
+`20261112T191848Z-96c80f`) puts L2 at **Dev 886/1,381 = 64.16%,
+held-out 55/61**, L1 flat — up from the 76-pass baseline through the
+landed #34 stages (per-rep pool absorption + width laws, locator
+recovery, composite table-walk decode, raw-array nice-float decode).
+The remaining mass is measured, not anecdotal: the container-family
+lever ceilings at ≤ +6 exports (stage-7 census, 93 fail-closed stores
+partitioned), and the open mass is the 68 mixed-write stores whose
+float-stream write law is the current decode target. History:
+`fitness/history.jsonl` (append-only).
+
 ## Progress
 
 Implementation tracker — 23 tickets under specs
@@ -89,7 +100,7 @@ issue tracker.
 | D | [#31](https://github.com/MadManJohnSmith/catpart-parser/issues/31) G3 primitive semantics (triangles) | done |
 | D | [#32](https://github.com/MadManJohnSmith/catpart-parser/issues/32) G4 catpart-export CLI + geometry fixtures | done |
 | D | [#33](https://github.com/MadManJohnSmith/catpart-parser/issues/33) G5 L2 fitness + publication | done |
-| D | [#34](https://github.com/MadManJohnSmith/catpart-parser/issues/34) G6 grind L2 to the bar (Phase 4 close) | planned |
+| D | [#34](https://github.com/MadManJohnSmith/catpart-parser/issues/34) G6 grind L2 to the bar (Phase 4 close) | in progress |
 
 ## Roadmap
 
