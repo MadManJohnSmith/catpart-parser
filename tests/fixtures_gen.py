@@ -185,6 +185,17 @@ VALID_VARIANTS = (
     # (the walk-mismatch residue exports through the trail-escape-pinned
     # raw f32 triples).
     "geometry-composite-law-raw-array",
+    # Stage-9 law variants (#34, 2026-11-12): the stage-8 mixed-write
+    # locator/predicate artifacts — the STRIP_RE false match inside the
+    # point region truncates the single-rep window (the full-body per-
+    # rep scan recovers it), the zero-block extent candidates fix the
+    # layout() overshoot, the flat law decodes the near-zero coordinates
+    # the raw scan's 1e-6 floor rejects, and the per-rep composition
+    # exports multi-rep walk-mismatch stores.
+    "geometry-composite-law-raw-array-strip-false-match",
+    "geometry-composite-law-table-overshoot",
+    "geometry-composite-law-flat-near-zero",
+    "geometry-composite-law-mixedwrite-multi-rep",
 )
 CORRUPTED_VARIANTS = (
     "bad-magic",
@@ -219,6 +230,11 @@ CORRUPTED_VARIANTS = (
     "geometry-composite-law-raw-array-wrong-offset",
     "geometry-composite-law-raw-array-unabsorbed",
     "geometry-composite-law-walk-nan",
+    # Stage-9 fail-closed negative (#34, 2026-11-12): a multi-rep
+    # walk-mismatch store whose second pool group carries a 9th vertex
+    # no decoded region re-lists (the sub-node records' residue) — the
+    # element index is unpinned, the store stays fail-closed for export.
+    "geometry-composite-law-mixedwrite-multi-rep-subnode",
 )
 GEOMETRY_VARIANTS = (
     "geometry",
@@ -254,6 +270,11 @@ COMPOSITE_VARIANTS = (
     "geometry-composite-law-raw-array-wrong-offset",
     "geometry-composite-law-raw-array-unabsorbed",
     "geometry-composite-law-walk-nan",
+    "geometry-composite-law-raw-array-strip-false-match",
+    "geometry-composite-law-table-overshoot",
+    "geometry-composite-law-flat-near-zero",
+    "geometry-composite-law-mixedwrite-multi-rep",
+    "geometry-composite-law-mixedwrite-multi-rep-subnode",
 )
 
 # --- nested-store geometry (G4, #32) -----------------------------------
@@ -582,6 +603,42 @@ def _geometry_box_edges_lex() -> tuple[tuple[int, int], ...]:
 #                                        -> not the raw-array family
 #                                        (trigger-ordering pin: the
 #                                        walk's own failure stands).
+# - geometry-composite-law-raw-array-strip-false-match  stage-8
+#                                        artifact 1 (stage-9 #34): the
+#                                        point region carries a STRIP_RE
+#                                        false match (01 45 00 ff across
+#                                        two nice floats) -> the
+#                                        single-rep window truncates the
+#                                        node mid-region, the raw law's
+#                                        12*elem_decl span no longer
+#                                        fits -> the full-body per-rep
+#                                        scan recovers the raw region.
+# - geometry-composite-law-table-overshoot  stage-8 artifact 2: the
+#                                        region opens with 16+ full-write
+#                                        slots, the 2-bit table's own
+#                                        leading bytes are zero and
+#                                        layout()'s zero-group skip
+#                                        overshoots INTO the table -> the
+#                                        extent candidates select the
+#                                        unique walk-exact extent.
+# - geometry-composite-law-flat-near-zero  stage-8 artifact 3: four
+#                                        non-pool triples carry near-zero
+#                                        coordinates (|v| ~ 1e-14) -> the
+#                                        raw scan's 1e-6 floor weak-fits
+#                                        (nice 0.667 < 0.98) -> the flat
+#                                        law (start pinned by counts_end,
+#                                        exporter predicate) decodes.
+# - geometry-composite-law-mixedwrite-multi-rep  the stage-9
+#                                        composition: two raw-layout
+#                                        reps, each pool group absorbed
+#                                        by its diagonal rep's region ->
+#                                        both export merged (stage
+#                                        identity-mixedwrite-reps).
+# - geometry-composite-law-mixedwrite-multi-rep-subnode  corrupted: rep
+#                                        1's pool carries a 9th vertex no
+#                                        region re-lists -> absorption
+#                                        not established (sub-node
+#                                        residue, fail-closed).
 
 COMPOSITE_POOL_WALK = (
     (0.0, 10.0, 0.0),
@@ -920,8 +977,17 @@ def _composite_store(variant: str) -> bytes:
         "geometry-composite-law-raw-array",
         "geometry-composite-law-raw-array-wrong-offset",
         "geometry-composite-law-raw-array-unabsorbed",
+        "geometry-composite-law-raw-array-strip-false-match",
+        "geometry-composite-law-flat-near-zero",
     ):
         return _composite_raw_store(variant)
+    if variant in (
+        "geometry-composite-law-mixedwrite-multi-rep",
+        "geometry-composite-law-mixedwrite-multi-rep-subnode",
+    ):
+        return _composite_mixedwrite_multi_rep_store(variant)
+    if variant == "geometry-composite-law-table-overshoot":
+        return _composite_table_overshoot_store()
     if variant == "geometry-composite-law-big":
         points = _composite_grid_points()
         elements = _composite_elements(points)
@@ -1222,6 +1288,22 @@ def _composite_raw_node_payload(points, escape: str = "end") -> bytes:
     return body
 
 
+#: The stage-9 false-match floats (artifact 1): adjacent f32s whose
+#: little-endian bytes ``00 00 01 45`` and ``00 ff 00 42`` contain the
+#: STRIP_RE sequence ``01 45 00 ff`` — a false strip header INSIDE the
+#: point region.  Both floats are nice raw coordinates (2064.0 and
+#: ~35.97), so the region stays a valid raw/flat reading.
+STRIP_FALSE_MATCH_Y = struct.unpack("<f", bytes.fromhex("00000145"))[0]
+STRIP_FALSE_MATCH_Z = struct.unpack("<f", bytes.fromhex("00ff0042"))[0]
+
+#: The stage-9 near-zero coordinates (artifact 3): the note's measured
+#: values (7d27c73d z = -1.19e-14, dd610ca5 x = 9.4e-15) — real
+#: tessellation coordinates the raw scan's 1e-6 floor rejects and the
+#: exporter predicate accepts.
+NEAR_ZERO_A = struct.unpack("<f", struct.pack("<f", -1.19e-14))[0]
+NEAR_ZERO_B = struct.unpack("<f", struct.pack("<f", 9.4e-15))[0]
+
+
 def _composite_raw_store(variant: str) -> bytes:
     """A composite store whose list node carries the stage-4a raw-array
     layout (G6 stage 6, #34).
@@ -1234,13 +1316,30 @@ def _composite_raw_store(variant: str) -> bytes:
 
     ``geometry-composite-law-raw-array-wrong-offset``: the trail-escape
     byte sits one past every candidate start's array end — the start
-    rule cannot pin a start, the store stays fail-closed
-    (``undecoded-variant``, both gaps named).
+    rule cannot pin a start.  Stage 9 note: the flat law (no escape
+    required) decodes the same region, so the store exports through the
+    mixed-write composition (the raw start rule's fail-closed arm is
+    pinned at unit level).
 
     ``geometry-composite-law-raw-array-unabsorbed``: the pool carries a
     9th vertex the triples do not re-list — strong fit, but absorption
     is not established -> fail-closed (the scan's 6/35 non-absorbed
-    strong-fit stores).
+    strong-fit stores; the composition fails on the same ground).
+
+    ``geometry-composite-law-raw-array-strip-false-match`` (stage-8
+    artifact 1, #34 stage 9): a 13th triple carries the STRIP_RE false
+    match ``01 45 00 ff`` (two adjacent nice floats) — the single-rep
+    window truncates the node mid-region, the raw law's 12*elem_decl
+    span no longer fits the truncated payload (0 escape candidates),
+    and the full-body per-rep scan recovers the raw region (stage
+    ``identity-mixedwrite-reps``).
+
+    ``geometry-composite-law-flat-near-zero`` (stage-8 artifact 3, #34
+    stage 9): the four non-pool triples carry near-zero coordinates
+    (|v| ~ 1e-14) — the raw law weak-fits under its 1e-6 floor (nice
+    8/12 = 0.667 < 0.98, the d51eb38c shape) and the flat law (start
+    pinned by counts_end, the exporter predicate) decodes the region
+    (stage ``identity-mixedwrite-reps``).
     """
     points = list(COMPOSITE_POINTS)
     pool_walk = COMPOSITE_POOL_WALK
@@ -1249,6 +1348,28 @@ def _composite_raw_store(variant: str) -> bytes:
         escape = "wrong"
     elif variant == "geometry-composite-law-raw-array-unabsorbed":
         pool_walk = COMPOSITE_POOL_WALK + ((0.0, 0.0, 999.5),)
+    elif variant == "geometry-composite-law-raw-array-strip-false-match":
+        # the false match rides the 13th triple's (y, z): adjacent
+        # floats whose bytes contain 01 45 00 ff (nice coordinates, so
+        # the region stays a valid raw reading on the FULL payload)
+        points = points + [(30.0, STRIP_FALSE_MATCH_Y, STRIP_FALSE_MATCH_Z)]
+    elif variant == "geometry-composite-law-flat-near-zero":
+        # the four z-edge midpoints (non-pool elements) carry near-zero
+        # coordinates: the pool corners stay clean nice floats (exact
+        # f32 absorption), the raw nice rate drops to 8/12
+        points = [
+            (x, y, z)
+            for x, y, z in COMPOSITE_POINTS
+        ]
+        for i, (x, y, z) in enumerate(points):
+            if (x, y, z) in (
+                (0.0, 10.0, 30.0),
+                (0.0, 110.0, 30.0),
+                (20.0, 10.0, 30.0),
+                (20.0, 110.0, 30.0),
+            ):
+                nz = NEAR_ZERO_A if i % 2 == 0 else NEAR_ZERO_B
+                points[i] = (x, nz, z)
     node_payload = _composite_raw_node_payload(points, escape=escape)
     body_parts = [
         NESTED_FULL_WRAP
@@ -1256,6 +1377,132 @@ def _composite_raw_store(variant: str) -> bytes:
         + bytes([len(pool_walk)])
         + b"".join(
             NESTED_VREC + struct.pack("<fff", *v) for v in pool_walk
+        ),
+        NESTED_FULL_WRAP
+        + NESTED_EDGE_SUBKIND
+        + bytes([12])
+        + b"".join(
+            b"\x02\x02" + struct.pack(">BB", a, b) for a, b in COMPOSITE_EDGES
+        ),
+        b"\x04\x04\xfd\xff" + node_payload,
+    ]
+    for marker, normal, refs in COMPOSITE_FACES:
+        body_parts.append(_facet_record(marker, normal, refs, width=1))
+    body = b"".join(body_parts)
+
+    catalog_len = NESTED_CATALOG_LEN
+    d8n = 32 + len(body)
+    header = (
+        MAGIC
+        + struct.pack(">II", d8n, catalog_len)
+        + b"\xff" * 8
+        + b"\x00" * 8
+    )
+    catalog = NESTED_CB0001 + struct.pack(
+        ">7I", 1, 0, 0xE7, 0xE7, 0, 0, catalog_len
+    ) + TRAILER_MARKER
+    tail126 = registration_block() + b"\x00" * (126 - 41)
+    return header + body + catalog + tail126
+
+
+def _composite_mixedwrite_multi_rep_store(variant: str) -> bytes:
+    """A two-rep walk-mismatch composite store (stage-9 composition,
+    #34 stage 9): both reps ride the stage-4a raw-array layout, so the
+    single-rep table walk raises and the raw-array law declines the
+    store (the concatenated pool spans both groups; no single region
+    re-lists it all) — the stage-8 mixed-write composition decodes both
+    nodes on the full-body window, absorbs each pool group by its
+    diagonal rep's region, and exports both reps' boxes merged (stage
+    ``identity-mixedwrite-reps``).
+
+    ``geometry-composite-law-mixedwrite-multi-rep-subnode`` adds a 9th
+    vertex to rep 1's pool group that no region re-lists (the 05 08 01
+    sub-node records' residue): the element index is unpinned, the
+    store stays fail-closed for export (the stage-8 note's integration
+    item (e); the corpus bad44bdf class).
+    """
+    pts0 = list(COMPOSITE_POINTS)
+    pts1 = [(x + 200.0, y, z) for x, y, z in COMPOSITE_POINTS]
+    pool0 = COMPOSITE_POOL_WALK
+    pool1 = tuple((x + 200.0, y, z) for x, y, z in COMPOSITE_POOL_WALK)
+    if variant == "geometry-composite-law-mixedwrite-multi-rep-subnode":
+        pool1 = pool1 + ((999.5, 10.0, 0.0),)
+    body_parts = [
+        NESTED_FULL_WRAP
+        + NESTED_POOL_SUBKIND
+        + bytes([len(pool0)])
+        + b"".join(
+            NESTED_VREC + struct.pack("<fff", *v) for v in pool0
+        ),
+        NESTED_FULL_WRAP
+        + NESTED_POOL_SUBKIND
+        + bytes([len(pool1)])
+        + b"".join(
+            NESTED_VREC + struct.pack("<fff", *v) for v in pool1
+        ),
+        NESTED_FULL_WRAP
+        + NESTED_EDGE_SUBKIND
+        + bytes([12])
+        + b"".join(
+            b"\x02\x02" + struct.pack(">BB", a, b) for a, b in COMPOSITE_EDGES
+        ),
+        b"\x04\x04\xfd\xff" + _composite_raw_node_payload(pts0),
+    ]
+    for marker, normal, refs in COMPOSITE_FACES:
+        body_parts.append(_facet_record(marker, normal, refs, width=1))
+    body_parts.append(b"\x04\x04\xfd\xff" + _composite_raw_node_payload(pts1))
+    for marker, normal, refs in COMPOSITE_FACES:
+        body_parts.append(_facet_record(marker, normal, refs, width=1))
+    body = b"".join(body_parts)
+
+    catalog_len = NESTED_CATALOG_LEN
+    d8n = 32 + len(body)
+    header = (
+        MAGIC
+        + struct.pack(">II", d8n, catalog_len)
+        + b"\xff" * 8
+        + b"\x00" * 8
+    )
+    catalog = NESTED_CB0001 + struct.pack(
+        ">7I", 1, 0, 0xE7, 0xE7, 0, 0, catalog_len
+    ) + TRAILER_MARKER
+    tail126 = registration_block() + b"\x00" * (126 - 41)
+    return header + body + catalog + tail126
+
+
+def _composite_table_overshoot_store() -> bytes:
+    """A table-law composite store whose region opens with 20 full-write
+    slots (stage-8 artifact 2, #34 stage 9): the 2-bit table's first 4
+    bytes are zero (16 leading full-write slots), so the committed
+    layout() zero-group skip overshoots INTO the table, the P1g count
+    reads a region byte (0) and the walk fails at element 0 ("0 left of
+    the declared 0" — the 221df959 shape).  The stage-8 extent law
+    selects the unique walk-exact extent (the true table at
+    counts_end + 4; the shifted extent reads a zero count and cannot
+    walk exact) -> the store exports through the mixed-write
+    composition (stage ``identity-mixedwrite-reps``)."""
+    # 20 elements, strictly ascending x off the LCP origin (x = 1 + 3i:
+    # every slot 0 = full write, so the table's first 4 bytes are zero);
+    # the box corners sit at COMPOSITE_FACES's corner indices
+    corner_idx = (0, 2, 3, 5, 6, 8, 9, 11)
+    points = []
+    for i in range(20):
+        if i in corner_idx:
+            k = corner_idx.index(i)
+            y = 10.0 if k in (0, 1, 4, 5) else 110.0
+            z = 0.0 if k in (0, 1, 2, 3) else 60.0
+            points.append((1.0 + 3.0 * i, y, z))
+        else:
+            points.append((1.0 + 3.0 * i, 50.0, 30.0))
+    corner_points = tuple(points[i] for i in corner_idx)
+    elements = _composite_elements(points)
+    node_payload = _composite_node_payload(elements)
+    body_parts = [
+        NESTED_FULL_WRAP
+        + NESTED_POOL_SUBKIND
+        + bytes([len(corner_points)])
+        + b"".join(
+            NESTED_VREC + struct.pack("<fff", *v) for v in corner_points
         ),
         NESTED_FULL_WRAP
         + NESTED_EDGE_SUBKIND

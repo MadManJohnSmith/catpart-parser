@@ -92,6 +92,61 @@ stage-3b table law dated 2026-11-11, byte-measured on the corpus):
   failure.  Named opens stay open: the tail field's semantics, count3's
   semantics (recorded, unvalidated), the weak-fit and no-fit stores.
 
+Mixed-write composition (stage 8 integrated 2026-11-12 stage 9, #34;
+docs/evidence/2026-11-12-mixedwrite-reps.md + the amended declaration in
+2026-11-12-stage9-integration.md): on the walk-mismatch residue the
+stage-8 census located three LOCATOR/PREDICATE artifacts — the write
+laws were never wrong on these payloads.  Integrated on the walk-
+mismatch path ONLY (after the stage-6 raw-array reading declines), so
+every store the table walk handles keeps its exact code path (the
+trigger-ordering discipline; walk-OK rows byte-identical):
+
+- (a) the list-node window: the per-rep scan runs over the FULL body
+  (``_scan_token_nodes`` — NODE_MAGIC to NODE_MAGIC, the exporter's own
+  convention).  The single-rep locator keeps the stage-3d window (it
+  ends at the first STRIP_RE match, which false-matches INSIDE point
+  regions on 8/93 stores); a full-window single-rep locator would
+  re-select the payload on 823/857 walk-OK stores, so the full-body
+  scan is the walk-mismatch path's locator (the artifact's only
+  manifestation — a store whose window truncates its node fails the
+  primary walk and lands here).
+- (b) the zero-block extent: ``layout()`` skips ALL consecutive zero
+  groups after the counts; when the region opens with >= 16 full-write
+  slots the 2-bit table's own leading bytes form whole zero groups and
+  the skip overshoots INTO the table (misaligned P1g count; 38/133
+  decoded table reps, 36 stores).  The walk-mismatch path's table law
+  takes the zero-block EXTENT as a candidate (1..k groups): exactly one
+  extent must yield the walk-exact decode, ambiguity stays fail-closed
+  (measured: all 133 corpus table reps resolve at a unique extent).
+- (c) the flat law (the stage-7 container PART-1 reading) joins the
+  raw law as the third per-node fallback: c1 full triples straight
+  after the 4-B tail field (start pinned by counts_end, NO escape
+  required), all-nice under :func:`_nice` (the raw scan's 1e-6 floor
+  rejects real near-zero coordinates — d51eb38c: floor-fit 0.632,
+  exporter-predicate all-nice), x-ascending or the pool fully
+  re-listed; the sub-sections follow byte-adjacent.
+- (d) on a walk-mismatch the per-rep composition runs over ALL token
+  nodes before fail-closing: pool group k is absorbed by the k-th
+  law-decoded rep's region (exact f32, then the stage-4b noise
+  tolerance, capped at 10,000-vertex pools — measured 0 noise on the
+  81), the M2b refs gate applies per rep, and the store exports only
+  when EVERY pool vertex is region-absorbed (vertices re-listed only
+  by the ``05 08 01`` sub-node records have unpinned element indices —
+  the store stays fail-closed for export until the sub-node
+  element-index law pins them).
+
+Amended declaration basis (stage9-absorption-probe.csv, committed
+before the A/B): the census's pairing loop breaks at the FIRST full
+match and its sub-node record set includes the pool wrappers' own
+``05 08 01`` vertex records, so on multi-rep stores pools 1+ were
+matched at rep 0 before their diagonal rep's region was tested — the
+census's "22 subnode-assisted" class is that early-break artifact.
+Re-measured without the break: 81 of the 82 reps-full stores are fully
+region-absorbed DIAGONALLY (60 single-rep strict + 21 multi-rep; all
+dev, exact f32), bad44bdf (1 uncovered vertex) and the 11 UV-family
+stores stay fail-closed.  D1 is therefore +81 exports (amended from
+the note's +60); the amendment is committed before the corpus run.
+
 Fail-closed ladder (refined 2026-11-11 stage 3d, not abandoned): a
 store exports only when its table walk is exact (layout fits, the walk
 consumes exactly the declared write count, every coordinate finite and
@@ -567,6 +622,16 @@ def decode_composite_store(data, span, groups, kinds):
     ``identity-raw-array``, one it does not cover keeps the
     ``undecoded-variant`` classification with the triggering walk
     failure AND the raw gap both named.
+
+    Stage-9 mixed-write composition (stage-8 laws, 2026-11-12, #34):
+    when the raw-array law declines the store too, the per-rep
+    decomposition runs over ALL token nodes on the FULL-body window
+    (:func:`_decode_mixedwrite` — the zero-block extent candidates,
+    the flat law's counts_end-pinned start, the diagonal absorption
+    precondition with the sub-node route fail-closed); a store it
+    covers exports with stage ``identity-mixedwrite-reps``, one it
+    does not cover keeps ``undecoded-variant`` with the walk, raw AND
+    composition gaps all named.
     """
     lo, hi = span.body_lo, span.body_hi
     if not any(k == b"\x01\x02" or k[:1] == b"\xff" for k in kinds):
@@ -601,11 +666,25 @@ def decode_composite_store(data, span, groups, kinds):
         try:
             return _decode_raw_array(data, lo, hi, groups, payload, elem_decl)
         except ExportError as raw_exc:
+            raw_detail = raw_exc.detail
+        # Stage-9 (2026-11-12, #34): the stage-8 mixed-write
+        # composition — the per-rep decomposition over ALL token nodes
+        # on the FULL-body window (the stage-8 locator), each node
+        # under the table/raw/flat laws (the zero-block extent
+        # candidates; the flat law's counts_end-pinned start), runs
+        # before the store fails closed.  The raw path above keeps the
+        # stage-6 behavior (its 28 exports are byte-identical); this
+        # path only sees stores the raw law declines.
+        try:
+            return _decode_mixedwrite(data, lo, hi, groups)
+        except ExportError as reps_exc:
             raise ExportError(
                 "undecoded-variant",
                 f"{exc.detail}; the stage-4a raw-array law does not "
-                f"cover the store either ({raw_exc.detail})",
-            ) from raw_exc
+                f"cover the store either ({raw_detail}); the stage-8 "
+                f"mixed-write per-rep composition does not export it "
+                f"either ({reps_exc.detail})",
+            ) from reps_exc
     points = [pt for _v, pt in elements if pt is not None]
     skip_slots = len(elements) - len(points)
 
@@ -1082,6 +1161,433 @@ def _decode_raw_array(data, lo, hi, groups, payload, elem_decl):
         "skipped_markers": skipped_markers,
         "node_bytes": len(payload),
         **raw_info,
+        **loop_stats,
+    }
+    return points, triangles, degenerate, info
+
+
+# --- stage-9: the mixed-write stream's locator/predicate artifacts
+# (stage 8, integrated 2026-11-12, #34) ---------------------------------
+#
+# The stage-8 census (scripts/triage/mixedwrite_decode.py,
+# docs/evidence/2026-11-12-mixedwrite-reps.md) showed the walk-mismatch
+# residue's payloads parse end-to-end with the COMMITTED write laws once
+# three locator/predicate artifacts are fixed.  The functions below port
+# the census's laws verbatim (not re-derived): the zero-block extent
+# candidates (table_decode), the escape-pinned raw probe (raw_probe),
+# the per-node law order table -> raw -> flat (decode_node), and the
+# per-rep composition (audit_store), scoped to the walk-mismatch path
+# and to the exporter's absorption/refs/triangulation gates.
+
+
+def _token_counts_end(payload: bytes):
+    """The position after the declared counts (the P1g prefix's end),
+    or ``None`` when unreadable.  The mixed-write node decode pins the
+    flat law's start and the zero-block extent candidates on this
+    offset (the stage-8 decoder's ``counts_end``);
+    :func:`_scan_token_nodes` validated the counts already, so ``None``
+    here is unreachable behind it."""
+    tok = payload.find(LIST_TOKEN)
+    if not 0 <= tok <= 64:
+        return None
+    p = tok + 5
+    try:
+        _, p = read_count(payload, p)
+        _, p = read_count(payload, p)
+    except (IndexError, struct.error):
+        return None
+    return p
+
+
+def _table_decode_extents(payload: bytes, element_count: int, counts_end: int):
+    """The stage-3b table walk with the zero-block EXTENT as a
+    candidate (stage-8 artifact 2; ported from
+    ``mixedwrite_decode.table_decode`` — not re-derived).
+
+    The committed :func:`layout` skips ALL consecutive zero groups
+    after the counts; when the region opens with >= 16 full-write slots
+    the 2-bit table's own leading bytes form whole zero groups, the
+    skip overshoots INTO the table, and the P1g count reads misaligned
+    (38/133 decoded table reps, 36 stores; 221df959's "declared 194").
+    The extent law: the table may start at ``counts_end + 4*e`` for
+    ``e`` in ``1..k`` (``k`` = the zero-group run after the counts);
+    exactly one extent must yield the walk-exact decode (the walk
+    consumes exactly the declared write count, every coordinate
+    finite and plausible) — several decode, the extent stays
+    fail-closed (ambiguous); none, this is not a table store.  The
+    committed layout() is untouched: a store whose committed skip
+    misaligns fails the primary walk and lands on this path, so the
+    candidates cover the artifact's full incidence without re-routing
+    walk-OK stores (measured: extents inside the zero block read a
+    zero count and can never walk exact — the committed skip position
+    is the only other candidate the law can select).
+
+    Returns ``(extent, elements, skips, region_end_rel, write_count)``
+    for the unique walk-exact extent, ``("ambiguous", results)`` when
+    several decode, or ``None``.
+    """
+    if payload[counts_end : counts_end + 4] != b"\x00\x00\x00\x00":
+        return None
+    ext = 1
+    while (
+        payload[counts_end + 4 * ext : counts_end + 4 + 4 * ext]
+        == b"\x00\x00\x00\x00"
+    ):
+        ext += 1
+    table_len = (element_count + 3) // 4
+    results = []
+    for e in range(1, ext + 1):
+        table_start = counts_end + 4 * e
+        count_pos = table_start + table_len
+        if count_pos >= len(payload):
+            continue
+        try:
+            wc, region_start = read_count(payload, count_pos)
+        except (IndexError, struct.error):
+            continue
+        if wc > 3 * element_count:
+            continue
+        region_end = region_start + 4 * wc
+        if region_end > len(payload):
+            continue
+        pos = region_start
+        elements = []
+        skips = 0
+        ok = True
+        x = y = z = 0.0  # the initial LCP state is the origin (P1i)
+        for i in range(element_count):
+            v = (payload[table_start + i // 4] >> (2 * (i % 4))) & 3
+            shape = SHAPES[v]
+            if shape == 0:
+                skips += 1
+                elements.append((v, None))
+                continue
+            if pos + 4 * shape > region_end:
+                ok = False
+                break
+            if shape == 3:
+                x, y, z = _f32(payload, pos), _f32(payload, pos + 4), _f32(payload, pos + 8)
+            elif shape == 2:
+                y, z = _f32(payload, pos), _f32(payload, pos + 4)
+            else:
+                z = _f32(payload, pos)
+            vals = (x, y, z) if shape == 3 else ((y, z) if shape == 2 else (z,))
+            if not all(_nice(c) for c in vals):
+                ok = False
+                break
+            pos += 4 * shape
+            elements.append((v, (x, y, z)))
+        if ok and pos == region_end:
+            results.append((e, elements, skips, region_end, wc))
+    if len(results) == 1:
+        return results[0]
+    if len(results) > 1:
+        return ("ambiguous", results)
+    return None
+
+
+def _raw_escape_probe(payload: bytes, element_count: int):
+    """The stage-4a raw-array start rule + fit rates on one node
+    payload (ported from ``mixedwrite_decode.raw_probe``): the UNIQUE
+    4-aligned start in ``[32, RAW_MAX_START]`` whose full elem_decl
+    span fits and whose trail-escape byte ``payload[start +
+    12*elem_decl]`` is ``0xFF``, with the per-triple nice rate (the
+    scan's :func:`_raw_nice` predicate — 1e-6 floor kept verbatim) and
+    the x-ascending rate.  Returns ``(start, nice_rate, asc_rate)`` or
+    ``None`` (zero or several candidates — fail-closed)."""
+    cands = [
+        s
+        for s in range(32, RAW_MAX_START + 1, 4)
+        if s + 12 * element_count < len(payload)
+        and payload[s + 12 * element_count] == 0xFF
+    ]
+    if len(cands) != 1:
+        return None
+    s = cands[0]
+    nicec = 0
+    xs = []
+    for k in range(element_count):
+        x, y, z = struct.unpack_from("<fff", payload, s + 12 * k)
+        if _raw_nice(x) and _raw_nice(y) and _raw_nice(z):
+            nicec += 1
+        xs.append(x)
+    rate = nicec / element_count
+    asc = (
+        sum(1 for a, b in zip(xs, xs[1:]) if b >= a - 1e-6) / (element_count - 1)
+        if element_count > 1
+        else 1.0
+    )
+    return s, rate, asc
+
+
+def _decode_node_mixedwrite(payload: bytes, element_count: int, counts_end: int, poolv):
+    """Decode one token-node payload with the stage-8 law set (ported
+    from ``mixedwrite_decode.decode_node`` — not re-derived), in the
+    census's order:
+
+    (a) the stage-3b table law with the zero-block extent candidates
+        (:func:`_table_decode_extents`);
+    (b) the stage-4a raw law — the committed start rule and fit
+        criteria (:data:`RAW_FIT_RATE`, the scan's :func:`_raw_nice`).
+        The pool-absorption gate is NOT applied here: the composition
+        judges absorption per rep (a multi-rep store's pool spans
+        several regions);
+    (c) the flat law (the stage-7 container PART-1 reading; stage-8
+        artifact 3): ``element_count`` full triples straight after the
+        4-B tail field — start pinned by ``counts_end``, NO escape
+        required, no zero block or table — all-nice under
+        :func:`_nice` (the exporter predicate; the raw scan's 1e-6
+        floor rejects real near-zero coordinates on these stores),
+        x-ascending >= :data:`RAW_FIT_RATE` OR the pool fully
+        re-listed verbatim (junk spans absorb nothing and fail here).
+
+    Returns ``(law, elements, pts, region_end_rel, write_count,
+    failure)`` with ``law`` in ``{'table', 'raw', 'flat', None}``;
+    ``elements`` is the (slot, point) element space (raw/flat elements
+    are all written, the stage-6 raw path's shape)."""
+    td = _table_decode_extents(payload, element_count, counts_end)
+    if td is not None and td[0] != "ambiguous":
+        _e, elements, skips, region_end, wc = td
+        return (
+            "table",
+            elements,
+            [pt for _v, pt in elements if pt is not None],
+            region_end,
+            wc,
+            "",
+        )
+    if td is not None and td[0] == "ambiguous":
+        return None, [], [], 0, 0, "table: ambiguous zero-block extent"
+    probe = _raw_escape_probe(payload, element_count)
+    if probe is not None:
+        s, rate, asc = probe
+        if rate >= RAW_FIT_RATE and asc >= RAW_FIT_RATE:
+            pts = list(
+                struct.iter_unpack("<fff", payload[s : s + 12 * element_count])
+            )
+            return (
+                "raw",
+                [(0, pt) for pt in pts],
+                pts,
+                s + 12 * element_count,
+                3 * element_count,
+                "",
+            )
+    s = counts_end + 4
+    if s + 12 * element_count <= len(payload) and element_count >= 2:
+        ok = True
+        xs = []
+        for k in range(element_count):
+            x, y, z = struct.unpack_from("<fff", payload, s + 12 * k)
+            if not (_nice(x) and _nice(y) and _nice(z)):
+                ok = False
+                break
+            xs.append(x)
+        if ok:
+            asc = (
+                sum(1 for a, b in zip(xs, xs[1:]) if b >= a - 1e-6)
+                / (element_count - 1)
+            )
+            pts = list(
+                struct.iter_unpack("<fff", payload[s : s + 12 * element_count])
+            )
+            pset = set(poolv)
+            hits = len(pset & set(pts))
+            if asc >= RAW_FIT_RATE or (pset and hits == len(pset)):
+                return (
+                    "flat",
+                    [(0, pt) for pt in pts],
+                    pts,
+                    s + 12 * element_count,
+                    3 * element_count,
+                    "",
+                )
+    if probe is not None:
+        s, rate, asc = probe
+        return (
+            None,
+            [],
+            [],
+            0,
+            0,
+            f"raw-weak-fit@{s} nice={rate:.4f} asc={asc:.4f}",
+        )
+    return None, [], [], 0, 0, "table: no walk-exact zero-block extent"
+
+
+def _decode_mixedwrite(data, lo: int, hi: int, groups):
+    """The stage-8 mixed-write per-rep composition (stage 9, #34): the
+    stage-5 per-rep decomposition applied to the walk-mismatch residue
+    over the FULL-body window, with the stage-8 locator/predicate laws
+    per node (:func:`_decode_node_mixedwrite`).
+
+    Rep k = (pool group k, the k-th law-decoded token node in body
+    order — the diagonal, measured on the census population: all 81
+    region-absorbable stores pair diagonally with exact f32 —, that
+    node's record territory ``[region_end_k, next decoded node)``).
+    The store exports only when EVERY pool vertex is absorbed by its
+    diagonal rep's region (exact f32, then the stage-4b noise
+    tolerance capped at 10,000-vertex pools): vertices re-listed only
+    by the ``05 08 01`` sub-node records have unpinned element indices
+    and keep the store fail-closed for export (the stage-8 note's
+    integration item (e); bad44bdf's class).  Per rep: the M2b refs
+    gate against the rep's own element count, records parsed with the
+    committed width laws, strip/polygon triangulation; merged meshes
+    concatenate the exported reps' written points.  A rep whose gated
+    references leave its own element space stays unexported with the
+    reason named (stage-5 per-rep fail-closed); reps beyond the pool
+    groups have no pool to re-list and stay unexported (stage-5 O2).
+
+    Raises :class:`ExportError` (``undecoded-variant``) with the
+    specific gap when no node decodes, absorption is not established,
+    or no rep exports."""
+    poolv = [v for g in groups for v in g.vertices]
+    pool_set = set(poolv)
+    nodes = _scan_token_nodes(data, lo, hi)
+    decoded = []
+    law_counts = {"table": 0, "raw": 0, "flat": 0}
+    node_failures = []
+    for npos, payload, c1, _c2 in nodes:
+        counts_end = _token_counts_end(payload)
+        if counts_end is None:  # unreachable behind _scan_token_nodes
+            continue
+        law, elements, pts, region_end_rel, wc, failure = _decode_node_mixedwrite(
+            payload, c1, counts_end, poolv
+        )
+        if law is None:
+            node_failures.append(f"node@{npos}: {failure}" if failure else f"node@{npos}: undecoded")
+            continue
+        law_counts[law] += 1
+        decoded.append(
+            {
+                "pos": npos,
+                "payload": payload,
+                "elem": c1,
+                "law": law,
+                "elements": elements,
+                "pts": pts,
+                # absolute end of the point region (the territory start)
+                "region_end": npos + 4 + region_end_rel,
+                "write_count": wc,
+            }
+        )
+    if not decoded:
+        raise ExportError(
+            "undecoded-variant",
+            f"the stage-8 mixed-write per-rep composition decodes none "
+            f"of the {len(nodes)} token nodes over the full-body "
+            f"window (table/raw/flat laws; "
+            f"{'first: ' + node_failures[0] if node_failures else 'no token nodes'})",
+        )
+    # Store-level absorption precondition: every pool vertex in its
+    # diagonal rep's region (exact f32, then the stage-4b noise
+    # tolerance; the census measured exact f32 on all 81).  Vertices no
+    # region re-lists are the sub-node record route's residue — their
+    # element slots are unpinned, the store stays fail-closed (named).
+    uncovered = 0
+    for k, g in enumerate(groups):
+        rep = decoded[k] if k < len(decoded) else None
+        distinct = set(g.vertices)
+        if rep is None:
+            uncovered += len(distinct)
+            continue
+        pts_set = set(rep["pts"])
+        missing = distinct - pts_set
+        if missing and len(distinct) <= 10_000:
+            missing = {
+                v
+                for v in missing
+                if (best := _tol_match(v, rep["pts"])) is None
+                or best > NOISE_REL
+            }
+        uncovered += len(missing)
+    if uncovered:
+        raise ExportError(
+            "undecoded-variant",
+            f"the stage-8 mixed-write per-rep composition does not "
+            f"establish pool absorption: {uncovered} of {len(pool_set)} "
+            f"pool vertices are absent from every decoded rep region "
+            f"({len(decoded)} law-decoded reps for {len(groups)} pool "
+            "groups; vertices re-listed only by the 05 08 01 sub-node "
+            "records have unpinned element indices — fail-closed for "
+            "export until the sub-node element-index law pins them)",
+        )
+    points: list = []
+    triangles: list = []
+    degenerate = 0
+    loop_stats = {"loops_exported": 0, "loops_curve_entry": 0}
+    skipped_markers: dict[int, int] = {}
+    facet_candidates = 0
+    facet_records = 0
+    write_count = 0
+    table_bytes = 0
+    element_decl = 0
+    curve_entries = 0
+    node_bytes = 0
+    reps_unexported = []
+    for k, d in enumerate(decoded):
+        node_bytes += len(d["payload"])
+        if k >= len(groups):
+            reps_unexported.append(
+                f"rep {k}: no pool group to re-list ({len(groups)} pool "
+                f"groups for {len(decoded)} law-decoded reps; per-rep "
+                "absorption unestablished)"
+            )
+            continue
+        nxt = decoded[k + 1]["pos"] if k + 1 < len(decoded) else hi
+        records, n_hdrs = parse_strip_records(
+            data, d["region_end"], nxt, d["elem"], elements=d["elements"]
+        )
+        grefs = [
+            r for _o, mk, _n, _c, refs, _w in records if mk in GATED for r in refs
+        ]
+        if grefs and max(grefs) >= d["elem"]:
+            mx = max(grefs)
+            reps_unexported.append(
+                f"rep {k}: facet references beyond the rep's element "
+                f"space (max ref {mx} >= element count {d['elem']}, "
+                "M2b identity per rep)"
+            )
+            continue
+        base = len(points)
+        tri_k, deg_k, stats_k = _triangulate(d["elements"], records)
+        points += d["pts"]
+        triangles += [(a + base, b + base, c + base) for a, b, c in tri_k]
+        degenerate += deg_k
+        loop_stats["loops_exported"] += stats_k["loops_exported"]
+        loop_stats["loops_curve_entry"] += stats_k["loops_curve_entry"]
+        facet_candidates += n_hdrs
+        facet_records += len(records)
+        write_count += d["write_count"]
+        if d["law"] == "table":
+            table_bytes += (d["elem"] + 3) // 4
+        element_decl += d["elem"]
+        curve_entries += len(d["elements"]) - len(d["pts"])
+        for _o, mk, _n, _c, _refs, _w in records:
+            if mk not in (0x42, 0x4A, 0x4C):
+                skipped_markers[mk] = skipped_markers.get(mk, 0) + 1
+    if not points:
+        raise ExportError(
+            "undecoded-variant",
+            f"the stage-8 mixed-write per-rep composition exports no "
+            f"rep: {'; '.join(reps_unexported) or 'no reps'}",
+        )
+    info = {
+        "stage": "identity-mixedwrite-reps",
+        "element_decl": element_decl,
+        "node_points": len(points),
+        "curve_entries": curve_entries,
+        "write_count": write_count,
+        "table_bytes": table_bytes,
+        "facet_candidates": facet_candidates,
+        "facet_records": facet_records,
+        "skipped_markers": skipped_markers,
+        "node_bytes": node_bytes,
+        "reps_decoded": len(decoded),
+        "reps_exported": len(decoded) - len(reps_unexported),
+        "reps_unexported": len(reps_unexported),
+        "rep_reasons": reps_unexported,
+        "rep_laws": law_counts,
         **loop_stats,
     }
     return points, triangles, degenerate, info
