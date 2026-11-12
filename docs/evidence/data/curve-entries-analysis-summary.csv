@@ -1,0 +1,146 @@
+section,key,value
+population,composite_stores_with_list_node,949
+population,small_stores,289
+population,big_stores,660
+population,split,"{'dev': 888, 'held-out': 61}"
+population,exported,681
+population,fail_closed,268
+population,fail_closed_stale_3a,0
+skip_slots,exported.small.stores,216
+skip_slots,exported.small.stores_with_skips,128
+skip_slots,exported.small.skip_slots,n=216 min=0 q1=0 med=2 q3=8 max=123 sum=2152
+skip_slots,exported.small.skips_loop_referenced,n=216 min=0 q1=0 med=2 q3=8 max=94 sum=1554
+tested_skipref,exported.small.stores_with_tested_loops,69
+tested_skipref,exported.small.loops,n=216 min=0 q1=0 med=0 q3=2 max=17 sum=221
+ce_loops,exported.small.stores_with_ce_loops,125
+ce_loops,exported.small.loops_per_store,n=216 min=0 q1=0 med=2 q3=4 max=41 sum=713
+skip_slots,exported.big.stores,465
+skip_slots,exported.big.stores_with_skips,417
+skip_slots,exported.big.skip_slots,n=465 min=0 q1=35 med=205 q3=677 max=99435 sum=505290
+skip_slots,exported.big.skips_loop_referenced,n=465 min=0 q1=6 med=69 q3=279 max=14937 sum=178085
+tested_skipref,exported.big.stores_with_tested_loops,218
+tested_skipref,exported.big.loops,n=465 min=0 q1=0 med=0 q3=8 max=3551 sum=6885
+ce_loops,exported.big.stores_with_ce_loops,393
+ce_loops,exported.big.loops_per_store,n=465 min=0 q1=2 med=14 q3=60 max=40606 sum=72262
+skip_slots,exported.all.stores,681
+skip_slots,exported.all.stores_with_skips,545
+skip_slots,exported.all.skip_slots,n=681 min=0 q1=2 med=53 q3=373 max=99435 sum=507442
+skip_slots,exported.all.skips_loop_referenced,n=681 min=0 q1=2 med=16 q3=164 max=14937 sum=179639
+tested_skipref,exported.all.stores_with_tested_loops,287
+tested_skipref,exported.all.loops,n=681 min=0 q1=0 med=0 q3=4 max=3551 sum=7106
+ce_loops,exported.all.stores_with_ce_loops,518
+ce_loops,exported.all.loops_per_store,n=681 min=0 q1=1 med=6 q3=31 max=40606 sum=72975
+skip_slots,fail-closed.small.stores,73
+skip_slots,fail-closed.small.stores_with_skips,34
+skip_slots,fail-closed.small.skip_slots,n=73 min=0 q1=0 med=0 q3=6 max=157 sum=1006
+skip_slots,fail-closed.small.skips_loop_referenced,n=73 min=0 q1=0 med=0 q3=5 max=157 sum=935
+tested_skipref,fail-closed.small.stores_with_tested_loops,25
+tested_skipref,fail-closed.small.loops,n=73 min=0 q1=0 med=0 q3=6 max=1052 sum=1541
+skip_slots,fail-closed.big.stores,195
+skip_slots,fail-closed.big.stores_with_skips,158
+skip_slots,fail-closed.big.skip_slots,n=195 min=0 q1=3 med=142 q3=492 max=53334 sum=149989
+skip_slots,fail-closed.big.skips_loop_referenced,n=195 min=0 q1=0 med=24 q3=212 max=1653 sum=25813
+tested_skipref,fail-closed.big.stores_with_tested_loops,107
+tested_skipref,fail-closed.big.loops,n=195 min=0 q1=0 med=2 q3=17 max=1779 sum=9211
+skip_slots,fail-closed.all.stores,268
+skip_slots,fail-closed.all.stores_with_skips,192
+skip_slots,fail-closed.all.skip_slots,n=268 min=0 q1=0 med=55 q3=269 max=53334 sum=150995
+skip_slots,fail-closed.all.skips_loop_referenced,n=268 min=0 q1=0 med=4 q3=118 max=1653 sum=26748
+tested_skipref,fail-closed.all.stores_with_tested_loops,132
+tested_skipref,fail-closed.all.loops,n=268 min=0 q1=0 med=0 q3=12 max=1779 sum=10752
+coverage,exported.stores.full,16
+coverage,exported.stores.no-ce-loops,163
+coverage,exported.stores.none,232
+coverage,exported.stores.partial,270
+coverage,exported.ce_loops_total,72975
+coverage,exported.ce_loops_battery_tested,6981
+coverage,exported.ce_loops_untested,65994
+dup_law,walk_exact.exported.stores,681
+dup_law,walk_exact.exported.skipref_coplanar,3769
+dup_law,walk_exact.exported.skipref_nonplanar,3337
+dup_law,walk_exact.exported.skipref_rate,0.5304
+dup_law,walk_exact.exported.control_coplanar,15037
+dup_law,walk_exact.exported.control_nonplanar,532
+dup_law,walk_exact.exported.control_rate,0.9658
+dup_law,walk_exact.exported_minus_13bb_cf73.stores,679
+dup_law,walk_exact.exported_minus_13bb_cf73.skipref_coplanar,3279
+dup_law,walk_exact.exported_minus_13bb_cf73.skipref_nonplanar,151
+dup_law,walk_exact.exported_minus_13bb_cf73.skipref_rate,0.9560
+dup_law,walk_exact.exported_minus_13bb_cf73.control_coplanar,14982
+dup_law,walk_exact.exported_minus_13bb_cf73.control_nonplanar,172
+dup_law,walk_exact.exported_minus_13bb_cf73.control_rate,0.9886
+dup_law,walk_exact.exported_l2_pass_minus.stores,613
+dup_law,walk_exact.exported_l2_pass_minus.skipref_coplanar,2708
+dup_law,walk_exact.exported_l2_pass_minus.skipref_nonplanar,138
+dup_law,walk_exact.exported_l2_pass_minus.skipref_rate,0.9515
+dup_law,walk_exact.exported_l2_pass_minus.control_coplanar,11130
+dup_law,walk_exact.exported_l2_pass_minus.control_nonplanar,63
+dup_law,walk_exact.exported_l2_pass_minus.control_rate,0.9944
+dup_law,walk_exact.exported_baseline_clean_minus.stores,236
+dup_law,walk_exact.exported_baseline_clean_minus.skipref_coplanar,2511
+dup_law,walk_exact.exported_baseline_clean_minus.skipref_nonplanar,96
+dup_law,walk_exact.exported_baseline_clean_minus.skipref_rate,0.9632
+dup_law,walk_exact.exported_baseline_clean_minus.control_coplanar,6644
+dup_law,walk_exact.exported_baseline_clean_minus.control_nonplanar,0
+dup_law,walk_exact.exported_baseline_clean_minus.control_rate,1.0000
+dup_law,walk_exact.exported_minus.small.stores,216
+dup_law,walk_exact.exported_minus.small.skipref_coplanar,221
+dup_law,walk_exact.exported_minus.small.skipref_nonplanar,0
+dup_law,walk_exact.exported_minus.small.skipref_rate,1.0000
+dup_law,walk_exact.exported_minus.small.control_coplanar,2385
+dup_law,walk_exact.exported_minus.small.control_nonplanar,7
+dup_law,walk_exact.exported_minus.small.control_rate,0.9971
+dup_law,walk_exact.exported_minus.big.stores,463
+dup_law,walk_exact.exported_minus.big.skipref_coplanar,3058
+dup_law,walk_exact.exported_minus.big.skipref_nonplanar,151
+dup_law,walk_exact.exported_minus.big.skipref_rate,0.9529
+dup_law,walk_exact.exported_minus.big.control_coplanar,12597
+dup_law,walk_exact.exported_minus.big.control_nonplanar,165
+dup_law,walk_exact.exported_minus.big.control_rate,0.9871
+dup_law,walk_exact.exported_l2_fail.stores,68
+dup_law,walk_exact.exported_l2_fail.skipref_coplanar,1061
+dup_law,walk_exact.exported_l2_fail.skipref_nonplanar,3199
+dup_law,walk_exact.exported_l2_fail.skipref_rate,0.2491
+dup_law,walk_exact.exported_l2_fail.control_coplanar,3907
+dup_law,walk_exact.exported_l2_fail.control_nonplanar,469
+dup_law,walk_exact.exported_l2_fail.control_rate,0.8928
+dup_law,walk_exact.fail_closed_NOT_EVIDENCE.stores,148
+dup_law,walk_exact.fail_closed_NOT_EVIDENCE.skipref_coplanar,1624
+dup_law,walk_exact.fail_closed_NOT_EVIDENCE.skipref_nonplanar,3146
+dup_law,walk_exact.fail_closed_NOT_EVIDENCE.skipref_rate,0.3405
+dup_law,walk_exact.fail_closed_NOT_EVIDENCE.control_coplanar,6361
+dup_law,walk_exact.fail_closed_NOT_EVIDENCE.control_nonplanar,3070
+dup_law,walk_exact.fail_closed_NOT_EVIDENCE.control_rate,0.6745
+dup_law,exported_minus.store_classes,"{'all-coplanar': 226, 'all-nonplanar': 3, 'mixed': 56, 'no-tested-loops': 394}"
+dup_law,exported_minus.stores_mixed_or_nonplanar_baseline_clean,41
+l2_exposure,exported_stores_with_ce_loops,518
+l2_exposure,exported_with_ce_loops.fail/empty-mesh,21
+l2_exposure,exported_with_ce_loops.fail/not-manifold,26
+l2_exposure,exported_with_ce_loops.pass/-,471
+l2_exposure,exported_without_ce_loops.fail/degenerate-triangles,2
+l2_exposure,exported_without_ce_loops.fail/empty-mesh,16
+l2_exposure,exported_without_ce_loops.fail/not-manifold,3
+l2_exposure,exported_without_ce_loops.pass/-,142
+l2_exposure,e0_candidates_empty_mesh_with_ce_loops,21
+l2_exposure,e0_battery_supported,4
+l2_exposure,e0_by_coverage,"{'full': 5, 'none': 12, 'partial': 4}"
+l2_exposure,e0_by_form,"{'big': 18, 'small': 3}"
+l2_exposure,e0_by_split,"{'dev': 20, 'held-out': 1}"
+l2_exposure,empty_mesh_without_ce_loops,16
+l2_exposure,not_manifold_with_ce_loops,26
+l2_exposure,passing_stores_at_risk_if_ce_loops_exported,471
+l2_exposure,passing_at_risk_battery_supported,8
+l2_exposure,fail_closed_with_skips,192
+l2_exposure,fail_closed_with_tested_skipref_loops,132
+twin_families,signature_families_gt1,77
+twin_families,stores_in_families,196
+twin_families,families_with_skips_gt0,49
+decoder_blind,composite_exports_total,747
+decoder_blind,exports_outside_decoder_population,66
+decoder_blind,with_dropped_loops,24
+decoder_blind,dropped_loops,210
+decoder_blind,l2_pass,57
+decoder_blind,l2_fail,9
+decoder_blind,empty_mesh_with_dropped_loops,3
+l2_exposure,e0_candidates_census_scope,24
+l2_exposure,e0_census_scope_blind,3

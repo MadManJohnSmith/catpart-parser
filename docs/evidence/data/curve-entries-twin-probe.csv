@@ -1,0 +1,163 @@
+probe,subject,metric,value
+layout,026d6726007381a9,elem_decl,124
+layout,026d6726007381a9,written,98
+layout,026d6726007381a9,skips,26
+layout,026d6726007381a9,skip_indices,1 6 8 12 15 22 25 29 43 46 58 61 73 76 91 93 95 98 105 108 113 114 115 117 119 123
+layout,026d6726007381a9,loop_referenced_skips,1 8 29 58 61 91 93 113 115 117 123
+layout,026d6726007381a9,edge_referenced_skips,6 29 58 61 91 93 113 114 115 119 123
+layout,026d6726007381a9,unreferenced_skips(mid/unpinned),6 12 15 22 25 43 46 73 76 95 98 105 108 114 119
+layout,026d6726007381a9,facet_records,5
+layout,026d6726007381a9,curve_records,24
+slots,026d6726007381a9,slot1,"dup_prev loop=y edge=n pin=(392.2199,435.5,2.1)"
+slots,026d6726007381a9,slot6,"mid loop=n edge=y pin=(392.64,435.5,2.855)"
+slots,026d6726007381a9,slot8,"dup_prev loop=y edge=n pin=(392.64,435.5,2.9)"
+slots,026d6726007381a9,slot12,"mid loop=n edge=n pin=(392.8196,434.5969,2.855)"
+slots,026d6726007381a9,slot15,"mid loop=n edge=n pin=(392.8196,436.4031,2.855)"
+slots,026d6726007381a9,slot22,"mid loop=n edge=n pin=(393.3312,433.8312,2.855)"
+slots,026d6726007381a9,slot25,"mid loop=n edge=n pin=(393.3312,437.1688,2.855)"
+slots,026d6726007381a9,slot29,"dup_prev loop=y edge=y pin=(393.45,435.5,2.9)"
+slots,026d6726007381a9,slot43,"mid loop=n edge=n pin=(394.0969,433.3196,2.855)"
+slots,026d6726007381a9,slot46,"mid loop=n edge=n pin=(394.0969,437.6804,2.855)"
+slots,026d6726007381a9,slot58,"dup_prev loop=y edge=y pin=(395.0,433.14,2.81)"
+slots,026d6726007381a9,slot61,"dup_prev loop=y edge=y pin=(395.0,437.86,2.81)"
+slots,026d6726007381a9,slot73,"mid loop=n edge=n pin=(395.9031,433.3196,2.855)"
+slots,026d6726007381a9,slot76,"mid loop=n edge=n pin=(395.9031,437.6804,2.855)"
+slots,026d6726007381a9,slot91,"dup_prev loop=y edge=y pin=(396.55,435.5,2.1)"
+slots,026d6726007381a9,slot93,"dup_prev loop=y edge=y pin=(396.55,435.5,2.9)"
+slots,026d6726007381a9,slot95,"mid loop=n edge=n pin=(396.6688,433.8312,2.855)"
+slots,026d6726007381a9,slot98,"mid loop=n edge=n pin=(396.6688,437.1688,2.855)"
+slots,026d6726007381a9,slot105,"mid loop=n edge=n pin=(397.1804,434.5969,2.855)"
+slots,026d6726007381a9,slot108,"mid loop=n edge=n pin=(397.1804,436.4031,2.855)"
+slots,026d6726007381a9,slot113,"dup_prev loop=y edge=y pin=(397.36,435.5,2.81)"
+slots,026d6726007381a9,slot114,"mid loop=n edge=y pin=(397.36,435.5,2.855)"
+slots,026d6726007381a9,slot115,"dup_prev loop=y edge=y pin=(397.36,435.5,2.81)"
+slots,026d6726007381a9,slot117,"dup_prev loop=y edge=n pin=(397.36,435.5,2.9)"
+slots,026d6726007381a9,slot119,"unpinned_dup loop=n edge=y pin=(397.4729,435.5,2.3975)"
+slots,026d6726007381a9,slot123,"dup_prev loop=y edge=y pin=(397.7801,435.5,2.1)"
+edges,026d6726007381a9,group0.records,8
+edges,026d6726007381a9,group0.sizes,3 3 9 2 2 2 2 9
+edges,026d6726007381a9,group0.rec0.profile,"n=3 skip_refs=1 z=2.1,2.3975,2.855"
+edges,026d6726007381a9,group0.rec1.profile,"n=3 skip_refs=3 z=2.855,2.3975,2.1"
+edges,026d6726007381a9,group0.rec2.ring,n=9 skip_refs=2 z_spread=0.000000 radius=2.3600 radius_spread=0.000019
+edges,026d6726007381a9,group0.rec3.vertical,"n=2 skip_refs=1 dxy=(0.000000,0.000000) z=(2.81,2.9)"
+edges,026d6726007381a9,group0.rec4.vertical,"n=2 skip_refs=0 dxy=(0.000000,0.000000) z=(2.9,2.81)"
+edges,026d6726007381a9,group0.rec5.vertical,"n=2 skip_refs=1 dxy=(0.000000,0.000000) z=(2.9,2.1)"
+edges,026d6726007381a9,group0.rec6.vertical,"n=2 skip_refs=2 dxy=(0.000000,0.000000) z=(2.1,2.9)"
+edges,026d6726007381a9,group0.rec7.ring,n=9 skip_refs=2 z_spread=0.000000 radius=2.3600 radius_spread=0.000019
+layout,e254a37e2ba6902c,elem_decl,124
+layout,e254a37e2ba6902c,written,98
+layout,e254a37e2ba6902c,skips,26
+layout,e254a37e2ba6902c,skip_indices,5 6 7 12 15 22 25 28 43 46 58 61 73 76 91 93 95 98 105 108 113 114 115 117 119 123
+layout,e254a37e2ba6902c,loop_referenced_skips,6 7 12 15 22 25 28 43 46 58 61 73 76 91 93 95 98 105 108 114 117 123
+layout,e254a37e2ba6902c,edge_referenced_skips,6 7 12 15 22 25 43 46 58 61 73 76 95 98 105 108 113 114 117
+layout,e254a37e2ba6902c,unreferenced_skips(mid/unpinned),5 113 115 119
+layout,e254a37e2ba6902c,facet_records,5
+layout,e254a37e2ba6902c,curve_records,24
+slots,e254a37e2ba6902c,slot5,"mid loop=n edge=n pin=(342.64,435.5,2.855)"
+slots,e254a37e2ba6902c,slot6,"dup_prev loop=y edge=y pin=(342.64,435.5,2.81)"
+slots,e254a37e2ba6902c,slot7,"dup_prev loop=y edge=y pin=(342.64,435.5,2.81)"
+slots,e254a37e2ba6902c,slot12,"dup_prev loop=y edge=y pin=(342.8196,434.5969,2.81)"
+slots,e254a37e2ba6902c,slot15,"dup_prev loop=y edge=y pin=(342.8196,436.4031,2.81)"
+slots,e254a37e2ba6902c,slot22,"dup_prev loop=y edge=y pin=(343.3312,433.8312,2.81)"
+slots,e254a37e2ba6902c,slot25,"dup_prev loop=y edge=y pin=(343.3312,437.1688,2.81)"
+slots,e254a37e2ba6902c,slot28,"dup_prev loop=y edge=n pin=(343.45,435.5,2.1)"
+slots,e254a37e2ba6902c,slot43,"dup_prev loop=y edge=y pin=(344.0969,433.3196,2.81)"
+slots,e254a37e2ba6902c,slot46,"dup_prev loop=y edge=y pin=(344.0969,437.6804,2.81)"
+slots,e254a37e2ba6902c,slot58,"dup_prev loop=y edge=y pin=(345.0,433.14,2.81)"
+slots,e254a37e2ba6902c,slot61,"dup_prev loop=y edge=y pin=(345.0,437.86,2.81)"
+slots,e254a37e2ba6902c,slot73,"dup_prev loop=y edge=y pin=(345.9031,433.3196,2.81)"
+slots,e254a37e2ba6902c,slot76,"dup_prev loop=y edge=y pin=(345.9031,437.6804,2.81)"
+slots,e254a37e2ba6902c,slot91,"dup_prev loop=y edge=n pin=(346.55,435.5,2.1)"
+slots,e254a37e2ba6902c,slot93,"dup_prev loop=y edge=n pin=(346.55,435.5,2.9)"
+slots,e254a37e2ba6902c,slot95,"dup_prev loop=y edge=y pin=(346.6688,433.8312,2.81)"
+slots,e254a37e2ba6902c,slot98,"dup_prev loop=y edge=y pin=(346.6688,437.1688,2.81)"
+slots,e254a37e2ba6902c,slot105,"dup_prev loop=y edge=y pin=(347.1804,434.5969,2.81)"
+slots,e254a37e2ba6902c,slot108,"dup_prev loop=y edge=y pin=(347.1804,436.4031,2.81)"
+slots,e254a37e2ba6902c,slot113,"mid loop=n edge=y pin=(347.36,435.5,2.855)"
+slots,e254a37e2ba6902c,slot114,"dup_prev loop=y edge=y pin=(347.36,435.5,2.81)"
+slots,e254a37e2ba6902c,slot115,"mid loop=n edge=n pin=(347.36,435.5,2.855)"
+slots,e254a37e2ba6902c,slot117,"dup_prev loop=y edge=y pin=(347.36,435.5,2.9)"
+slots,e254a37e2ba6902c,slot119,"unpinned_dup loop=n edge=n pin=(347.4729,435.5,2.3975)"
+slots,e254a37e2ba6902c,slot123,"dup_prev loop=y edge=n pin=(347.7801,435.5,2.1)"
+edges,e254a37e2ba6902c,group0.records,8
+edges,e254a37e2ba6902c,group0.sizes,3 3 9 2 2 2 2 9
+edges,e254a37e2ba6902c,group0.rec0.profile,"n=3 skip_refs=1 z=2.1,2.3975,2.855"
+edges,e254a37e2ba6902c,group0.rec1.profile,"n=3 skip_refs=0 z=2.81,2.3975,2.1"
+edges,e254a37e2ba6902c,group0.rec2.ring,n=9 skip_refs=8 z_spread=0.000000 radius=2.3600 radius_spread=0.000019
+edges,e254a37e2ba6902c,group0.rec3.vertical,"n=2 skip_refs=1 dxy=(0.000000,0.000000) z=(2.81,2.9)"
+edges,e254a37e2ba6902c,group0.rec4.vertical,"n=2 skip_refs=2 dxy=(0.000000,0.000000) z=(2.9,2.81)"
+edges,e254a37e2ba6902c,group0.rec5.vertical,"n=2 skip_refs=0 dxy=(0.000000,0.000000) z=(2.9,2.1)"
+edges,e254a37e2ba6902c,group0.rec6.vertical,"n=2 skip_refs=0 dxy=(0.000000,0.000000) z=(2.1,2.9)"
+edges,e254a37e2ba6902c,group0.rec7.ring,n=9 skip_refs=9 z_spread=0.000000 radius=2.3600 radius_spread=0.000019
+layout,twins,x_offset(e254a37e-026d6726),-50.0
+layout,twins,same_elem_decl,True
+layout,twins,skip_sets_equal,False
+layout,twins,skips_only_026d,1 8 29
+layout,twins,skips_only_e254a37e,5 7 28
+layout,twins,index_aligned_written_equal_after_offset,92/95
+slots,twins,026d_mid_slots,6 12 15 22 25 43 46 73 76 95 98 105 108 114
+slots,twins,026d_mid_slots_that_are_loop_referenced_dups_on_e254a37e,14/14
+strips,026d6726007381a9,strip0,marker=0x42 normal=n counts=[18] skip_refs=4/18
+strips,026d6726007381a9,strip1,"marker=0x42 normal=n counts=[7, 11] skip_refs=0/18"
+strips,026d6726007381a9,strip2,"marker=0x4a normal=y counts=[6, 7, 7, 6, 7, 7, 6] skip_refs=5/46"
+strips,026d6726007381a9,strip3,marker=0x42 normal=n counts=[18] skip_refs=2/18
+strips,026d6726007381a9,strip4,"marker=0x42 normal=n counts=[7, 11] skip_refs=3/18"
+strips,e254a37e2ba6902c,strip0,marker=0x42 normal=n counts=[18] skip_refs=8/18
+strips,e254a37e2ba6902c,strip1,"marker=0x42 normal=n counts=[7, 11] skip_refs=3/18"
+strips,e254a37e2ba6902c,strip2,"marker=0x4a normal=y counts=[6, 7, 7, 6, 7, 7, 6] skip_refs=7/46"
+strips,e254a37e2ba6902c,strip3,"marker=0x42 normal=n counts=[7, 11] skip_refs=0/18"
+strips,e254a37e2ba6902c,strip4,marker=0x42 normal=n counts=[18] skip_refs=10/18
+strips,twins,026d_strip0_best_match,e254a37e_strip4 seq_equal=18/18 skip_refs 026d=4 e254a37e=10
+strips,twins,026d_strip1_best_match,e254a37e_strip3 seq_equal=18/18 skip_refs 026d=0 e254a37e=0
+strips,twins,026d_strip2_best_match,e254a37e_strip2 seq_equal=46/46 skip_refs 026d=5 e254a37e=7
+strips,twins,026d_strip3_best_match,e254a37e_strip0 seq_equal=18/18 skip_refs 026d=2 e254a37e=8
+strips,twins,026d_strip4_best_match,e254a37e_strip1 seq_equal=18/18 skip_refs 026d=3 e254a37e=3
+strips,twins,pinned_sequence_positions_equal,118/118
+strips,twins,skip_refs_in_strips_026d,14
+strips,twins,skip_refs_in_strips_e254a37e,28
+battery,026d6726007381a9,pin=dup(prev),"skipref_normal_loops=3 coplanar=3 slots=[1, 91, 123]"
+battery,026d6726007381a9,pin=next,"skipref_normal_loops=3 coplanar=1 slots=[1, 91, 123]"
+battery,026d6726007381a9,pin=mid-where-eligible,"skipref_normal_loops=3 coplanar=1 slots=[1, 91, 123]"
+battery,026d6726007381a9,normal_loop_slot_z,1:2.1 91:2.1 123:2.1
+battery,026d6726007381a9,unreferenced_slots_tested_by_battery,0
+battery,e254a37e2ba6902c,pin=dup(prev),"skipref_normal_loops=5 coplanar=5 slots=[28, 91, 123]"
+battery,e254a37e2ba6902c,pin=next,"skipref_normal_loops=5 coplanar=0 slots=[28, 91, 123]"
+battery,e254a37e2ba6902c,pin=mid-where-eligible,"skipref_normal_loops=5 coplanar=0 slots=[28, 91, 123]"
+battery,e254a37e2ba6902c,normal_loop_slot_z,28:2.1 91:2.1 123:2.1
+battery,e254a37e2ba6902c,unreferenced_slots_tested_by_battery,0
+failloops,02ee154402795740,failing,1
+failloops,02ee154402795740,written_noncop,1
+failloops,02ee154402795740,written_cop,0
+failloops,02ee154402795740,written_untestable,0
+failloops,02ee154402795740,any_alt,0
+failloops,02ee154402795740,beyond,0
+failloops,02ff71f5b7a33d13,failing,1
+failloops,02ff71f5b7a33d13,written_noncop,1
+failloops,02ff71f5b7a33d13,written_cop,0
+failloops,02ff71f5b7a33d13,written_untestable,0
+failloops,02ff71f5b7a33d13,any_alt,0
+failloops,02ff71f5b7a33d13,beyond,5
+failloops,0a64c44c29e6cfa6,failing,1
+failloops,0a64c44c29e6cfa6,written_noncop,1
+failloops,0a64c44c29e6cfa6,written_cop,0
+failloops,0a64c44c29e6cfa6,written_untestable,0
+failloops,0a64c44c29e6cfa6,any_alt,0
+failloops,0a64c44c29e6cfa6,beyond,0
+failloops,278015fe3d3d603d,failing,3
+failloops,278015fe3d3d603d,written_noncop,3
+failloops,278015fe3d3d603d,written_cop,0
+failloops,278015fe3d3d603d,written_untestable,0
+failloops,278015fe3d3d603d,any_alt,0
+failloops,278015fe3d3d603d,beyond,0
+failloops,ffdbc4f7a2569ab8,failing,46
+failloops,ffdbc4f7a2569ab8,written_noncop,32
+failloops,ffdbc4f7a2569ab8,written_cop,0
+failloops,ffdbc4f7a2569ab8,written_untestable,14
+failloops,ffdbc4f7a2569ab8,any_alt,0
+failloops,ffdbc4f7a2569ab8,beyond,0
+failloops,total,failing,52
+failloops,total,written_noncop,38
+failloops,total,written_cop,0
+failloops,total,written_untestable,14
+failloops,total,any_alt,0
+failloops,total,beyond,5
