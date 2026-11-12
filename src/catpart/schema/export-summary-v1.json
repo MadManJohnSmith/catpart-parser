@@ -146,6 +146,11 @@
       "required": ["edge_count", "manifold", "closed", "oriented", "boundary_edge_count"],
       "additionalProperties": true,
       "description": "Mesh invariants over the decoded triangles (G3 soup_stats measures)."
+    },
+    "composite": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Additive composite-only decode block (stage-2c/3d #34; present only on composite-space exports — consumers ignore unknown properties). Carries the identity decode counters (stage, element_decl, node_points, curve_entries, write_count, table_bytes, facet_candidates, facet_records, skipped_markers, loops_exported, loops_curve_entry) and, on multi-rep stores (stage identity-per-rep, the stage-4b per-rep law), reps_decoded / reps_exported / reps_unexported / rep_reasons. node_bytes (stage-5 fold-in, 2026-11-12, docs/agents/stage-3d-reconciliation.md section 5): the decoded list-node payload byte span(s) — the single list node's payload on single-rep stores (stage identity-table-walk), the sum of the scanned node payload spans on multi-rep stores; over 4096 B marks the big-form family, letting form be derived from summaries/CSVs."
     }
   },
   "required": [
