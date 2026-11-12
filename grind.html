@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The grind — catpart-parser</title>
+<meta name="description" content="The #34 timeline: laws decoded, hypotheses refuted, fitness rows accepted — and where the remaining mass sits.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1120'/%3E%3Cpath d='M22 10a8 8 0 1 0 0 12' stroke='%2338e1ff' stroke-width='3.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page"><div class="wrap">
+
+  <nav data-page="grind"></nav>
+
+  <div class="page-head">
+    <div class="crumb">issue #34 · G6</div>
+    <h1>The grind to the 80% bar</h1>
+    <p class="lead">L2 geometry-sanity went from a 5.50% baseline to 64.16% in three days. Every
+    entry below is a merged commit or an accepted fitness run — analyses that failed are recorded
+    as refutations, not smoothed away. Corrections are dated, never massaged.</p>
+  </div>
+
+  <div class="tl" id="tl"></div>
+
+  <h2 class="section">Where the mass sits</h2>
+  <p class="section-sub" id="cls-sub"></p>
+  <div class="cls-grid" id="cls-grid"></div>
+
+  <footer data-common></footer>
+
+</div></div>
+
+<script src="grind-data.js"></script>
+<script src="common.js"></script>
+<script>
+(function () {
+  var D = window.GRIND_DATA || { timeline: [], classes: {} };
+  var KIND_LABEL = {
+    law: { t: "law landed", c: "var(--accent)" },
+    row: { t: "fitness row accepted", c: "var(--good)" },
+    census: { t: "census / refutation", c: "var(--warn)" },
+    todo: { t: "queued", c: "var(--ink-faint)" },
+  };
+  document.getElementById("tl").innerHTML = D.timeline.map(function (e) {
+    var k = KIND_LABEL[e.kind] || KIND_LABEL.law;
+    var ref = [];
+    if (e.run) ref.push("run " + e.run);
+    if (e.commit) ref.push('<a href="https://github.com/MadManJohnSmith/catpart-parser/commit/' + e.commit + '">' + e.commit + "</a>");
+    return '<div class="tl-entry kind-' + e.kind + '">' +
+      '<div class="tl-head"><span class="tl-date">' + e.date + '</span>' +
+      '<span class="tl-stage">' + e.stage + '</span>' +
+      '<span style="font-size:12px;color:' + k.c + '">' + k.t + "</span></div>" +
+      '<div class="tl-text">' + e.text + "</div>" +
+      (ref.length ? '<div class="tl-ref">' + ref.join(" · ") + "</div>" : "") +
+      "</div>";
+  }).join("");
+
+  var c = D.classes;
+  document.getElementById("cls-sub").textContent =
+    "Latest accepted run: dev " + c.latest_row.dev.pass + "/" + c.latest_row.dev.total +
+    " (" + c.latest_row.dev.pct + "%), held-out " + c.latest_row.held_out.pass + "/" +
+    c.latest_row.held_out.total + " (" + c.latest_row.held_out.pct + "%) — run " + c.latest_row.run_id + ".";
+
+  function table(rows, cols) {
+    return "<table>" + rows.map(function (r) {
+      return "<tr><td>" + r[cols[0]] + "</td><td class='n'>" + r[cols[1]] + "</td><td>" + (r[cols[2]] || "") + "</td></tr>";
+    }).join("") + "</table>";
+  }
+  document.getElementById("cls-grid").innerHTML =
+    '<div class="cls-card"><h3>Failure classes at the 2026-11-10 baseline</h3>' +
+    '<div class="src">committed census · population ' + c.baseline_census.population + " parts (dev + held-out)</div>" +
+    table(c.baseline_census.rows, ["class", "n", "note"]) + "</div>" +
+    '<div class="cls-card"><h3>The 93 fail-closed stores, partitioned</h3>' +
+    '<div class="src">' + c.fail_closed_stores.source + "</div>" +
+    table(c.fail_closed_stores.rows, ["family", "n", "stage8"]) + "</div>";
+})();
+</script>
+</body>
+</html>

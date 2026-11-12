@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Evidence browser — catpart-parser</title>
+<meta name="description" content="The committed evidence CSVs behind every parser claim: searchable, sortable.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1120'/%3E%3Cpath d='M22 10a8 8 0 1 0 0 12' stroke='%2338e1ff' stroke-width='3.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page"><div class="wrap">
+
+  <nav data-page="evidence"></nav>
+
+  <div class="page-head">
+    <div class="crumb">docs/evidence/data · committed</div>
+    <h1>Evidence, browsable</h1>
+    <p class="lead">The project's rule: no claim without a byte range and a reproduction command.
+    These are the curated claims and validation tables exactly as committed — searchable and
+    sortable here, canonical in the repository.</p>
+  </div>
+
+  <div class="ev-tabs" id="ev-tabs"></div>
+  <div class="ev-controls">
+    <input id="ev-search" type="search" placeholder="Filter rows (substring, any column)…" autocomplete="off">
+    <span class="ev-count" id="ev-count"></span>
+  </div>
+  <p class="ev-note" id="ev-note"></p>
+  <div class="ev-table-wrap">
+    <table class="ev" id="ev-table"></table>
+  </div>
+
+  <footer data-common></footer>
+
+</div></div>
+
+<script src="evidence-data.js"></script>
+<script src="common.js"></script>
+<script>
+(function () {
+  var DATA = window.EVIDENCE_DATA || { tables: [] };
+  var tabs = document.getElementById("ev-tabs");
+  var search = document.getElementById("ev-search");
+  var countEl = document.getElementById("ev-count");
+  var noteEl = document.getElementById("ev-note");
+  var table = document.getElementById("ev-table");
+  var current = 0, sortCol = -1, sortDir = 1, query = "";
+
+  tabs.innerHTML = DATA.tables.map(function (t, i) {
+    return '<button data-i="' + i + '">' + t.title + "</button>";
+  }).join("");
+
+  tabs.addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-i]");
+    if (!b) return;
+    select(+b.getAttribute("data-i"));
+  });
+
+  search.addEventListener("input", function () {
+    query = search.value.toLowerCase();
+    render();
+  });
+
+  function select(i) {
+    current = i; sortCol = -1; sortDir = 1;
+    search.value = ""; query = "";
+    tabs.querySelectorAll("button").forEach(function (b, k) {
+      b.classList.toggle("active", k === i);
+    });
+    var t = DATA.tables[i];
+    noteEl.innerHTML = t.note + ' · source: <a href="https://github.com/MadManJohnSmith/catpart-parser/blob/main/' +
+      t.source + '"><code>' + t.source + "</code></a>";
+    render();
+  }
+
+  function rows() {
+    var t = DATA.tables[current];
+    var out = t.rows.filter(function (r) {
+      if (!query) return true;
+      for (var k in r) if (String(r[k]).toLowerCase().indexOf(query) !== -1) return true;
+      return false;
+    });
+    if (sortCol >= 0) {
+      var col = t.columns[sortCol];
+      out = out.slice().sort(function (a, b) {
+        var va = a[col], vb = b[col];
+        var na = parseFloat(va), nb = parseFloat(vb);
+        if (!isNaN(na) && !isNaN(nb) && String(va).trim() !== "" && String(vb).trim() !== "") {
+          return (na - nb) * sortDir;
+        }
+        return String(va).localeCompare(String(vb)) * sortDir;
+      });
+    }
+    return out;
+  }
+
+  function render() {
+    var t = DATA.tables[current];
+    var out = rows();
+    countEl.textContent = out.length + " / " + t.rows.length + " rows";
+    var head = t.columns.map(function (c, k) {
+      var arr = k === sortCol ? '<span class="arr">' + (sortDir > 0 ? "▲" : "▼") + "</span>" : "";
+      return "<th data-c='" + k + "'>" + c + arr + "</th>";
+    }).join("");
+    var body = out.slice(0, 400).map(function (r) {
+      return "<tr>" + t.columns.map(function (c) {
+        return "<td title='" + String(r[c]).replace(/'/g, "&#39;") + "'>" + String(r[c]).replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</td>";
+      }).join("") + "</tr>";
+    }).join("");
+    table.innerHTML = "<thead><tr>" + head + "</tr></thead><tbody>" + body + "</tbody>";
+    if (out.length > 400) {
+      countEl.textContent += " · showing first 400";
+    }
+  }
+
+  table.addEventListener("click", function (e) {
+    var th = e.target.closest("th[data-c]");
+    if (!th) return;
+    var c = +th.getAttribute("data-c");
+    if (sortCol === c) { sortDir = -sortDir; } else { sortCol = c; sortDir = 1; }
+    render();
+  });
+
+  select(0);
+})();
+</script>
+</body>
+</html>
