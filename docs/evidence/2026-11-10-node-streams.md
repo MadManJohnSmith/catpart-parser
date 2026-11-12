@@ -502,6 +502,14 @@ tiles exactly but repeats refs inside the loop loses to u16be).
   26 identical triangle counts; 8 stores' triangle counts change —
   the sigma mapping was the artifact the law corrects; 144cad57's
   degenerate-gate fail resolves, fail → pass).
+  **Correction (2026-11-12, stage-3d reconciliation section 5,
+  stage-5 fold-in):** "all 34 stage-2c exports preserved" means
+  export SUCCESS only — on the joined `1a5c4b4`/`d832b86` CSVs, 28/34
+  keep vertex/triangle counts (alt's replay over the 61 stage-2c
+  baseline composites measured 45/61 PLY-identical and 54/61
+  count-identical; source:
+  [stage-3d-reconciliation.md](../../agents/stage-3d-reconciliation.md)
+  section 2).
 - **Projected fitness arithmetic (the coordinator runs the combined
   row; this branch does not):** dev L2 = 109 accepted + 36 stage-3a
   recovery-clean (disjoint — those stores are among the 313

@@ -35,11 +35,17 @@ generated on a pre-3a lineage and understated the recovery's effect):
   subsets of the 2026-11-12 ones (0 v/t mismatches on the 753 common
   exports). Stage-5 deltas measure against the 2026-11-12 row.
 
+Stage-5 (2026-11-12, #34): the composite block also reports
+``node_bytes`` (the stage-5 fold-in — lets big/small form be derived
+from the CSV) and ``--out-name`` selects the output file (the stage-5
+run commits under its own name; the 2026-11-12 baseline row stays
+untouched).
+
 Deterministic: sorted manifest order; no wall-clock value enters the
 CSV.  Read-only over the corpus; run with the worktree venv:
 
   .venv/bin/python -I scripts/triage/ab_identity_export.py
-  [--include-sha16 HEX16,...] [--out-dir DIR]
+  [--include-sha16 HEX16,...] [--out-dir DIR] [--out-name NAME]
 """
 
 import argparse
@@ -61,7 +67,7 @@ FIELDS = [
     "sha256", "split", "export_ok", "error_class", "l2_status",
     "failed_check", "vertex_count", "triangle_count", "manifold",
     "closed", "element_decl", "node_points", "curve_entries",
-    "loops_curve_entry",
+    "loops_curve_entry", "node_bytes",
 ]
 
 
@@ -69,6 +75,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--include-sha16", default="")
     ap.add_argument("--out-dir", default=str(OUT_DIR))
+    ap.add_argument("--out-name", default="identity-export-files.csv")
     args = ap.parse_args()
     rows_in = [
         r
@@ -107,10 +114,11 @@ def main():
             row["node_points"] = comp.get("node_points", "")
             row["curve_entries"] = comp.get("curve_entries", "")
             row["loops_curve_entry"] = comp.get("loops_curve_entry", "")
+            row["node_bytes"] = comp.get("node_bytes", "")
             out_rows.append(row)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / "identity-export-files.csv"
+    out_path = out_dir / args.out_name
     with out_path.open("w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=FIELDS)
         w.writeheader()

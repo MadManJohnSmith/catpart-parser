@@ -294,3 +294,114 @@ def test_composite_face_records_exercise_both_families():
     exported primitive families."""
     markers = sorted(mk for mk, _n, _r in COMPOSITE_FACES)
     assert markers == [0x4A, 0x4A, 0x4A, 0x4A, 0x4C, 0x4C]
+
+
+def test_composite_u24be_width_law(tmp_path, capsys):
+    """The stage-4b u24be width law (gap 1): the 65,600-element grid
+    (> 65,535 — 2-byte refs cannot index the top corners at 65,599)
+    exports: the face records tile exactly only at width 3, so the
+    u24be parse wins and the box exports closed (13bb5c0c's law,
+    docs/evidence/2026-11-11-per-rep-and-width-laws.md R10)."""
+    code, captured, ply_path = run_export(tmp_path, capsys, "geometry-composite-law-u24be")
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    nx, ny, nz = (40, 40, 41)
+    n = nx * ny * nz
+    assert n > 65_535
+    assert summary["vertex_count"] == n
+    assert summary["triangle_count"] == 12
+    assert summary["mesh"]["manifold"] is True
+    assert summary["mesh"]["closed"] is True
+    info = summary["composite"]
+    assert info["element_decl"] == n
+    assert info["table_bytes"] == (n + 3) // 4
+    assert info["node_bytes"] > 4096  # the big-form marker
+    # the PLY faces reference the >65,535 corners (u24be refs decoded)
+    _, faces = parse_ply(ply_path)
+    assert max(i for f in faces for i in f) == 65_599
+
+
+def test_composite_width_plane_tiebreak(tmp_path, capsys):
+    """The stage-4b plane tiebreak (width gap 2): the fixture record's
+    u8/u16be parses tie on (tiling, repeats, oob) over the interleaved
+    filler bytes; the u8 read (0, 10, 1, 4) is nonplanar against the
+    stored normal (0,0,1), the u16be read (10, 260, 520, 770) coplanar
+    (all z=0) — the plane law picks u16be (ef30cb2f's law, R11)."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-width-plane"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    # 12 box triangles + the extra record's 2-triangle strip
+    assert summary["triangle_count"] == 14
+    assert summary["degenerate_triangle_count"] == 0
+    assert summary["mesh"]["manifold"] is True
+    _, faces = parse_ply(ply_path)
+    # the u16be reading's triangles; the u8 misread (0, 10, 1, 4)
+    # would reference element 1, which no face does
+    assert (10, 260, 520) in faces
+    assert (770, 520, 260) in faces
+    assert all(1 not in f for f in faces)
+
+
+def test_composite_multi_rep_exports_merged(tmp_path, capsys):
+    """The stage-4b per-rep decomposition law (R1-R3): rep k = (the
+    k-th pool group, the k-th walk-exact node, that node's record
+    territory); the stage-3d single-rep reading fails absorption on
+    the two-rep store, the per-rep reading exports both reps' boxes
+    merged (24 vertices, 24 triangles, closed)."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-multi-rep"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    assert summary["vertex_count"] == 24
+    assert summary["triangle_count"] == 24
+    assert summary["mesh"]["manifold"] is True
+    assert summary["mesh"]["closed"] is True
+    info = summary["composite"]
+    assert info["stage"] == "identity-per-rep"
+    assert info["reps_decoded"] == 2
+    assert info["reps_exported"] == 2
+    assert info["reps_unexported"] == 0
+    assert info["element_decl"] == 24
+    assert info["node_points"] == 24
+    assert info["facet_records"] == 12
+    assert info["node_bytes"] > 0
+    _, faces = parse_ply(ply_path)
+    # each rep's box exports over its own element space, offset by the
+    # merged written-point base (rep 1 starts at written point 12)
+    assert sum(1 for f in faces if all(i < 12 for i in f)) == 12
+    assert sum(1 for f in faces if all(i >= 12 for i in f)) == 12
+
+
+def test_composite_multi_rep_partial_stays_fail_closed_per_rep(tmp_path, capsys):
+    """A rep whose pool does not absorb stays unexported — no guessing
+    (per-rep fail-closed): rep 1's pool carries a 9th vertex no region
+    re-lists, so only rep 0's box exports and the gap is named."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-multi-rep-partial"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    assert summary["vertex_count"] == 12
+    assert summary["triangle_count"] == 12
+    assert summary["mesh"]["closed"] is True
+    info = summary["composite"]
+    assert info["stage"] == "identity-per-rep"
+    assert info["reps_exported"] == 1
+    assert info["reps_unexported"] == 1
+    assert any("not re-listed" in r for r in info["rep_reasons"])
+
+
+def test_composite_single_rep_node_bytes_in_summary(tmp_path, capsys):
+    """The stage-5 fold-in: ``node_bytes`` rides the composite info
+    block additively (the list node's payload byte length; > 4096
+    marks the big-form family), schema-valid."""
+    code, captured, _ply_path = run_export(tmp_path, capsys, "geometry-composite-law")
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    validate(summary, load_schema("export-summary-v1"))
+    info = summary["composite"]
+    assert isinstance(info["node_bytes"], int)
+    assert info["node_bytes"] <= 4096  # small form

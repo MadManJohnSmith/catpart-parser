@@ -173,6 +173,14 @@ VALID_VARIANTS = (
     "geometry-composite-law-slanted",
     "geometry-composite-law-curve-entries",
     "geometry-composite-law-u16be",
+    # Stage-5 law variants (#34, 2026-11-12): the stage-4b width laws
+    # (u24be for element counts above 65,535; the plane tiebreak over
+    # interleaved families) and the per-rep decomposition (a rep that
+    # does not absorb stays unexported).
+    "geometry-composite-law-u24be",
+    "geometry-composite-law-width-plane",
+    "geometry-composite-law-multi-rep",
+    "geometry-composite-law-multi-rep-partial",
 )
 CORRUPTED_VARIANTS = (
     "bad-magic",
@@ -225,6 +233,10 @@ COMPOSITE_VARIANTS = (
     "geometry-composite-law-slanted",
     "geometry-composite-law-curve-entries",
     "geometry-composite-law-u16be",
+    "geometry-composite-law-u24be",
+    "geometry-composite-law-width-plane",
+    "geometry-composite-law-multi-rep",
+    "geometry-composite-law-multi-rep-partial",
     "geometry-composite-law-walk-mismatch",
     "geometry-composite-law-unabsorbed",
 )
@@ -440,18 +452,24 @@ def _facet_record(marker: int, normal, refs: tuple[int, ...], width: int = 1) ->
     <ty=1> ff``, u32le n, the 12-byte normal when the marker carries
     one, one loop-count byte (k=1, summing to n — the tiling law needs
     count bytes for n > 0, as the corpus 0x41 records show), then the
-    references (u8 lexicographic ranks on the clean stores; u8 or u16be
-    element indices on the composite stores, per the stage-3b width
-    rule)."""
+    references (u8 lexicographic ranks on the clean stores; u8, u16be
+    or — stage-4b, element counts above 65,535 — u24be element indices
+    on the composite stores, per the width rule)."""
     rec = bytes([0x01, marker, 0x01, 0xFF]) + struct.pack("<I", len(refs))
     if normal is not None:
         rec += struct.pack("<fff", *normal)
     if width == 1:
         return rec + bytes([len(refs)]) + bytes(refs)
+    if width == 2:
+        return (
+            rec
+            + bytes([len(refs)])
+            + b"".join(struct.pack(">H", r) for r in refs)
+        )
     return (
         rec
         + bytes([len(refs)])
-        + b"".join(struct.pack(">H", r) for r in refs)
+        + b"".join(struct.pack(">I", r)[1:] for r in refs)
     )
 
 
@@ -496,6 +514,31 @@ def _geometry_box_edges_lex() -> tuple[tuple[int, int], ...]:
 #                                        inside the loop: the stage-3b
 #                                        no-repeated-refs rule picks
 #                                        u16be.
+# - geometry-composite-law-u24be         stage-4b width gap 1: a
+#                                        65,600-element grid (> 65,535)
+#                                        whose face records carry
+#                                        u24be refs (top corners up to
+#                                        65,599) and tile exactly only
+#                                        at width 3 -> the box exports.
+# - geometry-composite-law-width-plane   stage-4b width gap 2: one
+#                                        record whose u8/u16be parses
+#                                        tie on (tiling, repeats, oob)
+#                                        over interleaved filler bytes;
+#                                        the u8 read is nonplanar vs
+#                                        the stored normal, the u16be
+#                                        read coplanar -> the plane
+#                                        tiebreak picks u16be.
+# - geometry-composite-law-multi-rep     stage-4b per-rep law: two
+#                                        reps (pool group k re-lists in
+#                                        the k-th node's region), the
+#                                        stage-3d single-rep reading
+#                                        fails absorption -> both reps
+#                                        export merged.
+# - geometry-composite-law-multi-rep-partial  as above, but rep 1's
+#                                        pool carries a 9th vertex no
+#                                        region re-lists -> rep 1 stays
+#                                        unexported (per-rep fail-
+#                                        closed), rep 0 exports.
 # - geometry-composite-law-walk-mismatch corrupted: the declared write
 #                                        count exceeds what the table
 #                                        encodes -> walk-exact failure
@@ -643,6 +686,95 @@ COMPOSITE_GRID_POOL_WALK = (
 )
 
 
+# --- stage-5 law fixtures (G6 stage 4b integration, #34, 2026-11-12) -----
+
+#: The u24be variant's element space: a 40 x 40 x 41 grid (65,600
+#: elements > 65,535 — a 2-byte ref cannot index the top corners; the
+#: stage-4b width gap 1, 13bb5c0c's law).
+COMPOSITE_U24_SHAPE = (40, 40, 41)
+
+
+def _composite_u24_points():
+    nx, ny, nz = COMPOSITE_U24_SHAPE
+    return [
+        (float(x), float(y), float(z))
+        for x in range(nx)
+        for y in range(ny)
+        for z in range(nz)
+    ]
+
+
+def _composite_u24_element(x: int, y: int, z: int) -> int:
+    nx, ny, nz = COMPOSITE_U24_SHAPE
+    return (x * ny + y) * nz + z
+
+
+#: The u24 grid box's faces over element indices (the 8 corners of the
+#: 0..39 / 0..39 / 0..40 cube; same strip/ring topology as the 10-grid
+#: box, so the export is a closed oriented manifold).  The top corners
+#: exceed 65,535 (max 65,599): only a u24be parse can carry them.
+COMPOSITE_U24_FACES = (
+    (0x4A, (0.0, 0.0, -1.0), (63960, 0, 65559, 1599)),
+    (0x4A, (0.0, 1.0, 0.0), (65599, 65559, 1639, 1599)),
+    (0x4A, (0.0, 0.0, 1.0), (40, 64000, 1639, 65599)),
+    (0x4A, (0.0, -1.0, 0.0), (63960, 64000, 0, 40)),
+    (0x4C, (-1.0, 0.0, 0.0), (0, 40, 1639, 1599)),
+    (0x4C, (1.0, 0.0, 0.0), (63960, 65559, 65599, 64000)),
+)
+
+#: The u24 grid's pool: the box's 8 corners (re-listed verbatim by the
+#: node list; deliberate non-lex walk order, as in the 10-grid).
+COMPOSITE_U24_POOL_WALK = (
+    (0.0, 0.0, 0.0),
+    (39.0, 0.0, 0.0),
+    (0.0, 39.0, 0.0),
+    (39.0, 39.0, 0.0),
+    (0.0, 39.0, 40.0),
+    (39.0, 39.0, 40.0),
+    (0.0, 0.0, 40.0),
+    (39.0, 0.0, 40.0),
+)
+
+
+def _composite_u24_edges() -> tuple[tuple[int, int], ...]:
+    """The box's 12 edges over x <= 38 corners (every index <= 65,535,
+    so the decorative 02 02 edge records stay u16be — the edge-table
+    law's width set; the FACET records carry the >65,535 refs)."""
+    g = _composite_u24_element
+    return (
+        (g(0, 0, 0), g(38, 0, 0)), (g(0, 0, 0), g(0, 39, 0)),
+        (g(0, 0, 0), g(0, 0, 40)), (g(38, 0, 0), g(38, 39, 0)),
+        (g(38, 0, 0), g(38, 0, 40)), (g(0, 39, 0), g(38, 39, 0)),
+        (g(0, 39, 0), g(0, 39, 40)), (g(0, 0, 40), g(38, 0, 40)),
+        (g(0, 0, 40), g(38, 0, 40)), (g(38, 39, 0), g(38, 39, 40)),
+        (g(38, 39, 0), g(0, 39, 40)), (g(38, 0, 40), g(38, 39, 40)),
+    )
+
+
+#: The narrow-width tiebreak fixture's record (stage-4b width gap 2,
+#: ef30cb2f's law): u16be refs (10, 260, 520, 770 — all z=0, coplanar
+#: against the stored normal (0,0,1)) whose byte stream ALSO parses as
+#: u8 refs (0, 10, 1, 4 — the high/low interleaving, nonplanar: z =
+#: 0,0,1,4).  Three interleaved filler bytes follow, so neither parse
+#: tiles onto the next header and u8/u16be tie on (tiling, repeats,
+#: oob) — the committed narrower-width rule picked the u8 misread; the
+#: stage-4b plane tiebreak picks u16be.
+COMPOSITE_WIDTH_PLANE_REFS = (10, 260, 520, 770)
+COMPOSITE_WIDTH_PLANE_NORMAL = (0.0, 0.0, 1.0)
+COMPOSITE_WIDTH_PLANE_FILLER = b"\x0c\x0d\x0e"
+
+
+def _composite_width_plane_record() -> bytes:
+    return (
+        bytes([0x01, 0x4A, 0x01, 0xFF])
+        + struct.pack("<I", len(COMPOSITE_WIDTH_PLANE_REFS))
+        + struct.pack("<fff", *COMPOSITE_WIDTH_PLANE_NORMAL)
+        + bytes([len(COMPOSITE_WIDTH_PLANE_REFS)])
+        + b"".join(struct.pack(">H", r) for r in COMPOSITE_WIDTH_PLANE_REFS)
+        + COMPOSITE_WIDTH_PLANE_FILLER
+    )
+
+
 def _composite_elements(points, skip_slots=()):
     """(slot_value, point_or_None) per element in region order.
 
@@ -743,6 +875,11 @@ def _composite_store(variant: str) -> bytes:
     """A composite store: pool + edge group + the list node (point
     region under the stage-3b table law) + facet records whose
     references are 0-based element indices in region order."""
+    if variant in (
+        "geometry-composite-law-multi-rep",
+        "geometry-composite-law-multi-rep-partial",
+    ):
+        return _composite_multi_rep_store(variant)
     if variant == "geometry-composite-law-big":
         points = _composite_grid_points()
         elements = _composite_elements(points)
@@ -769,6 +906,31 @@ def _composite_store(variant: str) -> bytes:
             + bytes([4, 0, 0, 0, 0])
             + bytes([0x00, 0x01, 0x01, 0x02, 0x03, 0x01, 0x03, 0x02])
         )
+        write_count_override = None
+    elif variant == "geometry-composite-law-u24be":
+        # The stage-4b u24be width law: 65,600 elements (> 65,535 — a
+        # 2-byte ref cannot index the top corners at 65,599); the box's
+        # face records carry u24be refs and tile exactly only at
+        # width 3.
+        points = _composite_u24_points()
+        elements = _composite_elements(points)
+        pool_walk = COMPOSITE_U24_POOL_WALK
+        faces = COMPOSITE_U24_FACES
+        width = 3
+        extra_record = None
+        write_count_override = None
+    elif variant == "geometry-composite-law-width-plane":
+        # The stage-4b plane tiebreak: the extra record's u8/u16be
+        # candidates tie on (tiling, repeats, oob) — three interleaved
+        # filler bytes keep both off the next header — and the u8 read
+        # is nonplanar against the stored normal while the u16be read
+        # is coplanar, so the plane law picks u16be.
+        points = _composite_grid_points()
+        elements = _composite_elements(points)
+        pool_walk = COMPOSITE_GRID_POOL_WALK
+        faces = COMPOSITE_GRID_FACES
+        width = 2
+        extra_record = _composite_width_plane_record()
         write_count_override = None
     elif variant == "geometry-composite-law-slanted":
         points = list(COMPOSITE_SLANTED_POINTS)
@@ -826,7 +988,20 @@ def _composite_store(variant: str) -> bytes:
         pool_walk = COMPOSITE_POOL_WALK + ((0.0, 0.0, 999.5),)
 
     node_payload = _composite_node_payload(elements, write_count_override)
-    if variant in ("geometry-composite-law-big", "geometry-composite-law-u16be"):
+    if variant == "geometry-composite-law-u24be":
+        # The u24 grid box's 12 edges over x <= 38 corners (every index
+        # <= 65,535: the decorative 02 02 edge records stay u16be — the
+        # edge-table law's width set; the FACET records carry the
+        # >65,535 refs the u24be law exists for).
+        edge_records = b"".join(
+            b"\x02\x02" + struct.pack(">HH", a, b)
+            for a, b in _composite_u24_edges()
+        )
+    elif variant in (
+        "geometry-composite-law-big",
+        "geometry-composite-law-u16be",
+        "geometry-composite-law-width-plane",
+    ):
         # The grid box's 12 edges as u16be element-index pairs (the F8
         # 6-byte 02 02 record form; grid corner indices).
         g = _composite_grid_element
@@ -864,6 +1039,77 @@ def _composite_store(variant: str) -> bytes:
         body_parts.append(_facet_record(marker, normal, refs, width=width))
     if extra_record is not None:
         body_parts.append(extra_record)
+    body = b"".join(body_parts)
+
+    catalog_len = NESTED_CATALOG_LEN
+    d8n = 32 + len(body)
+    header = (
+        MAGIC
+        + struct.pack(">II", d8n, catalog_len)
+        + b"\xff" * 8
+        + b"\x00" * 8
+    )
+    catalog = NESTED_CB0001 + struct.pack(
+        ">7I", 1, 0, 0xE7, 0xE7, 0, 0, catalog_len
+    ) + TRAILER_MARKER
+    tail126 = registration_block() + b"\x00" * (126 - 41)
+    return header + body + catalog + tail126
+
+
+def _composite_multi_rep_store(variant: str) -> bytes:
+    """A two-rep composite store (stage-4b per-rep law, #34).
+
+    Rep k = (the k-th ``01 06`` pool group, the k-th token-bearing list
+    node, the facet records in that node's territory).  Rep 0 is the
+    12-point box; rep 1 the same box translated +200 in x with its own
+    pool group and its own node — each pool re-lists verbatim in
+    exactly its own rep's region (the body-order diagonal).  The
+    stage-3d single-rep reading fails the absorption gate here (the
+    pool concatenates BOTH groups, rep 0's region re-lists only its
+    own); the per-rep reading exports both reps' geometry merged.
+
+    ``geometry-composite-law-multi-rep-partial`` adds a 9th vertex to
+    rep 1's pool group that no region re-lists: rep 1 stays unexported
+    (per-rep fail-closed — a rep that does not absorb is not guessed),
+    rep 0 exports alone.
+    """
+    pts0 = list(COMPOSITE_POINTS)
+    pts1 = [(x + 200.0, y, z) for x, y, z in COMPOSITE_POINTS]
+    pool0 = COMPOSITE_POOL_WALK
+    pool1 = tuple((x + 200.0, y, z) for x, y, z in COMPOSITE_POOL_WALK)
+    if variant == "geometry-composite-law-multi-rep-partial":
+        # the un-absorbed 9th vertex of rep 1's pool group
+        pool1 = pool1 + ((999.5, 10.0, 0.0),)
+    elements0 = _composite_elements(pts0)
+    elements1 = _composite_elements(pts1)
+    body_parts = [
+        NESTED_FULL_WRAP
+        + NESTED_POOL_SUBKIND
+        + bytes([len(pool0)])
+        + b"".join(
+            NESTED_VREC + struct.pack("<fff", *v) for v in pool0
+        ),
+        NESTED_FULL_WRAP
+        + NESTED_POOL_SUBKIND
+        + bytes([len(pool1)])
+        + b"".join(
+            NESTED_VREC + struct.pack("<fff", *v) for v in pool1
+        ),
+        # the edge group: the box's 12 edges over rep 0's element
+        # indices (decorative; edge tables do not triangulate)
+        NESTED_FULL_WRAP
+        + NESTED_EDGE_SUBKIND
+        + bytes([12])
+        + b"".join(
+            b"\x02\x02" + struct.pack(">BB", a, b) for a, b in COMPOSITE_EDGES
+        ),
+        b"\x04\x04\xfd\xff" + _composite_node_payload(elements0),
+    ]
+    for marker, normal, refs in COMPOSITE_FACES:
+        body_parts.append(_facet_record(marker, normal, refs, width=1))
+    body_parts.append(b"\x04\x04\xfd\xff" + _composite_node_payload(elements1))
+    for marker, normal, refs in COMPOSITE_FACES:
+        body_parts.append(_facet_record(marker, normal, refs, width=1))
     body = b"".join(body_parts)
 
     catalog_len = NESTED_CATALOG_LEN

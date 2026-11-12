@@ -52,11 +52,22 @@ stage-3b table law dated 2026-11-11, byte-measured on the corpus):
   gate: multi-plane fillet/bevel strips are legitimate geometry where
   whole-loop coplanarity does not apply (stage-3b loop battery:
   coplanar + skip-ref + multi-plane = 98.3% of testable loops).
-- Record width (stage-3b rule): per-record u8/u16be chosen by
+- Record width (stage-3b rule, extended 2026-11-11 stage 4b,
+  integrated 2026-11-12 stage 5): per-record u8/u16be/u24be chosen by
   end-alignment onto the next header, ranked exact tiling first, then
   **no-repeated-refs-within-a-loop** (a u8 misread of a u16be record
   repeats refs inside the loop), then no out-of-range refs, then the
-  narrower width.
+  **loop plane law** (a candidate whose normal-carrying loops are
+  non-coplanar against the record's stored normal loses to one that is
+  coplanar — the narrow-width tiebreak over interleaved non-STRIP_RE
+  families, where u8 and u16be tie on tiling/repeats/oob and the
+  committed rule picked the narrower misread), then the narrower
+  width.  u24be enters for element counts above 65,535 (a 2-byte ref
+  cannot index them; 13bb5c0c: element_count 236,385, records tile
+  exactly at u24be, byte-verified — docs/evidence/
+  2026-11-11-per-rep-and-width-laws.md R10/R11).  The plane law is a
+  tiebreak inside the width rank, not an export gate (the multi-plane
+  fillet/bevel strips stay legitimate geometry, stage-3d decision).
 
 Fail-closed ladder (refined 2026-11-11 stage 3d, not abandoned): a
 store exports only when its table walk is exact (layout fits, the walk
@@ -289,18 +300,30 @@ def decode_node_points(payload: bytes, element_count: int):
     return points, len(elements) - len(points), info
 
 
-def parse_strip_records(data, lo: int, hi: int, element_count: int):
-    """Every strip record with the width disambiguated (stage-3b rule).
+def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=None):
+    """Every strip record with the width disambiguated (stage-3b rule,
+    extended 2026-11-11 stage 4b: u24be candidate + the loop plane
+    tiebreak; integrated 2026-11-12 stage 5, #34).
 
-    Candidate parses: width u8/u16be x count-byte k (0..16) summing to
-    n, ending at or before the next header.  Rank: exact tiling, then
-    no-repeated-refs-within-a-loop, then no out-of-range refs, then the
-    narrower width (the tiling law first; the no-repeat rule resolves
-    the u8-misread of u16be records whose next header is not adjacent —
-    stage-3b, 2026-11-11).  Returns ``(records, n_headers)`` where each
-    record is ``(offset, marker, normal, counts, refs, width)``.
+    Candidate parses: width u8/u16be/u24be x count-byte k (0..16)
+    summing to n, ending at or before the next header.  Rank: exact
+    tiling, then no-repeated-refs-within-a-loop, then no out-of-range
+    refs, then **non-coplanar normal-carrying loops** (only computed
+    when ``elements`` — the decoded element space the refs index — is
+    passed; a candidate whose loops are non-coplanar against the
+    record's stored normal loses to one that is coplanar; without
+    ``elements`` the rank is the committed stage-3b one), then the
+    narrower width.  u24be exists for element counts above 65,535
+    (2-byte refs cannot index them; 13bb5c0c byte-verified: records
+    tile exactly at u24be).  Returns ``(records, n_headers)`` where
+    each record is ``(offset, marker, normal, counts, refs, width)``.
     """
     hdrs = [m.start() for m in STRIP_RE.finditer(data, lo, hi)]
+    skips = (
+        {i for i, (_v, pt) in enumerate(elements) if pt is None}
+        if elements is not None
+        else None
+    )
     out = []
     for i, o in enumerate(hdrs):
         nxt = hdrs[i + 1] if i + 1 < len(hdrs) else hi
@@ -319,7 +342,7 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int):
                 continue
             normal = struct.unpack("<fff", data[o + hlen + 4 : o + hlen + 16])
         best = None
-        for width in (1, 2):
+        for width in (1, 2, 3):
             for k in range(0, MAX_LOOP_COUNTS + 1):
                 if base + k > nxt:
                     break
@@ -344,10 +367,26 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int):
                         repeats = True
                     off += c
                 oob = any(r >= element_count for r in refs)
+                nonplanar = 0
+                if normal is not None and elements is not None:
+                    off = 0
+                    for c in counts:
+                        loop = refs[off : off + c]
+                        off += c
+                        if not loop:
+                            continue
+                        if any(
+                            r in skips or r >= len(elements) for r in loop
+                        ):
+                            continue
+                        st, _res = _loop_plane_status(loop, normal, elements)
+                        if st == "nonplanar":
+                            nonplanar += 1
                 rank = (
                     0 if end == nxt else 1,
                     1 if repeats else 0,
                     1 if oob else 0,
+                    nonplanar,
                     width,
                     k,
                 )
@@ -358,6 +397,35 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int):
         _rank, counts, refs, width = best
         out.append((o, mk, normal, counts, refs, width))
     return out, len(hdrs)
+
+
+# Plane tolerance of the committed loop battery (stage 3b): the
+# per-coordinate normal distance bound; f32 coordinate rounding ~1e-4.
+PLANE_TOL = 2e-3
+
+
+def _loop_plane_status(loop, normal, elements):
+    """Coplanarity of one fully-resolved loop against the record's
+    stored normal (the stage-3b battery criterion; ported from the
+    stage-4b width re-test, ``not_manifold_audit.py``).  Returns
+    ``("coplanar", 0.0)`` or ``("nonplanar", max_distance)``."""
+    nn = (normal[0] ** 2 + normal[1] ** 2 + normal[2] ** 2) ** 0.5
+    if nn == 0:
+        return "nonplanar", 0.0
+    pts = [elements[r][1] for r in loop]
+    p0 = pts[0]
+    worst = 0.0
+    for p in pts[1:]:
+        d = (
+            (p[0] - p0[0]) * normal[0]
+            + (p[1] - p0[1]) * normal[1]
+            + (p[2] - p0[2]) * normal[2]
+        ) / nn
+        if abs(d) > worst:
+            worst = abs(d)
+        if abs(d) > PLANE_TOL:
+            return "nonplanar", abs(d)
+    return "coplanar", worst
 
 
 def _triangulate(elements, records):
@@ -434,7 +502,8 @@ def _triangulate(elements, records):
 
 
 def decode_composite_store(data, span, groups, kinds):
-    """Decode one composite store span under the identity law (stage 3d).
+    """Decode one composite store span under the identity law (stage 3d;
+    per-rep decomposition added 2026-11-12 stage 5, #34).
 
     Returns ``(points, triangles, degenerate, info)`` where ``points``
     is the written point list in region order (the exported vertices)
@@ -443,9 +512,26 @@ def decode_composite_store(data, span, groups, kinds):
     when the law does not cover the store: no token-bearing list node
     (N1), a layout that does not fit the P1t law, a walk-exact failure
     (the U3-variant second layout family), non-finite coordinates, an
-    unabsorbed pool (the node list missing pool vertices), facet
-    references beyond the element space, or no exportable facet
-    records' families at all.
+    unabsorbed pool with no per-rep reading either, facet references
+    beyond the element space, or no exportable facet records' families
+    at all.
+
+    Stage-5 per-rep decomposition (stage-4b law, 2026-11-11): when the
+    single-rep reading fails the pool-absorption gate, the store body
+    may be a SEQUENCE of reps — rep k = (the k-th ``01 06`` pool
+    wrapper, the k-th walk-exact token-bearing list node, the strip
+    records in that node's territory) — and the k-th pool re-lists
+    verbatim (f32-exact, or within :data:`NOISE_REL` relative — the
+    measured double-rounding noise) in the k-th rep's region.  The
+    stage-3d "unabsorbed" family is the single-rep reading applied to
+    multi-rep stores (docs/evidence/2026-11-11-per-rep-and-width-laws.md
+    R1-R5).  Per rep: absorption, the M2b identity refs gate against
+    the REP's element count, and triangulation of the rep's territory
+    records; merged meshes concatenate the exported reps' written
+    points (disjoint element spaces, so triangle indices offset per
+    rep).  Fail-closed per rep: a rep whose pool does not absorb, or
+    whose gated references leave its own element space, stays
+    unexported with the reason named in ``info`` — no guessing.
     """
     lo, hi = span.body_lo, span.body_hi
     if not any(k == b"\x01\x02" or k[:1] == b"\xff" for k in kinds):
@@ -471,20 +557,17 @@ def decode_composite_store(data, span, groups, kinds):
     pool_set = set(poolv)
     missing = pool_set - set(points)
     if missing:
-        raise ExportError(
-            "undecoded-variant",
-            f"node list does not re-list the pool: {len(missing)} of "
-            f"{len(pool_set)} pool vertices absent from the decoded "
-            "point region (unabsorbed variant; the merge law's pool "
-            "absorption is not established there)",
-        )
+        # Stage-5 per-rep decomposition (stage-4b law): try the
+        # sequence-of-reps reading before failing closed.
+        return _decode_per_rep(data, lo, hi, groups, len(missing), len(pool_set))
 
-    records, n_hdrs = parse_strip_records(data, lo, hi, elem_decl)
+    records, n_hdrs = parse_strip_records(
+        data, lo, hi, elem_decl, elements=elements
+    )
     # Refs are 0-based element indices: every gated family's references
     # must resolve inside the element space (the exported markers plus
     # the normal-carrying 0x49, the stage-2c gate set).
-    gated = (0x42, 0x49, 0x4A, 0x4C)
-    all_refs = [r for _o, mk, _n, _c, refs, _w in records if mk in gated for r in refs]
+    all_refs = [r for _o, mk, _n, _c, refs, _w in records if mk in GATED for r in refs]
     if all_refs:
         mx = max(all_refs)
         if mx >= elem_decl:
@@ -512,6 +595,205 @@ def decode_composite_store(data, span, groups, kinds):
         "facet_candidates": n_hdrs,
         "facet_records": len(records),
         "skipped_markers": skipped_markers,
+        # stage-5 fold-in (reconciliation note section 5): the list
+        # node's payload byte length — lets big/small form be derived
+        # from summaries/CSVs (big > 4096 B).
+        "node_bytes": len(payload),
+        **loop_stats,
+    }
+    return points, triangles, degenerate, info
+
+
+# The gated families whose references must resolve in-bounds (the
+# exported markers plus the normal-carrying 0x49, the stage-2c gate set).
+GATED = (0x42, 0x49, 0x4A, 0x4C)
+
+# Noise-aware absorption tolerance (stage-4b R3): a pool vertex
+# "re-listed with noise" matches a written point within NOISE_REL
+# relative, per coordinate, scaled by max(1, |coord|).  Measured noise
+# <= 1.25e-08 relative; the smallest genuinely-different coordinate
+# pair measured is 4 decades above it.
+NOISE_REL = 1e-5
+
+
+def _tol_match(v, pts):
+    """Noise-aware re-listing test: some written point matches ``v``
+    within :data:`NOISE_REL` per coordinate.  Returns the best
+    (smallest) relative delta, or ``None`` when ``pts`` is empty."""
+    scale = max(1.0, abs(v[0]), abs(v[1]), abs(v[2]))
+    best = None
+    for p in pts:
+        d = max(
+            abs(p[0] - v[0]) / scale,
+            abs(p[1] - v[1]) / scale,
+            abs(p[2] - v[2]) / scale,
+        )
+        if best is None or d < best:
+            best = d
+    return best
+
+
+def _scan_token_nodes(data, lo: int, hi: int):
+    """Every token-bearing list node in [lo, hi) (stage-4b scan).
+
+    Returns ``(pos, payload, element_count, edge_bound)`` per node in
+    body order — unlike :func:`find_list_node` (largest payload BEFORE
+    the first strip header — the stage-3d single-rep window), this
+    scans the whole body: on multi-rep stores the k-th rep's node sits
+    after the previous rep's records.
+    """
+    nodes = []
+    pos = lo
+    while True:
+        pos = data.find(NODE_MAGIC, pos, hi)
+        if pos < 0:
+            break
+        end = data.find(NODE_MAGIC, pos + 4, hi)
+        if end < 0:
+            end = hi
+        payload = bytes(data[pos + 4 : end])
+        tok = payload.find(LIST_TOKEN)
+        if 0 <= tok <= 64:
+            p = tok + 5
+            try:
+                c1, p = read_count(payload, p)
+                c2, p = read_count(payload, p)
+            except (IndexError, struct.error):
+                pos += 1
+                continue  # unreadable counts: not a node
+            if 0 < c1 <= MAX_ELEMENT_COUNT:
+                nodes.append((pos, payload, c1, c2))
+        pos += 1
+    return nodes
+
+
+def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool):
+    """The sequence-of-reps reading (stage-4b per-rep law, stage-5
+    integration).  Rep k = (pool group k, the k-th walk-exact token
+    node, that node's record territory ``[region_end_k, node_{k+1})``);
+    the k-th pool re-lists verbatim (or within :data:`NOISE_REL`) in
+    the k-th rep's region.  A rep exports only when its pool absorbs
+    and its gated references resolve in-bounds against its OWN element
+    count; failing reps stay unexported with the reason named.  When
+    no rep exports, raises the stage-3d ``unabsorbed`` classification
+    with the per-rep residue named (fail-closed, no guessing)."""
+    decoded = []
+    for npos, payload, c1, _c2 in _scan_token_nodes(data, lo, hi):
+        try:
+            elements, info = decode_region(payload, c1)
+        except ExportError:
+            continue  # walk-exact failure: the rep has no decoded region
+        decoded.append(
+            {
+                "pos": npos,
+                "payload": payload,
+                "elem": c1,
+                "elements": elements,
+                "pts": [pt for _v, pt in elements if pt is not None],
+                # absolute end of the point region (the territory start)
+                "region_end": npos + 4 + info["walk_end"],
+                "write_count": info["write_count"],
+                "table_bytes": info["table_bytes"],
+            }
+        )
+    if not decoded:
+        raise ExportError(
+            "undecoded-variant",
+            f"node list does not re-list the pool: {n_missing} of "
+            f"{n_pool} pool vertices absent from the decoded point "
+            "region (unabsorbed variant; the per-rep decomposition "
+            "finds no walk-exact rep region either)",
+        )
+    points: list = []
+    triangles: list = []
+    degenerate = 0
+    loop_stats = {"loops_exported": 0, "loops_curve_entry": 0}
+    skipped_markers: dict[int, int] = {}
+    facet_candidates = 0
+    facet_records = 0
+    write_count = 0
+    table_bytes = 0
+    element_decl = 0
+    curve_entries = 0
+    node_bytes = 0
+    reps_unexported = []
+    for k, d in enumerate(decoded):
+        node_bytes += len(d["payload"])
+        gv = groups[k].vertices if k < len(groups) else ()
+        distinct = set(gv)
+        pts_set = set(d["pts"])
+        unmatched = [v for v in distinct if v not in pts_set]
+        if unmatched:
+            # noise-aware absorption (stage-4b R3): the verbatim misses
+            # may be double-rounding re-listings
+            unmatched = [
+                v
+                for v in unmatched
+                if (best := _tol_match(v, d["pts"])) is None
+                or best > NOISE_REL
+            ]
+        if unmatched:
+            reps_unexported.append(
+                f"rep {k}: pool group {k} not re-listed "
+                f"({len(unmatched)} of {len(distinct)} vertices absent "
+                "from the rep's region; per-rep absorption not "
+                "established)"
+            )
+            continue
+        nxt = decoded[k + 1]["pos"] if k + 1 < len(decoded) else hi
+        records, n_hdrs = parse_strip_records(
+            data, d["region_end"], nxt, d["elem"], elements=d["elements"]
+        )
+        grefs = [
+            r for _o, mk, _n, _c, refs, _w in records if mk in GATED for r in refs
+        ]
+        if grefs and max(grefs) >= d["elem"]:
+            mx = max(grefs)
+            reps_unexported.append(
+                f"rep {k}: facet references beyond the rep's element "
+                f"space (max ref {mx} >= element count {d['elem']}, "
+                "M2b identity per rep)"
+            )
+            continue
+        base = len(points)
+        tri_k, deg_k, stats_k = _triangulate(d["elements"], records)
+        points += d["pts"]
+        triangles += [(a + base, b + base, c + base) for a, b, c in tri_k]
+        degenerate += deg_k
+        loop_stats["loops_exported"] += stats_k["loops_exported"]
+        loop_stats["loops_curve_entry"] += stats_k["loops_curve_entry"]
+        facet_candidates += n_hdrs
+        facet_records += len(records)
+        write_count += d["write_count"]
+        table_bytes += d["table_bytes"]
+        element_decl += d["elem"]
+        curve_entries += len(d["elements"]) - len(d["pts"])
+        for _o, mk, _n, _c, _refs, _w in records:
+            if mk not in (0x42, 0x4A, 0x4C):
+                skipped_markers[mk] = skipped_markers.get(mk, 0) + 1
+    if not points:
+        raise ExportError(
+            "undecoded-variant",
+            f"node list does not re-list the pool: {n_missing} of "
+            f"{n_pool} pool vertices absent from the decoded point "
+            "region (unabsorbed variant; the per-rep decomposition "
+            f"exports no rep: {'; '.join(reps_unexported) or 'no reps'})",
+        )
+    info = {
+        "stage": "identity-per-rep",
+        "element_decl": element_decl,
+        "node_points": len(points),
+        "curve_entries": curve_entries,
+        "write_count": write_count,
+        "table_bytes": table_bytes,
+        "facet_candidates": facet_candidates,
+        "facet_records": facet_records,
+        "skipped_markers": skipped_markers,
+        "node_bytes": node_bytes,
+        "reps_decoded": len(decoded),
+        "reps_exported": len(decoded) - len(reps_unexported),
+        "reps_unexported": len(reps_unexported),
+        "rep_reasons": reps_unexported,
         **loop_stats,
     }
     return points, triangles, degenerate, info
