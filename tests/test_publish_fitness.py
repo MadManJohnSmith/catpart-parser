@@ -535,3 +535,30 @@ def test_empty_site_dir_publishes_the_historical_tree(tmp_path: Path, monkeypatc
         "fitness-history.json",
         "fitness-latest.json",
     ]
+
+
+@requires_git
+def test_format_docs_publish_under_format_for_the_portal(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """docs/format/*.md rides along under format/ so the site can render it."""
+    origin = tmp_path / "origin.git"
+    run_git("init", "--bare", str(origin))
+    repo = tmp_path / "repo"
+    write_history(repo, synthetic_history())
+    write_site(repo)
+    docs = repo / publish.FORMAT_DOCS_DIRNAME
+    docs.mkdir(parents=True)
+    (docs / "header.md").write_text("# Header\n\nbyte-ranged laws.\n", encoding="utf-8")
+    (docs / "notes.txt").write_text("non-markdown, not published\n", encoding="utf-8")
+    run_git("init", str(repo))
+    monkeypatch.chdir(repo)
+
+    assert publish.main(["--remote", str(origin)]) == 0
+    names = run_git("-C", str(origin), "ls-tree", "-r", "--name-only", "refs/heads/gh-pages")
+    assert "format/header.md" in names.splitlines()
+    assert "format/notes.txt" not in names.splitlines()
+    doc = run_git("-C", str(origin), "show", "refs/heads/gh-pages:format/header.md")
+    assert doc == "# Header\n\nbyte-ranged laws."  # run_git strips the trailing newline
+    out = capsys.readouterr().out
+    assert "+ 3 site file(s)" in out and "+ 1 format doc(s)" in out

@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Export gallery — catpart-parser</title>
+<meta name="description" content="Real catpart-export output rendered in 3D: corpus-free fixtures and the G3 precedent part, with the summary JSON each run emits.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1120'/%3E%3Cpath d='M22 10a8 8 0 1 0 0 12' stroke='%2338e1ff' stroke-width='3.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page"><div class="wrap">
+
+  <nav data-page="gallery"></nav>
+
+  <div class="page-head">
+    <div class="crumb">catpart-export · real decoder output</div>
+    <h1>What the decoder sees</h1>
+    <p class="lead">Each mesh below is the actual output of <code>catpart-export</code> — either a
+    corpus-free synthetic fixture from <code>tests/fixtures_gen.py</code> (the suite never needs the
+    real corpus) or the committed G3 precedent part. The binary PLY the CLI wrote is parsed
+    verbatim into this page; drag to orbit, scroll to zoom.</p>
+  </div>
+
+  <div class="mesh-layout">
+    <div class="mesh-stage">
+      <canvas id="stage"></canvas>
+      <div class="mesh-hint" id="mesh-hint">drag to orbit · wheel to zoom</div>
+    </div>
+    <div class="mesh-side">
+      <div class="mesh-pick" id="mesh-pick"></div>
+      <div class="mesh-meta" id="mesh-meta"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>The inspect half of the story</h2>
+    <p class="lede">Before any geometry, <code>catpart-inspect</code> reads the framing: header laws,
+    the container-name table, the save-time identity. Below, its complete real schema-v1 stdout for
+    the big-grid fixture.</p>
+    <div class="mesh-inspect">
+      <pre id="inspect-json">…</pre>
+    </div>
+  </div>
+
+  <footer data-common></footer>
+
+</div></div>
+
+<script src="gallery-data.js"></script>
+<script src="common.js"></script>
+<script>
+window.INSPECT_SAMPLE = {"schema_version":1,"magic":"V5_CFV2","header_dword":256,"header_dword12":7534,"ff8_at_16_24":true,"header_dword16":null,"header_dword20":null,"file_size":7790,"detected_version":"V5R21SP0HF0","kind":"part","document_name":"big-grid-demo.CATPart","containers":[{"name":"CATPrtCont","parent_name":"CATProdCont","table_id":196609,"index":1,"stream_id":1,"weight":11,"guid":"00000000000000000000000000001ae0"},{"name":"CATFeatCont","parent_name":"CATPrtCont","table_id":196609,"index":2,"stream_id":6,"weight":11,"guid":"00000000000000000000000000001ae1"},{"name":"CGMGeom","parent_name":"CATContainer","table_id":196609,"index":3,"stream_id":11,"weight":11,"guid":"00000000000000000000000000001ae2"}],"trailer":{"a":1,"registration_offset":7713,"c":231,"d":231,"e":0,"f":0,"tail_region_length":7534,"registration":{"tag":"N","company":"DASSAULT-SYSTEMES","product":"CATIA","code":"041803"}}};
+</script>
+<script>
+(function () {
+  var DATA = window.GALLERY_DATA || { meshes: [] };
+  var pick = document.getElementById("mesh-pick");
+  var meta = document.getElementById("mesh-meta");
+  var canvas = document.getElementById("stage");
+  var ctx = canvas.getContext("2d");
+
+  var state = { yaw: 0.7, pitch: 0.45, zoom: 1, mesh: null, dragging: false, lx: 0, ly: 0, auto: true };
+
+  pick.innerHTML = DATA.meshes.map(function (m, i) {
+    return '<button data-i="' + i + '">' + m.source + "</button>";
+  }).join("");
+
+  function fmt(n) { return n.toLocaleString("en-US"); }
+
+  function select(i) {
+    state.mesh = DATA.meshes[i];
+    state.yaw = 0.7; state.pitch = 0.45; state.zoom = 1; state.auto = true;
+    pick.querySelectorAll("button").forEach(function (b, k) {
+      b.classList.toggle("active", k === i);
+    });
+    var s = state.mesh.summary || {};
+    var warn = (s.warnings || []).map(function (w) { return w.class; }).join(", ") || "none";
+    meta.innerHTML =
+      '<div class="big">' + fmt(s.vertex_count || state.mesh.vertices.length) +
+      " verts · " + fmt(s.triangle_count || state.mesh.triangles.length) + " tris</div>" +
+      "<div>bounding box " + JSON.stringify(s.bounding_box || "-") + "</div>" +
+      "<div>warnings: " + warn + "</div>" +
+      "<div>" + state.mesh.note + "</div>" +
+      "<pre>" + JSON.stringify(s).replace(/</g, "&lt;") + "</pre>";
+    var ins = document.getElementById("inspect-json");
+    if (window.INSPECT_SAMPLE) ins.textContent = JSON.stringify(window.INSPECT_SAMPLE, null, 2);
+  }
+
+  pick.addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-i]");
+    if (b) select(+b.getAttribute("data-i"));
+  });
+
+  canvas.addEventListener("pointerdown", function (e) {
+    state.dragging = true; state.lx = e.clientX; state.ly = e.clientY; state.auto = false;
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener("pointermove", function (e) {
+    if (!state.dragging) return;
+    state.yaw += (e.clientX - state.lx) * 0.008;
+    state.pitch += (e.clientY - state.ly) * 0.008;
+    state.pitch = Math.max(-1.4, Math.min(1.4, state.pitch));
+    state.lx = e.clientX; state.ly = e.clientY;
+  });
+  canvas.addEventListener("pointerup", function () { state.dragging = false; });
+  canvas.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    state.zoom *= e.deltaY > 0 ? 0.92 : 1.08;
+    state.zoom = Math.max(0.3, Math.min(6, state.zoom));
+    state.auto = false;
+  }, { passive: false });
+
+  function resize() {
+    var dpr = window.devicePixelRatio || 1;
+    var w = canvas.clientWidth, h = canvas.clientHeight || 460;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener("resize", resize);
+
+  function project(v, w, h) {
+    var m = state.mesh;
+    var cosY = Math.cos(state.yaw), sinY = Math.sin(state.yaw);
+    var cosX = Math.cos(state.pitch), sinX = Math.sin(state.pitch);
+    var x = v[0] * cosY - v[2] * sinY;
+    var z = v[0] * sinY + v[2] * cosY;
+    var y = v[1] * cosX - z * sinX;
+    z = v[1] * sinX + z * cosX;
+    return [x, y, z];
+  }
+
+  function draw() {
+    var w = canvas.clientWidth, h = canvas.clientHeight || 460;
+    ctx.clearRect(0, 0, w, h);
+    var m = state.mesh;
+    if (!m) return;
+    if (state.auto) state.yaw += 0.0035;
+
+    var vs = m._proj || (m._proj = []);
+    var bb = m._bounds || (m._bounds = (function () {
+      var lo = [1e30, 1e30, 1e30], hi = [-1e30, -1e30, -1e30];
+      m.vertices.forEach(function (v) {
+        for (var k = 0; k < 3; k++) { if (v[k] < lo[k]) lo[k] = v[k]; if (v[k] > hi[k]) hi[k] = v[k]; }
+      });
+      var c = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
+      var r = 0;
+      m.vertices.forEach(function (v) {
+        var d = Math.hypot(v[0] - c[0], v[1] - c[1], v[2] - c[2]);
+        if (d > r) r = d;
+      });
+      return { c: c, r: r || 1 };
+    })());
+
+    var scale = Math.min(w, h) * 0.42 * state.zoom / bb.r;
+    var cx = w / 2, cy = h / 2;
+    var cosY = Math.cos(state.yaw), sinY = Math.sin(state.yaw);
+    var cosX = Math.cos(state.pitch), sinX = Math.sin(state.pitch);
+    var zs = new Array(vs.length);
+    for (var i = 0; i < m.vertices.length; i++) {
+      var v = m.vertices[i];
+      var x0 = (v[0] - bb.c[0]), y0 = (v[1] - bb.c[1]), z0 = (v[2] - bb.c[2]);
+      var x = x0 * cosY - z0 * sinY;
+      var z = x0 * sinY + z0 * cosY;
+      var y = y0 * cosX - z * sinX;
+      z = y0 * sinX + z * cosX;
+      vs[i] = [cx + x * scale, cy - y * scale, z];
+      zs[i] = z;
+    }
+
+    // unreferenced pool vertices as a faint point cloud
+    var used = m._used || (m._used = (function () {
+      var u = new Uint8Array(m.vertices.length);
+      m.triangles.forEach(function (t) { for (var k = 0; k < 3; k++) u[t[k]] = 1; });
+      return u;
+    })());
+    ctx.fillStyle = "rgba(139,123,255,0.35)";
+    for (i = 0; i < vs.length; i++) {
+      if (!used[i]) { ctx.fillRect(vs[i][0] - 1, vs[i][1] - 1, 2, 2); }
+    }
+
+    var order = m.triangles.map(function (t, i) {
+      return [i, (zs[t[0]] + zs[t[1]] + zs[t[2]]) / 3];
+    }).sort(function (a, b) { return b[1] - a[1]; });
+
+    var light = [0.4, 0.8, 0.45];
+    var ll = Math.hypot(light[0], light[1], light[2]);
+    light = [light[0] / ll, light[1] / ll, light[2] / ll];
+
+    for (i = 0; i < order.length; i++) {
+      var t = m.triangles[order[i][0]];
+      var A = vs[t[0]], B = vs[t[1]], C = vs[t[2]];
+      var e1 = [B[0] - A[0], B[1] - A[1], B[2] - A[2]];
+      var e2 = [C[0] - A[0], C[1] - A[1], C[2] - A[2]];
+      var nx = e1[1] * e2[2] - e1[2] * e2[1];
+      var ny = e1[2] * e2[0] - e1[0] * e2[2];
+      var nz = e1[0] * e2[1] - e1[1] * e2[0];
+      var nl = Math.hypot(nx, ny, nz) || 1;
+      var shade = Math.abs((nx * light[0] + ny * light[1] + nz * light[2]) / nl);
+      var depth = Math.max(0, Math.min(1, (order[i][1] / bb.r) * 0.5 + 0.5));
+      var r = Math.round(30 + shade * 40);
+      var g = Math.round(90 + shade * 140);
+      var b = Math.round(120 + shade * 135);
+      ctx.fillStyle = "rgba(" + r + "," + g + "," + b + "," + (0.88 - depth * 0.25).toFixed(2) + ")";
+      ctx.strokeStyle = "rgba(56,225,255,0.16)";
+      ctx.beginPath();
+      ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.lineTo(C[0], C[1]);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    requestAnimationFrame(draw);
+  }
+
+  resize();
+  select(0);
+  draw();
+})();
+</script>
+</body>
+</html>

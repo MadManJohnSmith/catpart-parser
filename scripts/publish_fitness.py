@@ -29,6 +29,10 @@ files, and rebuilds the ``gh-pages`` branch from exactly those files:
   trend charts publish current without a client-side fetch. A missing or
   empty ``site/`` publishes the two JSON files alone (the historical
   shape).
+- ``docs/format/*.md`` — the format documentation sources, published
+  under ``format/`` so the site's format portal fetches and renders them
+  client-side (the page stays honest: what it shows is what the repo
+  commits). No ``docs/format/`` publishes nothing extra.
 
 Branch mechanics use git plumbing only (``hash-object`` / ``mktree`` /
 ``commit-tree`` / ``update-ref``): no worktree, no index checkout, the
@@ -77,6 +81,10 @@ HISTORY_FILENAME = "fitness-history.json"
 #: may itself contain ``;`` or quotes).
 SITE_DIRNAME = "site"
 HISTORY_TOKEN = "/*__FITNESS_HISTORY__*/null"
+
+#: The format-documentation sources the site's portal renders; published
+#: under ``format/`` in the gh-pages tree.
+FORMAT_DOCS_DIRNAME = "docs/format"
 
 #: The publication branch (ADR-0003: gh-pages is the fitness visibility surface).
 PUBLISH_BRANCH = "gh-pages"
@@ -395,6 +403,23 @@ def _site_files(repo: Path, runs: list[tuple[dict, tuple[int, int], dict | None]
     return files
 
 
+def _format_doc_files(repo: Path) -> dict[str, bytes]:
+    """The format-doc sources, published under ``format/`` for the portal.
+
+    Only ``*.md`` rides along; a missing directory publishes nothing.
+    """
+    docs = repo / FORMAT_DOCS_DIRNAME
+    if not docs.is_dir():
+        return {}
+    files: dict[str, bytes] = {}
+    for path in sorted(docs.glob("*.md")):
+        try:
+            files[f"format/{path.name}"] = path.read_bytes()
+        except OSError as exc:
+            raise PublishError(f"cannot read format doc {path}: {exc}") from exc
+    return files
+
+
 def build_tree(repo: Path, files: dict[str, bytes]) -> str:
     """Write blobs and build the gh-pages root tree (deterministic).
 
@@ -438,10 +463,13 @@ def _commit_tree(repo: Path, tree: str, parent: str | None, last_accepted: dict)
 def _tree_summary(files: dict[str, bytes]) -> str:
     """One console line describing what the tree carries."""
     generated = {NOJEKYLL_FILENAME, LATEST_FILENAME, HISTORY_FILENAME}
-    site = sorted(set(files) - generated)
+    site = sorted(n for n in files if n not in generated and not n.startswith("format/"))
+    docs = sorted(n for n in files if n.startswith("format/"))
     out = f"{NOJEKYLL_FILENAME}, {LATEST_FILENAME}, {HISTORY_FILENAME}"
     if site:
         out += f", + {len(site)} site file(s)"
+    if docs:
+        out += f", + {len(docs)} format doc(s)"
     return out
 
 
@@ -450,6 +478,7 @@ def publish(repo: Path, history_path: Path, remote: str, *, push: bool) -> str:
     runs = _accepted_runs(read_history(history_path))
     files = _files_for(runs)
     files.update(_site_files(repo, runs))
+    files.update(_format_doc_files(repo))
     tree = build_tree(repo, files)
 
     head = _head_commit(repo, f"refs/heads/{PUBLISH_BRANCH}")
