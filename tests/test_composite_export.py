@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 
+from catpart.geometry.composite import parse_strip_records
 from catpart.schema import load_schema
 from catpart.schema.validate import validate
 from fixtures_gen import (
@@ -405,3 +406,36 @@ def test_composite_single_rep_node_bytes_in_summary(tmp_path, capsys):
     info = summary["composite"]
     assert isinstance(info["node_bytes"], int)
     assert info["node_bytes"] <= 4096  # small form
+
+
+def test_composite_u24be_candidate_is_threshold_gated():
+    """The stage-5 review O1 pin: the u24be candidate exists ONLY above
+    65,535 elements — and the suite must go red if the guard is
+    removed OR narrowed.  The bytes below tile exactly at u24be (4 x
+    [00 01 00], one count byte summing to n) and only at u24be; the
+    2-byte parse falls short of the next header.  Below the threshold
+    the 3-byte read is 256s past a 100-element space, so the guard is
+    what keeps the OOB junk out of the candidate set (the corpus gate
+    event: 4 exported stores flipped when u24be was offered
+    unconditionally); above it the same parse is in-bounds and must be
+    offered (a narrowed guard would pin the store to a non-tiling
+    misread)."""
+    rec = (
+        bytes([0x01, 0x41, 0x01, 0xFF])
+        + struct.pack("<I", 4)
+        + bytes([4])
+        + bytes([0x00, 0x01, 0x00] * 4)
+    )
+    # Below the threshold: no candidate may carry out-of-space refs.
+    records, n_hdrs = parse_strip_records(rec, 0, len(rec), 100)
+    assert n_hdrs == 1
+    assert records
+    for _o, _mk, _normal, _counts, refs, width in records:
+        assert width in (1, 2)
+        assert all(r < 100 for r in refs)
+    # Above it: the tiling u24be parse is in-bounds and must win.
+    records, n_hdrs = parse_strip_records(rec, 0, len(rec), 70_000)
+    assert n_hdrs == 1
+    assert records
+    assert [w for _o, _mk, _n, _c, _r, w in records] == [3]
+    assert all(r < 70_000 for _o, _mk, _n, _c, refs, _w in records for r in refs)

@@ -108,6 +108,18 @@ note, confirmed).
 | D9 | digests identical outside named rows | exported-both 859: **799 byte-identical** (PLY + L2 fields), 60 PLY-diff — all composite, all mapped above (59 plane-tiebreak + 13bb5c0c u24be); 6 of the 60 change PLY bytes with identical L2 fields (triangle content changed, counts/bbox/stats coincided) | met |
 | D10 | no explosion | replay wall time comparable both ends; no timeouts | met |
 
+**Review correction (2026-11-12, stage-5 review O3, dated):** the D5
+taxonomy above sums 58 of the 60 PLY-diff rows — it misfiled
+13bb5c0c (the D2 u24be store) under the tiebreak rows and missed two
+same-v/t, L2-neutral rows.  Full tiebreak partition (reviewer
+re-derived; d4127e6b coordinator-verified in the committed CSVs:
+exported both ends, fail -> fail, v/t 3345/860 identical): 21
+not-manifold -> pass + 2 degenerate-triangles -> pass + 9 pass ->
+pass with triangle decrements + **25** pass -> pass with identical
+v/t + **2** fail -> fail (**26504a08, d4127e6b**) = 59, + 13bb5c0c
+(D2 u24be) = 60.  Counts and the 0-lost-passes accounting unchanged;
+no row moves between pass/fail.
+
 **Accounting (every changed row mapped):**
 
 - exports 859 -> **1,011** (+152: 148 family + 4 census-blind; 0 lost);

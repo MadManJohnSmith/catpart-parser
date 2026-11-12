@@ -723,7 +723,18 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool):
     reps_unexported = []
     for k, d in enumerate(decoded):
         node_bytes += len(d["payload"])
-        gv = groups[k].vertices if k < len(groups) else ()
+        if k >= len(groups):
+            # stage-5 review O2 hardening: a walk-exact rep beyond the
+            # pool groups has no pool to re-list — per-rep absorption
+            # is unestablished, so it stays unexported (fail-closed;
+            # measured 0/152 on the corpus A/B).
+            reps_unexported.append(
+                f"rep {k}: no pool group to re-list ({len(groups)} pool "
+                f"groups for {len(decoded)} walk-exact reps; per-rep "
+                "absorption unestablished)"
+            )
+            continue
+        gv = groups[k].vertices
         distinct = set(gv)
         pts_set = set(d["pts"])
         unmatched = [v for v in distinct if v not in pts_set]
