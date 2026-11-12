@@ -305,20 +305,24 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
     extended 2026-11-11 stage 4b: u24be candidate + the loop plane
     tiebreak; integrated 2026-11-12 stage 5, #34).
 
-    Candidate parses: width u8/u16be/u24be x count-byte k (0..16)
-    summing to n, ending at or before the next header.  Rank: exact
-    tiling, then no-repeated-refs-within-a-loop, then no out-of-range
-    refs, then **non-coplanar normal-carrying loops** (only computed
-    when ``elements`` — the decoded element space the refs index — is
-    passed; a candidate whose loops are non-coplanar against the
-    record's stored normal loses to one that is coplanar; without
-    ``elements`` the rank is the committed stage-3b one), then the
-    narrower width.  u24be exists for element counts above 65,535
-    (2-byte refs cannot index them; 13bb5c0c byte-verified: records
-    tile exactly at u24be).  Returns ``(records, n_headers)`` where
-    each record is ``(offset, marker, normal, counts, refs, width)``.
+    Candidate parses: width u8/u16be (plus u24be ONLY when
+    ``element_count > 65,535`` — a 2-byte ref cannot index such an
+    element space, and on smaller spaces a 3-byte candidate can only
+    read junk past them: measured on the corpus A/B, 4 exported stores
+    flip to OOB junk when u24be is offered below the threshold) x
+    count-byte k (0..16) summing to n, ending at or before the next
+    header.  Rank: exact tiling, then no-repeated-refs-within-a-loop,
+    then no out-of-range refs, then **non-coplanar normal-carrying
+    loops** (only computed when ``elements`` — the decoded element
+    space the refs index — is passed; a candidate whose loops are
+    non-coplanar against the record's stored normal loses to one that
+    is coplanar; without ``elements`` the rank is the committed
+    stage-3b one), then the narrower width.  Returns ``(records,
+    n_headers)`` where each record is ``(offset, marker, normal,
+    counts, refs, width)``.
     """
     hdrs = [m.start() for m in STRIP_RE.finditer(data, lo, hi)]
+    widths = (1, 2, 3) if element_count > 65_535 else (1, 2)
     skips = (
         {i for i, (_v, pt) in enumerate(elements) if pt is None}
         if elements is not None
@@ -342,7 +346,7 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
                 continue
             normal = struct.unpack("<fff", data[o + hlen + 4 : o + hlen + 16])
         best = None
-        for width in (1, 2, 3):
+        for width in widths:
             for k in range(0, MAX_LOOP_COUNTS + 1):
                 if base + k > nxt:
                     break
