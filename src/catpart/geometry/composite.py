@@ -65,8 +65,9 @@ stage-3b table law dated 2026-11-11, byte-measured on the corpus):
   battery coverage full AND zero nonplanar).  The live law predicate
   selects exactly the battery-supported subset E0-b of the analysis
   (2fca9bc4 / 4ad53b87 / 4ae0392d / 505bbe1f at the stage-9 baseline;
-  the other 22 E0 members each carry a normal-less dropped loop, and
-  3dff4d93 a nonplanar one — measured, stage-10 note).  The U4-M mid
+  21 of the other 22 E0 members carry a normal-less dropped loop, and
+  3dff4d93's two dropped loops are normal-carrying with one nonplanar
+  (review F3 correction, 2026-11-13 — measured, stage-10 note).  The U4-M mid
   law stays DEMOTED to unsupported and is NOT implemented; the battery
   discriminates dup from next/mid wherever a loop references a slot
   (twin probe), and a ``mid`` slot is by construction referenced by no
@@ -1040,15 +1041,18 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool):
             continue
         base = len(points)
         tri_k, deg_k, stats_k = _triangulate(d["elements"], records)
-        dup_cand = stats_k.pop("dup_pin", None)
-        if dup_cand is not None:
-            # stage-10 E0-b candidate for this rep (its own triangulation
-            # is empty and its dropped loops were battery-evaluated):
-            # merged at the STORE level below only when the whole
-            # store's mesh is empty — a rep-level fire inside an
-            # otherwise-exporting store would be the 471-passing-stores
-            # downside exposure.
-            reps_dup_pin.append((base, dup_cand))
+        # stage-10 E0-b candidate for this rep (its own triangulation
+        # is empty and its dropped loops were battery-evaluated):
+        # recorded even when the law REJECTED (None) — a rep with an
+        # unsupported dropped loop must veto another rep's fire at the
+        # store-level gate below (stage-10 review F1: dropping the None
+        # candidate made that veto dead code and zeroed the curve-entry
+        # counters while unexported loops remained).  Merged at the
+        # STORE level below only when the whole store's mesh is empty —
+        # a rep-level fire inside an otherwise-exporting store would be
+        # the 471-passing-stores downside exposure.
+        if "dup_pin" in stats_k:
+            reps_dup_pin.append((base, stats_k.pop("dup_pin")))
         points += d["pts"]
         triangles += [(a + base, b + base, c + base) for a, b, c in tri_k]
         degenerate += deg_k
@@ -1713,11 +1717,11 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups):
             continue
         base = len(points)
         tri_k, deg_k, stats_k = _triangulate(d["elements"], records)
-        dup_cand = stats_k.pop("dup_pin", None)
-        if dup_cand is not None:
-            # stage-10 E0-b candidate (see _decode_per_rep): merged at
-            # the store level below, only when the whole mesh is empty.
-            reps_dup_pin.append((base, dup_cand))
+        # stage-10 E0-b candidate (see _decode_per_rep; the None case
+        # recorded too — stage-10 review F1, the same veto): merged at
+        # the store level below, only when the whole mesh is empty.
+        if "dup_pin" in stats_k:
+            reps_dup_pin.append((base, stats_k.pop("dup_pin")))
         points += d["pts"]
         triangles += [(a + base, b + base, c + base) for a, b, c in tri_k]
         degenerate += deg_k

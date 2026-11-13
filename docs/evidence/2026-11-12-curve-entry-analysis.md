@@ -353,11 +353,14 @@ nonplanar — the `e0_battery_supported` column's definition, ported to
 of every current member selects **exactly the 4 named stores**:
 `2fca9bc4` 2/2, `4ad53b87` 1/1, `4ae0392d` 1/1, `505bbe1f` 2/2
 normal-carrying AND coplanar under the dup pin.  Every other member
-keeps the conservative rule: 19 carry at least one normal-less
+keeps the conservative rule: 21 carry at least one normal-less
 (untestable) dropped loop — including the 3 former census-scope-blind
 stores (`4540eacc`, `d4a67129`, `f97b4c86`; the live evaluation closes
 their battery-unknown gap: normal-less, untestable) and the 2 new
-mixed-write members — and `3dff4d93` carries a nonplanar pinned loop.
+mixed-write members — and `3dff4d93`'s two dropped loops are
+normal-carrying with one nonplanar (stage-10 review F3 dated
+correction, 2026-11-13: the pre-declaration probe's 19 undercounted
+by 2; the review's own re-measure gives 21).
 The live predicate matches the committed
 `e0_battery_supported` classification on every store the analysis
 measured.  **Implementation choice (named per the dispatch): the

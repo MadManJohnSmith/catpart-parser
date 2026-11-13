@@ -1052,3 +1052,46 @@ def test_composite_e0b_multi_rep_store_gate(tmp_path, capsys):
     assert info["loops_curve_entry"] == 1
     assert "curve_entry_law" not in info
     assert "curve-entry-loops-unexported" in _warning_classes(summary)
+
+
+def test_composite_e0b_multi_rep_unsupported_veto(tmp_path, capsys):
+    """The store-level gate's None-candidate veto (stage-10 review F1):
+    BOTH reps' primary triangulations are empty — rep 0 carries a
+    NORMAL-LESS (untestable) dropped loop, rep 1 the battery-supported
+    dropped loop — so the WHOLE store stays conservative.  Dropping the
+    None candidate on the floor fired rep 1's pins here and zeroed the
+    curve-entry counters while rep 0's loop stayed unexported — red."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys,
+        "geometry-composite-law-e0b-multi-rep-unsupported-veto",
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    info = summary["composite"]
+    assert info["stage"] == "identity-per-rep"
+    assert info["reps_decoded"] == 2
+    assert info["reps_exported"] == 2
+    assert summary["vertex_count"] == 24
+    assert summary["triangle_count"] == 0  # the veto holds
+    assert info["loops_curve_entry"] == 2  # NOT zeroed: both unexported
+    assert "curve_entry_law" not in info
+    assert "curve-entry-loops-unexported" in _warning_classes(summary)
+
+
+def test_composite_e0b_unpinnable_keeps_conservative(tmp_path, capsys):
+    """The unpinnable arm (stage-10 review F4): the dropped loop's skip
+    slot is ELEMENT 0 — no preceding written element exists to weld to —
+    so the law rejects before the battery and the store keeps the
+    conservative rule.  Removing the unpinnable arm would let the law
+    proceed on a missing pin target — red."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-e0b-unpinnable"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    info = summary["composite"]
+    assert summary["vertex_count"] == 12
+    assert summary["triangle_count"] == 0  # stays empty-mesh
+    assert info["loops_curve_entry"] == 1
+    assert "curve_entry_law" not in info
+    assert "curve-entry-loops-unexported" in _warning_classes(summary)

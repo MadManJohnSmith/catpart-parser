@@ -102,8 +102,11 @@ fitness row itself stays with the coordinator.
   `node_bytes`/`stage` unchanged; `failed_check` `empty-mesh` -> "".
 - **D5 (warnings, summary-level)**: the 4 stores lose
   `curve-entry-loops-unexported` and gain
-  `curve-entry-loops-exported-dup-pin` (+ `open-shell`); every other
-  row's warnings unchanged.
+  `curve-entry-loops-exported-dup-pin` (+ `open-shell`); they also
+  lose `no-facet-records` and gain `unused-pool-vertices` (stage-10
+  review F2 dated correction, 2026-11-13 — mechanically implied by
+  D4's triangle transition: the declaration was narrower than the
+  observation the CSVs carried); every other row's warnings unchanged.
 - **D6 (STOP gates)**: ANY lost export or lost pass = STOP (the
   zero-regression premise violated); any changed row outside the 4 =
   stop-and-root-cause; a fired store that stays `empty-mesh` (pinned

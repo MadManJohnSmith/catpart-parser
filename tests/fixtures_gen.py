@@ -206,6 +206,8 @@ VALID_VARIANTS = (
     "geometry-composite-law-e0b-normal-less",
     "geometry-composite-law-e0b-nonempty",
     "geometry-composite-law-e0b-multi-rep-conservative",
+    "geometry-composite-law-e0b-multi-rep-unsupported-veto",
+    "geometry-composite-law-e0b-unpinnable",
 )
 CORRUPTED_VARIANTS = (
     "bad-magic",
@@ -291,6 +293,8 @@ COMPOSITE_VARIANTS = (
     "geometry-composite-law-e0b-normal-less",
     "geometry-composite-law-e0b-nonempty",
     "geometry-composite-law-e0b-multi-rep-conservative",
+    "geometry-composite-law-e0b-multi-rep-unsupported-veto",
+    "geometry-composite-law-e0b-unpinnable",
 )
 
 # --- nested-store geometry (G4, #32) -----------------------------------
@@ -682,6 +686,16 @@ def _geometry_box_edges_lex() -> tuple[tuple[int, int], ...]:
 #                                        loop, rep 0 exports its box:
 #                                        no rep-level fire (store-
 #                                        level gate).
+# - geometry-composite-law-e0b-multi-rep-unsupported-veto  BOTH reps
+#                                        empty: rep 0 carries a
+#                                        NORMAL-LESS dropped loop,
+#                                        rep 1 the supported one —
+#                                        one unsupported rep vetoes
+#                                        the store fire (review F1).
+# - geometry-composite-law-e0b-unpinnable  the dropped loop's skip
+#                                        slot is ELEMENT 0: no
+#                                        preceding written element
+#                                        to weld to (review F4).
 
 COMPOSITE_POOL_WALK = (
     (0.0, 10.0, 0.0),
@@ -1015,6 +1029,7 @@ def _composite_store(variant: str) -> bytes:
         "geometry-composite-law-multi-rep",
         "geometry-composite-law-multi-rep-partial",
         "geometry-composite-law-e0b-multi-rep-conservative",
+        "geometry-composite-law-e0b-multi-rep-unsupported-veto",
     ):
         return _composite_multi_rep_store(variant)
     if variant in (
@@ -1137,6 +1152,11 @@ def _composite_store(variant: str) -> bytes:
             # the stored normal (0,1,0) — the battery-supported E0-b
             # shape (the landed analysis's restricted subset).
             skip_slots = (2, 6, 10)
+            if variant == "geometry-composite-law-e0b-unpinnable":
+                # the unpinnable variant's skip slot is ELEMENT 0 (see
+                # the variant branch below): the walk-back has no
+                # preceding written element to weld to.
+                skip_slots = (0,)
             elements = _composite_elements(points, skip_slots)
 
             def _e0b_record(
@@ -1184,6 +1204,14 @@ def _composite_store(variant: str) -> bytes:
                 extra_record = _facet_record(
                     0x4C, (0.0, 1.0, 0.0), skip_loop_a
                 ) + _facet_record(0x42, None, skip_loop_b)
+            elif variant == "geometry-composite-law-e0b-unpinnable":
+                # the UNPINNABLE arm (stage-10 review F4): the dropped
+                # loop's skip slot is ELEMENT 0 — no preceding written
+                # element exists to weld to — so the law rejects before
+                # the battery and the store keeps the conservative rule.
+                extra_record = _facet_record(
+                    0x4C, (0.0, 0.0, -1.0), (0, 6, 9, 3)
+                )
             else:  # geometry-composite-law-e0b-nonempty
                 # the box exports its 12 triangles AND carries a
                 # battery-supported dropped loop: the primary mesh is
@@ -1319,6 +1347,7 @@ def _composite_multi_rep_store(variant: str) -> bytes:
         # the un-absorbed 9th vertex of rep 1's pool group
         pool1 = pool1 + ((999.5, 10.0, 0.0),)
     elements0 = _composite_elements(pts0)
+    rep0_records = COMPOSITE_FACES
     if variant == "geometry-composite-law-e0b-multi-rep-conservative":
         # stage-10 (#34): rep 1 carries skip slots (2, 6, 10 — the pins
         # are P1/P4/P7 +200x) and ONE battery-supported dropped loop;
@@ -1326,6 +1355,18 @@ def _composite_multi_rep_store(variant: str) -> bytes:
         # the store-level conservative gate holds (a rep-level fire
         # would regress the store's L2 state).
         elements1 = _composite_elements(pts1, (2, 6, 10))
+        rep1_records = ((0x4C, (0.0, 1.0, 0.0), (2, 0, 8, 3)),)
+    elif variant == "geometry-composite-law-e0b-multi-rep-unsupported-veto":
+        # stage-10 review F1 (#34): BOTH reps' primary triangulations
+        # are empty — rep 0 carries a NORMAL-LESS (untestable) dropped
+        # loop, rep 1 the battery-supported dropped loop.  The store's
+        # mesh is empty, so the store-level gate decides: one
+        # unsupported rep keeps the WHOLE store conservative (the
+        # gate's None-candidate veto; the F1 bug fired rep 1's pins
+        # here and zeroed the curve-entry counters).
+        elements0 = _composite_elements(pts0, (2, 6, 10))
+        elements1 = _composite_elements(pts1, (2, 6, 10))
+        rep0_records = ((0x42, None, (2, 0, 8, 3)),)
         rep1_records = ((0x4C, (0.0, 1.0, 0.0), (2, 0, 8, 3)),)
     else:
         elements1 = _composite_elements(pts1)
@@ -1353,7 +1394,7 @@ def _composite_multi_rep_store(variant: str) -> bytes:
         ),
         b"\x04\x04\xfd\xff" + _composite_node_payload(elements0),
     ]
-    for marker, normal, refs in COMPOSITE_FACES:
+    for marker, normal, refs in rep0_records:
         body_parts.append(_facet_record(marker, normal, refs, width=1))
     body_parts.append(b"\x04\x04\xfd\xff" + _composite_node_payload(elements1))
     for marker, normal, refs in rep1_records:
