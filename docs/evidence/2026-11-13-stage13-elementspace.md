@@ -91,21 +91,29 @@ refs-beyond); decode probe: `stage13-decode-probe.csv`.
 
 - **The structure (fact, anchors byte-verified):** wrapper + `01 06`
   pool (37 stores 1 group, 1 store 2 groups) + one non-pool group
-  (`00 00` x30 — the curve-record group of the stage-2a C1 census —
+  (`00 00` x30 [CORRECTED 2026-11-13 review F1: x26] — the
+  curve-record group of the stage-2a C1 census —
   `00 01` x6, `9c 00` x2, `00 ff` x2, `75 00`/`31 ff`/`62 00` x1) + a
   scene-graph node territory whose token-bearing list node declares
   the element space.  The pool is a small SUBSET of that space
-  (4-168 vertices vs declared 10-27,264), re-listed verbatim in the
+  (4-168 vertices vs declared 10-27,264 [CORRECTED 2026-11-13
+  review F1: 10-27,707]), re-listed verbatim in the
   node's decoded points.
 - **Anchor b86baae6ec9412ba (byte-ranged):** body [54407, 56827);
   node at body+467, payload 893 B, token `ff ff 02 00 01` at
-  payload+29, counts c1=40/c2=38, 2-bit table at payload[35,45),
-  write count 136, region payload[46,590).  The walk decodes exactly
+  payload+29, counts c1=40/c2=38, 2-bit table at payload[35,45)
+  [CORRECTED 2026-11-13 review F1: measured payload[40,50)],
+  write count 136 [CORRECTED: measured 80 — the 136 was a table
+  byte read at the mis-shifted offset and is self-inconsistent,
+  136 > 3x40], region payload[46,590) [CORRECTED: measured
+  payload[51,371)].  The walk decodes exactly
   40 distinct points = a tessellated cylinder (20-point circle at
   z=0 and z=5, r=2.5); the pool's 4 vertices sit at region indices
-  7, 8, 32, 36 (exact f32); facet rec0 (marker 0x42, 38 refs) walks
+  7, 8, 32, 36 [CORRECTED: measured 0, 1, 36, 37] (exact f32);
+  facet rec0 (marker 0x42, 38 refs) walks
   the cylinder side as (z=0, z=5) pairs per angular step, max ref 39
-  < 40.  The `00 00` group at body+1351 opens count=98 followed by a
+  < 40 [CORRECTED: rec0 max ref 37 — the 39 is rec1's].  The
+  `00 00` group at body+1351 opens count=98 followed by a
   nested node record — the curve/scene-graph carrier, not a vertex
   source.
 - **The N2 shape (fact):** c1_of_largest = max_ref + 1 on 24/38; the
@@ -155,7 +163,9 @@ refs-beyond); decode probe: `stage13-decode-probe.csv`.
   bypassed committed decode (88 / 118 / 1,100 triangles;
   `stage13-decode-probe.csv`).  **Anchor 66049cf3 (byte-ranged):**
   body [37761, 42170); node at body+917, payload 2,224 B, c1=44/c2=32,
-  table payload[35,46), write count 136, region payload[47,591); the
+  table payload[35,46), write count 136 [CORRECTED 2026-11-13 review
+  F1: measured 88], region payload[47,591) [CORRECTED: measured
+  payload[52,404)]; the
   44 points are a two-z-level tessellation (z=139.721/149.721); the 8
   facet records (0x4a, 4-ref quads) reference 0..43 in-bounds; the
   store's UNWRAPPED `05 08 01` run at body+2892 (16 records, no pool
@@ -172,7 +182,11 @@ refs-beyond); decode probe: `stage13-decode-probe.csv`.
     block): two nodes (kind 2 and kind 9 templates, `ff 03 01 00 00
     ff` sub-records), no geometry records of any family.
   - **90/131 largest-node layout failures**: the payload is a 70-97 B
-    template — `00 00 00 01` header, token `ff ff 02 00 01`, c1=84/86,
+    template on 72/90 [CORRECTED 2026-11-13 review F2: the other 18
+    largest nodes are 286-608 B with the SAME c1 signature — the
+    template framing covers the signature, not the size range; the
+    wireframe 8 below are a SUBSET of these 90, not a third
+    partition] — `00 00 00 01` header, token `ff ff 02 00 01`, c1=84/86,
     c2 = 0/1 or cumulative values (1/39/77 — the stage-3b residue's
     per-rep node signature), 16 B zero block, direction-cosine floats
     (`f3 04 35 3f` = 0.70709229 x2, `f3 04 35 bf` = -0.70709229),
@@ -185,7 +199,9 @@ refs-beyond); decode probe: `stage13-decode-probe.csv`.
     stage-6 raw-array signature stays absent (the stage-12 census's
     0/94 carries to 0/131 at this baseline).
   - **8 wireframe stores** (1968ce85, 4e8feabe, 65564a9b, 853788c3,
-    9fa8cb5a, a15e5740, be3ff691, e1cef8ab): unwrapped `05 08 01`
+    9fa8cb5a, a15e5740, be3ff691, e1cef8ab) [CORRECTED 2026-11-13
+    review F2: a subset of the 90 layout-failure stores above, not a
+    separate partition — the decomposition is 38 + 90 = 128]: unwrapped `05 08 01`
     vertex tables (10-16 records, 100% finite mm-scale, z = 0 or a
     single plane) + inline-coordinate edge records `03 02 01` +
     24 B of two xyz triples (8-12 per store; the edges' coordinates
