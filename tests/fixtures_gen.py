@@ -277,6 +277,8 @@ CORRUPTED_VARIANTS = (
     # no decoded region re-lists (the sub-node records' residue) — the
     # element index is unpinned, the store stays fail-closed for export.
     "geometry-composite-law-mixedwrite-multi-rep-subnode",
+    # Stage-12 recovery positive (#34, 2026-11-13): see above.
+    "geometry-othercontainer-composite-law",
 )
 GEOMETRY_VARIANTS = (
     "geometry",
@@ -311,6 +313,11 @@ COMPOSITE_VARIANTS = (
     "geometry-composite-law-curve-entries",
     "geometry-composite-law-u16be",
     "geometry-composite-law-u24be",
+    # Stage-12 recovery positive (#34, 2026-11-13): the composite-law
+    # store inside a CATBRepModeContainer block — a recovered store
+    # EXPORTING through the composite path (store_recovery must ride
+    # on composite summaries too).
+    "geometry-othercontainer-composite-law",
     "geometry-composite-law-width-plane",
     "geometry-composite-law-multi-rep",
     "geometry-composite-law-multi-rep-partial",
@@ -1744,6 +1751,10 @@ def _composite_table_overshoot_store() -> bytes:
 
 
 def _composite_payload(variant: str) -> bytes:
+    if variant == "geometry-othercontainer-composite-law":
+        return _nested_store_block(
+            b"CATBRepModeContainer", _composite_store("geometry-composite-law")
+        )
     preamble = 250 - len(storage_property_block(b"CATStdCont", b"CATContainer"))
     return (
         storage_property_block(b"CATStdCont", b"CATContainer")

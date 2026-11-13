@@ -230,6 +230,23 @@ def _recovered_error(exc: ExportError, span: store.StoreSpan, data) -> ExportErr
     )
 
 
+def _store_recovery_record(data, span: store.StoreSpan) -> dict | None:
+    """The ``store_recovery`` summary record for a recovered store
+    (stage 3a/stage-12 provenance, emitted on BOTH decode paths — the
+    stage-12 corpus passes are the first recovered stores to export
+    through the composite path). ``None`` on stores the shipped law
+    located."""
+    if span.container == store.CONTAINER_STDCONT and span.tail_law == store.TAIL_LAW_SHIPPED:
+        return None
+    recovery = {
+        "container": span.container,
+        "tail_law": span.tail_law,
+    }
+    if span.container == store.CONTAINER_OTHER:
+        recovery["container_name"] = store.block_name(data, span.block_start)[0]
+    return recovery
+
+
 def _export_store(data, span, ordinal: int) -> tuple[dict, list, list]:
     """Decode one store span through G3's export gate."""
     groups, kinds = pool.scan_pool_groups(data, span.body_lo, span.body_hi)
@@ -362,14 +379,10 @@ def _export_store(data, span, ordinal: int) -> tuple[dict, list, list]:
         # Stage 3a (#34): the store was recovered — name the probe and
         # the tail law on the summary (additive; absent on stores the
         # shipped law located). Stage 12 (#34): the other-container
-        # family also names the block's doc-type name.
-        recovery = {
-            "container": span.container,
-            "tail_law": span.tail_law,
-        }
-        if span.container == store.CONTAINER_OTHER:
-            recovery["container_name"] = store.block_name(data, span.block_start)[0]
-        summary["store_recovery"] = recovery
+        # family also names the block's doc-type name; the same record
+        # emits on the composite path (_export_composite_store — the
+        # stage-12 corpus passes are recovered composite stores).
+        summary["store_recovery"] = _store_recovery_record(data, span)
     _self_check(summary)
     return summary, flat, list(soup.triangles)
 
@@ -499,6 +512,11 @@ def _export_composite_store(data, span, ordinal: int, groups, kinds):
         # additive, composite-only (consumers ignore unknown properties):
         "composite": info,
     }
+    recovery = _store_recovery_record(data, span)
+    if recovery is not None:
+        # Stage 3a/12 (#34): recovered stores name HOW on every decode
+        # path (the stage-12 corpus passes export through here).
+        summary["store_recovery"] = recovery
     _self_check(summary)
     return summary, points, list(triangles)
 
