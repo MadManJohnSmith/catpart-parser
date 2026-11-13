@@ -1,0 +1,17 @@
+{
+  "name": "port",
+  "type": "module",
+  "description": "Rust port of the catpart Python reference decode pipeline (Phase 5 web viewer)",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "files": [
+    "port_bg.wasm",
+    "port.js",
+    "port.d.ts"
+  ],
+  "main": "port.js",
+  "types": "port.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
