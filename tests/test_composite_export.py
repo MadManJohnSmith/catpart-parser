@@ -41,6 +41,12 @@ COMPOSITE_VARIANTS = (
     "geometry-composite-law-u16be",
     "geometry-composite-law-walk-mismatch",
     "geometry-composite-law-unabsorbed",
+    "geometry-composite-law-e0b-dup-pin",
+    "geometry-composite-law-e0b-single-loop",
+    "geometry-composite-law-e0b-nonplanar",
+    "geometry-composite-law-e0b-normal-less",
+    "geometry-composite-law-e0b-nonempty",
+    "geometry-composite-law-e0b-multi-rep-conservative",
 )
 
 
@@ -911,3 +917,138 @@ def test_composite_mixedwrite_subnode_stays_fail_closed(tmp_path, capsys):
     assert "1 of 17 pool vertices" in error["detail"]
     assert "05 08 01 sub-node records" in error["detail"]
     assert not ply_path.exists()
+
+
+# --- stage 10: the E0-b dup-pin law (the curve-entry coordinates,
+# restricted per the landed analysis U4-stage5-recommendation) ----------
+
+
+def test_composite_e0b_dup_pin_exports_pinned_loops(tmp_path, capsys):
+    """The stage-10 E0-b positive (the 2fca9bc4/505bbe1f corpus shape):
+    the store's primary triangulation is EMPTY (its only facet record's
+    two loops reference skip slots) and both dropped loops are
+    normal-carrying and coplanar with the dup-pinned coordinates — the
+    law fires: the loops export with each skip slot welded to the
+    written vertex of its immediately preceding written element (no new
+    vertices; the exported faces are the pinned fans over the written
+    ranks).  Removing the law leaves this store empty-mesh — red."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-e0b-dup-pin"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    validate(summary, load_schema("export-summary-v1"))
+    info = summary["composite"]
+    assert info["curve_entries"] == 3
+    assert info["loops_curve_entry"] == 0  # nothing stays dropped
+    assert info["loops_curve_entry_exported"] == 2
+    assert info["loops_exported"] == 2
+    assert info["curve_entry_law"] == "e0b-dup-pin"
+    assert summary["vertex_count"] == 12  # the weld adds no vertices
+    assert summary["triangle_count"] == 4
+    assert summary["degenerate_triangle_count"] == 0
+    assert summary["mesh"]["manifold"] is True
+    classes = _warning_classes(summary)
+    assert "curve-entry-loops-unexported" not in classes
+    assert "curve-entry-loops-exported-dup-pin" in classes
+    # the pinned fans, in written ranks: skip 2 -> element 1 (P1),
+    # skip 6 -> element 5 (P4) — the WELD, pinned by the face indices
+    # (each fan originates at the pin target's written rank)
+    _, faces = parse_ply(ply_path)
+    assert sorted(faces) == [(1, 0, 6), (1, 6, 2), (4, 3, 9), (4, 9, 5)]
+
+
+def test_composite_e0b_single_loop_exports_pinned(tmp_path, capsys):
+    """The one-dropped-loop positive (the 4ad53b87/4ae0392d shape): a
+    single coplanar loop fires the law on an otherwise-empty store."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-e0b-single-loop"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    info = summary["composite"]
+    assert info["loops_curve_entry"] == 0
+    assert info["loops_curve_entry_exported"] == 1
+    assert info["curve_entry_law"] == "e0b-dup-pin"
+    assert summary["triangle_count"] == 2
+    _, faces = parse_ply(ply_path)
+    assert sorted(faces) == [(1, 0, 6), (1, 6, 2)]
+
+
+def test_composite_e0b_nonplanar_loop_keeps_conservative(tmp_path, capsys):
+    """The 3dff4d93 pin: one coplanar + one NONPLANAR dropped loop —
+    the battery is not fully green, so the WHOLE store keeps the
+    conservative non-export rule (fail-closed, gap named).  Applying
+    the law without the battery (removing the conservative gate) would
+    export the pinned loops here — red."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-e0b-nonplanar"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    info = summary["composite"]
+    assert info["loops_curve_entry"] == 2
+    assert "curve_entry_law" not in info
+    assert summary["triangle_count"] == 0  # stays empty-mesh
+    classes = _warning_classes(summary)
+    assert "curve-entry-loops-unexported" in classes
+    assert "curve-entry-loops-exported-dup-pin" not in classes
+
+
+def test_composite_e0b_normal_less_loop_keeps_conservative(tmp_path, capsys):
+    """The 08f2eccb mixed-coverage pin: one coplanar loop + one on a
+    NORMAL-LESS 0x42 strip — the untestable loop keeps the store on the
+    conservative rule (the battery cannot cover it; coverage not full).
+    Removing the coverage requirement would fire here — red."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-e0b-normal-less"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    info = summary["composite"]
+    assert info["loops_curve_entry"] == 2
+    assert "curve_entry_law" not in info
+    assert summary["triangle_count"] == 0
+    assert "curve-entry-loops-unexported" in _warning_classes(summary)
+
+
+def test_composite_e0b_nonempty_stays_conservative(tmp_path, capsys):
+    """The 471-passing-stores pin (the conservative gate's DOWNSIDE
+    direction): the box exports its 12 triangles AND carries a
+    battery-supported dropped loop — the store's mesh is not empty, so
+    the law must NOT fire (a fire could flip a passing store's L2
+    state).  Removing the empty-mesh condition adds the pinned
+    triangles here (12 -> 14) — red."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-e0b-nonempty"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    info = summary["composite"]
+    assert summary["triangle_count"] == 12  # NOT 14
+    assert summary["mesh"]["closed"] is True
+    assert info["loops_curve_entry"] == 1
+    assert "curve_entry_law" not in info
+    assert "curve-entry-loops-unexported" in _warning_classes(summary)
+
+
+def test_composite_e0b_multi_rep_store_gate(tmp_path, capsys):
+    """The per-rep paths' store-level gate: rep 0 exports its box, rep 1
+    carries a battery-supported dropped loop on an empty rep — the
+    store's merged mesh is not empty, so no rep fires (a per-rep gate
+    would add rep 1's pinned triangles to an otherwise-passing store —
+    red)."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-e0b-multi-rep-conservative"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    info = summary["composite"]
+    assert info["stage"] == "identity-per-rep"
+    assert info["reps_decoded"] == 2
+    assert info["reps_exported"] == 2
+    assert summary["triangle_count"] == 12  # NOT 14
+    assert summary["mesh"]["closed"] is True
+    assert info["loops_curve_entry"] == 1
+    assert "curve_entry_law" not in info
+    assert "curve-entry-loops-unexported" in _warning_classes(summary)
