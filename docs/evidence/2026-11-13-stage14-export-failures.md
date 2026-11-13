@@ -74,7 +74,11 @@ Per-store census: `stage14-export-failures-census.csv` (mechanism
 column); per-store dup-pin ceiling: `stage14-dup-pin-ceiling.csv`.
 
 - **`no-facet-records` (55, all dev) — the collapse pattern.**  43/55
-  carry ZERO `01 4x ff` (STRIP_RE) candidates in the body; the other
+  carry ZERO `01 4x ff` (STRIP_RE) candidates in the body [CORRECTED
+  2026-11-13 review F3: 42/55 — 839552c2 carries a PARSEABLE `0x4c`
+  record (4 loops, 52 in-bounds refs) inside the body but OUTSIDE the
+  decode windows; the review's hypothetical export gives 48 tris ->
+  not-manifold, so the ceiling-0 verdict STANDS]; the other
   12 carry 1-12 candidates (whole-file scan up to 36 on 086a4eff) that
   ALL decline the record parse — each verified individually, not
   extrapolated: the u32le n behind the marker reads 1e8-4e9 (out of the
@@ -116,8 +120,10 @@ column); per-store dup-pin ceiling: `stage14-dup-pin-ceiling.csv`.
   already committed inside `composite._e0b_dup_pin`; the probe only
   removes the battery criterion) gives **25/26 L2 passes (24 dev + 1
   held-out)** — pinned triangles 32-3,456 (sum 14,761), 0 skipped
-  degenerates among the passes — and 1 not-manifold (3dff4d93, 90
-  tris).  This is a probe MEASUREMENT of the hypothetical, not a
+  degenerates among the passes — and 1 not-manifold (3dff4d93,
+  90 tris [CORRECTED 2026-11-13 review F4: pinned_tris = 3 — the 90
+  is cf7394ee's figure]).  This is a probe MEASUREMENT of the
+  hypothetical, not a
   landing: the conservative rule stands unless overturned (section 6).
 - **`records-without-loops` (3, all dev) — the unpinned-marker
   residue.**  cf7394ee (table-walk, elem 1,430/515/915) carries 118
@@ -170,8 +176,11 @@ Per-store census: `stage14-notmanifold-mechanism.csv`.
   committed notes or this census.  Ceiling **0** (inference).
 - **`coplanar-overlap` (1, dev: 97a0a420, table-walk, 525 tris).**
   Edge (3,4) used 13x by 13 DISTINCT triangles from 13 different 0x42
-  records (~3,231 B apart), all loop1, third vertices 127..155 (odd
-  steps), ALL stored normals ~(1,0,0) agreeing with the triangle
+  records (exactly 3,233 B apart [CORRECTED 2026-11-13 review F6:
+  "~3,231 B"]), all loop1, third vertices 127..155 (odd
+  steps), ALL triangle plane normals ~(1,0,0) agreeing with the
+  planes [CORRECTED review F6: 0x42 records carry NO stored normals —
+  the normals are computed from the triangles]
   planes — a 13-page coplanar "book" along the segment (3,4) written
   in the bytes (each page a distinct record; the decode reproduces the
   records faithfully).  Ceiling **0** (inference, same grounds).
@@ -183,6 +192,14 @@ Per-store census: `stage14-notmanifold-mechanism.csv`.
   facets twice), not a double-parse (territory overlap 0, different
   offsets).  **Dedup ceiling: dropping the 4 extras -> manifold
   (fact, measured).**  1 store < the Phase-B >= 2 gate (section 6).
+  [CORRECTED 2026-11-13 review F1: the family is **8 stores, not 1**
+  — this detector only saw ORDERED triples; the same three indices
+  written twice in DIFFERENT ORDER (6 record pairs 13-42 B apart + 2
+  single-record cases, territory overlap 0, the same 1d256d12
+  mechanism) add **7 more full-gate flips** (b912cbef fails on 3
+  pre-existing degenerate skips).  The Phase-B >= 2 gate is MET for
+  the unordered-dedup law — a coordinator/owner decision alongside
+  the dup-pin-ALL report (section 6).]
 
 ## 4. The ceiling table (the dispatch's deliverable)
 
@@ -194,17 +211,21 @@ fitness row; held-out steady at 55/61).
 | empty-mesh `no-facet-records` | 55 | **0** — nothing to triangulate | fact |
 | empty-mesh `u4-curve-entry-all-loops` | 25 | **24 pass** under dup-pin-ALL (1 not-manifold: 3dff4d93) | fact (probe-measured), GATED on overturning the stage-10 conservative rule |
 | empty-mesh `records-without-loops` | 3 | **0 measured** under the 0x49 n==3*type hypothesis (cf7394ee all-skip-ref; f21255ac degenerate-fail; ccbb7862 unknown) | fact (measurement) / unknown (a different 0x49 grammar) |
-| not-manifold `content-fins` | 30 | **0** — distinct non-coplanar sheets; no law re-reads them | inference (byte evidence SF12) |
-| not-manifold `coplanar-overlap` | 1 | **0** — the book is in the bytes | inference |
-| not-manifold `duplicate-triangles` | 1 | **1** (dedup) | fact |
-| **total measured** | 117 | **25 dev** (24 + 1) | < 104 |
+| not-manifold `content-fins` | 30 | **0** — distinct non-coplanar sheets; no law re-reads them | inference (byte evidence SF12) [CORRECTED 2026-11-13 review F2: 15 after the winding-sign fix — see below] |
+| not-manifold `coplanar-overlap` | 1 | **0** — the book is in the bytes | inference [CORRECTED: 10 — 14 "fins" are exact-opposite-normal coplanar overlaps, same plane opposite winding] |
+| not-manifold `duplicate-triangles` | 1 | **1** (dedup) | fact [CORRECTED review F1: 8 dev — unordered re-writes; ceiling 8] |
+| **total measured** | 117 | **25 dev** (24 + 1) | < 104 [CORRECTED review F1/F2: taxonomy 15 fins + 10 coplanar + 8 dup = 33; ceiling **32 dev** (24 + 8) — still < 104] |
 
 **The grind answer, plainly: the bar is NOT reachable through the
 empty-mesh and not-manifold families.**  Even the full hypothetical
-(overturning the conservative rule) measures 25 < 104; without it the
+(overturning the conservative rule) measures 25 < 104 [CORRECTED
+2026-11-13 review F1: 32 < 104 with the unordered-dedup family];
+without it the
 measured ceiling is 1.  For scale: the remaining unpinned mass after
 this stage is the 128 no-facet no-pool stores (stage-13: structurally
-incapable), 125 missing-locator, 16 composite, 3 carriers — the
+incapable), 125 missing-locator, 16 composite [CORRECTED review F5:
+the "+ 3 carriers" enumeration is stale — all three pass today; the
+mass is 269 = 128 + 125 + 16] — the
 close-conversation arithmetic should re-open on THESE numbers.
 
 ## 5. Corrections to existing notes (dated, none massaged)
@@ -254,7 +275,12 @@ ruled conservative.
   25/26 pinned meshes pass every gate check including the
   degenerate-triangles check.  Decision: coordinator/owner's.
 - **duplicate-triangle dedup: 1 store** — below the >= 2 gate; no law
-  to pin (the duplication is writer-side content).
+  to pin (the duplication is writer-side content).  [CORRECTED
+  2026-11-13 review F1: the unordered-triple re-writes make the family
+  **8 dev stores** — the >= 2 gate is MET for the unordered-dedup law;
+  measured 7 more full-gate flips (b912cbef fails on 3 pre-existing
+  degenerate skips).  Landing it is a coordinator/owner decision, same
+  standing as the dup-pin-ALL report above.]
 - **No other mechanism has a pinnable law** (sections 2-3).
 
 No src/ file was touched by this stage; no A/B delta to declare; the
