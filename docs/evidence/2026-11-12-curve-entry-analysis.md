@@ -328,3 +328,42 @@ python3 -I -c "import csv; ab={r['sha256']:r for r in csv.DictReader(open('docs/
 ```
 
 -> 24.
+
+## 2026-11-12 stage-9-baseline recompute (stage-10 implementation pre-step, dated)
+
+E0 re-derived against the CURRENT stage-9 baseline
+(`stage9-identity-export-files.csv`, the accepted fitness row's 1,120
+exports; join per the pattern above):
+
+```
+python3 -I -c "import csv; ab={r['sha256']:r for r in csv.DictReader(open('docs/evidence/data/stage9-identity-export-files.csv'))}; print(sum(1 for r in ab.values() if r['export_ok']=='1' and 'empty-mesh' in (r['failed_check'] or '') and int(r['loops_curve_entry'] or 0)>0))"
+```
+
+-> **26 stores (25 dev + 1 held-out `1b1ae784`)** = the stage-5 24
+UNCHANGED + **2 NEW members from the stage-9 mixed-write exports**
+(`4dfef8f2`, `65eb023d`, both stage `identity-mixedwrite-reps`); 0
+members lost.  The 4 battery-supported E0-b stores remain empty-mesh
+with unchanged dropped-loop counts (`2fca9bc4` 2, `4ad53b87` 1,
+`4ae0392d` 1, `505bbe1f` 2) — E0-b is stable across stages 5->9.
+
+**The law-level predicate is supported (fact, pre-declaration probe,
+2026-11-12).**  The E0-b criterion (battery coverage full AND zero
+nonplanar — the `e0_battery_supported` column's definition, ported to
+`composite._e0b_dup_pin`) evaluated LIVE on the exporter's own decode
+of every current member selects **exactly the 4 named stores**:
+`2fca9bc4` 2/2, `4ad53b87` 1/1, `4ae0392d` 1/1, `505bbe1f` 2/2
+normal-carrying AND coplanar under the dup pin.  Every other member
+keeps the conservative rule: 19 carry at least one normal-less
+(untestable) dropped loop — including the 3 former census-scope-blind
+stores (`4540eacc`, `d4a67129`, `f97b4c86`; the live evaluation closes
+their battery-unknown gap: normal-less, untestable) and the 2 new
+mixed-write members — and `3dff4d93` carries a nonplanar pinned loop.
+The live predicate matches the committed
+`e0_battery_supported` classification on every store the analysis
+measured.  **Implementation choice (named per the dispatch): the
+law-level predicate, NOT a digest gate** — the committed analysis
+supports it (it selects exactly E0-b at this baseline), and a digest
+gate would freeze the corpus instead of the law.  The U4-M mid law
+stays DEMOTED/unsupported and is not implemented; the battery
+discriminates dup from next/mid wherever a loop references a slot
+(section 4).
