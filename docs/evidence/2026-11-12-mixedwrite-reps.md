@@ -94,7 +94,9 @@ fail — the stage-4b "shifted" case is the same measurement).  Pool
 absorption runs on exact f32 first, then the stage-4b noise tolerance
 (relative 1e-5, full triples only), then the twins' second route: the
 `05 08 01` vertex sub-node records re-list pool verbatim (stage-7's
-vertex sub-node law, now corpus-wide).  The refs gate parses the gated
+vertex sub-node law, now corpus-wide; [CORRECTED 2026-11-13: the
+corpus-wide status is retracted — the route remains the twins' law
+only, see DATED CORRECTION 2 below]).  The refs gate parses the gated
 records in each rep's territory (region end -> the next node magic)
 and requires max gated ref < the rep's element count.
 
@@ -152,7 +154,9 @@ POLYLINE law, refs < c1) + `04 04 ff ff` 8-B records (40-541 per
 store) + a vertex sub-node (`04 ff ff` + `00 00 00 01` + kind + count
 + count x `05 08 01` + 12 B f32) whose record count equals the pool
 size and whose records re-list the pool verbatim (248/248 on
-12dc542e, 203/203 on 8e8500b1).  The span's budget is ~48-53 B per
+12dc542e, 203/203 on 8e8500b1; [CORRECTED 2026-11-13: see DATED
+CORRECTION 2 below — the counted record set was the pool's own
+wrapper, 0 markers outside pool records on all 11 stores]).  The span's budget is ~48-53 B per
 declared element across all 11 stores — MORE data than full triples —
 and the non-pool elements' 3-D coordinates are NOT in the payload
 (the pairs read as parametric values; a surface evaluation would be
@@ -290,6 +294,11 @@ the stage-9 residual 12 — the lever has no store to act on:
   undecoded-variant whose exporter failures are other families —
   "no 01 06 vertex pool decoded" (G2 P8), "facet references beyond
   the pool", etc.; probe and exporter agree store-by-store).
+  [DATED FIX 2026-11-13 (review F2): "no composite pool" is
+  LOCATOR-relative — 16 of the missing-geometry-store files carry
+  composite-space wrappers in unlocated bytes (review raw scan;
+  those bytes reach no decode path, a locator-recovery sub-question
+  inside the stage-12 mass).  Read: "no located composite span".]
 - The 11 UV-family stores: 0 decoded reps under the law ladder
   (walk-mismatch co-blocker; residues 40..1,056, byte-verified all at
   pool-record positions, none pinnable — see correction 2 below).
@@ -335,6 +344,10 @@ wrapper records (the stage-9 pairing-artifact mechanism,
 S9-census-artifact, applied to the record set instead of the pairing
 loop).  The twins' second route does not exist on the UV family's
 bytes; the family's element semantics stay the (unchanged) blocker.
+Byte mechanism (review 2026-11-13, note `4f982c7`): the pool wrapper
+`10 24 04 ff ff 00 00 00 01 06 f8` read 2 bytes in is exactly this
+note's "`04 ff ff` + `00 00 00 01` + kind + count" framing — the
+"vertex sub-node" IS the pool's own wrapper, not a second structure.
 
 Reproduction:
 
@@ -347,8 +360,10 @@ python3 -I scripts/triage/stage11_subnode_population_probe.py --sha16 bad44bdf
 # -> docs/evidence/data/stage11-subnode-population-anchor.csv (1 row)
 ```
 
-Corpus run ~3 s wall (322 fail-closed parts; the exporter anchor runs
-only on the 12 composite fail-closed stores).  Claims row:
+Corpus run ~3 s wall (322 fail-closed parts; [DATED FIX 2026-11-13
+(review F1): the exporter anchor (pass 2) runs only on pass-1
+candidates — bad44bdf alone; `exporter_error_class` is filled on
+1/322 rows, not on all 12 composite stores]).  Claims row:
 `MW16-stage11-population` in `mixedwrite-reps-claims.csv`.  Phase B:
 not run (gate unmet on both arms — 0 pinnable stores, and no
 committed-evidence law question even arises).
