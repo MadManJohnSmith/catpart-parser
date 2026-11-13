@@ -80,18 +80,22 @@
       "properties": {
         "container": {
           "type": "string",
-          "enum": ["stdcont", "xdoclink", "seebody"],
-          "description": "Container family whose region located the store (stage 3a #34): stdcont = the shipped CATStdCont law, xdoclink = a CATXDocLinkCont region probe, seebody = a CATSeeBodyCont region probe (G1 N10's next_block_store family and the seebody stores, docs/evidence/2026-11-10-l2-grind-classification.md section 6)."
+          "enum": ["stdcont", "xdoclink", "seebody", "other-container"],
+          "description": "Container family whose region located the store (stage 3a #34; other-container added stage 12 #34 2026-11-13): stdcont = the shipped CATStdCont law, xdoclink = a CATXDocLinkCont region probe, seebody = a CATSeeBodyCont region probe (G1 N10's next_block_store family and the seebody stores, docs/evidence/2026-11-10-l2-grind-classification.md section 6), other-container = a store validated in a remaining block region of any other doc-type name (the stage-12 census: CATBRepModeContainer 39 / CameraStartupContainer 8 / contmeasure 2 / four others 1 each — docs/evidence/2026-11-13-noncomposite-census.md section 2)."
         },
         "tail_law": {
           "type": "string",
           "enum": ["shipped", "overshoot", "padded"],
           "description": "Catalog-tail law that validated the store (stage 3a #34): shipped = the pre-stage-3a window [cb, origin + dword8 + dword12); overshoot = the G1 C3 dword8-overshoot variant, read from the true catalog magic with length dword12; padded = the G1 padded-tail variant, ended at its CB__END (N4w)."
+        },
+        "container_name": {
+          "type": "string",
+          "description": "The located block's own doc-type name (stage 12 #34, present only with container = other-container; e.g. CATBRepModeContainer)."
         }
       },
       "required": ["container", "tail_law"],
       "additionalProperties": true,
-      "description": "Present only on recovered stores (stage 3a #34, the L5 lever): how the store was located — which container probe and which catalog-tail law. Absent on stores located by the shipped CATStdCont law. A recovered store that then fails the decode names the same probe/law on the error detail instead."
+      "description": "Present only on recovered stores (stage 3a #34, the L5 lever; stage 12 #34 extends the probe families): how the store was located — which container probe and which catalog-tail law. Absent on stores located by the shipped CATStdCont law. A recovered store that then fails the decode names the same probe/law on the error detail instead."
     },
     "origin_kind": {
       "type": "string",

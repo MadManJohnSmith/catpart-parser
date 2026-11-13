@@ -115,9 +115,27 @@ each is the fixture twin of a stage-1 census recovery family):
 - ``geometry-seebody-empty``    -> a ``CATSeeBodyCont`` block carrying no
   store (census case 084841b3): the probe matches nothing, fail-closed
   -> ``missing-geometry-store``.
+- ``geometry-othercontainer-store`` -> the store in a
+  ``CATBRepModeContainer`` block (stage-12 #34: the other-container
+  probe family, the census's dominant recovery region) -> exports via
+  the stage-12 probe, ``store_recovery`` = other-container/shipped
+  with ``container_name`` = CATBRepModeContainer.
 - ``geometry-overshoot-bad-tail`` -> an overshoot store whose corrected
   tail also violates N6 (C != D): neither tail family recovers,
   fail-closed -> ``malformed-store-header``.
+- ``geometry-othercontainer-composite`` -> the composite-gate store
+  inside a ``CATBRepModeContainer`` block: recovered by the stage-12
+  probe, then the composite gate fires -> ``undecoded-variant`` naming
+  the block on the error detail.
+- ``geometry-othercontainer-bad-tail`` -> the neither-family-recovers
+  store inside a ``CATBRepModeContainer`` block: the stage-12 probe
+  raises the shipped ``malformed-store-header`` rejection (fail-closed
+  — the same rules as the named families).
+- ``geometry-othercontainer-behind-empty-stdcont`` /
+  ``geometry-stdcont-precedence`` -> the stage-12 probe fires only
+  when nothing located before it (a store-less ``CATStdCont`` block
+  does not block the probe) and never overrides a located
+  ``CATStdCont`` store.
 """
 
 from __future__ import annotations
@@ -167,6 +185,13 @@ VALID_VARIANTS = (
     "geometry-xdoclink-store",
     "geometry-overshoot-tail",
     "geometry-padded-tail",
+    # Stage-12 recovery variants (#34, 2026-11-13): the store in a
+    # CATBRepModeContainer block (the other-container probe family —
+    # the corpus's dominant recovery region, census section 2), behind
+    # a store-less CATStdCont block, and the stdcont-precedence pin.
+    "geometry-othercontainer-store",
+    "geometry-othercontainer-behind-empty-stdcont",
+    "geometry-stdcont-precedence",
     # Stage-3d identity-law variants (#34): both forms export under the
     # table walk + element-index refs.
     "geometry-composite-law-big",
@@ -228,6 +253,11 @@ CORRUPTED_VARIANTS = (
     "geometry-seebody-composite",
     "geometry-seebody-empty",
     "geometry-overshoot-bad-tail",
+    # Stage-12 fail-closed negatives (#34, 2026-11-13): recovered-then-
+    # composite-failing and broken-tail stores in an other-container
+    # block (the same fail-closed rules as the named families).
+    "geometry-othercontainer-composite",
+    "geometry-othercontainer-bad-tail",
     # Composite-law corrupted variants (G6 stage 3d, #34): the fail-
     # closed ladder's specific gaps.  The stage-2c nonplanar variant is
     # retired (2026-11-11): under the identity law non-coplanarity is
@@ -255,6 +285,9 @@ GEOMETRY_VARIANTS = (
     "geometry-xdoclink-store",
     "geometry-overshoot-tail",
     "geometry-padded-tail",
+    "geometry-othercontainer-store",
+    "geometry-othercontainer-behind-empty-stdcont",
+    "geometry-stdcont-precedence",
 ) + (
     "geometry-bad-nested-magic",
     "geometry-composite-index-space",
@@ -265,6 +298,11 @@ GEOMETRY_VARIANTS = (
     "geometry-seebody-composite",
     "geometry-seebody-empty",
     "geometry-overshoot-bad-tail",
+    # Stage-12 fail-closed negatives (#34, 2026-11-13): recovered-then-
+    # composite-failing and broken-tail stores in an other-container
+    # block (the same fail-closed rules as the named families).
+    "geometry-othercontainer-composite",
+    "geometry-othercontainer-bad-tail",
 )
 COMPOSITE_VARIANTS = (
     "geometry-composite-law",
@@ -1842,6 +1880,26 @@ def _geometry_payload(variant: str) -> bytes:
     if variant == "geometry-xdoclink-store":
         return _nested_store_block(b"CATStdCont", None) + _nested_store_block(
             b"CATXDocLinkCont", _geometry_store(variant)
+        )
+    if variant == "geometry-othercontainer-store":
+        return _nested_store_block(b"CATBRepModeContainer", _geometry_store(variant))
+    if variant == "geometry-othercontainer-behind-empty-stdcont":
+        return _nested_store_block(b"CATStdCont", None) + _nested_store_block(
+            b"CATBRepModeContainer", _geometry_store("geometry")
+        )
+    if variant == "geometry-stdcont-precedence":
+        return _nested_store_block(
+            b"CATStdCont", _geometry_store("geometry")
+        ) + _nested_store_block(b"CATBRepModeContainer", _geometry_store("geometry"))
+    if variant == "geometry-othercontainer-composite":
+        return _nested_store_block(
+            b"CATBRepModeContainer",
+            _geometry_store("geometry-composite-index-space"),
+        )
+    if variant == "geometry-othercontainer-bad-tail":
+        return _nested_store_block(
+            b"CATBRepModeContainer",
+            _geometry_store("geometry-overshoot-bad-tail"),
         )
     preamble = 250 - len(storage_property_block(b"CATStdCont", b"CATContainer"))
     return (
