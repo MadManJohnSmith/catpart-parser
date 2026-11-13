@@ -254,3 +254,101 @@ committed decoders (`composite.decode_region` semantics mirrored in
 `table_decode`/`decode_node`, `composite.read_count`, `composite.STRIP_RE`,
 `composite._nice`/`_raw_nice`/`SHAPES`) — no law re-derivation beyond
 the artifacts and the flat law stated above.
+
+## Stage-11 Phase A addendum (2026-11-13, #34): the corpus-wide subnode-only-blocked population at the stage-10 baseline
+
+The stage-11 dispatch measured the subnode-index lever corpus-wide at
+the accepted stage-10 baseline (c0e46e1) — the ceiling paragraph's
+"the subnode law <= +22" and the stage-9 correction's residual
+("only bad44bdf keeps a genuine subnode-index vertex gap WITHIN the
+93") had never been re-measured outside the 93 trigger stores.
+Probe: `scripts/triage/stage11_subnode_population_probe.py` ->
+`stage11-subnode-population.csv` (322 rows, one per fail-closed
+part-span).  Method: OWN walkers (the stage-9 correction method —
+the census's `pool_subnode_only` column is joined for reference only,
+never trusted), population = every stage-10 `export_ok != 1` row
+(322 = 178 missing-geometry-store + 144 undecoded-variant; the
+"exported-empty on absorption grounds" disjunct measured vacuous,
+0 exported rows with `vertex_count == 0`), per part the exporter's
+container walk, per composite span the full-body law-ladder decode
+(the committed `decode_node`), DIAGONAL absorption (the exporter's
+`_decode_mixedwrite` precondition, noise capped at 10,000-vertex
+groups exactly as landed) plus a no-early-break union diagnostic,
+byte verification of EVERY uncovered vertex value (position of each
+12-B occurrence: at an `05 08 01` prefix / inside the pool's own
+records / elsewhere; per-vertex pinnability = >= 1 occurrence
+OUTSIDE the pool's own records), and an exporter anchor (pass 2:
+`build_export` must fail naming the absorption gap; the
+composition's residue count must equal the byte measure).
+
+**The headline (fact): the pinnable subnode-only-blocked population
+corpus-wide is 0.**  The fail-closed composite population is exactly
+the stage-9 residual 12 — the lever has no store to act on:
+
+- 310 of 322 fail-closed rows carry no composite pool at all
+  (no-composite-store: 178 missing-geometry-store + 132
+  undecoded-variant whose exporter failures are other families —
+  "no 01 06 vertex pool decoded" (G2 P8), "facet references beyond
+  the pool", etc.; probe and exporter agree store-by-store).
+- The 11 UV-family stores: 0 decoded reps under the law ladder
+  (walk-mismatch co-blocker; residues 40..1,056, byte-verified all at
+  pool-record positions, none pinnable — see correction 2 below).
+  Their blocker remains the family's open element semantics.
+- bad44bdf (dev, 24.7 MB body, 3 pool groups = 93,522 vertices /
+  93,518 distinct, 3 flat-law decoded reps, refs 3/3 in-bounds):
+  uncovered = 1 vertex, diagonal == union (no pairing slack), and
+  that vertex occurs EXACTLY ONCE in the whole body — inside the
+  pool's own `05 08 01` records (0 occurrences elsewhere).  There is
+  no sub-node record re-listing it: nothing for an element-index law
+  to pin.  UNPINNABLE.  The exporter anchor agrees to the vertex:
+  the composition's own absorption raise names residue 1 == the
+  byte measure.
+
+**Ceiling correction (fact):** "the subnode law <= +22 on the
+corrected reading" corrects to **0** — the census's 22 was its
+early-break artifact (S9-census-artifact), the stage-9 residue within
+the 93 (bad44bdf) is unpinnable, and no store outside the 93 is
+subnode-only-blocked at the stage-10 baseline.  Stage-11 Phase B's
+gate (>= 2 stores blocked AND the element-index law pinnable from
+committed evidence) is NOT met on both arms: Phase B does not run.
+
+**DATED CORRECTION 1 — bad44bdf's gap label:** the stage-8 note's
+open 2 and the stage-9 residual named "bad44bdf's 1 subnode-index
+vertex"; the label was the census column's semantics
+(`subnode_only_vertices = len(pset - covered)`, stage-9 probe —
+a count of uncovered vertices, never a byte verification of sub-node
+presence).  Byte truth: the vertex occurs once, in the pool's own
+records.  The store's honest class is **unpinnable pool residue**,
+not "subnode-index gap".
+
+**DATED CORRECTION 2 — the UV family's "vertex sub-node re-lists
+the pool verbatim" clause is the census record-set artifact:** the
+stage-8 UV paragraph claimed "a vertex sub-node (`04 ff ff` +
+`00 00 00 01` + kind + count + count x `05 08 01` + 12 B f32) whose
+record count equals the pool size and whose records re-list the pool
+verbatim (248/248 on 12dc542e, 203/203 on 8e8500b1)".  Measured
+now: on ALL 11 UV stores every `05 08 01` marker in the body sits
+inside the pool's own records (12dc542e 248 in / 0 out; 8e8500b1
+203 in / 0 out; family total 3,166 in / 0 out) — the counts equaled
+the pool sizes because the counted record set WAS the pool's own
+wrapper records (the stage-9 pairing-artifact mechanism,
+S9-census-artifact, applied to the record set instead of the pairing
+loop).  The twins' second route does not exist on the UV family's
+bytes; the family's element semantics stay the (unchanged) blocker.
+
+Reproduction:
+
+```
+ln -s /home/alan/Documents/Repos/catpart-parser/corpus corpus   # gitignored, read-only
+python3 -I scripts/triage/stage11_subnode_population_probe.py
+# -> docs/evidence/data/stage11-subnode-population.csv (322 rows)
+# anchor subset (bad44bdf, the unpinnable residue):
+python3 -I scripts/triage/stage11_subnode_population_probe.py --sha16 bad44bdf
+# -> docs/evidence/data/stage11-subnode-population-anchor.csv (1 row)
+```
+
+Corpus run ~3 s wall (322 fail-closed parts; the exporter anchor runs
+only on the 12 composite fail-closed stores).  Claims row:
+`MW16-stage11-population` in `mixedwrite-reps-claims.csv`.  Phase B:
+not run (gate unmet on both arms — 0 pinnable stores, and no
+committed-evidence law question even arises).
