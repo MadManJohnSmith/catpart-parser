@@ -693,7 +693,7 @@ def _triangulate(elements, records):
     return triangles, degenerate, stats
 
 
-def decode_composite_store(data, span, groups, kinds):
+def decode_composite_store(data, span, groups, kinds, allow_unrouted_elements=False):
     """Decode one composite store span under the identity law (stage 3d;
     per-rep decomposition added 2026-11-12 stage 5, #34).
 
@@ -707,6 +707,20 @@ def decode_composite_store(data, span, groups, kinds):
     unabsorbed pool with no per-rep reading either, facet references
     beyond the element space, or no exportable facet records' families
     at all.
+
+    Stage-13 second-chance element-space route (2026-11-13, #34):
+    ``allow_unrouted_elements`` skips ONLY the marker-routing check
+    below.  It is set by ``export._export_store``'s clean-path failure
+    points (the no-pool raise and the refs-beyond raise) for stores
+    whose body carries a token-bearing list node: the stage-13 finding
+    is that the element space beyond the pool IS the list node's point
+    region — the composite structure without the ``01 02`` edge group
+    / ``ff ..`` opener markers (docs/evidence/
+    2026-11-13-stage13-elementspace.md sections 2-3) — so the routing
+    predicate was the only blocker.  Every other gate (layout,
+    walk-exact, absorption, per-rep, the M2b refs gate,
+    triangulation) is unchanged; on any failure the caller re-raises
+    the ORIGINAL clean-path error.
 
     Stage-5 per-rep decomposition (stage-4b law, 2026-11-11): when the
     single-rep reading fails the pool-absorption gate, the store body
@@ -754,7 +768,9 @@ def decode_composite_store(data, span, groups, kinds):
     stays unsupported and is not implemented.
     """
     lo, hi = span.body_lo, span.body_hi
-    if not any(k == b"\x01\x02" or k[:1] == b"\xff" for k in kinds):
+    if not allow_unrouted_elements and not any(
+        k == b"\x01\x02" or k[:1] == b"\xff" for k in kinds
+    ):
         raise ExportError(
             "undecoded-variant",
             "composite decode invoked on a store without composite markers",
