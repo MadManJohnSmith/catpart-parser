@@ -196,6 +196,16 @@ VALID_VARIANTS = (
     "geometry-composite-law-table-overshoot",
     "geometry-composite-law-flat-near-zero",
     "geometry-composite-law-mixedwrite-multi-rep",
+    # Stage-10 E0-b dup-pin variants (#34, 2026-11-12): the restricted
+    # curve-entry law's shapes — the battery-supported positives fire;
+    # the nonplanar / normal-less / non-empty / multi-rep negatives
+    # keep the conservative rule.
+    "geometry-composite-law-e0b-dup-pin",
+    "geometry-composite-law-e0b-single-loop",
+    "geometry-composite-law-e0b-nonplanar",
+    "geometry-composite-law-e0b-normal-less",
+    "geometry-composite-law-e0b-nonempty",
+    "geometry-composite-law-e0b-multi-rep-conservative",
 )
 CORRUPTED_VARIANTS = (
     "bad-magic",
@@ -275,6 +285,12 @@ COMPOSITE_VARIANTS = (
     "geometry-composite-law-flat-near-zero",
     "geometry-composite-law-mixedwrite-multi-rep",
     "geometry-composite-law-mixedwrite-multi-rep-subnode",
+    "geometry-composite-law-e0b-dup-pin",
+    "geometry-composite-law-e0b-single-loop",
+    "geometry-composite-law-e0b-nonplanar",
+    "geometry-composite-law-e0b-normal-less",
+    "geometry-composite-law-e0b-nonempty",
+    "geometry-composite-law-e0b-multi-rep-conservative",
 )
 
 # --- nested-store geometry (G4, #32) -----------------------------------
@@ -639,6 +655,33 @@ def _geometry_box_edges_lex() -> tuple[tuple[int, int], ...]:
 #                                        region re-lists -> absorption
 #                                        not established (sub-node
 #                                        residue, fail-closed).
+# - geometry-composite-law-e0b-dup-pin   stage-10: skip slots at
+#                                        elements 2/6/10; one record
+#                                        with TWO dropped loops, both
+#                                        normal-carrying and coplanar
+#                                        under the dup pin -> the E0-b
+#                                        law fires, the pinned loops
+#                                        export (4 triangles).
+# - geometry-composite-law-e0b-single-loop  the one-dropped-loop
+#                                        positive (the 4ad53b87 shape).
+# - geometry-composite-law-e0b-nonplanar one coplanar + one NONPLANAR
+#                                        dropped loop (3dff4d93): not
+#                                        battery-supported -> the
+#                                        conservative rule holds.
+# - geometry-composite-law-e0b-normal-less  one coplanar + one on a
+#                                        normal-less 0x42 strip
+#                                        (08f2eccb): untestable ->
+#                                        conservative.
+# - geometry-composite-law-e0b-nonempty  the box exports AND carries a
+#                                        battery-supported dropped
+#                                        loop: not empty-mesh -> the
+#                                        store-level conservative
+#                                        gate holds (471-passing).
+# - geometry-composite-law-e0b-multi-rep-conservative  rep 1 carries a
+#                                        battery-supported dropped
+#                                        loop, rep 0 exports its box:
+#                                        no rep-level fire (store-
+#                                        level gate).
 
 COMPOSITE_POOL_WALK = (
     (0.0, 10.0, 0.0),
@@ -971,6 +1014,7 @@ def _composite_store(variant: str) -> bytes:
     if variant in (
         "geometry-composite-law-multi-rep",
         "geometry-composite-law-multi-rep-partial",
+        "geometry-composite-law-e0b-multi-rep-conservative",
     ):
         return _composite_multi_rep_store(variant)
     if variant in (
@@ -1082,6 +1126,85 @@ def _composite_store(variant: str) -> bytes:
             )
             width = 1
             write_count_override = None
+        elif variant.startswith("geometry-composite-law-e0b"):
+            # Stage-10 E0-b dup-pin fixtures (#34, 2026-11-12): skip
+            # slots at ELEMENT indices 2, 6, 10 over the 12-point box;
+            # each pin welds to the preceding written element — element
+            # 1 = P1 (0,10,30), element 5 = P4 (0,110,30), element 9 =
+            # P7 (20,10,30).  The e0b records' loops are given in
+            # ELEMENT indices; the pinned points sit on the box's
+            # y=10 / y=110 faces, so a dup-pinned loop is coplanar with
+            # the stored normal (0,1,0) — the battery-supported E0-b
+            # shape (the landed analysis's restricted subset).
+            skip_slots = (2, 6, 10)
+            elements = _composite_elements(points, skip_slots)
+
+            def _e0b_record(
+                marker: int, normal, loops: tuple[tuple[int, ...], ...]
+            ) -> bytes:
+                # one facet record with k = len(loops) count bytes (the
+                # multi-loop record form; _facet_record writes k = 1)
+                refs = [r for loop in loops for r in loop]
+                rec = bytes([0x01, marker, 0x01, 0xFF])
+                rec += struct.pack("<I", len(refs))
+                if normal is not None:
+                    rec += struct.pack("<fff", *normal)
+                return rec + bytes(len(loop) for loop in loops) + bytes(refs)
+
+            # skip 2 pins P1: coplanar fan (rank 1,0,6),(1,6,2) on y=10
+            skip_loop_a = (2, 0, 8, 3)
+            # skip 6 pins P4: coplanar fan (4,3,9),(4,9,5) on y=110
+            skip_loop_b = (6, 4, 12, 7)
+            # skip 6 pins P4 but the loop also carries P1 (y=10):
+            # NONPLANAR under the pin (the 3dff4d93 shape)
+            skip_loop_bad = (6, 4, 12, 1)
+            faces = ()
+            width = 1
+            write_count_override = None
+            if variant == "geometry-composite-law-e0b-dup-pin":
+                # 2 dropped loops, BOTH coplanar under the pin: the law
+                # fires (the 2fca9bc4 / 505bbe1f shape).
+                extra_record = _e0b_record(
+                    0x4C, (0.0, 1.0, 0.0), (skip_loop_a, skip_loop_b)
+                )
+            elif variant == "geometry-composite-law-e0b-single-loop":
+                # 1 dropped loop, coplanar: fires (the 4ad53b87 /
+                # 4ae0392d shape).
+                extra_record = _facet_record(0x4C, (0.0, 1.0, 0.0), skip_loop_a)
+            elif variant == "geometry-composite-law-e0b-nonplanar":
+                # one coplanar + one NONPLANAR dropped loop: not
+                # battery-supported -> the conservative rule holds.
+                extra_record = _facet_record(
+                    0x4C, (0.0, 1.0, 0.0), skip_loop_a
+                ) + _e0b_record(0x4C, (0.0, 1.0, 0.0), (skip_loop_bad,))
+            elif variant == "geometry-composite-law-e0b-normal-less":
+                # one coplanar loop + one on a NORMAL-LESS 0x42 strip
+                # (the 08f2eccb mixed-coverage shape): untestable ->
+                # the conservative rule holds.
+                extra_record = _facet_record(
+                    0x4C, (0.0, 1.0, 0.0), skip_loop_a
+                ) + _facet_record(0x42, None, skip_loop_b)
+            else:  # geometry-composite-law-e0b-nonempty
+                # the box exports its 12 triangles AND carries a
+                # battery-supported dropped loop: the primary mesh is
+                # NOT empty -> the store-level conservative gate holds
+                # (the 471-passing stores' shape).  The box's faces are
+                # written over WRITTEN indices — remapped through the
+                # skip layout (the curve-entries variant's _elem walk).
+                def _elem(r: int) -> int:
+                    e = r
+                    for s in skip_slots:
+                        if s <= e:
+                            e += 1
+                        else:
+                            break
+                    return e
+
+                faces = tuple(
+                    (mk, normal, tuple(_elem(r) for r in refs))
+                    for mk, normal, refs in COMPOSITE_FACES
+                )
+                extra_record = _facet_record(0x4C, (0.0, 1.0, 0.0), skip_loop_a)
         else:
             elements = _composite_elements(points)
             faces = COMPOSITE_FACES
@@ -1196,7 +1319,17 @@ def _composite_multi_rep_store(variant: str) -> bytes:
         # the un-absorbed 9th vertex of rep 1's pool group
         pool1 = pool1 + ((999.5, 10.0, 0.0),)
     elements0 = _composite_elements(pts0)
-    elements1 = _composite_elements(pts1)
+    if variant == "geometry-composite-law-e0b-multi-rep-conservative":
+        # stage-10 (#34): rep 1 carries skip slots (2, 6, 10 — the pins
+        # are P1/P4/P7 +200x) and ONE battery-supported dropped loop;
+        # rep 0 exports its box, so the store's mesh is NOT empty and
+        # the store-level conservative gate holds (a rep-level fire
+        # would regress the store's L2 state).
+        elements1 = _composite_elements(pts1, (2, 6, 10))
+        rep1_records = ((0x4C, (0.0, 1.0, 0.0), (2, 0, 8, 3)),)
+    else:
+        elements1 = _composite_elements(pts1)
+        rep1_records = COMPOSITE_FACES
     body_parts = [
         NESTED_FULL_WRAP
         + NESTED_POOL_SUBKIND
@@ -1223,7 +1356,7 @@ def _composite_multi_rep_store(variant: str) -> bytes:
     for marker, normal, refs in COMPOSITE_FACES:
         body_parts.append(_facet_record(marker, normal, refs, width=1))
     body_parts.append(b"\x04\x04\xfd\xff" + _composite_node_payload(elements1))
-    for marker, normal, refs in COMPOSITE_FACES:
+    for marker, normal, refs in rep1_records:
         body_parts.append(_facet_record(marker, normal, refs, width=1))
     body = b"".join(body_parts)
 

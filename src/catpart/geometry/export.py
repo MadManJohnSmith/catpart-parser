@@ -48,6 +48,7 @@ WARN_OPEN_SHELL = "open-shell"
 WARN_UNUSED_VERTICES = "unused-pool-vertices"
 WARN_NO_FACETS = "no-facet-records"
 WARN_CURVE_ENTRY = "curve-entry-loops-unexported"
+WARN_CURVE_ENTRY_EXPORTED = "curve-entry-loops-exported-dup-pin"
 
 
 def build_export(path, out_path) -> dict:
@@ -342,7 +343,11 @@ def _export_composite_store(data, span, ordinal: int, groups, kinds):
     non-finite coordinates, unabsorbed pool, references beyond the
     element space).  Loops referencing skip slots (curve entries, U4)
     are not exported — their coordinates are not pinned — and surface
-    as the ``curve-entry-loops-unexported`` warning.
+    as the ``curve-entry-loops-unexported`` warning; the stage-10 E0-b
+    dup-pin law is the one exception (composite.py's restricted
+    subset): on an otherwise-empty primary triangulation whose every
+    dropped loop is battery-supported under the dup pin, those loops
+    export and surface as ``curve-entry-loops-exported-dup-pin``.
     """
     points, triangles, degenerate, info = composite.decode_composite_store(
         data, span, groups, kinds
@@ -366,6 +371,22 @@ def _export_composite_store(data, span, ordinal: int, groups, kinds):
                 "live in the curve records (U4, open) so those loops are "
                 "not exported — no guessing; the store's other loops "
                 "export under the identity mapping",
+            }
+        )
+    if info.get("curve_entry_law"):
+        warnings.append(
+            {
+                "class": WARN_CURVE_ENTRY_EXPORTED,
+                "detail": f"{info['loops_curve_entry_exported']} facet "
+                "loops referencing skip slots (curve entries) exported "
+                "under the stage-10 E0-b dup-pin law (#34, 2026-11-12): "
+                "the store's primary triangulation is empty (E0) and "
+                "every dropped loop is normal-carrying and coplanar "
+                "against its record's stored normal with the dup-pinned "
+                "coordinates (each skip slot welded to the written "
+                "vertex of its immediately preceding written element, "
+                "no new vertices — the landed analysis's restricted "
+                "battery-supported subset)",
             }
         )
     skipped_markers = info.get("skipped_markers") or {}

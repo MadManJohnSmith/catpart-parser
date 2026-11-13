@@ -46,6 +46,31 @@ stage-3b table law dated 2026-11-11, byte-measured on the corpus):
   (U4: the entry's coordinates live in the curve records, open), so
   the exporter skips exactly those loops and names the gap — the rest
   of the store exports.
+
+  Stage-10 E0-b dup-pin law (2026-11-12, #34; the landed analysis's
+  RESTRICTED recommendation — docs/evidence/
+  2026-11-12-curve-entry-analysis.md section 5, claims row
+  ``U4-stage5-recommendation``, + the stage-9-baseline recompute
+  addendum): on a store whose primary triangulation is EMPTY (the
+  census's ``empty-mesh`` class — E0 by construction: it can only move
+  fail -> pass, no L2 pass can regress) and when EVERY dropped loop is
+  battery-supported — its record carries a 12-B normal and the loop is
+  coplanar against that normal with the dup-pinned coordinates (the
+  U4-D dup law, ported from the stage-4a decoder's ``dup_prev``, not
+  re-derived: a loop-referenced skip slot welds to the written vertex
+  of its immediately preceding written element, no new vertices) —
+  those loops export (``e0b-dup-pin``).  One normal-less (untestable)
+  or nonplanar dropped loop keeps the WHOLE store on the conservative
+  non-export rule with its warning (the analysis's E0-b criterion:
+  battery coverage full AND zero nonplanar).  The live law predicate
+  selects exactly the battery-supported subset E0-b of the analysis
+  (2fca9bc4 / 4ad53b87 / 4ae0392d / 505bbe1f at the stage-9 baseline;
+  the other 22 E0 members each carry a normal-less dropped loop, and
+  3dff4d93 a nonplanar one — measured, stage-10 note).  The U4-M mid
+  law stays DEMOTED to unsupported and is NOT implemented; the battery
+  discriminates dup from next/mid wherever a loop references a slot
+  (twin probe), and a ``mid`` slot is by construction referenced by no
+  facet loop, so it enters no triangle either way.
 - Loop plane law: coplanarity against the record's stored 12-B normal
   (the corner quads are slanted planes; the axis-constant reading was
   too strict).  It is the law's validation battery, not an export
@@ -510,6 +535,95 @@ def _loop_plane_status(loop, normal, elements):
     return "coplanar", worst
 
 
+def _loop_triangles(mk, idxs, points):
+    """One exported loop's triangles under the strip/polygon semantics
+    (G3): 0x4c polygon fans triangulate from the first reference,
+    0x42/0x4a strips use the sliding window with the odd-triangle
+    winding flip; degenerate triangles (repeated coordinates, or the
+    exactly-zero cross product on strips, G3 F7) are skipped and
+    counted.
+
+    Returns ``(triangles, degenerate)``; ``idxs`` are written-point
+    ranks (indices into ``points``, the exported vertex list)."""
+    lp = [points[i] for i in idxs]
+    triangles = []
+    degenerate = 0
+    if mk == 0x4C:
+        for t in range(1, len(lp) - 1):
+            tri = (idxs[0], idxs[t], idxs[t + 1])
+            a, b, c = lp[0], lp[t], lp[t + 1]
+            if a == b or b == c or a == c:
+                degenerate += 1
+                continue
+            triangles.append(tri)
+    else:
+        for t in range(len(lp) - 2):
+            tri = (idxs[t], idxs[t + 1], idxs[t + 2])
+            if t % 2 == 1:
+                tri = (tri[2], tri[1], tri[0])
+            a, b, c = lp[t], lp[t + 1], lp[t + 2]
+            if a == b or b == c or a == c:
+                degenerate += 1
+                continue
+            if _cross_zero(a, b, c):
+                degenerate += 1
+                continue
+            triangles.append(tri)
+    return triangles, degenerate
+
+
+def _e0b_dup_pin(elements, points, written_rank, dropped):
+    """The stage-10 E0-b dup-pin evaluation over one call's dropped
+    loops (the curve-entry coordinate law, restricted per the landed
+    analysis's ``U4-stage5-recommendation``; see the module docstring).
+
+    The U4-D dup law (ported from the stage-4a decoder's ``dup_prev``,
+    decode_curve_entries.py — not re-derived): a loop-referenced skip
+    slot carries the bit-exact coordinates of the written vertex of its
+    immediately preceding written element (the per-face copy — no new
+    vertices).  Battery-supported iff EVERY dropped loop is
+    coplanarity-testable (its record carries a 12-B normal, and every
+    referenced skip slot has a preceding written element to weld to)
+    AND coplanar against that normal with the dup-pinned coordinates
+    (the stage-3b battery, :func:`_loop_plane_status`,
+    :data:`PLANE_TOL`) — the analysis's E0-b criterion (coverage full
+    AND zero nonplanar).  One normal-less or nonplanar dropped loop
+    keeps the whole store on the conservative non-export rule.
+
+    Returns ``{"triangles", "degenerate", "loops"}`` when supported
+    (the pinned loops' triangles, written-rank indexed), ``None``
+    otherwise."""
+    skips = {i for i, (_v, pt) in enumerate(elements) if pt is None}
+    pin: dict[int, int] = {}
+    for _mk, _normal, loop in dropped:
+        for r in loop:
+            if r in skips and r not in pin:
+                j = r - 1
+                while j >= 0 and elements[j][1] is None:
+                    j -= 1
+                if j >= 0:
+                    pin[r] = j
+                # j < 0: no preceding written element — unpinnable
+    if any(r in skips and r not in pin for _mk, _n, loop in dropped for r in loop):
+        return None
+    pinned = list(elements)
+    for r, j in pin.items():
+        pinned[r] = (1, elements[j][1])
+    triangles = []
+    degenerate = 0
+    for mk, normal, loop in dropped:
+        if normal is None:
+            return None  # a normal-less dropped loop: battery cannot test it
+        st, _res = _loop_plane_status(loop, normal, pinned)
+        if st != "coplanar":
+            return None  # nonplanar under the dup pin (or a zero normal)
+        resolved = [pin.get(r, r) for r in loop]
+        tris, deg = _loop_triangles(mk, [written_rank[r] for r in resolved], points)
+        triangles += tris
+        degenerate += deg
+    return {"triangles": triangles, "degenerate": degenerate, "loops": len(dropped)}
+
+
 def _triangulate(elements, records):
     """Triangles under the identity mapping (strip/polygon semantics).
 
@@ -517,13 +631,23 @@ def _triangulate(elements, records):
     WRITTEN points (the exported vertex list), so referenced elements
     are remapped through the written rank.  Loops referencing skip
     slots (curve entries — their coordinates live in the curve records,
-    U4, open) are skipped and counted: the exporter names the gap
-    instead of guessing coordinates.  Strip triangles (0x42/0x4a) skip
-    the degenerate ones (repeated coordinates or exactly-zero cross
-    product, G3 F7); polygon fans (0x4c) skip repeated coordinates.
+    U4) are skipped and counted: the conservative rule names the gap
+    instead of guessing coordinates — EXCEPT the stage-10 E0-b dup-pin
+    law (:func:`_e0b_dup_pin`): when this call produced NO triangles
+    (the store's primary triangulation is empty — the E0 class) and
+    EVERY dropped loop is battery-supported under the dup pin, the
+    candidate rides ``stats["dup_pin"]`` for the caller to merge at the
+    store level (per-rep paths must gate on the WHOLE store's mesh
+    being empty — a rep-level fire inside an otherwise-passing store
+    would be the 471-passing-stores downside exposure).  Strip
+    triangles (0x42/0x4a) skip the degenerate ones (repeated
+    coordinates or exactly-zero cross product, G3 F7); polygon fans
+    (0x4c) skip repeated coordinates.
 
     Returns ``(triangles, degenerate, stats)`` where ``stats`` carries
-    the loop counters for the summary's composite block.
+    the loop counters for the summary's composite block (plus the
+    ``dup_pin`` candidate exactly when the law's precondition held and
+    it evaluated; consumers pop it before assembling ``info``).
     """
     written_rank: dict[int, int] = {}
     skips: set[int] = set()
@@ -538,7 +662,8 @@ def _triangulate(elements, records):
     degenerate = 0
     loops_exported = 0
     loops_curve_entry = 0
-    for _off, mk, _normal, counts, refs, _w in records:
+    dropped = []
+    for _off, mk, normal, counts, refs, _w in records:
         if mk not in (0x42, 0x4A, 0x4C):
             continue
         loops = []
@@ -551,35 +676,19 @@ def _triangulate(elements, records):
                 continue
             if any(r in skips for r in loop):
                 loops_curve_entry += 1
+                dropped.append((mk, normal, loop))
                 continue
             loops_exported += 1
             idxs = [written_rank[r] for r in loop]
-            lp = [points[i] for i in idxs]
-            if mk == 0x4C:
-                for t in range(1, len(lp) - 1):
-                    tri = (idxs[0], idxs[t], idxs[t + 1])
-                    a, b, c = lp[0], lp[t], lp[t + 1]
-                    if a == b or b == c or a == c:
-                        degenerate += 1
-                        continue
-                    triangles.append(tri)
-            else:
-                for t in range(len(lp) - 2):
-                    tri = (idxs[t], idxs[t + 1], idxs[t + 2])
-                    if t % 2 == 1:
-                        tri = (tri[2], tri[1], tri[0])
-                    a, b, c = lp[t], lp[t + 1], lp[t + 2]
-                    if a == b or b == c or a == c:
-                        degenerate += 1
-                        continue
-                    if _cross_zero(a, b, c):
-                        degenerate += 1
-                        continue
-                    triangles.append(tri)
+            tris, deg = _loop_triangles(mk, idxs, points)
+            degenerate += deg
+            triangles += tris
     stats = {
         "loops_exported": loops_exported,
         "loops_curve_entry": loops_curve_entry,
     }
+    if not triangles and dropped:
+        stats["dup_pin"] = _e0b_dup_pin(elements, points, written_rank, dropped)
     return triangles, degenerate, stats
 
 
@@ -632,6 +741,16 @@ def decode_composite_store(data, span, groups, kinds):
     covers exports with stage ``identity-mixedwrite-reps``, one it
     does not cover keeps ``undecoded-variant`` with the walk, raw AND
     composition gaps all named.
+
+    Stage-10 E0-b dup-pin law (2026-11-12, #34): on every exported
+    path, a store whose primary triangulation is EMPTY (the census's
+    ``empty-mesh`` class) exports its dropped curve-entry loops when
+    EVERY one is battery-supported under the dup pin
+    (:func:`_e0b_dup_pin` — the landed analysis's restricted
+    battery-supported subset E0-b; the per-rep paths gate the merge on
+    the WHOLE store's mesh being empty).  Anything else keeps the
+    conservative non-export rule and its warning; the U4-M mid law
+    stays unsupported and is not implemented.
     """
     lo, hi = span.body_lo, span.body_hi
     if not any(k == b"\x01\x02" or k[:1] == b"\xff" for k in kinds):
@@ -713,6 +832,21 @@ def decode_composite_store(data, span, groups, kinds):
             )
 
     triangles, degenerate, loop_stats = _triangulate(elements, records)
+    # Stage-10 E0-b dup-pin law (2026-11-12, #34): the primary
+    # triangulation is empty (the census's empty-mesh class) and EVERY
+    # dropped curve-entry loop is battery-supported under the dup pin —
+    # the loops export with their skip slots welded (the landed
+    # analysis's restricted subset; single-rep path, so this call IS
+    # the store-level mesh).  ``None`` (or no candidate) keeps the
+    # conservative non-export rule and its warning.
+    dup_pin = loop_stats.pop("dup_pin", None)
+    curve_entry_law = 0
+    if dup_pin is not None:
+        triangles = triangles + dup_pin["triangles"]
+        degenerate += dup_pin["degenerate"]
+        loop_stats["loops_exported"] += dup_pin["loops"]
+        curve_entry_law = dup_pin["loops"]
+        loop_stats["loops_curve_entry"] = 0
 
     skipped_markers: dict[int, int] = {}
     for _o, mk, _n, _c, _refs, _w in records:
@@ -735,6 +869,9 @@ def decode_composite_store(data, span, groups, kinds):
         "node_bytes": len(payload),
         **loop_stats,
     }
+    if curve_entry_law:
+        info["curve_entry_law"] = "e0b-dup-pin"
+        info["loops_curve_entry_exported"] = curve_entry_law
     return points, triangles, degenerate, info
 
 
@@ -851,6 +988,7 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool):
     curve_entries = 0
     node_bytes = 0
     reps_unexported = []
+    reps_dup_pin = []
     for k, d in enumerate(decoded):
         node_bytes += len(d["payload"])
         if k >= len(groups):
@@ -902,6 +1040,15 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool):
             continue
         base = len(points)
         tri_k, deg_k, stats_k = _triangulate(d["elements"], records)
+        dup_cand = stats_k.pop("dup_pin", None)
+        if dup_cand is not None:
+            # stage-10 E0-b candidate for this rep (its own triangulation
+            # is empty and its dropped loops were battery-evaluated):
+            # merged at the STORE level below only when the whole
+            # store's mesh is empty — a rep-level fire inside an
+            # otherwise-exporting store would be the 471-passing-stores
+            # downside exposure.
+            reps_dup_pin.append((base, dup_cand))
         points += d["pts"]
         triangles += [(a + base, b + base, c + base) for a, b, c in tri_k]
         degenerate += deg_k
@@ -924,6 +1071,17 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool):
             "region (unabsorbed variant; the per-rep decomposition "
             f"exports no rep: {'; '.join(reps_unexported) or 'no reps'})",
         )
+    # Stage-10 E0-b store-level gate: fire only when the WHOLE store's
+    # mesh is empty and every rep with dropped loops is battery-
+    # supported; one unsupported rep keeps everything conservative.
+    curve_entry_law = 0
+    if not triangles and reps_dup_pin and all(c is not None for _b, c in reps_dup_pin):
+        for b, c in reps_dup_pin:
+            triangles += [(a + b, s + b, t + b) for a, s, t in c["triangles"]]
+            degenerate += c["degenerate"]
+            loop_stats["loops_exported"] += c["loops"]
+            curve_entry_law += c["loops"]
+        loop_stats["loops_curve_entry"] = 0
     info = {
         "stage": "identity-per-rep",
         "element_decl": element_decl,
@@ -941,6 +1099,9 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool):
         "rep_reasons": reps_unexported,
         **loop_stats,
     }
+    if curve_entry_law:
+        info["curve_entry_law"] = "e0b-dup-pin"
+        info["loops_curve_entry_exported"] = curve_entry_law
     return points, triangles, degenerate, info
 
 
@@ -1525,6 +1686,7 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups):
     curve_entries = 0
     node_bytes = 0
     reps_unexported = []
+    reps_dup_pin = []
     for k, d in enumerate(decoded):
         node_bytes += len(d["payload"])
         if k >= len(groups):
@@ -1551,6 +1713,11 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups):
             continue
         base = len(points)
         tri_k, deg_k, stats_k = _triangulate(d["elements"], records)
+        dup_cand = stats_k.pop("dup_pin", None)
+        if dup_cand is not None:
+            # stage-10 E0-b candidate (see _decode_per_rep): merged at
+            # the store level below, only when the whole mesh is empty.
+            reps_dup_pin.append((base, dup_cand))
         points += d["pts"]
         triangles += [(a + base, b + base, c + base) for a, b, c in tri_k]
         degenerate += deg_k
@@ -1572,6 +1739,15 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups):
             f"the stage-8 mixed-write per-rep composition exports no "
             f"rep: {'; '.join(reps_unexported) or 'no reps'}",
         )
+    # Stage-10 E0-b store-level gate (see _decode_per_rep).
+    curve_entry_law = 0
+    if not triangles and reps_dup_pin and all(c is not None for _b, c in reps_dup_pin):
+        for b, c in reps_dup_pin:
+            triangles += [(a + b, s + b, t + b) for a, s, t in c["triangles"]]
+            degenerate += c["degenerate"]
+            loop_stats["loops_exported"] += c["loops"]
+            curve_entry_law += c["loops"]
+        loop_stats["loops_curve_entry"] = 0
     info = {
         "stage": "identity-mixedwrite-reps",
         "element_decl": element_decl,
@@ -1590,6 +1766,9 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups):
         "rep_laws": law_counts,
         **loop_stats,
     }
+    if curve_entry_law:
+        info["curve_entry_law"] = "e0b-dup-pin"
+        info["loops_curve_entry_exported"] = curve_entry_law
     return points, triangles, degenerate, info
 
 
