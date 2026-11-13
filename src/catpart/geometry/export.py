@@ -260,10 +260,17 @@ def _export_store(data, span, ordinal: int) -> tuple[dict, list, list]:
         return _export_composite_store(data, span, ordinal, groups, kinds)
     flat = [v for g in groups for v in g.vertices]
     if not flat:
-        raise ExportError(
-            "undecoded-variant",
-            "no 01 06 vertex pool decoded from the store body "
-            "(G2 P8 family: strips without a pool, or an empty store)",
+        return _unrouted_element_space(
+            data,
+            span,
+            ordinal,
+            groups,
+            kinds,
+            ExportError(
+                "undecoded-variant",
+                "no 01 06 vertex pool decoded from the store body "
+                "(G2 P8 family: strips without a pool, or an empty store)",
+            ),
         )
     lex = facets.lex_rank_map(flat)
     # The store-width context is bounded to the clean store class (#35,
@@ -278,11 +285,18 @@ def _export_store(data, span, ordinal: int) -> tuple[dict, list, list]:
     )
     beyond = max((max(rec.refs, default=-1) for rec in scan.records), default=-1)
     if beyond >= len(flat):
-        raise ExportError(
-            "undecoded-variant",
-            f"facet references beyond the pool: max ref {beyond} >= pool "
-            f"size {len(flat)} (G3 open question 2 — a further element "
-            "source or a second pool form; no guessing)",
+        return _unrouted_element_space(
+            data,
+            span,
+            ordinal,
+            groups,
+            kinds,
+            ExportError(
+                "undecoded-variant",
+                f"facet references beyond the pool: max ref {beyond} >= pool "
+                f"size {len(flat)} (G3 open question 2 — a further element "
+                "source or a second pool form; no guessing)",
+            ),
         )
     soup = facets.decode_soup(flat, lex, scan)
 
@@ -387,7 +401,34 @@ def _export_store(data, span, ordinal: int) -> tuple[dict, list, list]:
     return summary, flat, list(soup.triangles)
 
 
-def _export_composite_store(data, span, ordinal: int, groups, kinds):
+def _unrouted_element_space(data, span, ordinal: int, groups, kinds, original):
+    """The stage-13 second-chance element-space route (#34, 2026-11-13).
+
+    Fires ONLY where the clean path was about to raise the no-pool
+    error (G2 P8: no ``01 06`` vertex pool decoded) or the refs-beyond
+    error (G3 open question 2: facet references beyond the pool) —
+    the two failure classes the stage-13 census measured.  A store
+    whose body carries a token-bearing list node is routed through the
+    UNCHANGED composite decode (``allow_unrouted_elements`` skips only
+    the marker-routing check; the stage-13 finding: the element space
+    beyond the pool IS the list node's point region, the composite
+    structure without its markers — docs/evidence/
+    2026-11-13-stage13-elementspace.md sections 2-3).  Every store the
+    route does not cover re-raises the ORIGINAL clean-path error
+    unchanged (fail-closed, row-identical); every previously-exporting
+    store returned before this function existed.
+    """
+    try:
+        return _export_composite_store(
+            data, span, ordinal, groups, kinds, allow_unrouted_elements=True
+        )
+    except ExportError:
+        raise original from None
+
+
+def _export_composite_store(
+    data, span, ordinal: int, groups, kinds, allow_unrouted_elements=False
+):
     """Decode one composite store span under the identity law.
 
     The G6 stage-3d integration (#34, 2026-11-11): the list node's
@@ -407,9 +448,15 @@ def _export_composite_store(data, span, ordinal: int, groups, kinds):
     subset): on an otherwise-empty primary triangulation whose every
     dropped loop is battery-supported under the dup pin, those loops
     export and surface as ``curve-entry-loops-exported-dup-pin``.
+
+    ``allow_unrouted_elements`` (stage 13 #34, 2026-11-13) is the
+    second-chance element-space route from the clean path's no-pool and
+    refs-beyond failure points (``_unrouted_element_space``): it skips
+    only decode_composite_store's marker-routing check — every other
+    gate is the landed law.
     """
     points, triangles, degenerate, info = composite.decode_composite_store(
-        data, span, groups, kinds
+        data, span, groups, kinds, allow_unrouted_elements=allow_unrouted_elements
     )
     stats = mesh.mesh_stats(list(triangles))
     warnings = []

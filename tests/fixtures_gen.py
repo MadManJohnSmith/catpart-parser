@@ -192,6 +192,13 @@ VALID_VARIANTS = (
     "geometry-othercontainer-store",
     "geometry-othercontainer-behind-empty-stdcont",
     "geometry-stdcont-precedence",
+    # Stage-13 second-chance element-space positives (#34, 2026-11-13):
+    # the composite element-space structure WITHOUT its routing markers
+    # (no `01 02` edge group / opener) — the clean path fails with the
+    # no-pool or refs-beyond raise and the second-chance route re-routes
+    # to the unchanged composite decode (the stage-13 finding).
+    "geometry-unrouted-elementspace-refs-beyond",
+    "geometry-unrouted-elementspace-no-pool",
     # Stage-3d identity-law variants (#34): both forms export under the
     # table walk + element-index refs.
     "geometry-composite-law-big",
@@ -279,6 +286,12 @@ CORRUPTED_VARIANTS = (
     "geometry-composite-law-mixedwrite-multi-rep-subnode",
     # Stage-12 recovery positive (#34, 2026-11-13): see above.
     "geometry-othercontainer-composite-law",
+    # Stage-13 second-chance fail-closed negatives (#34, 2026-11-13):
+    # the second-chance element-space route declines and the ORIGINAL
+    # clean-path error re-raises unchanged (no token node / a walk-
+    # failing node).
+    "geometry-unrouted-elementspace-no-node",
+    "geometry-unrouted-elementspace-walk-mismatch",
 )
 GEOMETRY_VARIANTS = (
     "geometry",
@@ -308,6 +321,14 @@ GEOMETRY_VARIANTS = (
 )
 COMPOSITE_VARIANTS = (
     "geometry-composite-law",
+    # Stage-13 second-chance element-space variants (#34, 2026-11-13):
+    # the element space without its routing markers (positives export
+    # through the second-chance route; negatives keep the original
+    # clean-path error).
+    "geometry-unrouted-elementspace-refs-beyond",
+    "geometry-unrouted-elementspace-no-pool",
+    "geometry-unrouted-elementspace-no-node",
+    "geometry-unrouted-elementspace-walk-mismatch",
     "geometry-composite-law-big",
     "geometry-composite-law-slanted",
     "geometry-composite-law-curve-entries",
@@ -1070,6 +1091,8 @@ def _composite_store(variant: str) -> bytes:
     """A composite store: pool + edge group + the list node (point
     region under the stage-3b table law) + facet records whose
     references are 0-based element indices in region order."""
+    if variant.startswith("geometry-unrouted-elementspace"):
+        return _unrouted_elementspace_store(variant)
     if variant in (
         "geometry-composite-law-multi-rep",
         "geometry-composite-law-multi-rep-partial",
@@ -1350,6 +1373,76 @@ def _composite_store(variant: str) -> bytes:
         body_parts.append(_facet_record(marker, normal, refs, width=width))
     if extra_record is not None:
         body_parts.append(extra_record)
+    body = b"".join(body_parts)
+
+    catalog_len = NESTED_CATALOG_LEN
+    d8n = 32 + len(body)
+    header = (
+        MAGIC
+        + struct.pack(">II", d8n, catalog_len)
+        + b"\xff" * 8
+        + b"\x00" * 8
+    )
+    catalog = NESTED_CB0001 + struct.pack(
+        ">7I", 1, 0, 0xE7, 0xE7, 0, 0, catalog_len
+    ) + TRAILER_MARKER
+    tail126 = registration_block() + b"\x00" * (126 - 41)
+    return header + body + catalog + tail126
+
+
+def _unrouted_elementspace_store(variant: str) -> bytes:
+    """Stage-13 second-chance element-space fixtures (#34, 2026-11-13).
+
+    The composite element-space structure (the list node's point region
+    + facet records over 0-based element indices) WITHOUT its routing
+    markers: no ``01 02`` edge group and no ``ff ..`` opener, so
+    ``pool.has_composite_space`` is false and the clean path owns the
+    store.  The base box's facet records reference elements 0..11
+    while the pool re-lists only 8 corners — the corpus refs-beyond
+    family's exact shape (stage-13 note section 2).
+
+    - ``...-refs-beyond``: pool wrapper + node + facets.  The clean
+      path raises ``facet references beyond the pool`` (max ref 11 >=
+      pool 8); the second-chance route decodes the node region (the
+      pool absorbs verbatim) and exports all 12 points / 12 triangles.
+    - ``...-no-pool``: node + facets, NO pool wrapper.  The clean path
+      raises the G2 P8 no-pool error; the composite decode runs with an
+      empty pool (the absorption gate is vacuous) and exports the 12
+      node points.
+    - ``...-no-node``: facets only.  The second chance declines (no
+      token-bearing list node) and the ORIGINAL no-pool error
+      re-raises unchanged (the fail-closed negative).
+    - ``...-walk-mismatch``: node + facets, the node's declared write
+      count does not match its region (the stage-6 walk-mismatch
+      signature); every composite gate raises and the ORIGINAL no-pool
+      error re-raises unchanged.
+    """
+    points = list(COMPOSITE_POINTS)
+    elements = _composite_elements(points)
+    body_parts = []
+    with_pool = variant == "geometry-unrouted-elementspace-refs-beyond"
+    with_node = variant != "geometry-unrouted-elementspace-no-node"
+    if with_pool:
+        body_parts.append(
+            NESTED_FULL_WRAP
+            + NESTED_POOL_SUBKIND
+            + bytes([len(COMPOSITE_POOL_WALK)])
+            + b"".join(
+                NESTED_VREC + struct.pack("<fff", *v) for v in COMPOSITE_POOL_WALK
+            )
+        )
+    if with_node:
+        node_payload = _composite_node_payload(elements)
+        if variant == "geometry-unrouted-elementspace-walk-mismatch":
+            # the walk-mismatch signature: the declared write count
+            # exceeds the region's words, so the walk ends short of the
+            # declared region (decode_region raises).
+            node_payload = _composite_node_payload(
+                elements, write_count_override=17 + 2
+            )
+        body_parts.append(b"\x04\x04\xfd\xff" + node_payload)
+    for marker, normal, refs in COMPOSITE_FACES:
+        body_parts.append(_facet_record(marker, normal, refs))
     body = b"".join(body_parts)
 
     catalog_len = NESTED_CATALOG_LEN
