@@ -114,3 +114,36 @@ Known harness quirk (pre-existing, named): `ab_identity_export.py`'s
 ZeroDivisionError on `--include-sha16` runs that leave a split empty —
 after the CSV is written; the full A/B run (both splits non-empty) is
 unaffected.
+
+## Observed A/B (2026-11-12, this branch) — declared-vs-observed
+
+Run: `.venv/bin/python -I scripts/triage/ab_identity_export.py
+--out-name stage10-identity-export-files.csv` (1,442 rows, committed;
+the stage-9 baseline CSV untouched).  Observed headline: exports 1,120
+(dev 1,063 + held-out 57); L2 pass dev **952/1,381 = 68.93%** (was
+948), held-out **55/61** steady.
+
+| declaration | declared | observed | verdict |
+|---|---|---|---|
+| D1 exports | 1,120 unchanged, 0 gained/lost | 1,120 (1,063 + 57), 0 gained/lost | MET |
+| D2 L2 dev | 948 -> 952 (+4 exactly) | 948 -> 952 (+4) | MET |
+| D2 held-out | 55/61 unchanged | 55/61 unchanged | MET |
+| D2 lost passes | 0 | 0 (transitions: 1,003 pass preserved, 113 fail preserved, fail->pass +4, error classes byte-identical) | MET |
+| D3 changed rows | exactly 4 of 1,442 | exactly 4: 2fca9bc4, 4ad53b87, 4ae0392d, 505bbe1f | MET |
+| D4 field transitions | triangles 4/35/35/4; loops_curve_entry 2/1/1/2 -> 0; closed True -> False; manifold stays True; identity fields unchanged | the same five fields changed on each of the 4 rows (`l2_status`, `failed_check`, `triangle_count`, `closed`, `loops_curve_entry`), same values | MET |
+| D5 warnings | swap on exactly the 4 (summary-level, not in the CSV) | verified on the 4 via the seam (the law fires nowhere else — D3's row identity is the structural proof) | MET |
+| D6 STOP gates | any lost export/pass = STOP | none triggered | n/a |
+
+Per-store outcomes (fact, the committed CSV): `2fca9bc4` 0 -> 4
+triangles pass; `4ad53b87` 0 -> 35 pass; `4ae0392d` 0 -> 35 pass;
+`505bbe1f` 0 -> 4 pass.  All four keep `manifold True` (the pinned
+fans are open shells — `closed` flips True -> False, legitimate
+geometry per G3 F6).  The D6 report-and-reconcile arm (a fired store
+staying empty-mesh) did not occur.
+
+Membership consequence (fact): the 4 fired stores leave E0 (they are
+no longer empty-mesh and their `loops_curve_entry` is 0) — the NEXT
+baseline's E0 recompute starts from 22 members (the 26 minus the 4),
+still zero pass-regression exposure by construction.  The fitness row
+itself stays with the coordinator (dev 952 projected; this branch's
+numbers are A/B-measured, not a history row).
