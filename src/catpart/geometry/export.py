@@ -53,6 +53,8 @@ WARN_UNUSED_VERTICES = "unused-pool-vertices"
 WARN_NO_FACETS = "no-facet-records"
 WARN_CURVE_ENTRY = "curve-entry-loops-unexported"
 WARN_CURVE_ENTRY_EXPORTED = "curve-entry-loops-exported-dup-pin"
+WARN_DEDUP = "duplicate-triangles-deduped"
+WARN_DEDUP_DECLINED = "duplicate-triangles-dedup-declined"
 
 
 def build_export(path, out_path) -> dict:
@@ -443,11 +445,18 @@ def _export_composite_store(
     non-finite coordinates, unabsorbed pool, references beyond the
     element space).  Loops referencing skip slots (curve entries, U4)
     are not exported — their coordinates are not pinned — and surface
-    as the ``curve-entry-loops-unexported`` warning; the stage-10 E0-b
-    dup-pin law is the one exception (composite.py's restricted
-    subset): on an otherwise-empty primary triangulation whose every
-    dropped loop is battery-supported under the dup pin, those loops
-    export and surface as ``curve-entry-loops-exported-dup-pin``.
+    as the ``curve-entry-loops-unexported`` warning; the dup-pin law is
+    the one exception (composite.py; stage-10 2026-11-12, RELAXED
+    stage-15 2026-11-13 owner-authorized — the E0-b battery criterion
+    removed): on an otherwise-empty primary triangulation whose every
+    referenced skip slot has a preceding written element to weld to,
+    those loops export and surface as
+    ``curve-entry-loops-exported-dup-pin``.  A not-manifold assembled
+    mesh whose duplicate unordered index triples resolve it drops the
+    later copies (``duplicate-triangles-deduped``; the stage-15 law,
+    review F1 family) — a store whose duplicates do not resolve the
+    over-use keeps its emitted triangles and surfaces
+    ``duplicate-triangles-dedup-declined``.
 
     ``allow_unrouted_elements`` (stage 13 #34, 2026-11-13) is the
     second-chance element-space route from the clean path's no-pool and
@@ -485,14 +494,41 @@ def _export_composite_store(
                 "class": WARN_CURVE_ENTRY_EXPORTED,
                 "detail": f"{info['loops_curve_entry_exported']} facet "
                 "loops referencing skip slots (curve entries) exported "
-                "under the stage-10 E0-b dup-pin law (#34, 2026-11-12): "
-                "the store's primary triangulation is empty (E0) and "
-                "every dropped loop is normal-carrying and coplanar "
-                "against its record's stored normal with the dup-pinned "
-                "coordinates (each skip slot welded to the written "
-                "vertex of its immediately preceding written element, "
-                "no new vertices — the landed analysis's restricted "
-                "battery-supported subset)",
+                "under the dup-pin law (#34; stage-10 2026-11-12, "
+                "RELAXED stage-15 2026-11-13 owner-authorized — the "
+                "E0-b battery criterion removed): the store's primary "
+                "triangulation is empty (E0) and every referenced skip "
+                "slot is welded to the written vertex of its "
+                "immediately preceding written element (no new "
+                "vertices — the U4-D dup law); normal-less and "
+                "nonplanar dropped loops export under the same weld",
+            }
+        )
+    if info.get("unordered_dedup_dropped"):
+        warnings.append(
+            {
+                "class": WARN_DEDUP,
+                "detail": f"{info['unordered_dedup_dropped']} duplicate "
+                "triangles dropped under the unordered-triangle dedup "
+                "law (#34, stage-15 2026-11-13, review F1 family): the "
+                "same three element indices re-written from a second "
+                "record/loop (opposite winding — the writer re-listed "
+                "the facet; territory overlap 0); the emitted mesh was "
+                "not-manifold and the deduplicated mesh is manifold, "
+                "so the later copies dropped (first occurrence's "
+                "winding kept; degenerate skips untouched)",
+            }
+        )
+    if info.get("unordered_dedup_declined"):
+        warnings.append(
+            {
+                "class": WARN_DEDUP_DECLINED,
+                "detail": f"{info['unordered_dedup_declined']} duplicate "
+                "triangles found (the review F1 mechanism) but their "
+                "removal leaves the mesh not-manifold — the dedup "
+                "declined fail-closed and the emitted triangles are "
+                "kept verbatim (the over-use joins distinct triangles; "
+                "the L2 gate records not-manifold)",
             }
         )
     skipped_markers = info.get("skipped_markers") or {}

@@ -47,6 +47,12 @@ COMPOSITE_VARIANTS = (
     "geometry-composite-law-e0b-normal-less",
     "geometry-composite-law-e0b-nonempty",
     "geometry-composite-law-e0b-multi-rep-conservative",
+    "geometry-composite-law-e0b-relaxed-not-manifold",
+    "geometry-composite-law-e0b-multi-rep-relaxed",
+    "geometry-composite-law-dedup-unordered",
+    "geometry-composite-law-dedup-manifold-no-fire",
+    "geometry-composite-law-dedup-declined",
+    "geometry-composite-law-dedup-degenerate",
 )
 
 
@@ -919,8 +925,12 @@ def test_composite_mixedwrite_subnode_stays_fail_closed(tmp_path, capsys):
     assert not ply_path.exists()
 
 
-# --- stage 10: the E0-b dup-pin law (the curve-entry coordinates,
-# restricted per the landed analysis U4-stage5-recommendation) ----------
+# --- stage 10: the dup-pin law (the curve-entry coordinates); stage 15
+# RELAXED it (the E0-b battery criterion removed, owner-authorized
+# 2026-11-13 handoff cont. 23) — the old battery negatives re-scope to
+# pins on the NEW scope: fire only at exported+tris==0+dropped>0
+# whole-store gates, the unpinnable arm stays fail-closed, and the
+# corpus's one relaxation exception (3dff4d93) stays failed -------------
 
 
 def test_composite_e0b_dup_pin_exports_pinned_loops(tmp_path, capsys):
@@ -975,41 +985,100 @@ def test_composite_e0b_single_loop_exports_pinned(tmp_path, capsys):
     assert sorted(faces) == [(1, 0, 6), (1, 6, 2)]
 
 
-def test_composite_e0b_nonplanar_loop_keeps_conservative(tmp_path, capsys):
-    """The 3dff4d93 pin: one coplanar + one NONPLANAR dropped loop —
-    the battery is not fully green, so the WHOLE store keeps the
-    conservative non-export rule (fail-closed, gap named).  Applying
-    the law without the battery (removing the conservative gate) would
-    export the pinned loops here — red."""
+def test_composite_e0b_nonplanar_loop_exports_under_relaxed_law(tmp_path, capsys):
+    """The 3dff4d93 shape, re-scoped to the stage-15 relaxation (the
+    owner-authorized overturn of the stage-10 U4 conservative rule,
+    handoff cont. 23, 2026-11-13): one coplanar + one NONPLANAR dropped
+    loop on an empty-primary-mesh store — the battery criterion is
+    REMOVED and both loops export under the dup pin (the weld, no new
+    vertices).  Restoring the battery (the retired stage-10 gate) keeps
+    this store conservative at 0 triangles — red."""
     code, captured, ply_path = run_export(
         tmp_path, capsys, "geometry-composite-law-e0b-nonplanar"
     )
     assert code == 0, captured.err
     summary = json.loads(captured.out)
+    validate(summary, load_schema("export-summary-v1"))
     info = summary["composite"]
-    assert info["loops_curve_entry"] == 2
-    assert "curve_entry_law" not in info
-    assert summary["triangle_count"] == 0  # stays empty-mesh
+    assert info["loops_curve_entry"] == 0  # nothing stays dropped
+    assert info["loops_curve_entry_exported"] == 2
+    assert info["loops_exported"] == 2
+    assert info["curve_entry_law"] == "e0b-dup-pin"
+    assert summary["vertex_count"] == 12  # the weld adds no vertices
+    assert summary["triangle_count"] == 4
+    assert summary["degenerate_triangle_count"] == 0
+    assert summary["mesh"]["manifold"] is True
     classes = _warning_classes(summary)
-    assert "curve-entry-loops-unexported" in classes
-    assert "curve-entry-loops-exported-dup-pin" not in classes
+    assert "curve-entry-loops-unexported" not in classes
+    assert "curve-entry-loops-exported-dup-pin" in classes
+    # the pinned fans, in written ranks: skip 2 -> element 1 (P1),
+    # skip 6 -> element 5 (P4); the NONPLANAR loop's fan emits
+    # (4,3,9),(4,9,1) — the corpus's 3dff4d93 analog exports its pins
+    # too (its own mesh's over-edge is content this fixture does not
+    # carry; the relaxed-not-manifold fixture below pins that outcome).
+    _, faces = parse_ply(ply_path)
+    assert sorted(faces) == [(1, 0, 6), (1, 6, 2), (4, 3, 9), (4, 9, 1)]
 
 
-def test_composite_e0b_normal_less_loop_keeps_conservative(tmp_path, capsys):
-    """The 08f2eccb mixed-coverage pin: one coplanar loop + one on a
-    NORMAL-LESS 0x42 strip — the untestable loop keeps the store on the
-    conservative rule (the battery cannot cover it; coverage not full).
-    Removing the coverage requirement would fire here — red."""
+def test_composite_e0b_normal_less_loop_exports_under_relaxed_law(tmp_path, capsys):
+    """The 08f2eccb mixed-coverage shape, re-scoped to the stage-15
+    relaxation: one coplanar loop + one on a NORMAL-LESS 0x42 strip —
+    normal-less dropped loops export under the dup pin (the stage-14
+    measurement: the 25/26 corpus pinned meshes are exactly the
+    normal-less family).  Restoring the stage-10 coverage requirement
+    keeps this store conservative at 0 triangles — red."""
     code, captured, ply_path = run_export(
         tmp_path, capsys, "geometry-composite-law-e0b-normal-less"
     )
     assert code == 0, captured.err
     summary = json.loads(captured.out)
     info = summary["composite"]
-    assert info["loops_curve_entry"] == 2
-    assert "curve_entry_law" not in info
-    assert summary["triangle_count"] == 0
-    assert "curve-entry-loops-unexported" in _warning_classes(summary)
+    assert info["loops_curve_entry"] == 0
+    assert info["loops_curve_entry_exported"] == 2
+    assert info["curve_entry_law"] == "e0b-dup-pin"
+    assert summary["triangle_count"] == 4
+    assert summary["mesh"]["manifold"] is True
+    classes = _warning_classes(summary)
+    assert "curve-entry-loops-unexported" not in classes
+    assert "curve-entry-loops-exported-dup-pin" in classes
+    # the coplanar fan (1,0,6),(1,6,2) + the normal-less STRIP's
+    # triangles (4,3,9),(5,9,3) — the strip semantics (odd-triangle
+    # winding flip) pinned through the weld
+    _, faces = parse_ply(ply_path)
+    assert sorted(faces) == [(1, 0, 6), (1, 6, 2), (4, 3, 9), (5, 9, 3)]
+
+
+def test_composite_e0b_relaxed_not_manifold_stays_failed(tmp_path, capsys):
+    """The relaxation's corpus exception analog (the 3dff4d93 GATE
+    outcome): three pinned fans whose pinned triangles over-use edge
+    (rank 1, rank 6) three times — the relaxed law fires (the store's
+    primary triangulation is empty, every referenced skip slot
+    pinnable) and the loops EXPORT, but the assembled mesh stays
+    NOT-MANIFOLD: the decode does not veto on mesh invariants, the L2
+    gate owns the failed check (the corpus: 3dff4d93 exports under the
+    relaxed law and stays failed — declared in the stage-15 A/B).
+    Restoring the battery keeps this store conservative at 0 triangles
+    — red (its second fan is nonplanar against the stored normal)."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-e0b-relaxed-not-manifold"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    info = summary["composite"]
+    assert info["loops_curve_entry"] == 0
+    assert info["loops_curve_entry_exported"] == 3
+    assert info["curve_entry_law"] == "e0b-dup-pin"
+    assert summary["triangle_count"] == 4
+    assert summary["degenerate_triangle_count"] == 0
+    # the over-use survives the export: edge (1,6) used 3x by the three
+    # distinct pinned fans (1,6,2), (1,9,6), (1,10,6)
+    assert summary["mesh"]["manifold"] is False
+    assert summary["mesh"]["closed"] is False
+    classes = _warning_classes(summary)
+    assert "curve-entry-loops-unexported" not in classes
+    assert "curve-entry-loops-exported-dup-pin" in classes
+    _, faces = parse_ply(ply_path)
+    assert sorted(faces) == [(1, 0, 6), (1, 6, 2), (1, 9, 6), (1, 10, 6)]
 
 
 def test_composite_e0b_nonempty_stays_conservative(tmp_path, capsys):
@@ -1054,13 +1123,17 @@ def test_composite_e0b_multi_rep_store_gate(tmp_path, capsys):
     assert "curve-entry-loops-unexported" in _warning_classes(summary)
 
 
-def test_composite_e0b_multi_rep_unsupported_veto(tmp_path, capsys):
-    """The store-level gate's None-candidate veto (stage-10 review F1):
-    BOTH reps' primary triangulations are empty — rep 0 carries a
-    NORMAL-LESS (untestable) dropped loop, rep 1 the battery-supported
-    dropped loop — so the WHOLE store stays conservative.  Dropping the
-    None candidate on the floor fired rep 1's pins here and zeroed the
-    curve-entry counters while rep 0's loop stayed unexported — red."""
+def test_composite_e0b_multi_rep_unpinnable_veto(tmp_path, capsys):
+    """The store-level gate's None-candidate veto (stage-10 review F1),
+    re-scoped to the stage-15 relaxation: BOTH reps' primary
+    triangulations are empty — rep 0 carries an UNPINNABLE dropped loop
+    (its skip slot is rep 0's ELEMENT 0: no preceding written element
+    to weld to — the relaxed law's remaining reject arm; the retired
+    normal-less veto was the overturned stage-10 behavior), rep 1 a
+    pinnable dropped loop — so the WHOLE store stays conservative.
+    Dropping the None candidate on the floor fired rep 1's pins here
+    and zeroed the curve-entry counters while rep 0's loop stayed
+    unexported — red."""
     code, captured, ply_path = run_export(
         tmp_path, capsys,
         "geometry-composite-law-e0b-multi-rep-unsupported-veto",
@@ -1078,10 +1151,43 @@ def test_composite_e0b_multi_rep_unsupported_veto(tmp_path, capsys):
     assert "curve-entry-loops-unexported" in _warning_classes(summary)
 
 
+def test_composite_e0b_multi_rep_relaxed_fires(tmp_path, capsys):
+    """The stage-15 overturn at the store level: BOTH reps' primary
+    triangulations are empty and BOTH carry a NORMAL-LESS dropped loop —
+    under the relaxed law neither rep vetoes (the battery criterion is
+    removed, owner-authorized 2026-11-13), the store-level gate fires
+    and BOTH reps' pins export.  Restoring the stage-10 battery keeps
+    the whole store conservative at 0 triangles — red."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-e0b-multi-rep-relaxed"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    info = summary["composite"]
+    assert info["stage"] == "identity-per-rep"
+    assert info["reps_decoded"] == 2
+    assert info["reps_exported"] == 2
+    assert summary["vertex_count"] == 24
+    assert summary["triangle_count"] == 4  # 2 strip triangles per rep
+    assert info["loops_curve_entry"] == 0
+    assert info["loops_curve_entry_exported"] == 2
+    assert info["curve_entry_law"] == "e0b-dup-pin"
+    assert summary["mesh"]["manifold"] is True
+    classes = _warning_classes(summary)
+    assert "curve-entry-loops-unexported" not in classes
+    assert "curve-entry-loops-exported-dup-pin" in classes
+    _, faces = parse_ply(ply_path)
+    # rep 0's weld fan-strip (1,0,6),(2,6,0) + rep 1's same +12 base
+    assert sorted(faces) == [
+        (1, 0, 6), (2, 6, 0), (13, 12, 18), (14, 18, 12),
+    ]
+
+
 def test_composite_e0b_unpinnable_keeps_conservative(tmp_path, capsys):
-    """The unpinnable arm (stage-10 review F4): the dropped loop's skip
-    slot is ELEMENT 0 — no preceding written element exists to weld to —
-    so the law rejects before the battery and the store keeps the
+    """The unpinnable arm (stage-10 review F4; the relaxed law's
+    remaining fail-closed arm): the dropped loop's skip slot is
+    ELEMENT 0 — no preceding written element exists to weld to — so the
+    law rejects before any pin is welded and the store keeps the
     conservative rule.  Removing the unpinnable arm would let the law
     proceed on a missing pin target — red."""
     code, captured, ply_path = run_export(
@@ -1095,3 +1201,110 @@ def test_composite_e0b_unpinnable_keeps_conservative(tmp_path, capsys):
     assert info["loops_curve_entry"] == 1
     assert "curve_entry_law" not in info
     assert "curve-entry-loops-unexported" in _warning_classes(summary)
+
+
+# --- stage 15: the unordered-triangle dedup law (the stage-14 review
+# F1 family, owner-authorized 2026-11-13) --------------------------------
+
+
+def test_composite_dedup_unordered_drops_later_copy(tmp_path, capsys):
+    """The dedup positive (the review F1 mechanism): a second record
+    re-writes box triangle (6,0,9) REVERSED as (9,0,6) — edge (6,0) is
+    a box edge, so the duplicate pushes it to 3 uses and the emitted
+    mesh is not-manifold; the unordered dedup drops the LATER copy and
+    the mesh is the exact 12-triangle box again.  First occurrence's
+    winding wins.  Removing the dedup leaves the over-edge — red."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-dedup-unordered"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    validate(summary, load_schema("export-summary-v1"))
+    info = summary["composite"]
+    assert info["unordered_dedup_dropped"] == 1
+    assert summary["triangle_count"] == 12
+    assert summary["degenerate_triangle_count"] == 0
+    assert summary["mesh"]["manifold"] is True
+    assert summary["mesh"]["closed"] is True
+    classes = _warning_classes(summary)
+    assert "duplicate-triangles-deduped" in classes
+    assert "duplicate-triangles-dedup-declined" not in classes
+    _, faces = parse_ply(ply_path)
+    assert (9, 0, 6) not in faces  # the later copy is gone
+    assert (6, 0, 9) in faces  # the first occurrence's winding survives
+    assert len(faces) == 12
+
+
+def test_composite_dedup_manifold_no_fire(tmp_path, capsys):
+    """The zero-regression direction: a two-sided sheet — two triangles
+    over the SAME three written vertices in opposite windings — is
+    MANIFOLD (each shared edge used once per winding) and carries an
+    unordered duplicate pair, but the fire gate's pre-manifold
+    condition holds: NO dedup, the emitted mesh exports verbatim (both
+    copies ride; a passing store's row must not change).  Removing the
+    pre-manifold condition collapses the sheet to 1 triangle — red."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-dedup-manifold-no-fire"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    info = summary["composite"]
+    assert "unordered_dedup_dropped" not in info
+    assert "unordered_dedup_declined" not in info
+    assert summary["triangle_count"] == 2
+    assert summary["mesh"]["manifold"] is True
+    assert summary["mesh"]["closed"] is True
+    assert summary["mesh"]["oriented"] is True
+    classes = _warning_classes(summary)
+    assert "duplicate-triangles-deduped" not in classes
+    assert "duplicate-triangles-dedup-declined" not in classes
+    _, faces = parse_ply(ply_path)
+    assert sorted(faces) == [(0, 1, 3), (3, 1, 0)]
+
+
+def test_composite_dedup_declined_fail_closed(tmp_path, capsys):
+    """The fail-closed arm: duplicates whose removal does NOT produce a
+    manifold keep failing — box + duplicate + one FIN triangle on the
+    same box edge: dropping the duplicate still leaves the edge used
+    3x, so the dedup declines, the emitted 14 triangles are kept
+    VERBATIM and the declined dedup is named.  Applying the dedup
+    anyway (dropping the post-manifold condition) would export 13 —
+    red."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-dedup-declined"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    info = summary["composite"]
+    assert info["unordered_dedup_declined"] == 1
+    assert "unordered_dedup_dropped" not in info
+    assert summary["triangle_count"] == 14  # the emitted list, verbatim
+    assert summary["mesh"]["manifold"] is False
+    classes = _warning_classes(summary)
+    assert "duplicate-triangles-dedup-declined" in classes
+    assert "duplicate-triangles-deduped" not in classes
+    _, faces = parse_ply(ply_path)
+    assert (9, 0, 6) in faces  # kept: nothing was dropped
+
+
+def test_composite_dedup_degenerate_separate_gate(tmp_path, capsys):
+    """The b912cbef shape: the dedup fires (box + duplicate -> 12
+    triangles, manifold) while a PRE-EXISTING degenerate skip rides
+    UNTOUCHED — degenerates are counted at emission, never deduped, and
+    stay a separate L2 gate check (the corpus: b912cbef dedups to a
+    manifold mesh and still fails on its 3 pre-existing skips,
+    declared).  The dedup eating the skip count would zero it — red."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-dedup-degenerate"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    info = summary["composite"]
+    assert info["unordered_dedup_dropped"] == 1
+    assert summary["triangle_count"] == 12
+    assert summary["degenerate_triangle_count"] == 1  # the skip survives
+    assert summary["mesh"]["manifold"] is True
+    assert summary["mesh"]["closed"] is True
+    classes = _warning_classes(summary)
+    assert "duplicate-triangles-deduped" in classes
+    assert "degenerate-triangles-skipped" in classes
