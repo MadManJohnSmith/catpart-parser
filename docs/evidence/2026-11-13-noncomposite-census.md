@@ -293,7 +293,41 @@ commit follows it.
 - **D6 (STOP gates)**: ANY lost export or lost pass = STOP; any
   changed row outside the 53 = stop-and-root-cause.
 
-## 9. Reproduction
+## 9. Observed A/B (2026-11-13, this branch) — declared-vs-observed
+
+Run: `.venv/bin/python -I scripts/triage/ab_identity_export.py
+--out-name stage12-identity-export-files.csv` (1,442 rows, committed;
+the stage-10 baseline CSV untouched). Observed headline: exports
+1,120 -> **1,132** (dev 1,075 + held-out 57); dev L2 **964/1,381 =
+69.80%** (was 952), held-out **55/61** steady; error classes:
+`missing-geometry-store` 178 -> 125, `undecoded-variant` 140 -> 181
+dev (+4 held-out unchanged).
+
+| declaration | declared | observed | verdict |
+|---|---|---|---|
+| D1 exports | 1,120 -> 1,132 (+12, 0 lost) | 1,132 (1,075 + 57), 0 lost | MET |
+| D2 dev L2 | 952 -> 964 (+12 exactly, 69.80%) | 964/1,381 = 69.80% (+12) | MET |
+| D2 held-out | 55/61 unchanged | 55/61 unchanged | MET |
+| D2 lost passes | 0 | 0 (all 1,007 baseline passes preserved row-identical) | MET |
+| D3 changed rows | exactly 53 of 1,442 | exactly 53: 12 `missing-geometry-store` -> exported/pass, 41 -> `undecoded-variant` (error_class the ONLY changed field on all 41); every other row byte-identical | MET |
+| D3 the 12 names | the section-2 case table | the same 12 sha16s, `stage` = identity-table-walk x10 / identity-per-rep (636b13f6) / identity-mixedwrite-reps (d67512e6) | MET |
+| D4/D5 provenance | `store_recovery` on the 12 summaries; recovery suffix on the 41 details | suffix verified on the 41 at the seam; the 12's summary record VERIFIED ONLY AFTER A FIX — see below | MET after fix |
+| D6 STOP gates | any lost export/pass = STOP | none triggered | n/a |
+
+**Found-and-fixed during the observed run (fact):** the first
+implementation emitted `store_recovery` only on the clean decode path;
+the 12 corpus passes export through the COMPOSITE path
+(`_export_composite_store` builds its own summary), so their summaries
+carried no provenance — the first fixtures could not catch this (they
+export clean stores). Fixed (shared `_store_recovery_record` helper on
+both paths; the committed `geometry-othercontainer-composite-law`
+fixture exports a recovered composite store and pins the summary
+record, mutation-verified); corpus re-verified at the seam
+(d67512e6 -> `{other-container, shipped, CATBRepModeContainer}`;
+56080410 -> `..., CameraStartupContainer`); the full A/B re-run on the
+fixed code is row-level identical (53 rows, same transitions, 0 lost).
+
+## 10. Reproduction
 
 ```
 cd <worktree> && ln -s /home/alan/Documents/Repos/catpart-parser/corpus corpus
