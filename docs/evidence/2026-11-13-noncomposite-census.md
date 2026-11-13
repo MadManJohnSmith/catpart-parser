@@ -247,7 +247,53 @@ empty-mesh, all 13 verified still empty-mesh at this baseline.
 | SC7 | refs-beyond census: 38; max ref >= pool on 38/38; non-pool sub-kind on all; no second pool form | 38/38 | fact |
 | SC8 | grind ceiling: measured/pinnable = +12; this stage's IF-solved sum = 144 < 153; after the locator extension 964/1,381 = 69.80%, 141 flips remain with no pinnable lever | — | fact (arithmetic) + inference (labeled) |
 
-## 8. Reproduction
+## 8. Phase B: the DECLARED A/B delta (committed BEFORE the corpus run, 2026-11-13)
+
+Phase B gate (met): the missing-locator family has 178 stores blocked
+(>= 2), and its law is pinnable from COMMITTED evidence — the locate
+law is already committed and container-parameterized; the extension
+probes the remaining blocks with it unchanged, and the 12 passes were
+measured through the committed decode pre-declaration (section 2).
+Implementation commit precedes this declaration; the observed A/B
+commit follows it.
+
+- **D1 (exports)**: 1,120 -> **1,132 (+12, 0 lost)**.
+- **D2 (L2 gate)**: dev **952 -> 964 (+12 EXACTLY, the section-2
+  stores measured pre-declaration through the real decode + the
+  runner's gate logic; 964/1,381 = 69.80%)**; held-out **55/61
+  UNCHANGED** (the 178 population rows are all dev; every held-out
+  fail-closed part has a located stdcont span, so the recovery
+  families never run there); 0 lost passes.
+- **D3 (row-level)**: EXACTLY 53 of the 1,442 A/B rows differ; every
+  other row byte-identical. All 53 are today `missing-geometry-store`:
+  - **12 rows** `missing-geometry-store` -> export + `pass` (the named
+    section-2 stores);
+  - **41 rows** `missing-geometry-store` -> `undecoded-variant` (still
+    fail-closed: 37 recovered no-pool bodies + 4 recovered composite
+    spans failing under the committed composite laws);
+  - the other 125 missing-locator rows (no header, no validating
+    CB0001 tail) and all non-population rows unchanged.
+- **D4 (the 12 rows' provenance and decode paths)**: `store_recovery`
+  = `{container: "other-container", tail_law, container_name}` with
+  the section-2 case table's block/law pairs (CameraStartupContainer
+  shipped x4; CATBRepModeContainer padded/overshoot/shipped;
+  contmeasure shipped/overshoot; CATCameraContainer,
+  CATElecBehaviourCont, CATSiFiContShuttle shipped); `stage` =
+  identity-table-walk x10, identity-per-rep x1 (636b13f6),
+  identity-mixedwrite-reps x1 (d67512e6); `manifold` True, `failed_
+  check` "" on all 12.
+- **D5 (errors/details, schema)**: the 41 fail rows' details gain the
+  `[store recovered via the other-container (NAME) probe, LAW tail
+  law]` suffix; the schema change is additive (enum value +
+  optional `container_name`; schema v1 preserved). The known behavior
+  change — a V5_CFV2 header in an other-container region failing both
+  tail families would now raise `malformed-store-header` instead of
+  `missing-geometry-store` — has **0 corpus incidence** measured
+  pre-declaration (census `probe_malformed` = 0).
+- **D6 (STOP gates)**: ANY lost export or lost pass = STOP; any
+  changed row outside the 53 = stop-and-root-cause.
+
+## 9. Reproduction
 
 ```
 cd <worktree> && ln -s /home/alan/Documents/Repos/catpart-parser/corpus corpus
