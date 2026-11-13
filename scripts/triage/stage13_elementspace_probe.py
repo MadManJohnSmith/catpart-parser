@@ -420,6 +420,174 @@ def census_store(mm, span, family):
     return row
 
 
+DFIELDS = [
+    "sha256", "family", "container", "tail_law",
+    "route", "outcome", "fail_detail", "l2_status", "failed_check",
+    "vertex_count", "triangle_count", "manifold", "element_decl",
+    "node_points", "curve_entries", "stage", "window", "note",
+]
+
+
+def decode_probe(mm, span, sha16, family):
+    """The real composite decode, bypassing only the ROUTING predicate.
+
+    ``_export_composite_store`` IS the landed composite path (summary +
+    per-rep + mixedwrite fallbacks included); it is called directly on
+    the anchor span — the marker-routing check inside
+    ``decode_composite_store`` is measured as its own outcome.  For
+    marker-less stores (the no-pool facet carriers) the replicated
+    single-rep flow (the committed ``find_list_node`` /
+    ``decode_region`` / ``parse_strip_records`` / ``_triangulate`` on
+    the exporter's window) measures what a routing change WOULD decode
+    — recorded under ``route=bypass``, clearly separated.
+    """
+    rows = []
+    groups, kinds = pool.scan_pool_groups(mm, span.body_lo, span.body_hi)
+    from catpart.geometry.export import _export_composite_store
+    from catpart.fitness.runner import _score_export
+    from catpart.geometry import mesh as _mesh
+
+    # (a) the real path, routing predicate untouched
+    row = {k: "" for k in DFIELDS}
+    row["sha256"] = sha16
+    row["family"] = family
+    row["container"] = span.container
+    row["tail_law"] = span.tail_law
+    row["route"] = "real"
+    try:
+        summary, _pts, _tris = _export_composite_store(mm, span, 0, groups, kinds)
+    except ExportError as exc:
+        row["outcome"] = "raise"
+        row["fail_detail"] = exc.detail[:200]
+        rows.append(row)
+    else:
+        score = _score_export(summary)
+        row.update(_scored(score, summary))
+        rows.append(row)
+        return rows
+
+    # (b) the bypassed flow for marker-less stores (measurement only)
+    if not any(k == b"\x01\x02" or k[:1] == b"\xff" for k in kinds):
+        lo, hi = span.body_lo, span.body_hi
+        for window, node_hi in (
+            ("exporter", ( [m.start() for m in facets.STRIP_RE.finditer(mm, lo, hi)] or [hi] )[0]),
+            ("full-body", hi),
+        ):
+            row = {k: "" for k in DFIELDS}
+            row["sha256"] = sha16
+            row["family"] = family
+            row["container"] = span.container
+            row["tail_law"] = span.tail_law
+            row["route"] = "bypass"
+            row["window"] = window
+            try:
+                ln = composite.find_list_node(mm, lo, node_hi)
+                if ln is None:
+                    raise ExportError("undecoded-variant", "no token-bearing list node in window")
+                payload, elem_decl, _eb = ln
+                elements, info = composite.decode_region(payload, elem_decl)
+                points = [pt for _v, pt in elements if pt is not None]
+                poolv = [v for g in groups for v in g.vertices]
+                missing = set(poolv) - set(points)
+                if missing:
+                    # the landed per-rep fallback (decode_composite_store's
+                    # own next step on a pool the region does not absorb)
+                    per_pts, per_tris, per_deg, per_info = composite._decode_per_rep(
+                        mm, lo, hi, groups, len(missing), len(poolv)
+                    )
+                    stats = _mesh.mesh_stats(list(per_tris))
+                    bmin, bmax = _mesh.bounding_box(per_pts)
+                    summary = {
+                        "schema_version": 1,
+                        "vertex_count": len(per_pts),
+                        "triangle_count": len(per_tris),
+                        "bounding_box": {"min": bmin, "max": bmax},
+                        "warnings": [],
+                        "store_ordinal": 0,
+                        "origin_kind": span.origin_kind,
+                        "pool_group_count": len(groups),
+                        "facet_candidate_count": per_info.get("facet_candidates", 0),
+                        "facet_record_count": per_info.get("facet_records", 0),
+                        "degenerate_triangle_count": per_deg,
+                        "mesh": {
+                            "edge_count": stats.edge_count,
+                            "manifold": stats.manifold,
+                            "closed": stats.closed,
+                            "oriented": stats.oriented,
+                            "boundary_edge_count": stats.boundary_edges,
+                        },
+                        "composite": dict(per_info),
+                    }
+                    score = _score_export(summary)
+                    row.update(_scored(score, summary))
+                    rows.append(row)
+                    continue
+                records, n_hdrs = composite.parse_strip_records(
+                    mm, lo, hi, elem_decl, elements=elements
+                )
+                all_refs = [
+                    rf for _o, mk, _n, _c, refs, _w in records
+                    if mk in composite.GATED
+                    for rf in refs
+                ]
+                if all_refs and max(all_refs) >= elem_decl:
+                    raise ExportError(
+                        "undecoded-variant",
+                        f"facet references beyond the element space: max ref "
+                        f"{max(all_refs)} >= element count {elem_decl}",
+                    )
+                triangles, degenerate, _ls = composite._triangulate(elements, records)
+                stats = _mesh.mesh_stats(list(triangles))
+                bmin, bmax = _mesh.bounding_box(points)
+                summary = {
+                    "schema_version": 1,
+                    "vertex_count": len(points),
+                    "triangle_count": len(triangles),
+                    "bounding_box": {"min": bmin, "max": bmax},
+                    "warnings": [],
+                    "store_ordinal": 0,
+                    "origin_kind": span.origin_kind,
+                    "pool_group_count": len(groups),
+                    "facet_candidate_count": n_hdrs,
+                    "facet_record_count": len(records),
+                    "degenerate_triangle_count": degenerate,
+                    "mesh": {
+                        "edge_count": stats.edge_count,
+                        "manifold": stats.manifold,
+                        "closed": stats.closed,
+                        "oriented": stats.oriented,
+                        "boundary_edge_count": stats.boundary_edges,
+                    },
+                    "composite": {"stage": "identity-table-walk", "element_decl": elem_decl,
+                                  "node_points": len(points), "curve_entries": len(elements) - len(points)},
+                }
+            except ExportError as exc:
+                row["outcome"] = "raise"
+                row["fail_detail"] = exc.detail[:200]
+                rows.append(row)
+                continue
+            score = _score_export(summary)
+            row.update(_scored(score, summary))
+            rows.append(row)
+    return rows
+
+
+def _scored(score, summary):
+    comp = summary.get("composite") or {}
+    return {
+        "outcome": "export",
+        "l2_status": score["status"],
+        "failed_check": score["failed_check"] or "",
+        "vertex_count": summary["vertex_count"],
+        "triangle_count": summary["triangle_count"],
+        "manifold": summary["mesh"]["manifold"],
+        "element_decl": comp.get("element_decl", ""),
+        "node_points": comp.get("node_points", ""),
+        "curve_entries": comp.get("curve_entries", ""),
+        "stage": comp.get("stage", ""),
+    }
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--sha16", action="append", default=[], help="anchor subset")
@@ -438,6 +606,7 @@ def main(argv=None):
 
     mrows = []
     crows = []
+    drows = []
     fam_count = Counter()
     for sr in sorted(fail_closed, key=lambda r: r["sha256"]):
         sha = sr["sha256"]
@@ -500,6 +669,7 @@ def main(argv=None):
                     crow = census_store(mm, span, mrow["family"])
                     crow["sha256"] = sha
                     crows.append(crow)
+                    drows.extend(decode_probe(mm, span, sha, mrow["family"]))
             finally:
                 mm.close()
         # delta vs the committed stage-12 census (stage-10-baseline artifact)
@@ -519,6 +689,7 @@ def main(argv=None):
     anchor = "-anchor" if args.sha16 else ""
     mout = OUT_DIR / f"stage13-membership{anchor}.csv"
     cout = OUT_DIR / f"stage13-elementspace-census{anchor}.csv"
+    dout = OUT_DIR / f"stage13-decode-probe{anchor}.csv"
     with mout.open("w", newline="") as fh:
         wtr = csv.DictWriter(fh, fieldnames=MFIELDS)
         wtr.writeheader()
@@ -527,8 +698,25 @@ def main(argv=None):
         wtr = csv.DictWriter(fh, fieldnames=CFIELDS)
         wtr.writeheader()
         wtr.writerows(crows)
+    with dout.open("w", newline="") as fh:
+        wtr = csv.DictWriter(fh, fieldnames=DFIELDS)
+        wtr.writeheader()
+        wtr.writerows(drows)
     print(f"wrote {mout} ({len(mrows)} rows)")
     print(f"wrote {cout} ({len(crows)} rows)")
+    print(f"wrote {dout} ({len(drows)} rows)")
+
+    print("\n== decode probe (the real composite path, routing bypassed) ==")
+    real = [r for r in drows if r["route"] == "real"]
+    byp = [r for r in drows if r["route"] == "bypass"]
+    print(f"  real: {len(real)} — outcomes {Counter(r['outcome'] for r in real).most_common()}")
+    exp = [r for r in real if r["outcome"] == "export"]
+    print(f"  real exports: {len(exp)} — L2 {Counter(r['l2_status'] for r in exp).most_common()}"
+          f" — failed_check {Counter(r['failed_check'] for r in exp).most_common()}")
+    print(f"  real raises: {Counter(r['fail_detail'][:60] for r in real if r['outcome']=='raise').most_common(6)}")
+    print(f"  bypass rows: {len(byp)} — L2 {Counter(r['l2_status'] for r in byp if r['outcome']=='export').most_common()}"
+          f" — failed_check {Counter(r['failed_check'] for r in byp if r['outcome']=='export').most_common()}")
+    print(f"  bypass raises: {Counter(r['fail_detail'][:60] for r in byp if r['outcome']=='raise').most_common(6)}")
 
     print("\n== family taxonomy (exporter anchor, live baseline) ==")
     for fam, n in fam_count.most_common():
