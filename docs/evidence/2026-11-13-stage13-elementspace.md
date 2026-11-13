@@ -207,10 +207,12 @@ refs-beyond); decode probe: `stage13-decode-probe.csv`.
 - **refs-beyond: PINNABLE from committed evidence.**  The decode law
   IS the committed composite law (P1t/U1/M2b/per-rep — no new byte law
   needed); the only blocker is the routing predicate.  Measured
-  ceiling through the landed decode on the exporter window: **+35
-  exports / +31 L2 passes** (32 refs-beyond: 28 pass + 4 empty-mesh;
-  3 no-pool: 3 pass), all dev — dev 964 -> 995 = 72.05% projected.
-  Phase B ran (section 6).
+  ceiling through the probe's single-rep bypass on the exporter
+  window: 32 exports / 28 passes (+3 no-pool passes); the REAL
+  landing measured higher — the landed raw/mixedwrite fallbacks and
+  the stage-4b noise tolerance push it to **41 exports / 37 L2
+  passes** (section 6, all dev — dev 964 -> 1,001 = 72.48%).  Phase B
+  ran (section 6).
 - **no-pool: pinnable ONLY for the 3 facet carriers** (+3 exports/+3
   passes, the same routing change).  The other 128 are structurally
   incapable of L2 passes: with 0 facet records there is nothing to
@@ -260,31 +262,37 @@ only on the two named failure classes; the P7 vertices-only export is
 unaffected (it happens before the raise).
 
 Declared delta (the declaration commit precedes the corpus run; the
-per-store measurement behind it ran through the REAL
-`_export_composite_store` on the 169 population parts pre-declaration):
+measurement behind it ran through the REAL seam — `build_export` on
+each of the 169 population parts with the landed implementation, gated
+by the committed `_score_export` — pre-declaration):
 
-- D1: exports 1,132 -> **+35** (0 lost) — 32 refs-beyond + 3 no-pool,
-  the section-2/3 store lists (the named 28+4+3 stores; 477abcad is
-  NOT claimed: its exporter-window decode raises).
-- D2: L2 dev **964 -> +31 = 995/1,381 = 72.05%** (+28 refs-beyond + 3
-  no-pool); held-out **55/61 unchanged** (all 169 population rows are
-  dev); 0 lost passes.
-- D3: exactly **35 of the 1,442 A/B rows differ**: 35 rows
-  `undecoded-variant` -> exported (31 `pass` + 4 `empty-mesh`); the
-  error_class is the changed field; every other row byte-identical
-  (the 134 raising family stores re-raise their original error
-  unchanged — detail included).
-- D4: the new exports' `stage`: identity-table-walk (the table-walk
-  stores) / identity-per-rep (03c67888, 996fc82b, fcc76b63);
-  `store_recovery` unchanged where already present (the recovered
-  bodies among them: none — the 3 no-pool carriers are stage-12-census
-  no-pool rows, 0 of the 37 recovered bodies export).
+- D1: exports 1,132 -> **1,173 (+41, 0 lost)** — 38/38 refs-beyond
+  (34 `pass` + 4 `empty-mesh`) + 3 no-pool facet carriers.  The real
+  landing EXCEEDS the probe's single-rep bypass measurement
+  (35 exports / 31 passes): the landed stage-6 raw-array and stage-8
+  mixed-write fallbacks rescue 6 more stores (086b9dd9, 477abcad,
+  531350af, a60156f7, c3d79133, c5b31a94 — all `identity-mixedwrite-
+  reps`), and the stage-4b noise tolerance absorbs the two near-pool
+  twins (5a4dcd70/e3d4c2d1) the probe's exact-only check declined.
+- D2: dev L2 **964 -> 1,001/1,381 = 72.48% (+37)**; held-out
+  **unchanged** (all 169 population rows are dev); 0 lost passes.
+- D3: exactly **41 of the 1,442 A/B rows differ**: 41 rows
+  `undecoded-variant` -> exported (37 `pass` + 4 `empty-mesh`);
+  every other row byte-identical — the 128 no-pool stores that still
+  fail re-raise their ORIGINAL error unchanged (detail included), and
+  no non-population row moves.
+- D4: the 41 exports' `stage`: identity-table-walk x32 (28 of the
+  passes + the 4 empty-mesh vertices-only exports, warning class
+  `no-facet-records`) + identity-per-rep x3 (03c67888, 996fc82b,
+  fcc76b63) + identity-mixedwrite-reps x6 (the rescue list in D1);
+  `store_recovery` rides on the 8 stage-3a-recovered stores among the
+  41 (seebody/padded — the landed provenance law, unchanged); 0 of the
+  37 stage-12 recovered no-pool bodies export.
 - D5: no schema change (the composite summary block and warnings are
-  already committed schema-additive); the 4 empty-mesh exports carry
-  the `curve-entry-loops-unexported` warning class where loops are
-  dropped.
+  already committed schema-additive); the empty-mesh exports carry the
+  vertices-only `no-facet-records` warning.
 - D6: STOP gates: any lost export or lost pass = STOP; any changed
-  row outside the 35 = stop-and-root-cause.
+  row outside the 41 = stop-and-root-cause.
 
 ## 7. Claims
 
