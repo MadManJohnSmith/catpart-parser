@@ -127,7 +127,11 @@ because the probe loop stops after seebody.
   (`01 02` edge / `ff ..` opener) re-derive at exactly **16**; ALL 16
   are among the 53 recovered (each has exactly one recovered span, and
   every one of their 72 composite wrappers sits INSIDE the recovered
-  span's body). **12 of the 16 export+pass through the committed
+  span's body [CORRECTED 2026-11-13 (review F2): the 72 counts ALL
+  wrapper occurrences on the 16 files — 31 are composite-space
+  (`01 02` edge / `ff ..` opener), the other 41 are pool `01 06` /
+  other sub-kinds; verified inside: all 31 composite AND all 72
+  total]). **12 of the 16 export+pass through the committed
   composite decode; 4 stay composite-fail-closed** (416d14fd,
   434d4bb4, 4902c650, c6eaac5e). The review's "bytes no store locator
   reaches" was locator-relative and stands; the recovery question it
@@ -189,7 +193,7 @@ bad44bdf) + 79 exported empty-mesh dev + 32 exported not-manifold dev.
 
 | family | dev stores | blocker (byte level) | measured/pinnable ceiling | IF-solved ceiling (inference, 100%-yield upper bound) |
 |---|---|---|---|---|
-| missing-locator | 178 | no header (125) / unprobed-container header (53) | **+12 passes (FACT)** — measured through the shipped decode + gate | +12 — the locator lever is fully measured; the 41 remaining recoveries need the content levers below |
+| missing-locator | 178 | no header (125) / unprobed-container header (53) | **+12 passes (FACT)** — measured through the shipped decode + gate | +12 measured — the locator lever is fully measured; the 41 remaining recoveries need the content levers below [CORRECTED 2026-11-13 (review F1): those 41's content-lever mass must be counted IN the IF-solved column it delegates to — the 37 recovered no-pool bodies raise the no-pool row's hypothetical cap; see the corrected grind answer 2] |
 | no-pool (P8) | 94 | no `01 06` pool; 76 wrapper-less; node vocabulary present, semantics unknown | 0 pinnable from committed evidence | <= +94 IF a vertex-source law is found |
 | refs-beyond | 38 | refs exceed the pool; no second pool form in the bytes | 0 pinnable from committed evidence | <= +38 IF the wider element space decodes |
 | composite fail-closed (reference: UV 7 + bad44bdf) | 8 | UV: element coordinates not in the payload (the committed UV note: a surface evaluation would be required); bad44bdf: unpinnable (stage-11, byte-verified) | 0 | 0 pinned; UV open (unknown) |
@@ -207,6 +211,18 @@ bad44bdf) + 79 exported empty-mesh dev + 32 exported not-manifold dev.
    100% pass yield (the no-pool and refs-beyond laws do not exist
    today), this stage's ceiling is 12 + 94 + 38 = **144 < 153** — the
    non-composite mass CANNOT carry the bar even hypothetically.
+   [CORRECTED 2026-11-13 (review F1): the 100%-yield sum above
+   undercounts its own cap-raisers — the 37 locator-recovered
+   no-pool bodies (of the 41 measured-family residuals) belong in
+   the IF-solved sum per this note's own section 2 grant rules. The
+   honest hypothetical bound is **12 + 94 + 37 + 38 = 181 >= 153**
+   (185 if the 4 recovered composite stores are granted too): the
+   non-composite mass CAN carry the bar hypothetically, barely —
+   but ONLY via BOTH unpinned laws at 100% yield AND with the
+   extension landed, with zero committed evidence for either law
+   and no partial-credit mechanism measured anywhere in their
+   families. The decision is unaffected: the only MEASURED pinnable
+   lever is +12, and the close-sequence conversation stands.]
 3. Reaching 153 requires the export-fail families too (79 empty-mesh +
    32 not-manifold + the UV 8) — every one blocked behind a law no
    committed evidence pins (record reading, winding/manifold, UV
@@ -241,11 +257,11 @@ empty-mesh, all 13 verified still empty-mesh at this baseline.
 | SC1 | taxonomy 178 + 94 + 38 = 310, zero other; membership = fail-closed with zero composite spans (own walk); the excluded 12 = the stage-11 composite set, set-equal | 310/322 | fact |
 | SC2 | locator extension reach: `locate_store` validates a span on 53/178 blocks outside the three probed families (CATBRepMode 39 / CameraStartup 8 / contmeasure 2 / four others 1; padded 39 / shipped 12 / overshoot 2); probe_malformed = 0 | 53/178 | fact |
 | SC3 | the 53 recovered spans through the real decode: 12 export+pass, 4 composite-fail-closed, 37 no-pool content | 12 pass | fact |
-| SC4 | F2: exactly 16 files with composite wrappers; all 16 recovered; all 72 composite wrappers inside recovered bodies; 12 of 16 pass | 16/16 located, 12/16 pass | fact |
+| SC4 | F2: exactly 16 files with composite wrappers; all 16 recovered; all 72 wrapper occurrences (31 composite-space — corrected 2026-11-13 review F2) inside recovered bodies; 12 of 16 pass | 16/16 located, 12/16 pass | fact |
 | SC5 | the 125 non-recovered: zero V5_CFV2 outside offset 0; 121 CB0001 catalogs validate as neither store form; 13 carry wrappers with no store structure | 125/178 | fact |
 | SC6 | no-pool census: 94; 76 wrapper-less; 94 NODE_MAGIC / 67 token-bearing nodes; 89 zero strip candidates; 0 strong-raw signature | 94/94 | fact (semantics unknown) |
 | SC7 | refs-beyond census: 38; max ref >= pool on 38/38; non-pool sub-kind on all; no second pool form | 38/38 | fact |
-| SC8 | grind ceiling: measured/pinnable = +12; this stage's IF-solved sum = 144 < 153; after the locator extension 964/1,381 = 69.80%, 141 flips remain with no pinnable lever | — | fact (arithmetic) + inference (labeled) |
+| SC8 | grind ceiling: measured/pinnable = +12; IF-solved corrected 2026-11-13 review F1: 12+94+37+38 = 181 >= 153 (both unpinned laws at 100% yield + extension landed; zero committed evidence for either); after the locator extension 964/1,381 = 69.80%, 141 flips remain with no pinnable lever | — | fact (arithmetic) + inference (labeled) |
 
 ## 8. Phase B: the DECLARED A/B delta (committed BEFORE the corpus run, 2026-11-13)
 
