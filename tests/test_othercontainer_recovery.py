@@ -148,6 +148,29 @@ def test_othercontainer_bad_tail_stays_malformed(tmp_path: Path, capsys) -> None
     assert "matches neither stage-3a recovery family" in error["detail"]
 
 
+# --- provenance on the composite decode path ----------------------------
+
+def test_recovered_composite_summary_carries_provenance(
+    tmp_path: Path, capsys
+) -> None:
+    # The stage-12 census's 12 corpus passes are recovered stores that
+    # EXPORT through the composite path — provenance must ride on
+    # composite summaries too (not only the clean path's).
+    code, captured = run_export(
+        tmp_path, capsys, "geometry-othercontainer-composite-law"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    validate(summary, load_schema(SUMMARY_SCHEMA))
+    assert summary["triangle_count"] >= 1
+    assert "composite" in summary  # the composite decode path served it
+    assert summary["store_recovery"] == {
+        "container": "other-container",
+        "tail_law": "shipped",
+        "container_name": "CATBRepModeContainer",
+    }
+
+
 # --- L1 cross-check ------------------------------------------------------
 
 def test_othercontainer_fixtures_classify_clean_through_fitness(
@@ -161,6 +184,7 @@ def test_othercontainer_fixtures_classify_clean_through_fitness(
         "geometry-othercontainer-store",
         "geometry-othercontainer-behind-empty-stdcont",
         "geometry-stdcont-precedence",
+        "geometry-othercontainer-composite-law",
     ):
         path = tmp_path / f"{variant}.CATPart"
         path.write_bytes(build_fixture("part", seed=4, variant=variant))
