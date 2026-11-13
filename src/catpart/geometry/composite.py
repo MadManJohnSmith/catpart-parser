@@ -72,6 +72,17 @@ stage-3b table law dated 2026-11-11, byte-measured on the corpus):
   discriminates dup from next/mid wherever a loop references a slot
   (twin probe), and a ``mid`` slot is by construction referenced by no
   facet loop, so it enters no triangle either way.
+
+  RELAXED 2026-11-13 (stage 15, #34; owner decision, handoff
+  cont. 23): the E0-b battery criterion is REMOVED — the dup pin now
+  fires on EVERY empty-primary-mesh store whose referenced skip slots
+  are all pinnable, normal-less and nonplanar dropped loops included
+  (the stage-14 census measured the relaxation: 25/26 pinned meshes
+  pass every gate check incl. degenerate, 3dff4d93 stays not-manifold
+  on its content-level over-edge; docs/evidence/
+  2026-11-13-stage14-export-failures.md section 2, review-verified).
+  The unpinnable arm (a referenced skip slot with no preceding written
+  element) and the E0 whole-store scope are unchanged.
 - Loop plane law: coplanarity against the record's stored 12-B normal
   (the corner quads are slanted planes; the axis-constant reading was
   too strict).  It is the law's validation battery, not an export
@@ -192,6 +203,7 @@ import struct
 
 from catpart.geometry.errors import ExportError
 from catpart.geometry.facets import NORMAL_MARKERS_ALL, STRIP_RE
+from catpart.geometry import mesh
 
 NODE_MAGIC = b"\x04\x04\xfd\xff"
 LIST_TOKEN = b"\xff\xff\x02\x00\x01"
@@ -574,26 +586,30 @@ def _loop_triangles(mk, idxs, points):
 
 
 def _e0b_dup_pin(elements, points, written_rank, dropped):
-    """The stage-10 E0-b dup-pin evaluation over one call's dropped
-    loops (the curve-entry coordinate law, restricted per the landed
-    analysis's ``U4-stage5-recommendation``; see the module docstring).
+    """The dup-pin evaluation over one call's dropped loops (the
+    curve-entry coordinate law; see the module docstring).
 
     The U4-D dup law (ported from the stage-4a decoder's ``dup_prev``,
     decode_curve_entries.py — not re-derived): a loop-referenced skip
     slot carries the bit-exact coordinates of the written vertex of its
     immediately preceding written element (the per-face copy — no new
-    vertices).  Battery-supported iff EVERY dropped loop is
-    coplanarity-testable (its record carries a 12-B normal, and every
-    referenced skip slot has a preceding written element to weld to)
-    AND coplanar against that normal with the dup-pinned coordinates
-    (the stage-3b battery, :func:`_loop_plane_status`,
-    :data:`PLANE_TOL`) — the analysis's E0-b criterion (coverage full
-    AND zero nonplanar).  One normal-less or nonplanar dropped loop
-    keeps the whole store on the conservative non-export rule.
+    vertices).  RELAXED 2026-11-13 (stage 15, #34; owner-authorized
+    overturn of the stage-10 U4 conservative rule, handoff cont. 23):
+    the stage-10 E0-b battery criterion (every dropped loop
+    normal-carrying AND coplanar against its record normal with the
+    dup-pinned coordinates, :func:`_loop_plane_status` /
+    :data:`PLANE_TOL`) is REMOVED — normal-less and nonplanar dropped
+    loops export under the dup pin exactly like the battery-supported
+    ones (stage-14 probe-measured: 25/26 pinned meshes pass every gate
+    check incl. degenerate, docs/evidence/
+    2026-11-13-stage14-export-failures.md section 2 + the review's C4).
+    The fail-closed arm stays: a loop-referenced skip slot with NO
+    preceding written element to weld to (element 0 — unpinnable)
+    rejects the whole store onto the conservative non-export rule.
 
-    Returns ``{"triangles", "degenerate", "loops"}`` when supported
-    (the pinned loops' triangles, written-rank indexed), ``None``
-    otherwise."""
+    Returns ``{"triangles", "degenerate", "loops"}`` when every
+    referenced skip slot is pinnable (the pinned loops' triangles,
+    written-rank indexed), ``None`` otherwise."""
     skips = {i for i, (_v, pt) in enumerate(elements) if pt is None}
     pin: dict[int, int] = {}
     for _mk, _normal, loop in dropped:
@@ -607,17 +623,14 @@ def _e0b_dup_pin(elements, points, written_rank, dropped):
                 # j < 0: no preceding written element — unpinnable
     if any(r in skips and r not in pin for _mk, _n, loop in dropped for r in loop):
         return None
-    pinned = list(elements)
-    for r, j in pin.items():
-        pinned[r] = (1, elements[j][1])
     triangles = []
     degenerate = 0
-    for mk, normal, loop in dropped:
-        if normal is None:
-            return None  # a normal-less dropped loop: battery cannot test it
-        st, _res = _loop_plane_status(loop, normal, pinned)
-        if st != "coplanar":
-            return None  # nonplanar under the dup pin (or a zero normal)
+    for mk, _normal, loop in dropped:
+        # The battery criterion is removed (owner-authorized 2026-11-13,
+        # see the docstring): normal-less and nonplanar dropped loops
+        # export under the dup pin — the weld's written ranks are exact
+        # (the pinned coordinates are bit-identical to the pin target's,
+        # so the mesh never needed them; only the battery did).
         resolved = [pin.get(r, r) for r in loop]
         tris, deg = _loop_triangles(mk, [written_rank[r] for r in resolved], points)
         triangles += tris
@@ -633,14 +646,16 @@ def _triangulate(elements, records):
     are remapped through the written rank.  Loops referencing skip
     slots (curve entries — their coordinates live in the curve records,
     U4) are skipped and counted: the conservative rule names the gap
-    instead of guessing coordinates — EXCEPT the stage-10 E0-b dup-pin
-    law (:func:`_e0b_dup_pin`): when this call produced NO triangles
-    (the store's primary triangulation is empty — the E0 class) and
-    EVERY dropped loop is battery-supported under the dup pin, the
-    candidate rides ``stats["dup_pin"]`` for the caller to merge at the
-    store level (per-rep paths must gate on the WHOLE store's mesh
-    being empty — a rep-level fire inside an otherwise-passing store
-    would be the 471-passing-stores downside exposure).  Strip
+    instead of guessing coordinates — EXCEPT the dup-pin law
+    (:func:`_e0b_dup_pin`, relaxed 2026-11-13 stage 15 #34: the E0-b
+    battery criterion is removed, owner-authorized): when this call
+    produced NO triangles (the store's primary triangulation is empty —
+    the E0 class) and EVERY referenced skip slot has a preceding
+    written element to weld to, the candidate rides
+    ``stats["dup_pin"]`` for the caller to merge at the store level
+    (per-rep paths must gate on the WHOLE store's mesh being empty — a
+    rep-level fire inside an otherwise-passing store would be the
+    471-passing-stores downside exposure).  Strip
     triangles (0x42/0x4a) skip the degenerate ones (repeated
     coordinates or exactly-zero cross product, G3 F7); polygon fans
     (0x4c) skip repeated coordinates.
@@ -691,6 +706,71 @@ def _triangulate(elements, records):
     if not triangles and dropped:
         stats["dup_pin"] = _e0b_dup_pin(elements, points, written_rank, dropped)
     return triangles, degenerate, stats
+
+
+# --- stage 15: the unordered-triangle dedup law (the stage-14 review
+# F1 family, owner-authorized 2026-11-13, #34) ---------------------------
+#
+# The mechanism (review F1, byte-verified): the same three ELEMENT
+# indices emitted twice — from two different records 13-42 B apart in
+# the same rep (6 corpus stores), from two loops of one record
+# (b912cbef, ef61cfc2), or from two records in the same order
+# (1d256d12, the ordered case the stage-14 child's detector saw) — the
+# writer re-listed the facet; territory overlap 0 (two parses never).
+# The second copy's winding is opposite (the plane normals are exact
+# opposites), so the pair over-uses nothing TOGETHER — each shared edge
+# is used once per copy — but every edge shared with the surrounding
+# mesh counts the extra use, and the corpus stores' over-edges resolve
+# when the later copy is dropped.
+#
+# Fail-closed fire gate (the law applies ONLY where it resolves the
+# store's over-use — the stage-14 measured yield is 8 dev full-gate
+# flips + b912cbef's fail-class change): the emitted mesh must be NOT
+# manifold (an over-use) AND the deduplicated list must be manifold.
+# A manifold (passing) store is never touched — its row must not
+# change; a not-manifold store whose duplicates do NOT resolve the
+# over-use keeps its exact emitted triangles (the L2 gate names
+# not-manifold) and the declined dedup is named on the summary.
+# Degenerate triangles never enter the list (skipped at emission and
+# counted separately — b912cbef's 3 pre-existing skips are a SEPARATE
+# gate check); a repeated-index triple is never deduped regardless.
+
+
+def _apply_unordered_dedup(triangles, info):
+    """The unordered-triangle dedup at one store's assembled mesh.
+
+    Returns the triangle list to export — unchanged unless the law
+    fires — and records the outcome on ``info``:
+    ``unordered_dedup_dropped`` (fired: N later duplicate copies
+    dropped, the mesh is manifold) or ``unordered_dedup_declined``
+    (fired and declined: N duplicates found, removal leaves the mesh
+    not-manifold, the emitted list is kept verbatim).  Both keys are
+    additive (consumers ignore unknown properties).
+    """
+    if len(triangles) < 2 or mesh.mesh_stats(list(triangles)).manifold:
+        return triangles
+    seen: set[tuple[int, int, int]] = set()
+    kept = []
+    dropped = 0
+    for tri in triangles:
+        if tri[0] == tri[1] or tri[1] == tri[2] or tri[0] == tri[2]:
+            kept.append(tri)  # degenerate-shaped: never deduped
+            continue
+        key = tuple(sorted(tri))
+        if key in seen:
+            dropped += 1  # the later copy: first occurrence's winding wins
+            continue
+        seen.add(key)
+        kept.append(tri)
+    if not dropped:
+        return triangles
+    if mesh.mesh_stats(kept).manifold:
+        info["unordered_dedup_dropped"] = dropped
+        return kept
+    # The duplicates do not explain the over-use (fins/coplanar residue
+    # alongside): fail-closed — keep the emitted list, name the gap.
+    info["unordered_dedup_declined"] = dropped
+    return triangles
 
 
 def decode_composite_store(data, span, groups, kinds, allow_unrouted_elements=False):
@@ -757,15 +837,28 @@ def decode_composite_store(data, span, groups, kinds, allow_unrouted_elements=Fa
     does not cover keeps ``undecoded-variant`` with the walk, raw AND
     composition gaps all named.
 
-    Stage-10 E0-b dup-pin law (2026-11-12, #34): on every exported
-    path, a store whose primary triangulation is EMPTY (the census's
-    ``empty-mesh`` class) exports its dropped curve-entry loops when
-    EVERY one is battery-supported under the dup pin
-    (:func:`_e0b_dup_pin` — the landed analysis's restricted
-    battery-supported subset E0-b; the per-rep paths gate the merge on
-    the WHOLE store's mesh being empty).  Anything else keeps the
+    Stage-10 dup-pin law (2026-11-12, #34; RELAXED 2026-11-13 stage 15,
+    #34 — the E0-b battery criterion removed, owner-authorized
+    overturn, handoff cont. 23): on every exported path, a store whose
+    primary triangulation is EMPTY (the census's ``empty-mesh`` class)
+    exports its dropped curve-entry loops when every referenced skip
+    slot is pinnable under the dup pin (:func:`_e0b_dup_pin` — each
+    welded to the written vertex of its immediately preceding written
+    element; the per-rep paths gate the merge on the WHOLE store's mesh
+    being empty).  An unpinnable referenced skip slot keeps the
     conservative non-export rule and its warning; the U4-M mid law
     stays unsupported and is not implemented.
+
+    Stage-15 unordered-triangle dedup law (2026-11-13, #34; the
+    stage-14 review F1 family, owner-authorized): on every exported
+    path, a store whose assembled mesh is NOT manifold and whose
+    triangle list carries duplicate UNORDERED index triples (the same
+    facet re-written from a second record/loop, opposite winding) drops
+    the later copies when — and only when — the deduplicated list is
+    manifold (:func:`_apply_unordered_dedup`; a store whose duplicates
+    do not resolve the over-use keeps its exact emitted triangles with
+    the declined dedup named).  The raw-array path carries the same
+    gate (it triangulates records); measured corpus incidence 0.
     """
     lo, hi = span.body_lo, span.body_hi
     if not allow_unrouted_elements and not any(
@@ -889,6 +982,11 @@ def decode_composite_store(data, span, groups, kinds, allow_unrouted_elements=Fa
     if curve_entry_law:
         info["curve_entry_law"] = "e0b-dup-pin"
         info["loops_curve_entry_exported"] = curve_entry_law
+    # Stage-15 unordered-triangle dedup (see _apply_unordered_dedup):
+    # fires only on a not-manifold assembled mesh whose duplicate
+    # unordered triples resolve it — a passing store's mesh is never
+    # touched.
+    triangles = _apply_unordered_dedup(triangles, info)
     return points, triangles, degenerate, info
 
 
@@ -1058,15 +1156,16 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool):
         base = len(points)
         tri_k, deg_k, stats_k = _triangulate(d["elements"], records)
         # stage-10 E0-b candidate for this rep (its own triangulation
-        # is empty and its dropped loops were battery-evaluated):
-        # recorded even when the law REJECTED (None) — a rep with an
-        # unsupported dropped loop must veto another rep's fire at the
-        # store-level gate below (stage-10 review F1: dropping the None
-        # candidate made that veto dead code and zeroed the curve-entry
-        # counters while unexported loops remained).  Merged at the
-        # STORE level below only when the whole store's mesh is empty —
-        # a rep-level fire inside an otherwise-exporting store would be
-        # the 471-passing-stores downside exposure.
+        # is empty and its dropped loops were dup-pin-evaluated):
+        # recorded even when the law REJECTED (None — an unpinnable
+        # referenced skip slot) — a rep with an unpinnable dropped loop
+        # must veto another rep's fire at the store-level gate below
+        # (stage-10 review F1: dropping the None candidate made that
+        # veto dead code and zeroed the curve-entry counters while
+        # unexported loops remained).  Merged at the STORE level below
+        # only when the whole store's mesh is empty — a rep-level fire
+        # inside an otherwise-exporting store would be the
+        # 471-passing-stores downside exposure.
         if "dup_pin" in stats_k:
             reps_dup_pin.append((base, stats_k.pop("dup_pin")))
         points += d["pts"]
@@ -1092,8 +1191,8 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool):
             f"exports no rep: {'; '.join(reps_unexported) or 'no reps'})",
         )
     # Stage-10 E0-b store-level gate: fire only when the WHOLE store's
-    # mesh is empty and every rep with dropped loops is battery-
-    # supported; one unsupported rep keeps everything conservative.
+    # mesh is empty and every rep with dropped loops is pinnable; one
+    # unpinnable rep keeps everything conservative.
     curve_entry_law = 0
     if not triangles and reps_dup_pin and all(c is not None for _b, c in reps_dup_pin):
         for b, c in reps_dup_pin:
@@ -1122,6 +1221,11 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool):
     if curve_entry_law:
         info["curve_entry_law"] = "e0b-dup-pin"
         info["loops_curve_entry_exported"] = curve_entry_law
+    # Stage-15 unordered-triangle dedup (see _apply_unordered_dedup):
+    # the store-level gate — the reps' element spaces are disjoint, so
+    # same-rep duplicates are the only possible matches, and a passing
+    # store's mesh is never touched.
+    triangles = _apply_unordered_dedup(triangles, info)
     return points, triangles, degenerate, info
 
 
@@ -1344,6 +1448,11 @@ def _decode_raw_array(data, lo, hi, groups, payload, elem_decl):
         **raw_info,
         **loop_stats,
     }
+    # Stage-15 unordered-triangle dedup (see _apply_unordered_dedup):
+    # the raw path triangulates facet records like the other paths, so
+    # the same duplicated-writer-content mechanism is in scope (measured
+    # corpus incidence 0 — no identity-raw-array row is not-manifold).
+    triangles = _apply_unordered_dedup(triangles, info)
     return points, triangles, degenerate, info
 
 
@@ -1734,8 +1843,9 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups):
         base = len(points)
         tri_k, deg_k, stats_k = _triangulate(d["elements"], records)
         # stage-10 E0-b candidate (see _decode_per_rep; the None case
-        # recorded too — stage-10 review F1, the same veto): merged at
-        # the store level below, only when the whole mesh is empty.
+        # recorded too — the unpinnable veto, stage-10 review F1):
+        # merged at the store level below, only when the whole mesh is
+        # empty.
         if "dup_pin" in stats_k:
             reps_dup_pin.append((base, stats_k.pop("dup_pin")))
         points += d["pts"]
@@ -1789,6 +1899,9 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups):
     if curve_entry_law:
         info["curve_entry_law"] = "e0b-dup-pin"
         info["loops_curve_entry_exported"] = curve_entry_law
+    # Stage-15 unordered-triangle dedup (see _apply_unordered_dedup):
+    # the store-level gate, as in _decode_per_rep.
+    triangles = _apply_unordered_dedup(triangles, info)
     return points, triangles, degenerate, info
 
 

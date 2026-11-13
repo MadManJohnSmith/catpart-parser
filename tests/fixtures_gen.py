@@ -228,10 +228,14 @@ VALID_VARIANTS = (
     "geometry-composite-law-table-overshoot",
     "geometry-composite-law-flat-near-zero",
     "geometry-composite-law-mixedwrite-multi-rep",
-    # Stage-10 E0-b dup-pin variants (#34, 2026-11-12): the restricted
-    # curve-entry law's shapes — the battery-supported positives fire;
-    # the nonplanar / normal-less / non-empty / multi-rep negatives
-    # keep the conservative rule.
+    # Stage-10 E0-b dup-pin variants (#34, 2026-11-12; RELAXED stage-15
+    # 2026-11-13 owner-authorized — the battery criterion removed): the
+    # positives fire; the non-empty / multi-rep-conservative negatives
+    # keep the E0 whole-store rule, the unpinnable negatives keep the
+    # fail-closed arm, and the nonplanar / normal-less shapes now
+    # EXPORT under the relaxed law (their old conservative response is
+    # the overturned stage-10 behavior — the re-scoped tests pin the
+    # fire).
     "geometry-composite-law-e0b-dup-pin",
     "geometry-composite-law-e0b-single-loop",
     "geometry-composite-law-e0b-nonplanar",
@@ -240,6 +244,19 @@ VALID_VARIANTS = (
     "geometry-composite-law-e0b-multi-rep-conservative",
     "geometry-composite-law-e0b-multi-rep-unsupported-veto",
     "geometry-composite-law-e0b-unpinnable",
+    "geometry-composite-law-e0b-relaxed-not-manifold",
+    "geometry-composite-law-e0b-multi-rep-relaxed",
+    # Stage-15 unordered-triangle dedup variants (#34, 2026-11-13, the
+    # stage-14 review F1 family): the positive fires on a not-manifold
+    # mesh whose duplicate unordered triple resolves it; the manifold
+    # two-sided sheet never fires (a passing store's row must not
+    # change), the insufficient-duplicates store declines fail-closed,
+    # and the degenerate-skip store fires while the pre-existing skips
+    # stay a separate gate check (the b912cbef shape).
+    "geometry-composite-law-dedup-unordered",
+    "geometry-composite-law-dedup-manifold-no-fire",
+    "geometry-composite-law-dedup-declined",
+    "geometry-composite-law-dedup-degenerate",
 )
 CORRUPTED_VARIANTS = (
     "bad-magic",
@@ -361,6 +378,12 @@ COMPOSITE_VARIANTS = (
     "geometry-composite-law-e0b-multi-rep-conservative",
     "geometry-composite-law-e0b-multi-rep-unsupported-veto",
     "geometry-composite-law-e0b-unpinnable",
+    "geometry-composite-law-e0b-relaxed-not-manifold",
+    "geometry-composite-law-e0b-multi-rep-relaxed",
+    "geometry-composite-law-dedup-unordered",
+    "geometry-composite-law-dedup-manifold-no-fire",
+    "geometry-composite-law-dedup-declined",
+    "geometry-composite-law-dedup-degenerate",
 )
 
 # --- nested-store geometry (G4, #32) -----------------------------------
@@ -729,39 +752,93 @@ def _geometry_box_edges_lex() -> tuple[tuple[int, int], ...]:
 #                                        elements 2/6/10; one record
 #                                        with TWO dropped loops, both
 #                                        normal-carrying and coplanar
-#                                        under the dup pin -> the E0-b
-#                                        law fires, the pinned loops
-#                                        export (4 triangles).
+#                                        under the dup pin -> the dup-
+#                                        pin law fires, the pinned
+#                                        loops export (4 triangles).
 # - geometry-composite-law-e0b-single-loop  the one-dropped-loop
 #                                        positive (the 4ad53b87 shape).
 # - geometry-composite-law-e0b-nonplanar one coplanar + one NONPLANAR
-#                                        dropped loop (3dff4d93): not
-#                                        battery-supported -> the
-#                                        conservative rule holds.
+#                                        dropped loop (3dff4d93): the
+#                                        stage-15 RELAXED law exports
+#                                        both (the battery criterion
+#                                        is removed; the retired
+#                                        stage-10 battery kept this
+#                                        conservative — the re-scoped
+#                                        test pins the fire).
 # - geometry-composite-law-e0b-normal-less  one coplanar + one on a
 #                                        normal-less 0x42 strip
-#                                        (08f2eccb): untestable ->
-#                                        conservative.
+#                                        (08f2eccb): the stage-15
+#                                        RELAXED law exports both
+#                                        (the 25/26 corpus pinned
+#                                        meshes are the normal-less
+#                                        family).
+# - geometry-composite-law-e0b-relaxed-not-manifold  stage-15: three
+#                                        pinned fans whose pinned
+#                                        triangles over-use one edge
+#                                        3x — the law fires and the
+#                                        mesh stays NOT-MANIFOLD (the
+#                                        3dff4d93 gate outcome: the
+#                                        decode does not veto, the L2
+#                                        gate owns the check).
 # - geometry-composite-law-e0b-nonempty  the box exports AND carries a
-#                                        battery-supported dropped
-#                                        loop: not empty-mesh -> the
-#                                        store-level conservative
-#                                        gate holds (471-passing).
+#                                        pinnable dropped loop: not
+#                                        empty-mesh -> the store-
+#                                        level conservative gate
+#                                        holds (471-passing; the E0
+#                                        scope survives the stage-15
+#                                        relaxation).
 # - geometry-composite-law-e0b-multi-rep-conservative  rep 1 carries a
-#                                        battery-supported dropped
-#                                        loop, rep 0 exports its box:
-#                                        no rep-level fire (store-
-#                                        level gate).
+#                                        pinnable dropped loop, rep 0
+#                                        exports its box: no rep-
+#                                        level fire (store-level
+#                                        gate).
+# - geometry-composite-law-e0b-multi-rep-relaxed  stage-15: BOTH reps
+#                                        carry NORMAL-LESS dropped
+#                                        loops, both empty -> the
+#                                        relaxed law fires at the
+#                                        store level, both reps' pins
+#                                        export (the overturned
+#                                        stage-10 veto shape).
 # - geometry-composite-law-e0b-multi-rep-unsupported-veto  BOTH reps
-#                                        empty: rep 0 carries a
-#                                        NORMAL-LESS dropped loop,
-#                                        rep 1 the supported one —
-#                                        one unsupported rep vetoes
-#                                        the store fire (review F1).
+#                                        empty: rep 0 carries an
+#                                        UNPINNABLE dropped loop
+#                                        (skip slot = rep 0's element
+#                                        0), rep 1 a pinnable one —
+#                                        one unpinnable rep vetoes
+#                                        the store fire (review F1;
+#                                        the relaxed law's remaining
+#                                        reject arm).
 # - geometry-composite-law-e0b-unpinnable  the dropped loop's skip
 #                                        slot is ELEMENT 0: no
 #                                        preceding written element
 #                                        to weld to (review F4).
+# - geometry-composite-law-dedup-unordered  stage-15: the box + a
+#                                        second record re-writing box
+#                                        triangle (6,0,9) REVERSED as
+#                                        (9,0,6) -> edge {6,0} used
+#                                        3x (not-manifold); the dedup
+#                                        drops the later copy -> the
+#                                        exact 12-triangle box,
+#                                        manifold (review F1).
+# - geometry-composite-law-dedup-manifold-no-fire  the zero-regression
+#                                        direction: a two-sided sheet
+#                                        (two triangles, opposite
+#                                        windings, same three
+#                                        vertices) is MANIFOLD -> the
+#                                        fire gate must NOT fire, the
+#                                        emitted rows stay verbatim.
+# - geometry-composite-law-dedup-declined  box + dup + one FIN on the
+#                                        same edge: dropping the dup
+#                                        still leaves it over-used ->
+#                                        the dedup DECLINES (fail-
+#                                        closed), triangles verbatim,
+#                                        declined named.
+# - geometry-composite-law-dedup-degenerate  the b912cbef shape: box +
+#                                        dup + a degenerate skip; the
+#                                        dedup fires and the skip
+#                                        rides untouched -> the L2
+#                                        gate fails degenerate-
+#                                        triangles (a separate check).
 
 COMPOSITE_POOL_WALK = (
     (0.0, 10.0, 0.0),
@@ -1098,6 +1175,7 @@ def _composite_store(variant: str) -> bytes:
         "geometry-composite-law-multi-rep-partial",
         "geometry-composite-law-e0b-multi-rep-conservative",
         "geometry-composite-law-e0b-multi-rep-unsupported-veto",
+        "geometry-composite-law-e0b-multi-rep-relaxed",
     ):
         return _composite_multi_rep_store(variant)
     if variant in (
@@ -1260,33 +1338,61 @@ def _composite_store(variant: str) -> bytes:
                 # 4ae0392d shape).
                 extra_record = _facet_record(0x4C, (0.0, 1.0, 0.0), skip_loop_a)
             elif variant == "geometry-composite-law-e0b-nonplanar":
-                # one coplanar + one NONPLANAR dropped loop: not
-                # battery-supported -> the conservative rule holds.
+                # one coplanar + one NONPLANAR dropped loop (the
+                # 3dff4d93 shape): the stage-15 RELAXED law exports both
+                # (the battery criterion is removed, owner-authorized
+                # 2026-11-13) — the pinned fans emit and the store's
+                # gate outcome is the mesh's own business.  Under the
+                # retired stage-10 battery this store stayed
+                # conservative: the re-scoped test pins the fire.
                 extra_record = _facet_record(
                     0x4C, (0.0, 1.0, 0.0), skip_loop_a
                 ) + _e0b_record(0x4C, (0.0, 1.0, 0.0), (skip_loop_bad,))
             elif variant == "geometry-composite-law-e0b-normal-less":
                 # one coplanar loop + one on a NORMAL-LESS 0x42 strip
-                # (the 08f2eccb mixed-coverage shape): untestable ->
-                # the conservative rule holds.
+                # (the 08f2eccb mixed-coverage shape): the stage-15
+                # RELAXED law exports both (25/26 corpus pinned meshes
+                # are exactly the normal-less family).  Under the
+                # retired stage-10 battery this store stayed
+                # conservative: the re-scoped test pins the fire.
                 extra_record = _facet_record(
                     0x4C, (0.0, 1.0, 0.0), skip_loop_a
                 ) + _facet_record(0x42, None, skip_loop_b)
+            elif variant == "geometry-composite-law-e0b-relaxed-not-manifold":
+                # the stage-15 relaxation's corpus exception analog (the
+                # 3dff4d93 gate outcome): three pinned 0x4C fans whose
+                # pinned triangles OVER-USE edge (rank 1, rank 6) three
+                # times — the law fires (empty primary mesh, all skip
+                # slots pinnable), the loops export, and the mesh stays
+                # NOT-MANIFOLD: the decode does not veto, the L2 gate
+                # owns the failed check (the corpus: 3dff4d93 exports
+                # under the relaxed law and stays failed, declared).
+                # Under the retired stage-10 battery this store stayed
+                # conservative (the second fan is nonplanar against the
+                # stored normal): the test pins the fire AND the
+                # not-manifold verdict.
+                extra_record = _e0b_record(
+                    0x4C,
+                    (0.0, 1.0, 0.0),
+                    ((2, 0, 8, 3), (2, 12, 8), (2, 13, 8)),
+                )
             elif variant == "geometry-composite-law-e0b-unpinnable":
-                # the UNPINNABLE arm (stage-10 review F4): the dropped
-                # loop's skip slot is ELEMENT 0 — no preceding written
-                # element exists to weld to — so the law rejects before
-                # the battery and the store keeps the conservative rule.
+                # the UNPINNABLE arm (stage-10 review F4; the relaxed
+                # law's remaining fail-closed arm): the dropped loop's
+                # skip slot is ELEMENT 0 — no preceding written element
+                # exists to weld to — so the law rejects and the store
+                # keeps the conservative rule.
                 extra_record = _facet_record(
                     0x4C, (0.0, 0.0, -1.0), (0, 6, 9, 3)
                 )
             else:  # geometry-composite-law-e0b-nonempty
                 # the box exports its 12 triangles AND carries a
-                # battery-supported dropped loop: the primary mesh is
-                # NOT empty -> the store-level conservative gate holds
-                # (the 471-passing stores' shape).  The box's faces are
-                # written over WRITTEN indices — remapped through the
-                # skip layout (the curve-entries variant's _elem walk).
+                # pinnable dropped loop: the primary mesh is NOT empty
+                # -> the store-level conservative gate holds (the
+                # 471-passing stores' shape; the E0 scope survives the
+                # stage-15 relaxation).  The box's faces are written
+                # over WRITTEN indices — remapped through the skip
+                # layout (the curve-entries variant's _elem walk).
                 def _elem(r: int) -> int:
                     e = r
                     for s in skip_slots:
@@ -1301,6 +1407,67 @@ def _composite_store(variant: str) -> bytes:
                     for mk, normal, refs in COMPOSITE_FACES
                 )
                 extra_record = _facet_record(0x4C, (0.0, 1.0, 0.0), skip_loop_a)
+        elif variant.startswith("geometry-composite-law-dedup"):
+            # Stage-15 unordered-triangle dedup fixtures (#34,
+            # 2026-11-13): the plain 12-point box (no skip slots) plus
+            # extra records re-writing one box triangle in REVERSED
+            # ref order — the review F1 mechanism (the writer re-lists
+            # the facet from a second record, opposite winding).  Box
+            # face 1 is the 0x4a strip (6, 0, 9, 3) -> triangles
+            # (6,0,9) and (3,9,0); the dup record's strip loop
+            # (9, 0, 6) emits (9,0,6) — the same UNORDERED triple as
+            # (6,0,9).  Edge {6,0} is a box edge (2 faces use it), so
+            # the dup pushes it to 3 uses: not-manifold.
+            elements = _composite_elements(points)
+            faces = COMPOSITE_FACES
+            width = 1
+            write_count_override = None
+            # 0x42 strips carry NO stored normal (NORMAL_MARKERS_ALL
+            # excludes 0x42 — review F6): every 0x42 record here is
+            # normal-less or the width law misreads the 12-B block.
+            dup_record = _facet_record(0x42, None, (9, 0, 6))
+            if variant == "geometry-composite-law-dedup-unordered":
+                # the positive: box + dup -> not-manifold ({6,0} x3);
+                # the dedup drops (9,0,6) -> the exact 12-triangle box,
+                # manifold.  First occurrence's winding wins: (6,0,9)
+                # survives, (9,0,6) does not.
+                extra_record = dup_record
+            elif variant == "geometry-composite-law-dedup-manifold-no-fire":
+                # the zero-regression direction: a two-sided sheet —
+                # two triangles over the SAME three written vertices in
+                # opposite windings — is MANIFOLD (each shared edge
+                # used once per winding, closed even): the fire gate's
+                # pre-manifold condition must NOT fire, and both
+                # copies survive verbatim (a passing store's row must
+                # not change).  The sheet's vertices are box points,
+                # but the box faces are OMITTED so the sheet's edges
+                # are free-standing (the box would push them to 4
+                # uses).
+                faces = ()
+                extra_record = _facet_record(
+                    0x42, None, (0, 1, 3)
+                ) + _facet_record(0x42, None, (3, 1, 0))
+            elif variant == "geometry-composite-law-dedup-declined":
+                # the fail-closed arm: box + dup + one FIN triangle on
+                # the same box edge {6,0} (0,6,7 — distinct vertices,
+                # non-coplanar content) — dropping the dup still leaves
+                # {6,0} used 3x, so the dedup DECLINES: the emitted 14
+                # triangles are kept verbatim and the declined dedup is
+                # named.  Removing the post-manifold condition would
+                # export 13 — red.
+                extra_record = dup_record + _facet_record(
+                    0x4C, (0.0, -1.0, 0.0), (0, 6, 7)
+                )
+            else:  # geometry-composite-law-dedup-degenerate
+                # the b912cbef shape: box + dup + one DEGENERATE strip
+                # (a loop repeating element 5 — a==b skips it, counted,
+                # no triangle).  The dedup fires (12 triangles,
+                # manifold) and the pre-existing degenerate skip rides
+                # UNTOUCHED: the L2 gate fails degenerate-triangles (a
+                # separate check, never deduped away).
+                extra_record = dup_record + _facet_record(
+                    0x4C, (0.0, 1.0, 0.0), (5, 5, 7)
+                )
         else:
             elements = _composite_elements(points)
             faces = COMPOSITE_FACES
@@ -1494,17 +1661,33 @@ def _composite_multi_rep_store(variant: str) -> bytes:
         # would regress the store's L2 state).
         elements1 = _composite_elements(pts1, (2, 6, 10))
         rep1_records = ((0x4C, (0.0, 1.0, 0.0), (2, 0, 8, 3)),)
-    elif variant == "geometry-composite-law-e0b-multi-rep-unsupported-veto":
-        # stage-10 review F1 (#34): BOTH reps' primary triangulations
-        # are empty — rep 0 carries a NORMAL-LESS (untestable) dropped
-        # loop, rep 1 the battery-supported dropped loop.  The store's
-        # mesh is empty, so the store-level gate decides: one
-        # unsupported rep keeps the WHOLE store conservative (the
-        # gate's None-candidate veto; the F1 bug fired rep 1's pins
-        # here and zeroed the curve-entry counters).
+    elif variant == "geometry-composite-law-e0b-multi-rep-relaxed":
+        # stage-15 (#34, 2026-11-13): BOTH reps' primary triangulations
+        # are empty and BOTH carry a NORMAL-LESS dropped loop — under
+        # the relaxed dup-pin law (the battery criterion removed,
+        # owner-authorized) neither rep vetoes: the store-level gate
+        # fires and BOTH reps' pins export (4 triangles).  Under the
+        # retired stage-10 battery this shape was the unsupported-veto
+        # negative: the test pins the overturn at the store level.
         elements0 = _composite_elements(pts0, (2, 6, 10))
         elements1 = _composite_elements(pts1, (2, 6, 10))
         rep0_records = ((0x42, None, (2, 0, 8, 3)),)
+        rep1_records = ((0x42, None, (2, 0, 8, 3)),)
+    elif variant == "geometry-composite-law-e0b-multi-rep-unsupported-veto":
+        # stage-10 review F1 (#34), re-scoped stage-15: BOTH reps'
+        # primary triangulations are empty — rep 0 carries an
+        # UNPINNABLE dropped loop (its skip slot is rep 0's ELEMENT 0:
+        # no preceding written element to weld to — the relaxed law's
+        # remaining reject arm; the old normal-less veto is the
+        # overturned stage-10 behavior), rep 1 a pinnable dropped
+        # loop.  The store's mesh is empty, so the store-level gate
+        # decides: rep 0's None candidate vetoes and the WHOLE store
+        # stays conservative (the gate's None-candidate veto; the F1
+        # bug fired rep 1's pins here and zeroed the curve-entry
+        # counters).
+        elements0 = _composite_elements(pts0, (0,))
+        elements1 = _composite_elements(pts1, (2, 6, 10))
+        rep0_records = ((0x42, None, (0, 1, 5, 4)),)
         rep1_records = ((0x4C, (0.0, 1.0, 0.0), (2, 0, 8, 3)),)
     else:
         elements1 = _composite_elements(pts1)
