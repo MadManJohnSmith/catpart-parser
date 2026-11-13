@@ -34,6 +34,24 @@ export function decode_inspect(bytes) {
     }
     return takeFromExternrefTable0(ret[0]);
 }
+
+/**
+ * The Phase 6 product structure entry point (spec §7.2 of
+ * ``docs/specs/phase6-assembly-viewer-spec.md``).
+ * Accepts raw bytes of a .CATProduct file and returns the parsed
+ * hierarchy, instance list, and transform vectors.
+ * @param {Uint8Array | number[]} bytes
+ * @returns {any}
+ */
+export function decode_product_structure(bytes) {
+    const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.decode_product_structure(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,

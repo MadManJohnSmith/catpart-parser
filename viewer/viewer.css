@@ -110,3 +110,414 @@
 .ctable { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12.5px; }
 .ctable th { text-align: left; color: var(--ink-faint); font-weight: 600; text-transform: uppercase; letter-spacing: .6px; font-size: 11px; }
 .ctable th, .ctable td { padding: 6px 8px; border-bottom: 1px solid var(--card-edge); font-family: var(--mono); }
+
+/* --- Assembly Viewer & Classification Tree Styles (Phase 6, Ticket P3-V5) --- */
+
+:root {
+  --color-success: #22c55e;
+  --color-info: #06b6d4;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+}
+
+/* 1. Canonical Classification Badges (Spec §3.2 & §4.1) */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.badge-placed,
+.pill.status-placed,
+.pill.good {
+  background: rgba(34, 197, 94, 0.14);
+  color: var(--color-success);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.badge-identity,
+.pill.status-identity,
+.pill.neutral {
+  background: rgba(6, 182, 212, 0.14);
+  color: var(--color-info);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+}
+
+.badge-unresolved,
+.pill.status-unresolved,
+.pill.warn {
+  background: rgba(245, 158, 11, 0.14);
+  color: var(--color-warning);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.badge-undecodable,
+.pill.status-undecodable,
+.pill.bad {
+  background: rgba(239, 68, 68, 0.14);
+  color: var(--color-danger);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+/* 2. Panel Header & Product Switcher (§4.3) */
+.panel-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.product-select {
+  background: var(--bg-soft);
+  border: 1px solid var(--card-edge);
+  color: var(--ink);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12.5px;
+  cursor: pointer;
+  outline: none;
+}
+.product-select:focus {
+  border-color: var(--accent);
+}
+
+/* 3. Summary Bar */
+.assembly-summary-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0;
+}
+
+.summary-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.summary-total {
+  background: var(--bg-soft);
+  border: 1px solid var(--card-edge);
+  color: var(--ink);
+}
+.summary-chip .chip-label {
+  color: inherit;
+  opacity: 0.85;
+}
+.summary-chip .chip-val {
+  font-weight: 700;
+  font-family: var(--mono);
+}
+
+/* 4. Root Product Container Row */
+.tree-root-container {
+  margin-bottom: 10px;
+}
+.tree-root-row {
+  background: var(--bg-soft);
+  border: 1px solid var(--card-edge);
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+.root-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.root-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.root-icon {
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent);
+}
+.root-name {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink);
+}
+.root-ver {
+  font-size: 12px;
+}
+.root-counts {
+  font-size: 12px;
+  margin-left: 24px;
+}
+
+/* 5. Hierarchical Instance Tree */
+.tree-container {
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.assembly-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.tree-node {
+  border-radius: 6px;
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
+}
+.tree-node:hover {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: var(--card-edge);
+}
+.tree-node.selected {
+  background: rgba(56, 225, 255, 0.08);
+  border-color: var(--accent);
+}
+
+.node-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--ink-dim);
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+.icon-btn:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--card-edge);
+  background: rgba(255, 255, 255, 0.06);
+}
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.inst-vis-toggle.is-hidden {
+  color: var(--ink-faint);
+  opacity: 0.5;
+}
+
+.inst-isolate-btn.is-isolated {
+  color: var(--accent);
+  background: rgba(56, 225, 255, 0.14);
+  border-color: var(--accent);
+}
+
+.node-select-btn {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: none;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+}
+.node-select-btn:focus-visible {
+  outline: 1px solid var(--accent);
+}
+
+.inst-name {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.part-number {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 6. Instance Inspector */
+.inspector-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.inspector-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.inspector-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.inspector-title {
+  font-size: 16px;
+  font-weight: 700;
+  font-family: var(--mono);
+  color: var(--ink);
+  margin: 0;
+}
+
+.inspector-kv {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.kv-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 13px;
+}
+.kv-key {
+  color: var(--ink-faint);
+}
+.kv-val code {
+  color: var(--accent);
+}
+
+.inspector-section {
+  margin-top: 6px;
+}
+.section-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--ink-faint);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.transform-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 12px;
+  margin-top: 4px;
+}
+.transform-table th {
+  text-align: left;
+  color: var(--ink-faint);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 5px 6px;
+  border-bottom: 1px solid var(--card-edge);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.transform-table td {
+  padding: 5px 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--ink);
+}
+.transform-table td:nth-child(odd) {
+  color: var(--ink-faint);
+  width: 24px;
+}
+
+.inspector-notice {
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  margin: 6px 0;
+}
+.inspector-notice.bad {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--bad);
+}
+.inspector-notice.warn {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: var(--warn);
+}
+.inspector-notice.info {
+  background: rgba(6, 182, 212, 0.12);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+  color: var(--accent);
+}
+.notice-title {
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+.notice-detail {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+/* 7. Exploded View Slider */
+.exploded-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.exploded-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 110px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--card-edge);
+  outline: none;
+  cursor: pointer;
+}
+.exploded-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 0 6px rgba(56, 225, 255, 0.4);
+}
+.exploded-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: none;
+}
+
+.explode-value {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--accent);
+  min-width: 32px;
+}
+

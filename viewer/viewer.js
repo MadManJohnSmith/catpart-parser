@@ -1,27 +1,30 @@
-/* The Phase 5 viewer (spec docs/specs/phase5-viewer-spec.md §5): a
-   hand-written ES module over the two §2.3 WASM entries and the one
-   vendored, pinned three.js module. No bundler, no framework, no
-   node_modules — the site's zero-runtime-dependency property.
+/* The Phase 5 & Phase 6 viewer: a hand-written ES module over the WASM entries
+   and the pinned three.js module. No bundler, no framework, no node_modules.
 
-   Surface: drag-drop / file-picker of a .CATPart; orbit/zoom +
-   wireframe/solid on the decoded mesh; the §3.4 sanity gate (gate.js,
-   the _score_export mirror); the schema-v1 metadata panel; the curve
-   overlay over the decoded polyline loops (the §2.3 additive `curves`
-   — pre-weld point sequences, NOT part of the summary); and the
-   classified-failure display — a failing decode shows its
-   { error_class, detail }, never a blank screen.
-
-   Memory honesty (§10 risk 8): desktop-target only. The file is held
-   as an ArrayBuffer, copied into the WASM linear memory, and decoded
-   into new typed arrays — ≈3x transient peak; the largest corpus file
-   is ~120 MB. Every load disposes the previous scene's GPU resources.
-   No margin is declared anywhere in this app (§3.4 — that is V5's
-   owner-approved declaration, not the viewer's). */
+   Supports:
+   - Part Mode (Phase 5): Single .CATPart drag-drop/upload, geometry mesh,
+     curve overlay, sanity gate, schema-v1 metadata panel.
+   - Assembly Mode (Phase 6): Multi-file, .CATProduct, or .zip upload,
+     Virtual File Catalog, 3D spatial scene graph with R_X(-pi/2) basis,
+     geometry instancing pool, hierarchical instance tree with the 4
+     canonical badges (Placed, Identity, Unresolved, Undecodable),
+     interactive instance inspector, and exploded view slider.
+*/
 
 import * as THREE from "./three.module.min.js";
-import init, { decode_export, decode_inspect } from "./pkg/port.js";
+import init, { decode_export, decode_inspect, decode_product_structure } from "./pkg/port.js";
 import { MAX_DEGENERATE_TRIANGLES, scoreExport } from "./gate.js";
 import { attachOrbit } from "./orbit.js";
+import { VirtualFileCatalog } from "./catalog.js";
+import { ingestFiles, isZipFile } from "./ingest.js";
+import {
+  AssemblyScene,
+  STATUS_PLACED,
+  STATUS_IDENTITY,
+  STATUS_UNRESOLVED,
+  STATUS_UNDECODABLE,
+} from "./assembly_scene.js";
+import { AssemblyUI } from "./assembly_ui.js";
 
 const els = {
   drop: document.getElementById("drop"),
@@ -32,10 +35,21 @@ const els = {
   errorClass: document.getElementById("error-class"),
   errorDetail: document.getElementById("error-detail"),
   gate: document.getElementById("gate"),
+  gatePanel: document.getElementById("gate-panel"),
   meta: document.getElementById("meta"),
+  metaPanel: document.getElementById("meta-panel"),
   curvesBtn: document.getElementById("curve-toggle"),
   wireBtn: document.getElementById("wire-toggle"),
   curveState: document.getElementById("curve-state"),
+  assemblyPanel: document.getElementById("assembly-panel"),
+  inspectorPanel: document.getElementById("inspector-panel"),
+  assemblyTreeContainer: document.getElementById("assembly-tree-container"),
+  assemblySummaryBar: document.getElementById("assembly-summary-bar"),
+  assemblySwitcherContainer: document.getElementById("assembly-switcher-container"),
+  instanceInspector: document.getElementById("instance-inspector"),
+  explodedToolbar: document.getElementById("exploded-view-toolbar"),
+  explodeSlider: document.getElementById("explode-slider"),
+  explodeValue: document.getElementById("explode-value"),
 };
 
 /* ---- three.js scaffolding (created once) ---- */
@@ -56,6 +70,44 @@ let solidMaterial = null;
 let showCurves = false;
 let showWireframe = false;
 
+/* ---- Assembly Subsystems (Phase 6) ---- */
+
+const assemblyScene = new AssemblyScene(scene, {
+  defaultMaterial: null,
+  applyRootBasis: true,
+});
+
+let activeCatalog = null;
+
+const assemblyUI = new AssemblyUI({
+  document: window.document,
+  treeContainer: els.assemblyTreeContainer,
+  summaryContainer: els.assemblySummaryBar,
+  inspectorContainer: els.instanceInspector,
+  switcherContainer: els.assemblySwitcherContainer,
+  toolbarContainer: els.explodedToolbar,
+  scene: assemblyScene,
+  onExplodeChange: (scale) => {
+    assemblyScene.setExplodedScale(scale);
+  },
+  onSelectInstance: (rec) => {
+    if (rec && rec.instance_name) {
+      assemblyScene.frameInstance(rec.instance_name, orbit);
+    }
+  },
+  onToggleVisibility: (id, vis) => {
+    assemblyScene.setInstanceVisibility(id, vis);
+  },
+  onIsolateInstance: (id, iso) => {
+    assemblyScene.isolateInstance(id, iso);
+  },
+  onSwitchProduct: async (cand) => {
+    if (activeCatalog && cand) {
+      await loadAssemblyFromCatalog(activeCatalog, cand.name);
+    }
+  },
+});
+
 function resize() {
   const rect = els.canvas.getBoundingClientRect();
   const w = Math.max(rect.width, 1);
@@ -75,7 +127,25 @@ function tick() {
 }
 requestAnimationFrame(tick);
 
-function disposeMesh() {
+function setUIMode(mode) {
+  if (mode === "assembly") {
+    if (els.assemblyPanel) els.assemblyPanel.hidden = false;
+    if (els.inspectorPanel) els.inspectorPanel.hidden = false;
+    if (els.explodedToolbar) els.explodedToolbar.hidden = false;
+    if (els.gatePanel) els.gatePanel.hidden = true;
+    if (els.metaPanel) els.metaPanel.hidden = true;
+    viewerState.mode = "assembly";
+  } else {
+    if (els.assemblyPanel) els.assemblyPanel.hidden = true;
+    if (els.inspectorPanel) els.inspectorPanel.hidden = true;
+    if (els.explodedToolbar) els.explodedToolbar.hidden = true;
+    if (els.gatePanel) els.gatePanel.hidden = false;
+    if (els.metaPanel) els.metaPanel.hidden = false;
+    viewerState.mode = "part";
+  }
+}
+
+function clearScene() {
   for (const obj of [meshObject, curveGroup]) {
     if (!obj) continue;
     scene.remove(obj);
@@ -86,9 +156,15 @@ function disposeMesh() {
   }
   meshObject = null;
   curveGroup = null;
+  assemblyScene.clear();
+  if (assemblyUI) assemblyUI.clear();
 }
 
-/* ---- rendering the decoded result ---- */
+function disposeMesh() {
+  clearScene();
+}
+
+/* ---- rendering the decoded result (Part Mode) ---- */
 
 function buildMesh(vertices, triangles) {
   const geometry = new THREE.BufferGeometry();
@@ -168,7 +244,9 @@ function renderGate(summary) {
 }
 
 function clearGate() {
-  els.gate.innerHTML = `<p class="dim">no export — the decode failed (see the classified error)</p>`;
+  if (els.gate) {
+    els.gate.innerHTML = `<p class="dim">no export — the decode failed (see the classified error)</p>`;
+  }
 }
 
 function esc(text) {
@@ -179,6 +257,7 @@ function esc(text) {
 }
 
 function renderMeta(doc) {
+  if (!els.meta) return;
   const containers = (doc.containers || [])
     .map(
       (c) =>
@@ -221,11 +300,12 @@ function refreshToggles(curveCount) {
 }
 
 /* The scripted-check surface (window.viewer): the same state the
-   panels render, machine-readable for the local Playwright acceptance
-   (scripts/viewer_acceptance.py) — read-only, never required to use
-   the page. */
+   panels render, machine-readable for Playwright acceptance
+   (scripts/viewer_acceptance.py and scripts/assembly_viewer_acceptance.py)
+   — read-only, never required to use the page. */
 const viewerState = {
   status: "idle",
+  mode: "part", // "part" | "assembly"
   fileName: null,
   gate: null,
   error: null,
@@ -234,6 +314,7 @@ const viewerState = {
   curveCount: 0,
   curvesVisible: false,
   wireframe: false,
+  assembly: null,
 };
 
 function publishState() {
@@ -242,16 +323,14 @@ function publishState() {
   window.viewer = viewerState;
 }
 
-/* ---- loading ---- */
+/* ---- loading (Part Mode) ---- */
 
 async function loadFile(file) {
-  // Once a file is in, the drop zone slims to a "load another" bar.
+  setUIMode("part");
   els.drop.classList.add("compact");
-  // Every panel resets per load — the previous file's gate, toggles
-  // and mesh never leak into this one's display.
   clearGate();
   clearError();
-  disposeMesh();
+  clearScene();
   showCurves = false;
   refreshToggles(0);
   viewerState.status = "decoding";
@@ -261,13 +340,10 @@ async function loadFile(file) {
   viewerState.summary = null;
   viewerState.inspect = null;
   viewerState.curveCount = 0;
+  viewerState.assembly = null;
   publishState();
   setStatus(`decoding ${file.name} (${file.size.toLocaleString("en")} B)…`);
   const bytes = new Uint8Array(await file.arrayBuffer());
-  // The §2.3 entries are whole-buffer; each throws the classified
-  // { error_class, detail } object on failure. The two seams fail
-  // independently: the metadata panel shows the inspect refusal, the
-  // main panel the export refusal.
   let summary = null;
   let doc = null;
   let exportError = null;
@@ -297,7 +373,7 @@ async function loadFile(file) {
       container_count: (doc.containers || []).length,
     };
     renderMeta(doc);
-  } else if (inspectError) {
+  } else if (inspectError && els.meta) {
     els.meta.innerHTML = `<div class="kv"><span>inspect failed</span><code>${esc(
       inspectError.error_class || "unknown",
     )}</code></div><p class="dim">${esc(inspectError.detail || "")}</p>`;
@@ -309,11 +385,6 @@ async function loadFile(file) {
       triangle_count: summary.triangle_count,
       degenerate_triangle_count: summary.degenerate_triangle_count,
       manifold: summary.mesh.manifold,
-      // V5 phase A (ticket #52): mechanical exposure additions for the
-      // reproduction harness — the full mesh block and the ordered
-      // warnings, exactly what the boundary's summary carries and what
-      // the Python fitness record's l2 shape holds (runner.py). No
-      // gate change: scoreExport's checks and record shape untouched.
       mesh: summary.mesh,
       warnings: summary.warnings || [],
     };
@@ -322,8 +393,6 @@ async function loadFile(file) {
   } else {
     clearGate();
   }
-  // Nothing to draw on a refused decode: the classified error takes
-  // the stage's place (never a blank screen — §5).
   els.canvas.hidden = !summary;
   if (exportError) {
     viewerState.error = {
@@ -347,13 +416,174 @@ async function loadFile(file) {
   resize();
 }
 
-/* ---- inputs ---- */
+/* ---- loading (Assembly Mode) ---- */
+
+async function loadAssemblyFromCatalog(catalog, preferredRoot = null) {
+  activeCatalog = catalog;
+  setUIMode("assembly");
+  els.drop.classList.add("compact");
+  clearGate();
+  clearError();
+  clearScene();
+  viewerState.status = "decoding";
+  viewerState.error = null;
+  viewerState.gate = null;
+  viewerState.summary = null;
+  viewerState.inspect = null;
+  viewerState.assembly = null;
+  publishState();
+
+  const candidates = catalog.getProducts();
+  if (candidates.length === 0) {
+    throw {
+      error_class: "missing-product-file",
+      detail: "No .CATProduct file found in uploaded archive or folder",
+    };
+  }
+
+  let rootProduct = null;
+  if (preferredRoot) {
+    rootProduct = catalog.resolveProduct(preferredRoot) || catalog.byPath.get(preferredRoot);
+  }
+  if (!rootProduct) {
+    rootProduct = candidates[0];
+  }
+
+  viewerState.fileName = rootProduct.name;
+  setStatus(`decoding product ${rootProduct.name}…`);
+
+  const bytes = await rootProduct.getBytes();
+  const doc = decode_product_structure(bytes);
+
+  // Load into AssemblyScene (instancing, GPU buffer pool, bounds)
+  const counts = await assemblyScene.loadAssembly(doc, catalog, {
+    decodeExport: decode_export,
+    orbit,
+    autoFrame: true,
+  });
+
+  // Load into AssemblyUI (instance tree, badges, inspector, summary bar)
+  assemblyUI.setAssembly(doc, catalog);
+  if (candidates.length > 1) {
+    assemblyUI.setProductList(candidates, rootProduct.name);
+  } else {
+    assemblyUI.setProductList([]);
+  }
+
+  const sphereData = assemblyScene.computeBoundingSphere("world");
+
+  viewerState.assembly = {
+    document: doc,
+    catalog: catalog,
+    totalInstances: counts.totalInstances,
+    placedInstances: counts.placedInstances,
+    identityInstances: counts.identityInstances,
+    unresolvedInstances: counts.unresolvedInstances,
+    undecodableInstances: counts.undecodableInstances,
+    uniqueGeometries: counts.uniqueGeometries,
+    uniqueMeshAllocations: counts.uniqueGeometries,
+    counts: {
+      total: counts.totalInstances,
+      placed: counts.placedInstances,
+      identity: counts.identityInstances,
+      unresolved: counts.unresolvedInstances,
+      undecodable: counts.undecodableInstances,
+    },
+    tallies: {
+      total: counts.totalInstances,
+      placed: counts.placedInstances,
+      identity: counts.identityInstances,
+      unresolved: counts.unresolvedInstances,
+      undecodable: counts.undecodableInstances,
+    },
+    boundingSphere: {
+      center: [sphereData.center.x, sphereData.center.y, sphereData.center.z],
+      radius: sphereData.radius,
+    },
+    instances: Array.from(assemblyScene.instances.values()).map((inst) => ({
+      instanceName: inst.userData.instanceName,
+      partNumber: inst.userData.partNumber,
+      status: inst.userData.placementStatus,
+      placementStatus: inst.userData.placementStatus,
+      transform: inst.userData.transform,
+      isPlacedSpatial: inst.userData.isPlacedSpatial,
+      visible: inst.visible,
+    })),
+  };
+
+  els.canvas.hidden = false;
+  setStatus(
+    `${rootProduct.name} — ${counts.totalInstances} instance${counts.totalInstances === 1 ? "" : "s"} ` +
+      `(${counts.placedInstances} placed, ${counts.identityInstances} identity, ` +
+      `${counts.unresolvedInstances} unresolved, ${counts.undecodableInstances} undecodable)`,
+  );
+  viewerState.status = "loaded";
+  publishState();
+  resize();
+}
+
+/* ---- Input Handling (Single Part vs Multi-File / Assembly) ---- */
+
+async function handleUploadedInputs(inputs) {
+  let isSinglePart = false;
+  if (inputs instanceof FileList || Array.isArray(inputs)) {
+    if (inputs.length === 1) {
+      const name = inputs[0].name.toLowerCase();
+      if (name.endsWith(".catpart") && !name.endsWith(".zip")) {
+        isSinglePart = true;
+      }
+    }
+  } else if (inputs && inputs.name) {
+    const name = inputs.name.toLowerCase();
+    if (name.endsWith(".catpart") && !name.endsWith(".zip")) {
+      isSinglePart = true;
+    }
+  }
+
+  if (isSinglePart) {
+    const file = inputs[0] || inputs;
+    await loadFile(file);
+    return;
+  }
+
+  try {
+    const result = await ingestFiles(inputs);
+    if (result.hasRootProduct && result.rootProduct) {
+      await loadAssemblyFromCatalog(result.catalog, result.rootProduct.name);
+    } else if (result.partsCount > 0 && result.productsCount === 0) {
+      const firstPart = result.catalog.getParts()[0];
+      const bytes = await firstPart.getBytes();
+      const fakeFile = new File([bytes], firstPart.name);
+      await loadFile(fakeFile);
+    } else {
+      throw {
+        error_class: "missing-product-file",
+        detail: "No .CATProduct file found in uploaded files or archive",
+      };
+    }
+  } catch (err) {
+    clearScene();
+    els.canvas.hidden = true;
+    viewerState.status = "failed";
+    viewerState.error = {
+      error_class: err.error_class || "ingest-error",
+      detail: err.detail || String(err),
+    };
+    showError(viewerState.error.error_class, viewerState.error.detail);
+    setStatus("Failed to load assembly");
+    publishState();
+  }
+}
+
+/* ---- inputs listeners ---- */
 
 els.input.addEventListener("change", () => {
-  const file = els.input.files && els.input.files[0];
-  if (file) loadFile(file);
+  if (els.input.files && els.input.files.length > 0) {
+    handleUploadedInputs(els.input.files);
+  }
   els.input.value = "";
 });
+
 els.drop.addEventListener("click", () => els.input.click());
 els.drop.addEventListener("dragover", (ev) => {
   ev.preventDefault();
@@ -363,18 +593,23 @@ els.drop.addEventListener("dragleave", () => els.drop.classList.remove("over"));
 els.drop.addEventListener("drop", (ev) => {
   ev.preventDefault();
   els.drop.classList.remove("over");
-  const file = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
-  if (file) loadFile(file);
+  if (ev.dataTransfer) {
+    handleUploadedInputs(ev.dataTransfer);
+  }
 });
+
 els.curvesBtn.addEventListener("click", () => {
   showCurves = !showCurves;
   if (curveGroup) curveGroup.visible = showCurves;
+  assemblyScene.setCurvesVisible(showCurves);
   refreshToggles(viewerState.curveCount);
   publishState();
 });
+
 els.wireBtn.addEventListener("click", () => {
   showWireframe = !showWireframe;
   if (solidMaterial) solidMaterial.wireframe = showWireframe;
+  assemblyScene.setWireframe(showWireframe);
   refreshToggles(viewerState.curveCount);
   publishState();
 });
@@ -383,12 +618,10 @@ els.wireBtn.addEventListener("click", () => {
 
 init()
   .then(() => {
-    setStatus("Drop a .CATPart — the decode runs fully in your browser.");
+    setStatus("Drop a .CATPart, .CATProduct, or .zip — runs fully in your browser.");
     resize();
   })
   .catch((err) => {
-    // The one failure the classified seam cannot carry: the WASM
-    // module itself did not load. Still never a blank screen.
     setStatus("the viewer failed to initialise");
     showError("viewer-init", String(err));
     viewerState.status = "failed";
