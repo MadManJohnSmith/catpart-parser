@@ -93,6 +93,24 @@ base-class annotation) + `document_name`; units: documented negative
 **Acceptance:** subset of corpus exports geometry that a neutral viewer
 renders sanely.
 
+**Status (2026-11-13): in flight — G6 (#34) grinding toward the bar.**
+G1-G5 closed 2026-11-10 (L2 fitness shipped, baseline 76/1,381 =
+5.50%). The #34 grind has landed stages 1-13 (all independently
+reviewed, linear history, fitness rows append-only): per-rep pool
+absorption + width laws (u24be, plane tiebreak), locator recovery +
+the stage-12 other-container extension, the composite table-walk /
+per-rep / raw-array decode laws, the E0 curve-entry law, and the
+stage-13 element-space law (beyond-pool refs = point-region
+indices). Latest accepted row `20261113T210248Z-ec1b5d`: **Dev
+1,001/1,381 = 72.48%, held-out 55/61, exports 1,173**; L1 flat.
+Levers closed at 0 with byte evidence: subnode-index (stage-11),
+the no-pool grant (stage-13 — 128/131 stores carry zero facet
+records). Stage-14 (the exported-but-failing families: 84
+empty-mesh + 33 not-manifold) measures the remaining ceiling; the
+80% bar (1,105) needs 104 dev flips and the measured levers sum
+well below it — the close-vs-continue decision follows the
+stage-14 landing, under the pre-authorized bar revision rule above.
+
 ## Phase 5 — Web viewer, parts (L2 delivery surface)
 
 A browser viewer that opens arbitrary `.CATPart` files with 100%

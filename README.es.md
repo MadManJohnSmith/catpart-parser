@@ -60,6 +60,25 @@ documentado 0.82–0.93 de presencia de stores), 29
 mueve las variantes no decodificadas hacia la barra de ≥ 80% bajo
 no-regret.
 
+**Estado del grind (2026-11-13):** la última fila aceptada (run
+`20261113T210248Z-ec1b5d`) pone L2 en **Dev 1,001/1,381 = 72.48%,
+held-out 55/61**, L1 plano, 1,173 exportaciones — desde el baseline
+de 76 pases por las etapas #34 aterrizadas (absorción de pools
+por-rep + leyes de anchos, recuperación de locators incluida la
+extensión other-container de stage-12, decode composite table-walk,
+decode raw-array de nice-floats, la ley E0 de curve-entries, y la
+ley de espacio de elementos de stage-13: los refs "beyond-pool" son
+índices de la región de puntos — la estructura composite commiteada
+sin sus marcadores de routing). Dos palancas cerraron en 0 con
+evidencia de bytes (la palanca subnode-index, stage-11; el grant
+no-pool, stage-13: 128/131 stores llevan cero registros de
+facetas). La masa restante está medida, no es anecdótica: el censo
+stage-14 pone el techo de las familias exportadas-pero-fallando en
+25 pases dev contra 104 necesarios para la barra del 80% (en
+review), y las familias sin ley (128 sin contenido de facetas, 125
+missing-locator, 16 composite) no llevan ley con evidencia
+commiteada. Historia: `fitness/history.jsonl` (append-only).
+
 ## Progreso
 
 Tracker de implementación — 23 tickets bajo las specs
@@ -96,7 +115,7 @@ geometría L2) con 6 tickets — 5/6 (G1-G5 hechos 2026-11-10).**
 | D | [#31](https://github.com/MadManJohnSmith/catpart-parser/issues/31) G3 primitive semantics (triangles) | hecho |
 | D | [#32](https://github.com/MadManJohnSmith/catpart-parser/issues/32) G4 catpart-export CLI + geometry fixtures | hecho |
 | D | [#33](https://github.com/MadManJohnSmith/catpart-parser/issues/33) G5 L2 fitness + publication | hecho |
-| D | [#34](https://github.com/MadManJohnSmith/catpart-parser/issues/34) G6 grind L2 to the bar (Phase 4 close) | planeado |
+| D | [#34](https://github.com/MadManJohnSmith/catpart-parser/issues/34) G6 grind L2 to the bar (Phase 4 close) | en curso |
 
 ## Hoja de ruta
 
@@ -104,7 +123,7 @@ geometría L2) con 6 tickets — 5/6 (G1-G5 hechos 2026-11-10).**
 |---|---|---|
 | L0 | Corpus público + triage a nivel de bytes con evidencia reproducible | hecho (Fases 0/1) |
 | L1 | Mapa de contenedores/secciones, metadatos, inventario de contenedores, nombres | hecho (Fase 3) |
-| L2 | Geometría básica: mallas y curvas exportables a STEP o renderizables | planeado |
+| L2 | Geometría básica: mallas y curvas exportables a STEP o renderizables | en curso (Fase 4, 72.48%) |
 | L3 | B-rep paramétrico completo (sólidos CAD precisos) | planeado, el más difícil |
 
 ## Método

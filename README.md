@@ -54,15 +54,22 @@ passes, 66 closed volumes + 10 open shells (component signals).
 [#34](https://github.com/MadManJohnSmith/catpart-parser/issues/34) (G6)
 grinds the undecoded variants toward the ≥ 80% bar under no-regret.
 
-**Grind status (2026-11-12):** the latest accepted row (run
-`20261112T191848Z-96c80f`) puts L2 at **Dev 886/1,381 = 64.16%,
-held-out 55/61**, L1 flat — up from the 76-pass baseline through the
-landed #34 stages (per-rep pool absorption + width laws, locator
-recovery, composite table-walk decode, raw-array nice-float decode).
-The remaining mass is measured, not anecdotal: the container-family
-lever ceilings at ≤ +6 exports (stage-7 census, 93 fail-closed stores
-partitioned), and the open mass is the 68 mixed-write stores whose
-float-stream write law is the current decode target. History:
+**Grind status (2026-11-13):** the latest accepted row (run
+`20261113T210248Z-ec1b5d`) puts L2 at **Dev 1,001/1,381 = 72.48%,
+held-out 55/61**, L1 flat, exports 1,173 — up from the 76-pass
+baseline through the landed #34 stages (per-rep pool absorption +
+width laws, locator recovery incl. the stage-12 other-container
+extension, composite table-walk decode, raw-array nice-float
+decode, the E0 curve-entry law, and the stage-13 element-space
+law: beyond-pool refs are point-region indices — the committed
+composite structure minus its routing markers). Two levers closed
+at 0 with byte evidence (the subnode-index lever, stage-11; the
+no-pool grant, stage-13: 128/131 stores carry zero facet
+records). The remaining mass is measured, not anecdotal: the
+stage-14 census puts the exported-but-failing ceiling at 25 dev
+passes against 104 needed for the 80% bar (in review), and the
+unpinned families (128 no-facet-content, 125 missing-locator, 16
+composite) carry no committed-evidence law. History:
 `fitness/history.jsonl` (append-only).
 
 ## Progress
@@ -108,7 +115,7 @@ issue tracker.
 |---|---|---|
 | L0 | Public corpus + byte-level triage with reproducible evidence | done (Phase 0/1) |
 | L1 | Container/section map, metadata, container inventory, names | done (Phase 3) |
-| L2 | Geometry basics: meshes and curves exportable to STEP or renderable | planned |
+| L2 | Geometry basics: meshes and curves exportable to STEP or renderable | in progress (Phase 4, 72.48%) |
 | L3 | Full parametric B-rep (precise CAD solids) | planned, hardest |
 
 ## Method
