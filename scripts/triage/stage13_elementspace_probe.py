@@ -43,6 +43,14 @@ orchestration and every census below is this probe's own.  Anchor runs
 (``--sha16``) write ``*-anchor.csv`` so committed CSVs are never
 clobbered.  Analysis only: ``src/`` untouched, corpus read-only.
 
+BASELINE SCOPE (dated 2026-11-13): the committed CSVs are the
+STAGE-12-LANDED-baseline measurement (the Phase A commits predate this
+stage's Phase B routing extension).  On a tree that carries the
+stage-13 second-chance route, ``build_export`` no longer raises on the
+41 routed stores (37 pass + 4 empty-mesh) — those rows show
+``exported?!`` in the membership pass, the probe's own cross-check of
+Phase B; re-run at main eed27a9 for byte-identical CSVs.
+
 Run:
   python3 -I scripts/triage/stage13_elementspace_probe.py
 Out: docs/evidence/data/stage13-membership.csv
@@ -51,7 +59,6 @@ Out: docs/evidence/data/stage13-membership.csv
 
 import argparse
 import csv
-import dataclasses
 import mmap
 import struct
 import sys

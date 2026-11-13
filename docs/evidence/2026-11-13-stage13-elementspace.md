@@ -294,13 +294,39 @@ by the committed `_score_export` — pre-declaration):
 - D6: STOP gates: any lost export or lost pass = STOP; any changed
   row outside the 41 = stop-and-root-cause.
 
-## 7. Claims
+## 7. Observed A/B (2026-11-13, this branch) — declared-vs-observed
 
-See `stage13-elementspace-claims.csv` (SE1-SE12).  Phase B observed
-results: the section-6 table is completed in the claims CSV (SE13)
-and the wrap-up commit.
+Run: `.venv/bin/python -I scripts/triage/ab_identity_export.py
+--out-name stage13-identity-export-files.csv` (1,442 rows, committed;
+the stage-12 baseline CSV untouched; ~26 s wall).  Observed headline:
+exports 1,132 -> **1,173** (dev 1,116 + held-out 57); dev L2
+**1,001/1,381 = 72.48%** (was 964), held-out **55/61** steady; error
+classes: `undecoded-variant` 181 -> 140 dev, `missing-geometry-store`
+125 unchanged.
 
-## 8. Reproduction
+| declaration | declared | observed | verdict |
+|---|---|---|---|
+| D1 exports | 1,132 -> 1,173 (+41, 0 lost) | 1,173 (1,116 + 57), 0 lost | MET |
+| D2 dev L2 | 964 -> 1,001 (+37, 72.48%) | 1,001/1,381 = 72.48% (+37) | MET |
+| D2 held-out | unchanged | 55/61 unchanged | MET |
+| D2 lost passes | 0 | 0 (all 1,019 baseline pass rows byte-identical) | MET |
+| D3 changed rows | exactly 41 of 1,442 | exactly 41, all `undecoded-variant` -> exported (37 `pass` + 4 `empty-mesh`); every other row byte-identical | MET |
+| D4 stage mix | table-walk x32 / per-rep x3 / mixedwrite x6 | table-walk x32 / per-rep x3 (03c67888, 996fc82b, fcc76b63) / mixedwrite-reps x6 (086b9dd9, 477abcad, 531350af, a60156f7, c3d79133, c5b31a94) | MET |
+| D5 schema/provenance | no schema change; store_recovery on the stage-3a-recovered of the 41 | unchanged schema; empty-mesh exports carry `no-facet-records` | MET |
+| D6 STOP gates | any lost export/pass = STOP | none triggered | n/a |
+
+The 4 empty-mesh exports (1467e3df, 77168b28, 9ed8c3e1, b9f61739) are
+vertices-only (26,401/26,401/212/310 points, 0 triangles — every
+facet loop references skip slots, U4): exported rows whose L2 gate
+fails `empty-mesh`, replacing `undecoded-variant` rows 1:1.  The 128
+no-pool stores that still fail re-raised their original errors
+unchanged (row-identical; the second chance declined on all).
+
+## 8. Claims
+
+See `stage13-elementspace-claims.csv` (SE1-SE13).
+
+## 9. Reproduction
 
 ```
 cd <worktree> && ln -s /home/alan/Documents/Repos/catpart-parser/corpus corpus
