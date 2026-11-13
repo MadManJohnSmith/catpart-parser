@@ -172,3 +172,27 @@ set -o pipefail && bash scripts/check.sh
 Corpus binaries are not committed (corpus symlinked read-only);
 `python3 -I` throughout; the fitness row itself stays with the
 coordinator.
+
+## Observed A/B (2026-11-13, this branch @ the implementation commit) — declared-vs-observed
+
+The full corpus run (`ab_identity_export.py`, 1,442 rows, committed as
+`stage15-identity-export-files.csv`):
+
+| declaration | declared | observed | verdict |
+|---|---|---|---|
+| D1 exports | 1,173 unchanged | dev 1,116 + held-out 57 = 1,173 (0 gained/lost) | MET |
+| D2 dev L2 | 1,001 -> 1,033/1,381 = 74.80% (+32) | 1,033 (0.7480), +32 | MET |
+| D2 held-out | 55 -> 56 (+1) | 56 (+1: 1b1ae784) | MET |
+| D3 row-level | exactly 35 of 1,442 differ (26 dup-pin + 9 carriers) | exactly 35 changed rows, set-identical to the declared set; 0 outside, 0 declared-but-unchanged | MET |
+| D5 ceiling | the 25 pass rows == the ceiling CSV's `ceiling_pass=1` rows; 3dff4d93 fail/not-manifold/3 | row-for-row True (triangle_count == pinned_tris on all 26) | MET |
+| D5 carriers | 8 flips; b912cbef fail -> `degenerate-triangles`; a61588e5 byte-identical | 8 pass flips; b912cbef fail/degenerate-triangles/10,030 tris/manifold True; a61588e5 byte-identical | MET |
+| D6 STOP gates | any lost export/pass, any row outside the 35, any declined row not byte-identical | none fired | MET |
+
+Observed transition table (baseline `l2_status`/`failed_check` ->
+observed): 25x `fail/empty-mesh -> pass/-`; 8x `fail/not-manifold ->
+pass/-`; 1x `fail/empty-mesh -> fail/not-manifold` (3dff4d93); 1x
+`fail/not-manifold -> fail/degenerate-triangles` (b912cbef).  Stage mix
+of the 35: identity-table-walk x24 (the dup-pin single-rep family),
+identity-per-rep x5, identity-mixedwrite-reps x6.  0 lost exports, 0
+lost passes — the zero-regression premise holds; the owner's target
+(dev 1,033/1,381 = 74.80%) is hit exactly.
