@@ -254,3 +254,141 @@ committed decoders (`composite.decode_region` semantics mirrored in
 `table_decode`/`decode_node`, `composite.read_count`, `composite.STRIP_RE`,
 `composite._nice`/`_raw_nice`/`SHAPES`) — no law re-derivation beyond
 the artifacts and the flat law stated above.
+
+## Stage-11 Phase A addendum (2026-11-13, #34): the subnode-only-blocked population, re-measured corpus-wide at the stage-10 baseline
+
+Phase A of the stage-11 dispatch re-derives, at the accepted stage-10
+fitness row (`20261113T155028Z-1aac63`: L2 dev 952/1,381 = 68.94%,
+exports 1,120), the corpus-wide population of fail-closed stores whose
+ONLY pool-absorption blocker is `05 08 01` sub-node-only vertices, and
+re-measures this note's ceiling claim ("the 22 subnode-assisted stores
+need the sub-node element-index law first ... <= +22", MW14; carried as
+"<= +22 on the corrected reading" by the stage-9 claims).  The probe
+(`scripts/triage/stage11_subnode_population_probe.py` ->
+`stage11-subnode-population.csv`, 322 rows) re-measures with OWN
+walkers — the stage-9 correction method; this note's census columns
+are joined for reference only (MW8's `pool_subnode_only` figures are
+the early-break artifact the stage-9 probe corrected):
+
+- **Population (fact):** every fail-closed store of the stage-10 row
+  (322 = 178 missing-geometry-store + 144 undecoded-variant).
+  Exported stores cannot carry subnode-only vertices (the exporter's
+  absorption precondition — every pool vertex region-absorbed — gates
+  export), and the "exported-empty on absorption grounds" disjunct is
+  measured vacuous: 0 exported rows with `vertex_count == 0` (the
+  L2-failing exports are empty-MESH, not absorption-empty).
+- **Method (fact):** composite spans walked per store (CATStdCont in
+  body order, then the exporter's xdoclink/seebody recovery probes —
+  `export.py`'s order); token nodes over the FULL body decoded with
+  the committed law set (`decode_node`: table with the zero-block
+  extent candidates -> raw -> flat); absorption per pool group WITHOUT
+  the early break — the UNION over ALL decoded reps (exact f32, then
+  the exporter's `_tol_match` noise capped at 10,000-vertex groups) AND
+  the exporter's diagonal; per uncovered vertex (cap 200 distinct
+  values per store) every occurrence of its 12-B pattern in the body
+  is classified by position (at an `05 08 01` record prefix / inside
+  the pool's own record spans / elsewhere); per-rep refs gate on the
+  exporter's territories.
+
+### The measured population (fact, per store)
+
+**1 store: `bad44bdf52f5c411`** (dev, anchor named):
+
+- 3 pool groups (64,539 / 14,490 / 14,493 vertices; 93,518 distinct),
+  6 token nodes, 3 flat reps decoded (c1 64,538 / 14,490 / 14,493, asc
+  1.000), 3 undecoded 86-element nodes (the stage-3b note's U3-variant
+  small per-rep nodes with cumulative edge bounds 1/34/67 — NOT
+  pool-carrying reps; the exporter's composition does not gate on
+  them).
+- Absorption: groups 1 and 2 fully absorbed diagonally (exact f32);
+  group 0 holds 64,539 distinct vertices against its rep's 64,538
+  element slots — exactly 1 vertex is re-listed by NO decoded region,
+  and the union residue equals the diagonal residue (no pairing
+  co-blocker).  Refs 3/3 in-bounds.
+- Its uncovered vertex's 12-B pattern occurs EXACTLY ONCE in the
+  24.7 MB body — at an `05 08 01` record position (its own pool
+  record).  Classification: **subnode-only-blocked** (fail-closed
+  `undecoded-variant`; pool vertex re-listed by no region; appears
+  only at an `05 08 01` record; no other gate blocker).
+
+The 11 UV-family stores (12dc542e, 17dca565, 1b0eef98, 219c099e,
+38d65967, 58ed8b28, 6c6a2e9f, 8e8500b1, a722b491, abacf110, e42e3805):
+classified **unabsorbed-walk-mismatch** — 0 decoded reps (each store's
+single token node fails the table/raw/flat laws), so the pool group has
+no diagonal rep; their blocker is this note's named open (the UV
+element semantics), NOT the index law.  The other 310 fail-closed rows
+carry NO composite span (178 missing-geometry + 132 undecoded-variant
+whose located store has no composite space) — no pool, no absorption
+blocker.
+
+### The ceiling verdict
+
+- "(<= +22 on the corrected reading)" is CORRECTED to **<= +1**
+  (fact): 21 of the census's 22 "subnode-assisted" stores export at
+  stage-10 (stage `identity-mixedwrite-reps`, inside the stage-9 +81);
+  the 22nd is bad44bdf.  The +22 was the early-break count.
+- The lever's ACTIONABLE population is **0** (fact, byte-measured): no
+  fail-closed store carries ANY outside-pool `05 08 01` re-listing —
+  bad44bdf 0/1 verified; the 11 UV stores 0/40..0/200 verified each.
+  The stage-8 reading behind MW8/MW11 ("a vertex sub-node ... whose
+  records re-list the pool verbatim (248/248 on 12dc542e)") is
+  byte-measured as the POOL WRAPPER ITSELF: `04 ff ff` + `00 00 00 01`
+  + kind `06` + count IS `FULL_WRAP` (`10 24 04 ff ff 00 00 00`) +
+  subkind `01 06` + the P1g count — the "re-listing" is the pool's own
+  records (the whole-body `05 08 01` scan is vacuous for exactly this
+  reason: pool.py's `VREC` and the sub-node record marker are the same
+  bytes; a pool vertex's own pool record always matches).  The stage-7
+  census's own columns agree (`multipart-container-files.csv`:
+  `vertex_subnodes=0`, `vertex_records=0` on 12dc542e/8e8500b1); the
+  genuine DISTINCT vertex sub-nodes are the twins' 11-record ones
+  (81ad336b/e23423d6, `vertex_subnodes=1`), and both twins export at
+  stage-10.  MW11's "re-list the pool verbatim" wording is therefore a
+  **candidate** correction (the UV family's other structural
+  descriptions stand).
+- Consequence (inference, from the exporter's committed gate): a
+  sub-node element-index law has NO evidence source on any fail-closed
+  store — there are no sub-node records beyond the pools' own to pin
+  indices from.  bad44bdf's 1-vertex gap would need a DIFFERENT law
+  (candidate sources: the undecoded 86-element U3-variant nodes, or a
+  pool/element-count reconciliation on group 0 — 64,539 pool vertices
+  vs a 64,538-element rep; both opens are beyond committed evidence).
+  Phase B's gate ("Phase A finds >= 2 stores blocked AND the
+  element-index law is pinnable from COMMITTED evidence") is NOT met
+  on either clause: the population is 1, the pinnable-from-records
+  population is 0.  **The subnode-index lever closes as measured** —
+  residual ceiling <= +1 export (bad44bdf, contingent on a law that
+  committed evidence cannot state), actionable 0.
+
+### Reading notes and judgment calls (named)
+
+- "No other blocker" is operationalized at the exporter's committed
+  gate structure (inference): a pool group counts walk-mismatch-blocked
+  iff its DIAGONAL rep is missing; undecoded non-pool-carrying nodes do
+  not block (the composition ignores them — bad44bdf's 3 failed
+  86-element nodes are named in the probe CSV).  A stricter whole-body
+  reading (any undecoded node = "walk mismatch applies") would empty
+  the population to 0; the ceiling verdict (actionable 0) is UNCHANGED
+  under either reading.
+- The definition's clause "those vertices appear only in `05 08 01`
+  sub-node records" is byte-checkable (every occurrence of the vertex's
+  12-B pattern sits at an `05 08 01` record position) but is
+  tautological given clause 2 for any pool vertex — the pool's own
+  records carry the same marker.  The measurable content is the
+  OUTSIDE-pool re-listing (a distinct sub-node record set), reported
+  per store (`uncovered_outside_pool_relisted`): 0 across the whole
+  fail-closed population.
+- Union vs diagonal: the stage-9 probe measured union coverage; the
+  exporter gates DIAGONALLY.  A store whose diagonal residue exceeds
+  its union residue is pairing-blocked (class `unabsorbed-pairing`);
+  the probe found none (bad44bdf's residues are equal, 1 == 1).
+- Unknown (carried): what bad44bdf's 3 small undecoded nodes encode,
+  and where group 0's 64,539th element slot lives (if anywhere) — the
+  U3-variant/multipart opens, not subnode-index questions.
+
+Reproduction:
+
+```
+ln -s /home/alan/Documents/Repos/catpart-parser/corpus corpus   # gitignored, read-only
+.venv/bin/python -I scripts/triage/stage11_subnode_population_probe.py
+# -> docs/evidence/data/stage11-subnode-population.csv (322 rows; 12 composite-span rows)
+```
