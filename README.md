@@ -54,23 +54,26 @@ passes, 66 closed volumes + 10 open shells (component signals).
 [#34](https://github.com/MadManJohnSmith/catpart-parser/issues/34) (G6)
 grinds the undecoded variants toward the ≥ 80% bar under no-regret.
 
-**Grind status (2026-11-13):** the latest accepted row (run
-`20261113T210248Z-ec1b5d`) puts L2 at **Dev 1,001/1,381 = 72.48%,
-held-out 55/61**, L1 flat, exports 1,173 — up from the 76-pass
-baseline through the landed #34 stages (per-rep pool absorption +
-width laws, locator recovery incl. the stage-12 other-container
-extension, composite table-walk decode, raw-array nice-float
-decode, the E0 curve-entry law, and the stage-13 element-space
-law: beyond-pool refs are point-region indices — the committed
-composite structure minus its routing markers). Two levers closed
-at 0 with byte evidence (the subnode-index lever, stage-11; the
-no-pool grant, stage-13: 128/131 stores carry zero facet
-records). The remaining mass is measured, not anecdotal: the
-stage-14 census puts the exported-but-failing ceiling at 25 dev
-passes against 104 needed for the 80% bar (in review), and the
-unpinned families (128 no-facet-content, 125 missing-locator, 16
-composite) carry no committed-evidence law. History:
-`fitness/history.jsonl` (append-only).
+**Grind status (2026-11-13, CLOSE):** the final accepted row (run
+`20261113T231506Z-c2ab64`) puts L2 at **Dev 1,033/1,381 = 74.80%,
+held-out 56/61**, L1 flat, exports 1,173 — up from the 76-pass
+baseline through 15 landed #34 stages (per-rep pool absorption +
+width laws, locator recovery incl. the other-container extension,
+composite table-walk / per-rep / raw-array decode, the E0
+curve-entry law, the stage-13 element-space law, and the
+stage-15 dup-pin-ALL + unordered-dedup levers, owner-authorized).
+The 80% bar is unreachable: the measured ceiling of the residual
+is exactly what landed (+32), and every remaining failure class is
+byte-closed against any committed-evidence law (128 no-pool stores
+carry ZERO facet records; 125 missing-locator headers are
+unreachable; the UV family's element coordinates are not in the
+payload; the not-manifold failures are content-fins/coplanar books
+in the bytes). Under the ROADMAP's pre-authorized bar-revision rule
+the L2 bar re-adjusts to the measured ceiling **74.80% (margin 0)**
+with documented negatives — the full per-class table and the
+render-sanity gate (PASS, 6-store Dev subset) live in
+[docs/evidence/2026-11-13-phase4-close.md](docs/evidence/2026-11-13-phase4-close.md).
+History: `fitness/history.jsonl` (append-only).
 
 ## Progress
 
@@ -115,7 +118,7 @@ issue tracker.
 |---|---|---|
 | L0 | Public corpus + byte-level triage with reproducible evidence | done (Phase 0/1) |
 | L1 | Container/section map, metadata, container inventory, names | done (Phase 3) |
-| L2 | Geometry basics: meshes and curves exportable to STEP or renderable | in progress (Phase 4, 72.48%) |
+| L2 | Geometry basics: meshes and curves exportable to STEP or renderable | closed at 74.80% (bar re-adjusted per the pre-authorized rule) |
 | L3 | Full parametric B-rep (precise CAD solids) | planned, hardest |
 
 ## Method

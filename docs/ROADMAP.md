@@ -93,23 +93,35 @@ base-class annotation) + `document_name`; units: documented negative
 **Acceptance:** subset of corpus exports geometry that a neutral viewer
 renders sanely.
 
-**Status (2026-11-13): in flight — G6 (#34) grinding toward the bar.**
-G1-G5 closed 2026-11-10 (L2 fitness shipped, baseline 76/1,381 =
-5.50%). The #34 grind has landed stages 1-13 (all independently
-reviewed, linear history, fitness rows append-only): per-rep pool
-absorption + width laws (u24be, plane tiebreak), locator recovery +
-the stage-12 other-container extension, the composite table-walk /
-per-rep / raw-array decode laws, the E0 curve-entry law, and the
-stage-13 element-space law (beyond-pool refs = point-region
-indices). Latest accepted row `20261113T210248Z-ec1b5d`: **Dev
-1,001/1,381 = 72.48%, held-out 55/61, exports 1,173**; L1 flat.
-Levers closed at 0 with byte evidence: subnode-index (stage-11),
-the no-pool grant (stage-13 — 128/131 stores carry zero facet
-records). Stage-14 (the exported-but-failing families: 84
-empty-mesh + 33 not-manifold) measures the remaining ceiling; the
-80% bar (1,105) needs 104 dev flips and the measured levers sum
-well below it — the close-vs-continue decision follows the
-stage-14 landing, under the pre-authorized bar revision rule above.
+**Status (2026-11-13): CLOSED — the bar re-adjusted per the
+pre-authorized rule.** G1-G5 closed 2026-11-10 (L2 fitness shipped,
+baseline 76/1,381 = 5.50%). The #34 grind landed 15 stages (each
+independently reviewed, linear history, fitness rows append-only):
+per-rep pool absorption + width laws (u24be, plane tiebreak),
+locator recovery + the other-container extension, the composite
+table-walk / per-rep / raw-array decode laws, the E0 curve-entry
+law, the element-space law (beyond-pool refs = point-region
+indices), and the owner-authorized dup-pin-ALL + unordered-dedup
+levers. Final accepted row `20261113T231506Z-c2ab64`: **Dev
+1,033/1,381 = 74.80%, held-out 56/61, exports 1,173**; L1 flat
+throughout. The 80% bar (1,105) is unreachable: stages 11-14
+byte-closed every remaining family (128 no-pool stores carry ZERO
+facet records — structurally incapable; 125 missing-locator
+headers unreachable-by-construction; the UV family's element
+coordinates are not in the payload; the not-manifold failures are
+content-fins/coplanar books in the bytes; the measured residual
+ceiling (+32) landed exactly in stage-15). Under the pre-authorized
+bar-revision rule the L2 bar re-adjusts to the measured ceiling
+**74.80% (margin 0)** with documented negatives. The per-class
+failure table and the render-sanity gate (G3-precedent software
+render, PASS on a 6-store Dev subset incl. the stage-15 flips):
+[docs/evidence/2026-11-13-phase4-close.md](../evidence/2026-11-13-phase4-close.md).
+Acceptance "a subset of corpus exports geometry that a neutral
+viewer renders sanely": met (the G3 facet-soup PASS + this gate).
+The decode climb chart lives on the GitHub Pages site
+(`grind.html`); follow-up items are tracked as post-v1.0 tickets
+(the CSV-quoting repair of 6 landed claims CSVs and the unpinned
+families' research notes are the named debts).
 
 ## Phase 5 — Web viewer, parts (L2 delivery surface)
 
