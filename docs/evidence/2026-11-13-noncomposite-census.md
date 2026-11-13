@@ -342,3 +342,10 @@ python3 -I scripts/triage/stage12_noncomposite_census_probe.py \
 Corpus binaries are not committed (corpus symlinked read-only). The
 probe imports the committed geometry modules read-only and writes
 nothing outside `docs/evidence/data/`; `src/` is untouched by Phase A.
+BASELINE SCOPE (dated 2026-11-13): the committed CSVs are the stage-10-
+baseline measurement; re-running the probe on a tree that carries this
+stage's Phase B shifts the live exporter anchor exactly per the
+declared/observed A/B (the 53 recoverable parts: 12 export, 41 raise
+`undecoded-variant`, all 53 drop out of the census) — the shift is the
+probe's own cross-check of Phase B, observed on the branch-final tree;
+re-run at the baseline on commit 42132fc for byte-identical CSVs.

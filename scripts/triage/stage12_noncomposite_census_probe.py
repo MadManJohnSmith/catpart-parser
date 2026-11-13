@@ -53,7 +53,19 @@ this probe's own:
     bytes no located span covers, with the stage-1 C6 ``02 02``
     edge-table walk per edge wrapper.
 
-Analysis only: src/ untouched, corpus read-only (symlink).  Run:
+BASELINE SCOPE (dated 2026-11-13): the committed CSVs are the
+STAGE-10-BASELINE measurement.  The exporter anchor is live code: on
+a tree that already carries this stage's Phase B (the other-container
+probe family), ``build_export`` no longer raises missing-geometry-
+store on the 53 recoverable parts (12 export, 41 raise
+undecoded-variant) and those rows drop out of the census — that
+shift is the probe's own cross-check of Phase B, not a contradiction.
+Re-running for the baseline needs a pre-Phase-B tree (commit
+42132fc); anchor runs write *-anchor.csv so the committed files are
+never clobbered.
+
+Analysis only at the baseline: src/ untouched, corpus read-only
+(symlink).  Run:
   python3 -I scripts/triage/stage12_noncomposite_census_probe.py
 Out: docs/evidence/data/stage12-noncomposite-census.csv
      docs/evidence/data/stage12-unlocated-wrappers.csv
@@ -572,12 +584,20 @@ def main(argv=None):
                 mm.close()
         rows.append(row)
 
-    out = OUT_DIR / "stage12-noncomposite-census.csv"
+    out = OUT_DIR / (
+        "stage12-noncomposite-census.csv"
+        if not args.sha16
+        else "stage12-noncomposite-census-anchor.csv"
+    )
     with out.open("w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=FIELDS)
         w.writeheader()
         w.writerows(rows)
-    wout = OUT_DIR / "stage12-unlocated-wrappers.csv"
+    wout = OUT_DIR / (
+        "stage12-unlocated-wrappers.csv"
+        if not args.sha16
+        else "stage12-unlocated-wrappers-anchor.csv"
+    )
     with wout.open("w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=WFIELDS)
         w.writeheader()
