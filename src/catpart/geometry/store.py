@@ -71,12 +71,25 @@ ORIGIN_KIND_BLOCK = "block"
 # Stage 3a recovery provenance (#34): which container family located the
 # store and which catalog-tail law validated it. ``stdcont``/``shipped``
 # is the pre-stage-3a behavior; every other combination is a recovery.
+# Stage 12 (#34, 2026-11-13) adds the final family: ``other-container``
+# — a store validated in a block region whose doc-type name is none of
+# the three probed families (the corpus mass: CATBRepModeContainer 39,
+# CameraStartupContainer 8, contmeasure 2, four others 1 each — the
+# stage-1 census's C11 candidate upside, measured in
+# docs/evidence/2026-11-13-noncomposite-census.md). The block's own
+# name travels on the summary (``store_recovery.container_name``).
 CONTAINER_STDCONT = "stdcont"
 CONTAINER_XDOCLINK = "xdoclink"
 CONTAINER_SEEBODY = "seebody"
+CONTAINER_OTHER = "other-container"
 TAIL_LAW_SHIPPED = "shipped"
 TAIL_LAW_OVERSHOOT = "overshoot"
 TAIL_LAW_PADDED = "padded"
+
+#: The doc-type names the export seam's named probe families cover
+#: (stage 3a + the shipped law). Every other valid block name belongs
+#: to the stage-12 ``other-container`` probe family.
+NAMED_PROBE_CONTAINERS = ("CATStdCont", "CATXDocLinkCont", "CATSeeBodyCont")
 
 
 def find_all(data, needle: bytes, start: int, end: int) -> list[int]:

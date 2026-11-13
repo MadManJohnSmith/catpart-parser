@@ -29,7 +29,11 @@ lever): after the shipped ``CATStdCont`` law finds nothing,
 same law, and the two G1-documented catalog-tail variants (dword8-
 overshoot, padded) recover under a relaxed tail law — all fail-closed,
 with the recovery named on the span, the success summary
-(``store_recovery``) or the failure detail.
+(``store_recovery``) or the failure detail. Stage 12 (#34,
+2026-11-13) adds the final probe family: every remaining valid block
+whatever its doc-type name (``other-container`` — the census's 53
+recoverable stores in CATBRepModeContainer and siblings), same law,
+probed only when the named families found nothing.
 """
 
 from __future__ import annotations
@@ -118,7 +122,7 @@ def _export_data(data) -> tuple[dict, list, list]:
             summary, vertices, triangles = _export_store(data, span, ordinal)
         except ExportError as exc:
             if first_error is None:
-                first_error = _recovered_error(exc, span)
+                first_error = _recovered_error(exc, span, data)
             continue
         return summary, vertices, triangles
     if not located and first_error is None:
@@ -148,7 +152,39 @@ def _export_data(data) -> tuple[dict, list, list]:
                     summary, vertices, triangles = _export_store(data, span, ordinal)
                 except ExportError as exc:
                     if first_error is None:
-                        first_error = _recovered_error(exc, span)
+                        first_error = _recovered_error(exc, span, data)
+                    continue
+                return summary, vertices, triangles
+        if not located and first_error is None:
+            # Stage 12 recovery extension (#34, 2026-11-13): the final
+            # probe family — every remaining valid block whatever its
+            # doc-type name (the corpus mass: CATBRepModeContainer,
+            # CameraStartupContainer, contmeasure, ... — the stage-12
+            # census measured 53 recoverable stores there, 12 of them
+            # exporting through the committed laws). Same locate law,
+            # same fail-closed rules, probed only when the three named
+            # families found nothing; the block's own name travels on
+            # the summary (``store_recovery.container_name``).
+            others = [
+                (b, nm) for b, nm in blocks if nm not in store.NAMED_PROBE_CONTAINERS
+            ]
+            for ordinal, (blk, _nm) in enumerate(others):
+                try:
+                    span = store.locate_store(
+                        data, blk, blocks, d8_outer, container=store.CONTAINER_OTHER
+                    )
+                except ExportError as exc:
+                    if first_error is None:
+                        first_error = exc
+                    continue
+                if span is None:
+                    continue
+                located = True
+                try:
+                    summary, vertices, triangles = _export_store(data, span, ordinal)
+                except ExportError as exc:
+                    if first_error is None:
+                        first_error = _recovered_error(exc, span, data)
                     continue
                 return summary, vertices, triangles
         if not located and first_error is None:
@@ -171,19 +207,25 @@ def _export_data(data) -> tuple[dict, list, list]:
     raise first_error  # all located stores failed classification
 
 
-def _recovered_error(exc: ExportError, span: store.StoreSpan) -> ExportError:
+def _recovered_error(exc: ExportError, span: store.StoreSpan, data) -> ExportError:
     """Record the recovery provenance on a recovered store's failure.
 
-    A store recovered by the stage-3a extension (a non-``CATStdCont``
-    probe, or a relaxed tail law) that then fails the decode keeps its
-    classification with the probe/law named in the detail; a store the
-    shipped law located passes through unchanged.
+    A store recovered by the stage-3a/stage-12 extensions (a
+    non-``CATStdCont`` probe, or a relaxed tail law) that then fails
+    the decode keeps its classification with the probe/law named in
+    the detail; a store the shipped law located passes through
+    unchanged. The stage-12 ``other-container`` family also names the
+    block's doc-type name.
     """
     if span.container == store.CONTAINER_STDCONT and span.tail_law == store.TAIL_LAW_SHIPPED:
         return exc
+    where = f"{span.container} probe"
+    if span.container == store.CONTAINER_OTHER:
+        name = store.block_name(data, span.block_start)[0]
+        where = f"{span.container} ({name}) probe"
     return ExportError(
         exc.error_class,
-        f"{exc.detail} [store recovered via the {span.container} probe, "
+        f"{exc.detail} [store recovered via the {where}, "
         f"{span.tail_law} tail law]",
     )
 
@@ -319,11 +361,15 @@ def _export_store(data, span, ordinal: int) -> tuple[dict, list, list]:
     if span.container != store.CONTAINER_STDCONT or span.tail_law != store.TAIL_LAW_SHIPPED:
         # Stage 3a (#34): the store was recovered — name the probe and
         # the tail law on the summary (additive; absent on stores the
-        # shipped law located).
-        summary["store_recovery"] = {
+        # shipped law located). Stage 12 (#34): the other-container
+        # family also names the block's doc-type name.
+        recovery = {
             "container": span.container,
             "tail_law": span.tail_law,
         }
+        if span.container == store.CONTAINER_OTHER:
+            recovery["container_name"] = store.block_name(data, span.block_start)[0]
+        summary["store_recovery"] = recovery
     _self_check(summary)
     return summary, flat, list(soup.triangles)
 
