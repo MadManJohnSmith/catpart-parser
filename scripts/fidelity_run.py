@@ -1,35 +1,67 @@
 #!/usr/bin/env python3
 """The Fidelity harness (spec ``docs/specs/phase5-viewer-spec.md`` §4, V1
-ticket #40): prove Port ≡ Python over one diff implementation, dual-mode.
+ticket #40 + V2 ticket #41): prove Port ≡ Python over one diff
+implementation, dual-mode.
 
 - **Fixture mode** (``--fixtures``): generates the A2 synthetic fixtures
   via ``tests/fixtures_gen.py`` in-process, runs both implementations
   over them, diffs — wired into the gate as ``tests/test_port_fidelity.py``.
   This is how "CI covers the port with the synthetic fixtures from A2"
   is satisfied with one harness: the same diff code proves parity in CI
-  on fixtures and locally on the corpus.
+  on fixtures and locally on the corpus. V2 adds the export comparison
+  over the non-composite geometry variants (the composite-law and
+  unrouted-elementspace variants are V3 scope, #42 — excluded from the
+  export matrix). ``--slice`` selects l1 (inspect rows), l2 (export
+  rows) or both (default).
 
 - **Corpus mode** (default, local-only per ADR-0003): walks
   ``manifests/corpus-manifest.csv``, applies the slice populations
-  (§3.1 — the L1-JSON slice is ALL manifest rows, junk included), and
-  drives the Python reference (``catpart-inspect``) and the Rust port
-  (``port/target/release/fidelity_cli``, built once per run by
-  ``cargo build --release``) as subprocesses — the exact shipped seams,
-  no in-process imports, one shape for both.
+  (§3.1 — the L1-JSON slice is ALL manifest rows, junk included; the
+  L2-export slice is the ``kind=part`` rows), and drives the Python
+  reference (``catpart-inspect`` / ``catpart-export``) and the Rust
+  port (``port/target/release/fidelity-cli``, built once per run by
+  ``cargo build --release``) as subprocesses — the exact shipped
+  seams, no in-process imports, one shape for both.
 
-Diff definition (§3.2, L1 slice): the inspect document is compared by
-parsed-document equality — recursive structural equality, object key
-sets equal, arrays equal in order, numbers equal with the int/float
-distinction preserved. A failed run is compared by ``error_class``
-string equality: the Python side's exit 1 on the shipped seam is the
-fitness class ``crash`` (``runner._classify_file`` maps every inspect
-exception there; the A2 fixture table pins short-file → crash), and the
-port's stderr JSON line carries the same single-class L1 vocabulary
-(see ``port/src/bin/fidelity_cli.rs``). ``detail`` is never compared
-byte-wise. Any harness-level failure (timeout, missing binary, unreadable
-output) is recorded as its own outcome class and NEVER counts as a
-match — the run is invalid until every row is match/mismatch/
-error-class-mismatch by evidence.
+Diff definitions (§3.2):
+
+- **L1 slice** (V1): the inspect document is compared by
+  parsed-document equality — recursive structural equality, object key
+  sets equal, arrays equal in order, numbers equal with the int/float
+  distinction preserved. A failed run is compared by ``error_class``
+  string equality: the Python side's exit 1 on the shipped seam is the
+  fitness class ``crash`` (``runner._classify_file`` maps every inspect
+  exception there; the A2 fixture table pins short-file → crash), and
+  the port's stderr JSON line carries the same single-class L1
+  vocabulary (``bin/fidelity-cli.rs``).
+- **L2 export slice** (V2): the export summary is compared by
+  parsed-document equality AND the PLY bytes byte-identical; a failed
+  run is compared by ``error_class`` string equality (the geometry
+  vocabulary of ``catpart.geometry.errors``, at the same raise sites
+  both sides). ``detail`` is never compared byte-wise. The
+  composite-path EXPORTS (the Python summary carries the additive
+  ``composite`` key — the twin emits it on every composite-path decode)
+  are **excluded** at V2 as the outcome ``excluded-composite-path``
+  (the ticket #41 hard stop: the composite decode is V3, #42; a
+  composite-store row must appear as an error-class-equal refusal or be
+  excluded, never as a false match). The corpus sample is biased away
+  from that family via the stage-15 roster
+  (``docs/evidence/data/stage15-identity-export-files.csv``:
+  ``element_decl > 0`` marks the stores the identity law decoded —
+  spec §4: "the stage CSVs name the per-family stores, so V2/V3
+  samples can bias to the families under work") and toward the
+  fail-closed classes (``undecoded-variant``, ``missing-geometry-store``,
+  the malformed-* families) with a seat weight of 3; the run-time
+  composite-key check stays armed as the authoritative exclusion (it
+  caught the two warning-free composite exports in the V2 smoke run —
+  the roster is the sample-time bias, the summary key is the truth).
+
+Any harness-level failure (timeout, missing binary, unreadable output)
+is recorded as its own outcome class and NEVER counts as a match — the
+run is invalid until every row is match/mismatch/error-class-mismatch
+by evidence (an excluded row is a measurement intentionally not made;
+it is named per-row in the note and never counted as a match or a
+mismatch).
 
 Outputs (§4): a dated evidence note (figures only; every figure
 CSV-composable, #37) + a per-file CSV under ``docs/evidence/data/`` —
@@ -57,6 +89,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from collections import Counter
 from datetime import datetime, timezone
@@ -67,16 +100,39 @@ MANIFEST_PATH = REPO_ROOT / "manifests" / "corpus-manifest.csv"
 FITNESS_DIR = REPO_ROOT / "fitness"
 DATA_DIR = REPO_ROOT / "docs" / "evidence" / "data"
 
+#: The stage-15 roster (spec §4: the stage CSVs name the per-family
+#: stores; V2 biases away from the composite family via
+#: ``element_decl > 0``).
+COMPOSITE_ROSTER_PATH = DATA_DIR / "stage15-identity-export-files.csv"
+
 #: The L1 slice's single error class (see the module docstring and
-#: ``port/src/bin/fidelity_cli.rs``): the Python side's exit 1 on the
+#: ``port/src/bin/fidelity-cli.rs``): the Python side's exit 1 on the
 #: shipped inspect seam is the fitness class ``crash``.
 L1_PYTHON_ERROR_CLASS = "crash"
 
-#: Outcome vocabulary (§4).
+#: The fail-closed classes the V2 sample biases toward (ticket #41:
+#: "biased to non-composite exports AND to fail-closed classes:
+#: undecoded-variant, missing-store families") and their seat weight.
+FAIL_CLOSED_CLASSES = (
+    "undecoded-variant",
+    "missing-geometry-store",
+    "malformed-store-header",
+    "malformed-pool-group",
+    "malformed-pool-vertex",
+)
+FAIL_CLOSED_WEIGHT = 3
+
+#: Outcome vocabulary (§4 + the V2 exclusion).
 OUTCOME_MATCH = "match"
 OUTCOME_OUTPUT_MISMATCH = "output-mismatch"
 OUTCOME_CLASS_MISMATCH = "error-class-mismatch"
 OUTCOME_HARNESS_ERROR = "harness-error"
+OUTCOME_EXCLUDED_COMPOSITE = "excluded-composite-path"
+
+#: The Python export summary's additive composite-only key (the twin
+#: emits it on every composite-path decode) — the authoritative
+#: composite-path marker at run time.
+COMPOSITE_SUMMARY_KEY = "composite"
 
 CSV_COLUMNS = (
     "row_id",
@@ -105,27 +161,37 @@ SLICE_BOTH = "both"
 # --- seam resolution -----------------------------------------------------
 
 
-def resolve_python_inspect() -> str:
-    """Locate the shipped ``catpart-inspect`` console script.
+def _resolve_console_script(name: str, override_env: str) -> str:
+    """Locate a shipped console script (the shared resolution order).
 
-    Order: the ``FIDELITY_PY_INSPECT`` override, the console script
-    next to the running interpreter (the venv layout both the gate and
-    the corpus machine use), then ``PATH``.
+    Order: the ``override_env`` override, the console script next to the
+    running interpreter (the venv layout both the gate and the corpus
+    machine use), then ``PATH``.
     """
-    override = os.environ.get("FIDELITY_PY_INSPECT")
+    override = os.environ.get(override_env)
     if override:
         return override
-    adjacent = Path(sys.executable).parent / "catpart-inspect"
+    adjacent = Path(sys.executable).parent / name
     if adjacent.is_file():
         return str(adjacent)
-    found = shutil.which("catpart-inspect")
+    found = shutil.which(name)
     if found:
         return found
     raise SystemExit(
-        "fidelity_run: cannot find the catpart-inspect console script "
-        "(set FIDELITY_PY_INSPECT or install the package: "
+        f"fidelity_run: cannot find the {name} console script "
+        f"(set {override_env} or install the package: "
         "python -m venv .venv && .venv/bin/pip install -e '.[test,lint]')"
     )
+
+
+def resolve_python_inspect() -> str:
+    """Locate the shipped ``catpart-inspect`` console script."""
+    return _resolve_console_script("catpart-inspect", "FIDELITY_PY_INSPECT")
+
+
+def resolve_python_export() -> str:
+    """Locate the shipped ``catpart-export`` console script."""
+    return _resolve_console_script("catpart-export", "FIDELITY_PY_EXPORT")
 
 
 def build_port_bin() -> Path:
@@ -189,17 +255,18 @@ class SeamResult:
         return self.exit_code == 1
 
 
-def run_seam(command: list[str], path: str, timeout: float) -> SeamResult:
+def run_seam(command: list[str], path: str, timeout: float, trailing: tuple[str, ...] = ()) -> SeamResult:
     """Run one implementation over ``path`` with the shared shape.
 
-    The subprocess gets the file path as its only argument and must
-    answer with the inspect document on stdout (exit 0) or a failure
-    (exit 1); anything else is a harness-level failure (§3.2).
+    The subprocess gets the file path as its first argument plus
+    ``trailing`` (the export seam's PLY path) and must answer with its
+    document on stdout (exit 0) or a classified failure (exit 1);
+    anything else is a harness-level failure (§3.2).
     """
     started = time.monotonic()
     try:
         proc = subprocess.run(
-            command + [path],
+            command + [path] + list(trailing),
             capture_output=True,
             timeout=timeout,
         )
@@ -251,8 +318,8 @@ def first_divergence(py_doc, port_doc, path: str = "$") -> str | None:
     return None
 
 
-def parse_port_error_class(seam: SeamResult) -> str | None:
-    """The ``error_class`` of the port's one-JSON-line stderr failure.
+def parse_error_class(seam: SeamResult) -> str | None:
+    """The ``error_class`` of the one-JSON-line stderr failure.
 
     Returns ``None`` when the line is missing or unparsable — a
     harness-level failure (§3.2: unreadable output), never a class.
@@ -266,8 +333,21 @@ def parse_port_error_class(seam: SeamResult) -> str | None:
     return payload["error_class"]
 
 
+def parse_summary(seam: SeamResult) -> tuple[dict | None, str | None]:
+    """The parsed stdout document of a successful seam run.
+
+    Returns ``(document, None)`` or ``(None, harness_error_detail)`` —
+    unparsable stdout is a harness-level failure (§3.2), never a
+    comparison.
+    """
+    try:
+        return json.loads(seam.stdout), None
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return None, f"{seam.side} stdout is not JSON: {seam.stdout[:200]!r}"
+
+
 def compare_row(py: SeamResult, port: SeamResult, timeout: float) -> tuple[str, str]:
-    """Compare one (python, port) seam pair → ``(outcome, first_divergence)``.
+    """Compare one (python, port) inspect pair → ``(outcome, first_divergence)``.
 
     The outcome vocabulary is §4's: match / output-mismatch /
     error-class-mismatch / harness-error; a harness-level failure never
@@ -283,28 +363,101 @@ def compare_row(py: SeamResult, port: SeamResult, timeout: float) -> tuple[str, 
     if port.exit_code == 2:
         return OUTCOME_HARNESS_ERROR, "port usage error (exit 2) — harness invoked the seam wrongly"
     if py.failed and port.failed:
-        port_class = parse_port_error_class(port)
+        port_class = parse_error_class(port)
         if port_class is None:
             return OUTCOME_HARNESS_ERROR, f"port stderr is not an error-class JSON line: {port.stderr[:200]!r}"
         if port_class == L1_PYTHON_ERROR_CLASS:
             return OUTCOME_MATCH, ""
         return OUTCOME_CLASS_MISMATCH, f"error_class python={L1_PYTHON_ERROR_CLASS} port={port_class}"
     if py.ok and port.ok:
-        try:
-            py_doc = json.loads(py.stdout)
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return OUTCOME_HARNESS_ERROR, f"python stdout is not JSON: {py.stdout[:200]!r}"
-        try:
-            port_doc = json.loads(port.stdout)
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            return OUTCOME_HARNESS_ERROR, f"port stdout is not JSON: {port.stdout[:200]!r}"
+        py_doc, err = parse_summary(py)
+        if err:
+            return OUTCOME_HARNESS_ERROR, err
+        port_doc, err = parse_summary(port)
+        if err:
+            return OUTCOME_HARNESS_ERROR, err
         found = first_divergence(py_doc, port_doc)
         if found is None:
             return OUTCOME_MATCH, ""
         return OUTCOME_OUTPUT_MISMATCH, found
     sides = "python produced a document, port failed" if py.ok else "port produced a document, python failed"
-    port_class = parse_port_error_class(port) if port.failed else None
+    port_class = parse_error_class(port) if port.failed else None
     return OUTCOME_OUTPUT_MISMATCH, f"{sides}" + (f" (port error_class={port_class})" if port_class else "")
+
+
+def compare_row_export(
+    py: SeamResult,
+    port: SeamResult,
+    timeout: float,
+    ply_py_path: Path,
+    ply_port_path: Path,
+) -> tuple[str, str, str]:
+    """Compare one (python, port) export pair (§3.2, V2).
+
+    Returns ``(outcome, first_divergence, ply_equal)`` — ``ply_equal``
+    is ``"true"``/``"false"`` when compared, ``""`` when not (refused
+    or excluded rows write no comparable PLY pair). The composite-path
+    exclusion: a Python summary carrying the additive ``composite`` key
+    with a port refusal is ``excluded-composite-path`` (the ticket #41
+    hard stop — the composite decode is V3; never a false match). With
+    the port ALSO succeeding the row compares fully (V3-proof).
+    """
+    if py.timed_out or port.timed_out:
+        side = "python" if py.timed_out else "port"
+        return OUTCOME_HARNESS_ERROR, f"{side} exceeded the {timeout:g}s timeout", ""
+    if py.exit_code not in (0, 1):
+        return OUTCOME_HARNESS_ERROR, f"python exit {py.exit_code} outside the seam contract (0/1): {py.stderr[:200]!r}", ""
+    if port.exit_code not in (0, 1, 2):
+        return OUTCOME_HARNESS_ERROR, f"port exit {port.exit_code} outside the seam contract (0/1/2): {port.stderr[:200]!r}", ""
+    if port.exit_code == 2:
+        return OUTCOME_HARNESS_ERROR, "port usage error (exit 2) — harness invoked the seam wrongly", ""
+    py_doc = None
+    if py.ok:
+        py_doc, err = parse_summary(py)
+        if err:
+            return OUTCOME_HARNESS_ERROR, err, ""
+    port_doc = None
+    if port.ok:
+        port_doc, err = parse_summary(port)
+        if err:
+            return OUTCOME_HARNESS_ERROR, err, ""
+    if py_doc is not None and COMPOSITE_SUMMARY_KEY in py_doc and port_doc is None:
+        # The hard stop (ticket #41): a composite-path export with no
+        # port decode is excluded, never a false match.
+        return OUTCOME_EXCLUDED_COMPOSITE, "python summary carries the composite key (V3 decode, #42); port refused", ""
+    if py.failed and port.failed:
+        py_class = parse_error_class(py)
+        if py_class is None:
+            return OUTCOME_HARNESS_ERROR, f"python stderr is not an error-class JSON line: {py.stderr[:200]!r}", ""
+        port_class = parse_error_class(port)
+        if port_class is None:
+            return OUTCOME_HARNESS_ERROR, f"port stderr is not an error-class JSON line: {port.stderr[:200]!r}", ""
+        if py_class == port_class:
+            return OUTCOME_MATCH, "", ""
+        return OUTCOME_CLASS_MISMATCH, f"error_class python={py_class} port={port_class}", ""
+    if py_doc is not None and port_doc is not None:
+        found = first_divergence(py_doc, port_doc)
+        if found is not None:
+            return OUTCOME_OUTPUT_MISMATCH, found, ""
+        if not ply_py_path.is_file() or not ply_port_path.is_file():
+            return OUTCOME_HARNESS_ERROR, "a PLY output is missing on a successful export pair", ""
+        ply_equal = ply_py_path.read_bytes() == ply_port_path.read_bytes()
+        if ply_equal:
+            return OUTCOME_MATCH, "", "true"
+        return (
+            OUTCOME_OUTPUT_MISMATCH,
+            f"PLY bytes differ (python {ply_py_path.stat().st_size} B, port {ply_port_path.stat().st_size} B)",
+            "false",
+        )
+    sides = "python produced a document, port failed" if py.ok else "port produced a document, python failed"
+    class_note = ""
+    if py.failed:
+        py_class = parse_error_class(py)
+        class_note = f" (python error_class={py_class})" if py_class else ""
+    else:
+        port_class = parse_error_class(port)
+        class_note = f" (port error_class={port_class})" if port_class else ""
+    return OUTCOME_OUTPUT_MISMATCH, f"{sides}{class_note}", ""
 
 
 # --- fixture mode (§4) ----------------------------------------------------
@@ -322,7 +475,7 @@ def load_fixtures_gen():
 
 
 def fixture_matrix() -> list[dict]:
-    """The A2 fixture population the gate compares (spec §4 fixture mode).
+    """The A2 fixture population the gate compares on the L1 slice (§4).
 
     - The canonical shape (``variant=None``) and the geometry/composite
       variants sweep seeds 0 and 7 (table padding alignment); their
@@ -362,27 +515,62 @@ def fixture_matrix() -> list[dict]:
     return matrix
 
 
-def run_fixture_mode(csv_path: Path, note_path: Path, timeout: float, port_bin: Path | None) -> int:
+def export_fixture_matrix() -> list[dict]:
+    """The export-comparison fixture population (§3.2 L2, V2 #41).
+
+    All geometry-bearing A2 variants (the canonical store, the recovery
+    variants, the corrupted classes — the ticket's acceptance set) at
+    seeds 0 and 7, plus the store-less shapes (``None``, ``dual-region``
+    and the plain corrupted families) which refuse
+    ``missing-geometry-store`` / the short-file path — the fail-closed
+    vocabulary on fixtures. kind=part only: the L2 population is the
+    runner's part rows (§3.1). The composite-law and
+    unrouted-elementspace variants are V3 scope (#42) — the composite
+    decode is not ported, so they are excluded from the export matrix
+    (their refusals are compared on the corpus via the exclusion rule
+    where the twin refuses them).
+    """
+    gen = load_fixtures_gen()
+    plain = {"dual-region", "bad-magic", "truncated-table", "missing-trailer", "junk-payload", "oversized-dword", "short-file"}
+    matrix: list[dict] = [{"kind": "part", "seed": 0, "variant": None}]
+    for variant in sorted(plain):
+        matrix.append({"kind": "part", "seed": 0, "variant": variant})
+    for variant in sorted(set(gen.GEOMETRY_VARIANTS)):
+        for seed in (0, 7):
+            matrix.append({"kind": "part", "seed": seed, "variant": variant})
+    return matrix
+
+
+def _export_commands(port_bin: Path) -> tuple[list[str], list[str]]:
+    """The export subprocess shapes (one shape per implementation).
+
+    Python: ``catpart-export <file> -o <ply>`` (the console script's
+    contract); port: ``fidelity-cli export <file> <ply>`` (spec §2.4's
+    "PLY to a second path argument").
+    """
+    return (
+        [resolve_python_export()],
+        [str(port_bin), "export"],
+    )
+
+
+def run_fixture_mode(csv_path: Path, note_path: Path, timeout: float, port_bin: Path | None, slice_name: str = SLICE_BOTH) -> int:
     """Generate the A2 fixtures in-process, run both seams, diff (§4)."""
     gen = load_fixtures_gen()
-    python_cmd = [resolve_python_inspect()]
-    port_cmd = [str(port_bin or build_port_bin()), "inspect"]
+    bin_path = port_bin or build_port_bin()
+    python_inspect = [resolve_python_inspect()]
+    port_inspect = [str(bin_path), "inspect"]
+    python_export, port_export = _export_commands(bin_path)
     fixtures_dir = csv_path.parent / "fidelity-fixtures"
     fixtures_dir.mkdir(parents=True, exist_ok=True)
+    ply_dir = fixtures_dir / "ply"
+    ply_dir.mkdir(parents=True, exist_ok=True)
     rows: list[dict] = []
     started = time.monotonic()
-    for entry in fixture_matrix():
-        fixture_id = (
-            f"{entry['variant'] or 'canonical'}|k{entry['kind']}|s{entry['seed']}"
-            + ("|doc" if entry.get("document_name") else "")
-        )
-        path = fixtures_dir / f"{_safe_name(fixture_id)}.CATPart"
-        path.write_bytes(gen.build_fixture(entry["kind"], seed=entry["seed"], variant=entry["variant"], document_name=entry.get("document_name")))
-        py = run_seam(python_cmd, str(path), timeout)
-        port = run_seam(port_cmd, str(path), timeout)
-        outcome, divergence = compare_row(py, port, timeout)
+
+    def add_row(entry: dict, fixture_id: str, path: Path, py: SeamResult, port: SeamResult, outcome: str, divergence: str, ply_equal: str, slice_label: str) -> None:
         rows.append({
-            "row_id": fixture_id,
+            "row_id": f"{fixture_id}|{slice_label}" if slice_label else fixture_id,
             "path": str(path.relative_to(REPO_ROOT)) if path.is_relative_to(REPO_ROOT) else str(path),
             "split": "fixture",
             "kind": entry["kind"],
@@ -392,13 +580,37 @@ def run_fixture_mode(csv_path: Path, note_path: Path, timeout: float, port_bin: 
             "python_exit": py.exit_code,
             "port_exit": port.exit_code,
             "outcome": outcome,
-            "python_error_class": L1_PYTHON_ERROR_CLASS if py.failed else "",
-            "port_error_class": parse_port_error_class(port) or "",
-            "ply_equal": "",
+            "python_error_class": parse_error_class(py) or (L1_PYTHON_ERROR_CLASS if py.failed else ""),
+            "port_error_class": parse_error_class(port) or "",
+            "ply_equal": ply_equal,
             "first_divergence": divergence,
             "python_seconds": f"{py.seconds:.3f}",
             "port_seconds": f"{port.seconds:.3f}",
         })
+
+    if slice_name in (SLICE_L1, SLICE_BOTH):
+        for entry in fixture_matrix():
+            fixture_id = (
+                f"{entry['variant'] or 'canonical'}|k{entry['kind']}|s{entry['seed']}"
+                + ("|doc" if entry.get("document_name") else "")
+            )
+            path = fixtures_dir / f"{_safe_name(fixture_id)}.CATPart"
+            path.write_bytes(gen.build_fixture(entry["kind"], seed=entry["seed"], variant=entry["variant"], document_name=entry.get("document_name")))
+            py = run_seam(python_inspect, str(path), timeout)
+            port = run_seam(port_inspect, str(path), timeout)
+            outcome, divergence = compare_row(py, port, timeout)
+            add_row(entry, fixture_id, path, py, port, outcome, divergence, "", "l1")
+    if slice_name in (SLICE_L2, SLICE_BOTH):
+        for entry in export_fixture_matrix():
+            fixture_id = f"{entry['variant'] or 'canonical'}|k{entry['kind']}|s{entry['seed']}"
+            path = fixtures_dir / f"{_safe_name(fixture_id)}.CATPart"
+            path.write_bytes(gen.build_fixture(entry["kind"], seed=entry["seed"], variant=entry["variant"]))
+            ply_py = ply_dir / "python.ply"
+            ply_port = ply_dir / "port.ply"
+            py = run_seam(python_export, str(path), timeout, ("-o", str(ply_py)))
+            port = run_seam(port_export, str(path), timeout, (str(ply_port),))
+            outcome, divergence, ply_equal = compare_row_export(py, port, timeout, ply_py, ply_port)
+            add_row(entry, fixture_id, path, py, port, outcome, divergence, ply_equal, "l2")
     shutil.rmtree(fixtures_dir, ignore_errors=True)
     wall_clock = time.monotonic() - started
     write_csv(csv_path, rows)
@@ -408,9 +620,29 @@ def run_fixture_mode(csv_path: Path, note_path: Path, timeout: float, port_bin: 
         population_rows=rows,
         wall_clock=wall_clock,
         csv_path=csv_path,
-        slice_note="L1 slice (inspect document equality); the L2 export slice is V2 scope",
+        slice_note=fixture_slice_note(slice_name),
     )
     return exit_code_for(rows)
+
+
+def fixture_slice_note(slice_name: str) -> str:
+    """The fixture-mode slice note (the composite exclusion named)."""
+    if slice_name == SLICE_L1:
+        return "L1 slice (inspect document equality); --slice l1: the L2 export rows skipped"
+    if slice_name == SLICE_L2:
+        return (
+            "L2 export slice on fixtures (summary parsed-document equality + PLY "
+            "byte-identical + error_class equality, §3.2): the geometry-bearing A2 "
+            "variants + the store-less refusals; the composite-law and "
+            "unrouted-elementspace variants are V3 scope (ticket #42) and excluded "
+            "from the export matrix"
+        )
+    return (
+        "L1 slice (inspect document equality) + L2 export slice on fixtures "
+        "(summary + PLY bytes + error classes, §3.2); the composite-law and "
+        "unrouted-elementspace variants are V3 scope (ticket #42) and excluded "
+        "from the export matrix"
+    )
 
 
 def _safe_name(fixture_id: str) -> str:
@@ -455,6 +687,30 @@ def load_accepted_report() -> dict:
             "catpart-fitness or sample from the current corpus"
         )
     return report
+
+
+def load_composite_roster() -> dict[str, bool]:
+    """The stage-15 roster's composite-family map (spec §4).
+
+    ``element_decl > 0`` marks the stores the G6 identity law decoded —
+    the corpus's composite-family stores, both the exporting ones (the
+    twin's additive ``composite`` summary key at run time is the
+    authoritative marker) and the whole family the V2 sample must bias
+    away from. Returns ``{sha256: is_composite}`` so the sampler can
+    also verify every part row is covered (fail-closed on a stale
+    roster or a missing file).
+    """
+    if not COMPOSITE_ROSTER_PATH.is_file():
+        raise SystemExit(
+            f"fidelity_run: the stage-15 roster {COMPOSITE_ROSTER_PATH} is missing — "
+            "the V2 composite bias needs it (spec §4: the stage CSVs name the "
+            "per-family stores)"
+        )
+    with COMPOSITE_ROSTER_PATH.open(newline="", encoding="utf-8") as fh:
+        return {
+            row["sha256"]: row["element_decl"] not in ("", "0")
+            for row in csv.DictReader(fh)
+        }
 
 
 def export_outcome_class(record: dict) -> str:
@@ -529,79 +785,207 @@ def stratified_sample(rows: list[dict], report: dict, count: int) -> list[dict]:
     return sample
 
 
+def biased_l2_sample(rows: list[dict], report: dict, count: int) -> tuple[list[dict], dict]:
+    """The V2 L2 sample: biased away from composite, toward fail-closed.
+
+    The pool is the ``kind=part`` rows NOT in the stage-15 composite
+    roster (``element_decl > 0`` — the ticket's "bias AWAY from
+    composite-family stores"); every part row must be in the roster
+    (fail-closed: a stale roster must stop the run, not silently
+    sample over unknown families). Strata are the §4 axis
+    (detected_version x split x export outcome class); the fail-closed
+    classes (:data:`FAIL_CLOSED_CLASSES`) carry a seat weight of
+    :data:`FAIL_CLOSED_WEIGHT` — a stratum occupies that many slots in
+    the round-wise priority list, so per round it receives that many
+    seats while quota lasts. Within a stratum the picks are evenly
+    spaced over the sha256-sorted rows — no RNG; the same N yields the
+    same sample. Returns ``(sample, stats)`` where ``stats`` names the
+    exclusion arithmetic for the note.
+    """
+    by_sha = {record["sha256"]: record for record in report["files"]}
+    roster = load_composite_roster()
+    kept: list[tuple[dict, str, str, str]] = []
+    composite_in_split = 0
+    for row in rows:
+        is_composite = roster.get(row["sha256"])
+        if is_composite is None:
+            raise SystemExit(
+                f"fidelity_run: part row {row['sha256'][:16]} is not in the stage-15 "
+                "roster — a stale stratification basis; the composite-family "
+                "exclusion cannot be applied fail-closed"
+            )
+        if is_composite:
+            composite_in_split += 1
+            continue
+        record = by_sha[row["sha256"]]
+        version = record.get("detected_version") or "unknown"
+        split = record.get("split") or "unknown"
+        stratum_class = export_outcome_class(record)
+        kept.append((row, version, split, stratum_class))
+    strata: dict[tuple, list[dict]] = {}
+    for row, version, split, stratum_class in kept:
+        strata.setdefault((version, split, stratum_class), []).append(row)
+    for members in strata.values():
+        members.sort(key=lambda row: row["sha256"])
+    ordered = sorted(strata.items(), key=lambda item: item[0])
+    weights = [
+        FAIL_CLOSED_WEIGHT if members_key[2] in FAIL_CLOSED_CLASSES else 1
+        for members_key, _ in ordered
+    ]
+    sizes = [len(members) for _, members in ordered]
+    if count >= sum(sizes):
+        quota = list(sizes)
+    else:
+        quota = [0] * len(ordered)
+        remaining = count
+        priority: list[int] = []
+        for index in sorted(range(len(ordered)), key=lambda index: (-weights[index] * sizes[index], ordered[index][0])):
+            priority.extend([index] * weights[index])
+        while remaining > 0:
+            gave = False
+            for index in priority:
+                if remaining == 0:
+                    break
+                if quota[index] < sizes[index]:
+                    quota[index] += 1
+                    remaining -= 1
+                    gave = True
+            if not gave:
+                break
+    sample: list[dict] = []
+    for (_, members), n in zip(ordered, quota):
+        n = min(n, len(members))
+        if n <= 0:
+            continue
+        if n == 1:
+            ranks = [0]
+        else:
+            ranks = sorted({round(i * (len(members) - 1) / (n - 1)) for i in range(n)})
+            if len(ranks) < n:
+                ranks = sorted(set(range(len(members))) | set(ranks))[:n]
+        sample.extend(members[rank] for rank in ranks)
+    stats = {
+        "part_rows_in_split": len(kept) + composite_in_split,
+        "composite_family_excluded": composite_in_split,
+        "non_composite_pool": len(kept),
+        "sampled": len(sample),
+        "by_class": dict(sorted(Counter(export_outcome_class(by_sha[row["sha256"]]) for row in sample).items())),
+    }
+    return sample, stats
+
+
 def run_corpus_mode(csv_path: Path, note_path: Path, split: str, slice_name: str, sample: tuple[str, int] | None, timeout: float, port_bin: Path | None) -> int:
     """Walk the manifest, apply the slice population, diff both seams."""
     manifest = read_manifest()
     report = load_accepted_report()
+    bin_path = port_bin or build_port_bin()
+    python_inspect = [resolve_python_inspect()]
+    port_inspect = [str(bin_path), "inspect"]
+    python_export, port_export = _export_commands(bin_path)
     rows = manifest
     if split != "all":
         rows = [row for row in rows if row["split"] == split]
-    slice_note = "L1-JSON slice (§3.1: ALL manifest rows — parts, products and the magic_ok=no junk)"
-    if sample is not None:
-        method, count = sample
-        if method != "stratified":
-            raise SystemExit(f"fidelity_run: unknown --sample method {method!r} (only stratified:N at V1)")
-        # The junk rows are part of the slice's definition (§3.1) and
-        # the ticket's acceptance names them explicitly: always include
-        # every magic_ok=no row (6 in the current corpus), stratify the
-        # remainder. N counts the total sample.
-        forced = [row for row in rows if row["magic_ok"] == "no"]
-        rest = [row for row in rows if row["magic_ok"] != "no"]
-        sampled = stratified_sample(rest, report, max(count - len(forced), 0))
-        rows = sorted(forced + sampled, key=lambda row: row["sha256"])
-        slice_note += (
-            f"; stratified sample N={count} (detected_version x split x export "
-            f"outcome class; all {len(forced)} magic_ok=no rows always included)"
-        )
+
+    l2_stats: dict | None = None
     if slice_name == SLICE_L2:
-        # V1: geometry is not ported (V0 stubs) — the L2 population
-        # compares nothing yet; report slice-empty (§6 V2 owns it).
-        write_csv(csv_path, [])
-        write_note(
-            note_path,
-            run_kind="corpus-mode",
-            population_rows=[],
-            wall_clock=0.0,
-            csv_path=csv_path,
-            slice_note=(
-                "L2-export slice requested (--slice l2): SLICE-EMPTY at V1 — "
-                "the geometry modules are V0 stubs and export mode is V2 (#41); no rows compared"
-            ),
+        # The L2 population (§3.1): the kind=part rows. The sample is
+        # the V2-biased one (composite-family exclusion + fail-closed
+        # weight); without --sample the FULL non-composite population
+        # runs (the V6 shape).
+        part_rows = [row for row in rows if row["kind"] == "part"]
+        if sample is not None:
+            method, count = sample
+            if method != "stratified":
+                raise SystemExit(f"fidelity_run: unknown --sample method {method!r} (only stratified:N)")
+            sampled, l2_stats = biased_l2_sample(part_rows, report, count)
+            rows = sorted(sampled, key=lambda row: row["sha256"])
+        else:
+            _, l2_stats = biased_l2_sample(part_rows, report, len(part_rows))
+            rows = sorted(part_rows, key=lambda row: row["sha256"])
+        slice_note = (
+            "L2-export slice (§3.1: the kind=part rows): summary parsed-document "
+            "equality + PLY byte-identical + error_class equality on double "
+            "refusals (§3.2); composite-path exports excluded "
+            "(excluded-composite-path — the ticket #41 hard stop, the composite "
+            "decode is V3 #42)"
         )
-        print("fidelity_run: --slice l2 is slice-empty at V1 (geometry is not ported; V2, ticket #41)")
-        return 0
-    if slice_name == SLICE_BOTH:
-        # Run the L1 slice now; the note records the L2 slice-empty.
-        slice_note += "; --slice both: the L2-export slice is SLICE-EMPTY at V1 (V2, ticket #41)"
-    python_cmd = [resolve_python_inspect()]
-    port_cmd = [str(port_bin or build_port_bin()), "inspect"]
+    else:
+        slice_note = "L1-JSON slice (§3.1: ALL manifest rows — parts, products and the magic_ok=no junk)"
+        if sample is not None:
+            method, count = sample
+            if method != "stratified":
+                raise SystemExit(f"fidelity_run: unknown --sample method {method!r} (only stratified:N)")
+            # The junk rows are part of the slice's definition (§3.1) and
+            # the ticket's acceptance names them explicitly: always include
+            # every magic_ok=no row (6 in the current corpus), stratify the
+            # remainder. N counts the total sample.
+            forced = [row for row in rows if row["magic_ok"] == "no"]
+            rest = [row for row in rows if row["magic_ok"] != "no"]
+            sampled = stratified_sample(rest, report, max(count - len(forced), 0))
+            rows = sorted(forced + sampled, key=lambda row: row["sha256"])
+            slice_note += (
+                f"; stratified sample N={count} (detected_version x split x export "
+                f"outcome class; all {len(forced)} magic_ok=no rows always included)"
+            )
+        if slice_name == SLICE_BOTH:
+            slice_note += (
+                "; --slice both: the L2 export comparison runs on the part rows "
+                "of the same sample (summary + PLY bytes + error classes; "
+                "composite-path exports excluded, ticket #41 hard stop)"
+            )
+    if slice_name == SLICE_L1 and l2_stats is None:
+        pass  # the L1-only shape: no export pass
     by_sha = {record["sha256"]: record for record in report["files"]}
     result_rows: list[dict] = []
     started = time.monotonic()
-    for row in rows:
-        path = str(REPO_ROOT / row["local_path"])
-        record = by_sha[row["sha256"]]
-        py = run_seam(python_cmd, path, timeout)
-        port = run_seam(port_cmd, path, timeout)
-        outcome, divergence = compare_row(py, port, timeout)
-        result_rows.append({
-            "row_id": row["sha256"],
-            "path": row["path"],
-            "split": row["split"],
-            "kind": row["kind"],
-            "magic_ok": row["magic_ok"],
-            "detected_version": record.get("detected_version") or "unknown",
-            "export_outcome_class": export_outcome_class(record),
-            "python_exit": py.exit_code,
-            "port_exit": port.exit_code,
-            "outcome": outcome,
-            "python_error_class": L1_PYTHON_ERROR_CLASS if py.failed else "",
-            "port_error_class": parse_port_error_class(port) or "",
-            "ply_equal": "",
-            "first_divergence": divergence,
-            "python_seconds": f"{py.seconds:.3f}",
-            "port_seconds": f"{port.seconds:.3f}",
-        })
+    with tempfile.TemporaryDirectory(prefix="fidelity-run-") as ply_dir:
+        for row in rows:
+            path = str(REPO_ROOT / row["local_path"])
+            record = by_sha[row["sha256"]]
+            base_row = {
+                "row_id": row["sha256"],
+                "path": row["path"],
+                "split": row["split"],
+                "kind": row["kind"],
+                "magic_ok": row["magic_ok"],
+                "detected_version": record.get("detected_version") or "unknown",
+                "export_outcome_class": export_outcome_class(record),
+            }
+            if slice_name in (SLICE_L1, SLICE_BOTH):
+                py = run_seam(python_inspect, path, timeout)
+                port = run_seam(port_inspect, path, timeout)
+                outcome, divergence = compare_row(py, port, timeout)
+                result_rows.append({
+                    **base_row,
+                    "python_exit": py.exit_code,
+                    "port_exit": port.exit_code,
+                    "outcome": outcome,
+                    "python_error_class": L1_PYTHON_ERROR_CLASS if py.failed else "",
+                    "port_error_class": parse_error_class(port) or "",
+                    "ply_equal": "",
+                    "first_divergence": divergence,
+                    "python_seconds": f"{py.seconds:.3f}",
+                    "port_seconds": f"{port.seconds:.3f}",
+                })
+            if slice_name in (SLICE_L2, SLICE_BOTH) and row["kind"] == "part":
+                ply_py = Path(ply_dir) / f"{row['sha256'][:24]}.python.ply"
+                ply_port = Path(ply_dir) / f"{row['sha256'][:24]}.port.ply"
+                py = run_seam(python_export, path, timeout, ("-o", str(ply_py)))
+                port = run_seam(port_export, path, timeout, (str(ply_port),))
+                outcome, divergence, ply_equal = compare_row_export(py, port, timeout, ply_py, ply_port)
+                result_rows.append({
+                    **base_row,
+                    "row_id": f"{row['sha256']}|export",
+                    "python_exit": py.exit_code,
+                    "port_exit": port.exit_code,
+                    "outcome": outcome,
+                    "python_error_class": parse_error_class(py) or "",
+                    "port_error_class": parse_error_class(port) or "",
+                    "ply_equal": ply_equal,
+                    "first_divergence": divergence,
+                    "python_seconds": f"{py.seconds:.3f}",
+                    "port_seconds": f"{port.seconds:.3f}",
+                })
     wall_clock = time.monotonic() - started
     write_csv(csv_path, result_rows)
     write_note(
@@ -611,6 +995,7 @@ def run_corpus_mode(csv_path: Path, note_path: Path, split: str, slice_name: str
         wall_clock=wall_clock,
         csv_path=csv_path,
         slice_note=slice_note,
+        l2_stats=l2_stats,
     )
     return exit_code_for(result_rows)
 
@@ -628,7 +1013,7 @@ def write_csv(csv_path: Path, rows: list[dict]) -> None:
             writer.writerow([row[column] for column in CSV_COLUMNS])
 
 
-def write_note(note_path: Path, run_kind: str, population_rows: list[dict], wall_clock: float, csv_path: Path, slice_note: str) -> None:
+def write_note(note_path: Path, run_kind: str, population_rows: list[dict], wall_clock: float, csv_path: Path, slice_note: str, l2_stats: dict | None = None) -> None:
     """The dated evidence note: figures only, every figure CSV-composable.
 
     The prose curation around these figures happens before the note is
@@ -640,6 +1025,7 @@ def write_note(note_path: Path, run_kind: str, population_rows: list[dict], wall
     outcomes = Counter(row["outcome"] for row in population_rows)
     mismatches = outcomes[OUTCOME_OUTPUT_MISMATCH] + outcomes[OUTCOME_CLASS_MISMATCH]
     harness_errors = outcomes[OUTCOME_HARNESS_ERROR]
+    excluded = outcomes[OUTCOME_EXCLUDED_COMPOSITE]
     lines = [
         f"# Fidelity run — {run_kind}",
         "",
@@ -651,6 +1037,19 @@ def write_note(note_path: Path, run_kind: str, population_rows: list[dict], wall
         f"- Mismatches (output-mismatch + error-class-mismatch): {mismatches}",
         f"- Harness-level failures (never matches, §3.2): {harness_errors}",
     ]
+    if excluded:
+        lines += [
+            f"- Excluded composite-path rows (the ticket #41 hard stop: the "
+            f"composite decode is V3, #42; never matches, never mismatches): {excluded}",
+        ]
+    if l2_stats is not None:
+        lines += [
+            f"- V2 sample bias (stage-15 roster): {l2_stats['part_rows_in_split']} part rows in the "
+            f"split, {l2_stats['composite_family_excluded']} composite-family rows excluded "
+            f"(element_decl > 0), pool {l2_stats['non_composite_pool']}, sampled {l2_stats['sampled']} "
+            f"(fail-closed classes weight {FAIL_CLOSED_WEIGHT}); sampled by export outcome class: "
+            f"{l2_stats['by_class']}",
+        ]
     if population_rows:
         by_split = Counter(row["split"] for row in population_rows)
         by_kind = Counter(row["kind"] for row in population_rows)
@@ -665,12 +1064,17 @@ def write_note(note_path: Path, run_kind: str, population_rows: list[dict], wall
             f"- §4 budget (per-ticket sample runs ≤ 15 min at N=100): "
             f"{'WITHIN' if wall_clock <= 900 else 'EXCEEDED'} at N={len(population_rows)}",
         ]
-        diverging = [row for row in population_rows if row["outcome"] != OUTCOME_MATCH]
+        diverging = [row for row in population_rows if row["outcome"] not in (OUTCOME_MATCH, OUTCOME_EXCLUDED_COMPOSITE)]
         if diverging:
             lines += ["", "## Non-match rows (first divergence per row)", ""]
             for row in diverging:
                 detail = row["first_divergence"][:220]
                 lines.append(f"- `{row['row_id'][:16]}` {row['outcome']}: {detail}")
+        excluded_rows = [row for row in population_rows if row["outcome"] == OUTCOME_EXCLUDED_COMPOSITE]
+        if excluded_rows:
+            lines += ["", "## Excluded composite-path rows (named per-row, §3.2 discipline)", ""]
+            for row in excluded_rows:
+                lines.append(f"- `{row['row_id'][:16]}` {row['path']}")
     else:
         lines += ["- No rows compared (slice-empty)."]
     lines.append("")
@@ -678,8 +1082,11 @@ def write_note(note_path: Path, run_kind: str, population_rows: list[dict], wall
 
 
 def exit_code_for(rows: list[dict]) -> int:
-    """0 when every row is a match (§4: the run is invalid otherwise)."""
-    bad = [row for row in rows if row["outcome"] != OUTCOME_MATCH]
+    """0 when every row is a match or an excluded row (§4 + the V2 hard
+    stop: the run is invalid on any mismatch or harness-level failure;
+    an excluded row is a measurement intentionally not made, named
+    per-row in the note, never a match and never a mismatch)."""
+    bad = [row for row in rows if row["outcome"] not in (OUTCOME_MATCH, OUTCOME_EXCLUDED_COMPOSITE)]
     for row in bad:
         print(
             f"fidelity_run: {row['outcome']}: {row['row_id'][:16]} {row['first_divergence'][:200]}",
@@ -692,7 +1099,7 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     split = "all"
-    slice_name = SLICE_L1
+    slice_name: str | None = None  # None = the mode's default (fixture: both; corpus: l1)
     sample: tuple[str, int] | None = None
     fixtures = False
     timeout = 600.0
@@ -724,12 +1131,20 @@ def main(argv: list[str] | None = None) -> int:
             port_bin = Path(next(it))
         else:
             raise SystemExit(f"fidelity_run: unknown argument {arg!r}")
+    if fixtures:
+        # Fixture mode defaults to BOTH slices at V2: the gate's fixture
+        # pin covers the inspect matrix AND the export matrix (V2, #41).
+        slice_name = slice_name or SLICE_BOTH
+        if csv_path is None:
+            csv_path = DATA_DIR / "v2-fidelity-fixture-claims.csv"
+        if note_path is None:
+            note_path = REPO_ROOT / "docs" / "evidence" / f"{stamp}-v2-fidelity-fixtures.md"
+        return run_fixture_mode(csv_path, note_path, timeout, port_bin, slice_name)
+    slice_name = slice_name or SLICE_L1
     if csv_path is None:
-        csv_path = DATA_DIR / "v1-fidelity-l1-claims.csv"
+        csv_path = DATA_DIR / ("v2-fidelity-l2-claims.csv" if slice_name == SLICE_L2 else "v1-fidelity-l1-claims.csv")
     if note_path is None:
         note_path = REPO_ROOT / "docs" / "evidence" / f"{stamp}-v1-fidelity-l1.md"
-    if fixtures:
-        return run_fixture_mode(csv_path, note_path, timeout, port_bin)
     return run_corpus_mode(csv_path, note_path, split, slice_name, sample, timeout, port_bin)
 
 
