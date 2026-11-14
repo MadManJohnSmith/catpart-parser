@@ -90,6 +90,30 @@ the lex-rank mapping (correction C8).
   (G3 F8's 6-byte ``02 02 (u16be)(u16be)`` records) marks the composite
   index space -> ``undecoded-variant`` (open question 1).
 
+Non-composite parity shapes (V2 #41, the harness-gap fixtures: the
+decision paths the first export parity run left unexercised):
+
+- ``geometry-u16be-facets``     -> the box's six faces re-encoded with
+  u16be references over a 300-vertex pool (the 8 corners + 292
+  lex-smaller fillers): the P1g ff-escaped count (> 255) and the F1w
+  clean-store width law (every record's u8 count windows fail the
+  count law, the u16be parse tiles exactly -> the unanimous vote sets
+  prefer=2) -> exports 12 triangles + the ``unused-pool-vertices``
+  warning (292 unreferenced fillers).
+- ``geometry-degenerate-cross`` -> a 9th pool vertex collinear on the
+  z=0 face's diagonal and the face's strip re-threaded through it:
+  one strip triangle has three DISTINCT vertices and an exactly-zero
+  cross product -> skipped by the ``(0.0, 0.0, 0.0)`` tuple equality
+  (the G3 F7 arm the repeated-vertex fixture does not reach) ->
+  exports with the ``degenerate-triangles-skipped`` and
+  ``unused-pool-vertices`` warnings.
+- ``geometry-second-store-exports`` -> two ``CATStdCont`` blocks: the
+  first store's catalog tail matches neither recovery family (the
+  shipped ``malformed-store-header`` rejection) and the second store
+  is canonical -> the first exportable store wins, summary
+  ``store_ordinal`` = 1 and the rejection never surfaces (the twin's
+  candidate-walk law).
+
 Recovery variants (G6 stage 3a, #34 — the locator recovery extension;
 each is the fixture twin of a stage-1 census recovery family):
 
@@ -176,6 +200,12 @@ VALID_VARIANTS = (
     "dual-region",
     "geometry",
     "geometry-open-shell",
+    # Non-composite parity shapes (V2 #41): the harness-gap fixtures
+    # (the u16be clean-store width law + the P1g ff-escaped pool count,
+    # the zero-cross degenerate skip, the multi-store candidate walk).
+    "geometry-u16be-facets",
+    "geometry-degenerate-cross",
+    "geometry-second-store-exports",
     # Composite-law variants (G6 stage 2c/3d, #34): the identity law
     # decodes both forms; slanted quads, curve-entry loops and the
     # u16be no-repeat rule are the law's shapes.
@@ -313,6 +343,12 @@ CORRUPTED_VARIANTS = (
 GEOMETRY_VARIANTS = (
     "geometry",
     "geometry-open-shell",
+    # Non-composite parity shapes (V2 #41): the harness-gap fixtures
+    # (the u16be clean-store width law + the P1g ff-escaped pool count,
+    # the zero-cross degenerate skip, the multi-store candidate walk).
+    "geometry-u16be-facets",
+    "geometry-degenerate-cross",
+    "geometry-second-store-exports",
     "geometry-seebody-store",
     "geometry-xdoclink-store",
     "geometry-overshoot-tail",
@@ -2060,6 +2096,66 @@ def _geometry_store(variant: str) -> bytes:
         faces = faces[:5]  # drop the x=20 face: real sheet-like shell (F6)
 
     pool_walk = list(GEOMETRY_POOL_WALK)
+    facet_width = 1
+    if variant == "geometry-u16be-facets":
+        # The 300-vertex pool (8 corners + 292 lex-smaller fillers):
+        # the P1g ff-escaped count, and the faces re-encoded with u16be
+        # lex ranks — every rank is >= 292 (the fillers all sort before
+        # the corners), so the first ref's high byte poisons every u8
+        # count window (1 != 4 at k=1; the k=5 sum >= 53) and the u16be
+        # parse tiles exactly: the unanimous exact-tile vote sets
+        # prefer=2 (F1w). Resolved through the lex map by coordinates
+        # (the COMPOSITE_SLANTED_FACES pattern).
+        pool_walk = list(GEOMETRY_POOL_WALK) + [
+            (0.0, -1000.0 - float(i), 0.0) for i in range(292)
+        ]
+        walk_rank = {
+            walk: rank
+            for rank, walk in enumerate(
+                sorted(
+                    range(len(pool_walk)),
+                    key=lambda i: (pool_walk[i][0], pool_walk[i][1], pool_walk[i][2]),
+                )
+            )
+        }
+        faces = [
+            (
+                marker,
+                normal,
+                tuple(walk_rank[GEOMETRY_LEX[r]] for r in refs),
+            )
+            for marker, normal, refs in faces
+        ]
+        facet_width = 2
+    if variant == "geometry-degenerate-cross":
+        # The z=0 face's strip re-threaded through a 9th vertex
+        # collinear on that face's diagonal: triangle 0 has three
+        # DISTINCT vertices and an exactly-zero cross product — the
+        # (0.0, 0.0, 0.0) tuple-equality skip (F7's second arm; the
+        # open-shell fixture's 0x41 record only reaches the
+        # repeated-vertex arm).
+        pool_walk = list(GEOMETRY_POOL_WALK) + [(10.0, 0.0, 0.0)]
+        walk_rank = {
+            walk: rank
+            for rank, walk in enumerate(
+                sorted(
+                    range(len(pool_walk)),
+                    key=lambda i: (pool_walk[i][0], pool_walk[i][1], pool_walk[i][2]),
+                )
+            )
+        }
+        z0_walks = [GEOMETRY_LEX[r] for r in (4, 0, 6, 2)]  # the z=0 face corners
+        mid_walk = 8  # (10.0, 0.0, 0.0)
+        new_walks = [z0_walks[0], mid_walk, z0_walks[1], z0_walks[2], z0_walks[3]]
+        faces = [
+            (marker, normal, tuple(walk_rank[GEOMETRY_LEX[r]] for r in refs))
+            for marker, normal, refs in faces
+        ]
+        faces[0] = (
+            0x4A,
+            (0.0, 0.0, -1.0),
+            tuple(walk_rank[w] for w in new_walks),
+        )
     if variant == "geometry-nan-coords":
         # G2 P3 violation: NaN f32le coordinate in the 4th walked vertex.
         x, y, z = pool_walk[3]
@@ -2069,10 +2165,15 @@ def _geometry_store(variant: str) -> bytes:
         # G2 P2g violation: count field 8, only 6 records before facets.
         vertices = pool_walk[:6]
 
+    # The pool group's count field: 300 ff-escaped on the u16be
+    # variant (the P1g escape path); 8 everywhere else — the
+    # truncated-pool corruption REQUIRES the field to stay 8 while the
+    # walked records drop to 6 (the G2 P2g violation under test).
+    pool_count_field = 300 if variant == "geometry-u16be-facets" else 8
     body_parts = [
         NESTED_FULL_WRAP
         + NESTED_POOL_SUBKIND
-        + bytes([8])
+        + _p1g_count(pool_count_field)
         + b"".join(NESTED_VREC + struct.pack("<fff", *v) for v in vertices)
     ]
     if variant in ("geometry-composite-index-space", "geometry-seebody-composite"):
@@ -2094,7 +2195,7 @@ def _geometry_store(variant: str) -> bytes:
             rec += struct.pack("<fff", *normal) + bytes([len(refs), 0, 0])
             body_parts.append(rec)
         else:
-            body_parts.append(_facet_record(marker, normal, refs))
+            body_parts.append(_facet_record(marker, normal, refs, width=facet_width))
     if variant == "geometry-open-shell":
         # A well-formed 0x41 triangle-list record (F9 byte law n == 3*ty)
         # whose single loop repeats one rank: the strip reading is
@@ -2188,6 +2289,16 @@ def _geometry_payload(variant: str) -> bytes:
             b"CATBRepModeContainer",
             _geometry_store("geometry-overshoot-bad-tail"),
         )
+    if variant == "geometry-second-store-exports":
+        # Two CATStdCont blocks: the first store's tail matches neither
+        # recovery family (the shipped malformed-store-header
+        # rejection, fail-closed), the second is canonical — the first
+        # exportable store wins, store_ordinal = 1 (V2 #41's
+        # candidate-walk fixture).
+        return _nested_store_block(
+            b"CATStdCont",
+            _geometry_store("geometry-overshoot-bad-tail"),
+        ) + _nested_store_block(b"CATStdCont", _geometry_store("geometry"))
     preamble = 250 - len(storage_property_block(b"CATStdCont", b"CATContainer"))
     return (
         storage_property_block(b"CATStdCont", b"CATContainer")
