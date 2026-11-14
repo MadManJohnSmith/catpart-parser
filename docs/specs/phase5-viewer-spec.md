@@ -777,3 +777,17 @@ create V0 and V5, set dependencies per §6, apply labels.
   (1.06e-5 closest to the PLANE_TOL boundary) dwarf any re-rounding
   — including a differently-rounded `pow` on wasm32 (V4 note: Rust's
   wasm32 `powf` resolves to the libm crate, not glibc).
+- 2026-11-14: **V5 margin DECLARED = 0** (owner decision, pre-run per
+  §3.4): the in-browser sanity rate must equal the published L2
+  scalar exactly per split (dev 1,033/1,381 = 74.8009%; held-out
+  56/61 = 91.8033%); harness-error files are excluded-but-reported
+  per-file. The declaration cites native Fidelity evidence only (the
+  V1-V4 chain: L1 120/120, L2 non-composite 120/120, composite
+  452/452, fixtures 334/334 — 0 mismatches on every compared surface;
+  the pkg a byte-identical rebuild of the pinned toolchain; the
+  wasm32 powf margins dwarfing re-rounding; gate.js proven
+  line-by-line vs `_score_export`) — no in-browser measurement
+  existed at declaration time. The harness is margin-gated by
+  construction (`reproduction_run.py` refuses without `--margin`; no
+  subset rate is expressible). The margin is never re-declared to
+  absorb a failing run (§3.4).
