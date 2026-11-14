@@ -132,9 +132,14 @@ def build_port_bin() -> Path:
     """Build the release ``fidelity-cli`` once per run (§4) and return it.
 
     Runs ``cargo build --release --locked`` inside ``port/``; the run
-    aborts if the build fails or the binary is missing or stale (older
-    than the newest crate source). Cargo names the artifact
-    ``fidelity_cli`` (underscores); the harness resolves both spellings.
+    aborts if the build fails or the binary is missing — cargo's own
+    rebuild is the freshness guarantee: a no-op build still refreshes
+    the artifact, so whatever survives the build is current by
+    construction (review F2, ticket #40: the post-build mtime check
+    was unreachable — cargo freshens the binary even on a no-op build
+    — and is dropped; correction dated 2026-11-14 in the V1 note).
+    The artifact is ``fidelity-cli`` (spec §2.4); the harness resolves
+    both spellings for older checkouts.
     """
     port_dir = REPO_ROOT / "port"
     cargo = shutil.which("cargo")
@@ -157,26 +162,8 @@ def build_port_bin() -> Path:
     for name in ("fidelity-cli", "fidelity_cli"):
         candidate = port_dir / "target" / "release" / name
         if candidate.is_file():
-            newest_source = newest_mtime(port_dir / "src", port_dir / "Cargo.toml", port_dir / "Cargo.lock")
-            if newest_source is not None and candidate.stat().st_mtime < newest_source:
-                raise SystemExit(
-                    "fidelity_run: the release fidelity-cli binary is stale "
-                    "relative to port/src — rebuild before running the harness"
-                )
             return candidate
     raise SystemExit("fidelity_run: cargo build reported success but the fidelity-cli binary is missing")
-
-
-def newest_mtime(*paths: Path) -> float | None:
-    """Newest mtime over ``paths`` (directories walked for ``*.rs``)."""
-    newest: float | None = None
-    for path in paths:
-        if path.is_dir():
-            for source in path.rglob("*.rs"):
-                newest = max(newest or 0.0, source.stat().st_mtime)
-        elif path.is_file():
-            newest = max(newest or 0.0, path.stat().st_mtime)
-    return newest
 
 
 # --- subprocess shape (one shape for both implementations) ----------------

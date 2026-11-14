@@ -112,6 +112,22 @@ ADR-0002's discipline):
   pin now guards the same class end-to-end at the seam. This is §10
   risk 1's detector doing its job, at integer scale.
 
+- **2026-11-14 (merge fixups, coordinator): two review-driven
+  corrections, neither a Fidelity surface change.** (1) The bin file
+  renamed `port/src/bin/fidelity_cli.rs` -> `port/src/bin/fidelity-cli.rs`,
+  so the artifact is `target/release/fidelity-cli` and §2.4's citation
+  is accurate verbatim (decision 2 below is superseded; hyphen bin
+  file names build cleanly — no `[[bin]]` section needed; the harness
+  already resolved the hyphen spelling first, `fidelity_run.py:157`).
+  (2) The post-build stale-binary check in `build_port_bin` is
+  unreachable — `cargo build` freshens the artifact mtime even on a
+  no-op build, so the check never fired (review F2; the verifier
+  utimed the binary to the epoch through the real path and no abort
+  fired). The claim "aborts if stale" is dropped: cargo's own rebuild
+  is the freshness guarantee, and the missing-binary/build-failure
+  aborts remain reachable and pinned. No fixture or corpus row
+  changes; gate re-run green after both fixups.
+
 ## Fixture-mode parity (§4 fixture mode, the gate)
 
 - Population: 229 fixtures = the A2 variant lists of
