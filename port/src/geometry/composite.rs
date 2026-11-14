@@ -1350,19 +1350,41 @@ pub fn decode_composite_store(
             // probe-semantics walk not ending at the declared region
             // end). A store the table walk handles never reaches this
             // branch; a walk-exact store with junk coordinates is not
-            // the family (its own failure is re-raised). PORT STAGE 1:
-            // the raw-array + mixedwrite consumers land with stage 2 —
-            // the branch fails closed with the twin's class naming the
-            // stage-2 gap (error classes are the machine contract, §3.2).
-            return Err(ExportError::new(
-                UNDECODED_VARIANT,
-                format!(
-                    "{}; the stage-4a raw-array law and the stage-8 \
-                     mixed-write per-rep composition land with port \
-                     stage 2 (ticket #42): fail-closed interim",
-                    exc.detail
-                ),
-            ));
+            // the family (its own failure is re-raised). When the raw
+            // reading does not cover the store either, the stage-9
+            // mixed-write composition runs, and only when that
+            // declines too do both gaps join the failure (fail-closed).
+            if walk_mismatch(payload, elem_decl).is_none() {
+                return Err(exc);
+            }
+            match decode_raw_array_path(data, lo, hi, groups, payload, elem_decl) {
+                Ok(ok) => return Ok(ok),
+                Err(raw_exc) => {
+                    let raw_detail = raw_exc.detail;
+                    // Stage-9 (2026-11-12, #34): the stage-8 mixed-write
+                    // composition — the per-rep decomposition over ALL
+                    // token nodes on the FULL-body window (the stage-8
+                    // locator), each node under the table/raw/flat laws
+                    // (the zero-block extent candidates; the flat law's
+                    // counts_end-pinned start), runs before the store
+                    // fails closed.
+                    match decode_mixedwrite(data, lo, hi, groups) {
+                        Ok(ok) => return Ok(ok),
+                        Err(reps_exc) => {
+                            return Err(ExportError::new(
+                                UNDECODED_VARIANT,
+                                format!(
+                                    "{}; the stage-4a raw-array law does not \
+                                     cover the store either ({}); the stage-8 \
+                                     mixed-write per-rep composition does not \
+                                     export it either ({})",
+                                    exc.detail, raw_detail, reps_exc.detail
+                                ),
+                            ));
+                        }
+                    }
+                }
+            }
         }
     };
     let points: Vec<(f64, f64, f64)> = elements.iter().filter_map(|e| e.1).collect();
@@ -1451,6 +1473,966 @@ pub fn decode_composite_store(
     })
 }
 
+// --- stage-6: the walk-mismatch residue's raw-array law (stage 4a,
+// integrated 2026-11-12, #34) -------------------------------------------
+//
+// The law as committed (docs/evidence/2026-11-10-node-streams.md section
+// "Stage 4a-residue" + residue-raw-scan.csv + the reference
+// implementations classify_residue_family.py --raw / probe_residue_anchor.py):
+// a walk-mismatch payload continues past the header as raw f32 triples;
+// the start is pinned by the trail-escape condition; strong fit = nice
+// AND x-ascending over the full span (the scan's criteria and predicate,
+// ported verbatim — not re-derived); the pool must re-list verbatim.
+// The tail field's and count3's semantics stay open (named).
+
+/// The committed scan's candidate bound: 4-aligned starts 32..64
+/// (``classify_residue_family.py`` ``RAW_MAX_START``).
+pub const RAW_MAX_START: usize = 64;
+
+/// The committed strong-fit bar (residue-raw-scan.csv: strong = nice >=
+/// 0.98 AND x-ascending >= 0.98 over the full elem_decl span).
+pub const RAW_FIT_RATE: f64 = 0.98;
+
+/// The raw scan's coordinate predicate (the stage-2c probe's predicate,
+/// kept verbatim: the raw array has no table to fix the parse, so the
+/// rate IS the parse validation — :fn:`nice`'s dropped 1e-6 floor was
+/// never the measured criterion here) — the twin's ``_raw_nice``:
+/// ``v == v and (v == 0.0 or 1e-6 < abs(v) < 1e7)``.
+// ``v == v`` is the twin's NaN test verbatim.
+#[allow(clippy::eq_op)]
+fn raw_nice(v: f64) -> bool {
+    v == v && (v == 0.0 || 1e-6 < v.abs() && v.abs() < 1e7)
+}
+
+/// The walk-mismatch family signature (the census probe's walk
+/// semantics, ``decode_big_form_points.decode_region``: all elem_decl
+/// slots walked bounded ONLY by the payload, no coordinate aborts) —
+/// the twin's ``_walk_mismatch``. Returns ``Some`` when the declared
+/// P1t prefix does not describe the payload — the layout raises, or
+/// the walk does not end exactly at the declared region end — and
+/// ``None`` when the walk is exact (a walk-exact store with junk
+/// coordinates is not the family; the caller re-raises the original
+/// failure). The profile's contents are never consumed by the caller
+/// (only its presence); the returned string names the mismatch kind
+/// for humans.
+// ``(n + 3) / 4`` is the twin's expression shape (see layout).
+#[allow(clippy::manual_div_ceil)]
+fn walk_mismatch(payload: &[u8], elem_decl: u32) -> Option<&'static str> {
+    let tok = find(payload, LIST_TOKEN, 0, payload.len())?;
+    // unreachable behind find_list_node, kept total
+    let mut p = tok + 5;
+    let (_, np) = read_count_checked(payload, p)?; // unreadable declared counts
+    p = np;
+    let (_, np) = read_count_checked(payload, p)?;
+    p = np;
+    while p + 4 <= payload.len() && payload[p..p + 4] == [0u8; 4] {
+        p += 4;
+    }
+    let table_len = (elem_decl as usize + 3) / 4;
+    let count_pos = p + table_len;
+    if count_pos >= payload.len() {
+        return Some("layout: the 2-bit table runs past the payload");
+    }
+    let (write_count, region_start) = read_count_checked(payload, count_pos)?; // unreadable write count
+    let region_end = region_start + 4 * write_count as usize;
+    if region_end > payload.len() {
+        return Some("layout: the declared write count overruns the payload");
+    }
+    let mut pos = region_start;
+    for v in table_slots(payload, p, table_len, elem_decl) {
+        let shape = SHAPES[v as usize];
+        if pos + 4 * shape > payload.len() {
+            break; // the probe's clean stop: bounded by the payload only
+        }
+        pos += 4 * shape;
+    }
+    if pos != region_end {
+        return Some("walk: the probe walk does not end at the declared region end");
+    }
+    None
+}
+
+/// The raw anatomy the twin's ``decode_raw_array`` info dict carries.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RawInfo {
+    /// The pinned array start (payload-relative).
+    pub raw_start: usize,
+    /// The nice rate — the twin's ``round(rate, 4)``.
+    pub raw_nice_rate: f64,
+    /// The x-ascending rate — the twin's ``round(asc, 4)``.
+    pub raw_x_asc_rate: f64,
+    /// The bytes after the trail-escape byte.
+    pub raw_trail_bytes: usize,
+    /// The count3 field (recorded when readable, never validated — open).
+    pub raw_count3: Option<u32>,
+}
+
+/// Python's ``round(x, 4)`` on an f64: correct rounding of the exact
+/// binary value to 4 decimals (ties-to-even), the result's nearest
+/// f64. Rust's ``{:.4}`` performs the same correct rounding of the
+/// exact value; parse-back yields the same double. Unit-tested against
+/// the Python ground truth (see ``py_round4_matches_python``).
+fn py_round4(x: f64) -> f64 {
+    format!("{x:.4}")
+        .parse::<f64>()
+        .expect("a finite f64 formatted with 4 decimals always parses back")
+}
+
+/// The raw-array reading of a walk-mismatch list-node payload (stage-4a
+/// law, ported from ``classify_residue_family.py --raw`` and the
+/// committed start rule — not re-derived) — the twin's
+/// ``decode_raw_array``.
+///
+/// ``[token][count1][count2][tail][elem_decl x [x][y][z] stride 12, x
+/// ascending][FF][count3 u32le][trail]``: the array start is the
+/// UNIQUE 4-aligned start in ``[32, RAW_MAX_START]`` whose full
+/// elem_decl span fits and whose trail-escape byte
+/// ``payload[start + 12*elem_decl]`` is ``0xFF`` (the committed start
+/// rule — it selected a unique start in 32/39 scan-fit stores; zero or
+/// several candidates stay fail-closed). Strong fit = the scan's
+/// criteria at the pinned start: both the nice rate and the x-ascending
+/// rate at or above RAW_FIT_RATE (the scan's predicate and 1e-6 pair
+/// tolerance). Pool absorption = every distinct pool vertex re-listed
+/// verbatim in the triples (exact f32 — the scan's
+/// ``pool_absorbed_raw`` criterion).
+///
+/// Returns the raw triples in array order (the element space — no
+/// skip slots, every element written) and the raw anatomy. Raises
+/// ``undecoded-variant`` with the specific gap otherwise: the start
+/// not pinned, a weak fit, or an unabsorbed pool. The tail field's and
+/// count3's semantics are OPEN: count3 is recorded when readable,
+/// never validated.
+// The tuple return is the twin's return shape (points, info).
+#[allow(clippy::type_complexity)]
+fn decode_raw_array(
+    payload: &[u8],
+    elem_decl: u32,
+    poolv: &[(f64, f64, f64)],
+) -> Result<(Vec<(f64, f64, f64)>, RawInfo), ExportError> {
+    let ed = elem_decl as usize;
+    let candidates: Vec<usize> = (32..=RAW_MAX_START)
+        .step_by(4)
+        .filter(|&s| s + 12 * ed < payload.len() && payload[s + 12 * ed] == 0xFF)
+        .collect();
+    let n_cand = (RAW_MAX_START - 32) / 4 + 1;
+    if candidates.len() != 1 {
+        return Err(ExportError::new(
+            UNDECODED_VARIANT,
+            format!(
+                "raw-array start not pinned: the trail-escape condition \
+                 payload[start + 12*{elem_decl}] == 0xFF selects \
+                 {} of the {n_cand} candidate starts \
+                 (4-aligned 32..{RAW_MAX_START}, the committed scan bound) \
+                 — fail-closed (the law's start rule)",
+                candidates.len()
+            ),
+        ));
+    }
+    let start = candidates[0];
+    if elem_decl < 2 {
+        return Err(ExportError::new(
+            UNDECODED_VARIANT,
+            format!(
+                "raw-array fit undefined: elem_decl {elem_decl} leaves the \
+                 scan's x-ascending rate without a consecutive pair (no-fit)"
+            ),
+        ));
+    }
+    let ps: HashSet<(u64, u64, u64)> = poolv.iter().copied().map(vkey).collect();
+    let mut xs: Vec<f64> = Vec::with_capacity(elem_decl as usize);
+    let mut points: Vec<(f64, f64, f64)> = Vec::with_capacity(elem_decl as usize);
+    let mut nicec = 0u32;
+    let span = &payload[start..start + 12 * elem_decl as usize];
+    for triple in span.as_chunks::<12>().0 {
+        let x = f32_widen(triple, 0);
+        let y = f32_widen(triple, 4);
+        let z = f32_widen(triple, 8);
+        if raw_nice(x) && raw_nice(y) && raw_nice(z) {
+            nicec += 1;
+        }
+        xs.push(x);
+        points.push((x, y, z));
+    }
+    let rate = f64::from(nicec) / f64::from(elem_decl);
+    let asc =
+        xs.windows(2).filter(|w| w[1] >= w[0] - 1e-6).count() as f64 / (elem_decl as f64 - 1.0);
+    if rate < RAW_FIT_RATE || asc < RAW_FIT_RATE {
+        return Err(ExportError::new(
+            UNDECODED_VARIANT,
+            format!(
+                "raw-array weak fit at the pinned start {start}: nice \
+                 {rate:.4} / x-ascending {asc:.4} below the \
+                 {RAW_FIT_RATE} strong-fit bar (the committed criteria; \
+                 weak-fit family, fail-closed)"
+            ),
+        ));
+    }
+    let point_set: HashSet<(u64, u64, u64)> = points.iter().copied().map(vkey).collect();
+    let missing = ps.difference(&point_set).count();
+    if missing > 0 {
+        return Err(ExportError::new(
+            UNDECODED_VARIANT,
+            format!(
+                "raw-array pool not absorbed: {missing} of {} \
+                 pool vertices absent from the {elem_decl} raw triples \
+                 (exact-f32 absorption, the scan's pool_absorbed_raw \
+                 criterion; fail-closed)",
+                ps.len()
+            ),
+        ));
+    }
+    let trail_at = start + 12 * elem_decl as usize;
+    let mut info = RawInfo {
+        raw_start: start,
+        raw_nice_rate: py_round4(rate),
+        raw_x_asc_rate: py_round4(asc),
+        raw_trail_bytes: payload.len() - trail_at,
+        raw_count3: None,
+    };
+    // The escape byte's count runs past the payload: open, named —
+    // recorded only when readable (the twin's try/except pass).
+    if let Some((count3, _after)) = read_count_checked(payload, trail_at) {
+        info.raw_count3 = Some(count3);
+    }
+    Ok((points, info))
+}
+
+/// Export path of the raw-array law: decode the array, then the
+/// committed export ladder on the raw element space — records parsed
+/// over the store body, the M2b identity refs gate (gated families'
+/// references resolve inside the elem_decl element space),
+/// strip/polygon triangulation. Raises ``undecoded-variant`` with the
+/// raw gap when the law does not cover the store — the twin's
+/// ``_decode_raw_array``.
+fn decode_raw_array_path(
+    data: &[u8],
+    lo: usize,
+    hi: usize,
+    groups: &[PoolGroup],
+    payload: &[u8],
+    elem_decl: u32,
+) -> Result<CompositeDecode, ExportError> {
+    let poolv: Vec<(f64, f64, f64)> = groups
+        .iter()
+        .flat_map(|g| g.vertices.iter().copied())
+        .collect();
+    let (points, raw_info) = decode_raw_array(payload, elem_decl, &poolv)?;
+    // The raw element space: every element written (slot value 0 —
+    // the twin's ``[(0, pt) for pt in points]``), no skip slots.
+    let elements: Vec<Element> = points.iter().map(|&pt| (0, Some(pt))).collect();
+    let (records, n_hdrs) = parse_strip_records(data, lo, hi, elem_decl, Some(&elements));
+    let all_refs: Vec<u32> = records
+        .iter()
+        .filter(|r| GATED.contains(&r.marker))
+        .flat_map(|r| r.refs.iter().copied())
+        .collect();
+    if let Some(&mx) = all_refs.iter().max()
+        && mx >= elem_decl
+    {
+        return Err(ExportError::new(
+            UNDECODED_VARIANT,
+            format!(
+                "facet references beyond the raw-array element space: \
+                 max ref {mx} >= element count {elem_decl} (M2b \
+                 identity on the raw array; G3 open question 2)"
+            ),
+        ));
+    }
+    let (triangles, degenerate, loop_stats) = triangulate(&elements, &records);
+    let mut skipped_markers: BTreeMap<u8, u32> = BTreeMap::new();
+    for rec in &records {
+        if !matches!(rec.marker, 0x42 | 0x4A | 0x4C) {
+            *skipped_markers.entry(rec.marker).or_insert(0) += 1;
+        }
+    }
+    let info = CompositeInfo {
+        stage: "identity-raw-array",
+        element_decl: elem_decl as usize,
+        node_points: points.len(),
+        curve_entries: 0,
+        write_count: None,
+        table_bytes: None,
+        facet_candidates: n_hdrs,
+        facet_records: records.len(),
+        skipped_markers,
+        node_bytes: payload.len(),
+        reps_decoded: None,
+        reps_exported: None,
+        reps_unexported: None,
+        rep_reasons: None,
+        rep_laws: None,
+        raw_start: Some(raw_info.raw_start),
+        raw_nice_rate: Some(raw_info.raw_nice_rate),
+        raw_x_asc_rate: Some(raw_info.raw_x_asc_rate),
+        raw_trail_bytes: Some(raw_info.raw_trail_bytes),
+        raw_count3: raw_info.raw_count3,
+        loops_exported: loop_stats.loops_exported,
+        loops_curve_entry: loop_stats.loops_curve_entry,
+        curve_entry_law: None,
+        loops_curve_entry_exported: None,
+        unordered_dedup_dropped: None,
+        unordered_dedup_declined: None,
+    };
+    // Stage-15 unordered-triangle dedup (see apply_unordered_dedup at
+    // stage 3): the raw path triangulates facet records like the other
+    // paths, so the same duplicated-writer-content mechanism is in
+    // scope (measured corpus incidence 0 — no identity-raw-array row
+    // is not-manifold).
+    Ok(CompositeDecode {
+        points,
+        triangles,
+        degenerate,
+        info,
+    })
+}
+
+// --- stage-9: the mixed-write stream's locator/predicate artifacts
+// (stage 8, integrated 2026-11-12, #34) ---------------------------------
+//
+// The stage-8 census (scripts/triage/mixedwrite_decode.py,
+// docs/evidence/2026-11-12-mixedwrite-reps.md) showed the walk-mismatch
+// residue's payloads parse end-to-end with the COMMITTED write laws once
+// three locator/predicate artifacts are fixed. The functions below port
+// the census's laws verbatim (not re-derived): the zero-block extent
+// candidates (table_decode), the escape-pinned raw probe (raw_probe),
+// the per-node law order table -> raw -> flat (decode_node), and the
+// per-rep composition (audit_store), scoped to the walk-mismatch path
+// and to the exporter's absorption/refs/triangulation gates.
+
+/// The position after the declared counts (the P1g prefix's end), or
+/// ``None`` when unreadable — the twin's ``_token_counts_end``. The
+/// mixed-write node decode pins the flat law's start and the
+/// zero-block extent candidates on this offset (the stage-8 decoder's
+/// ``counts_end``); :fn:`scan_token_nodes` validated the counts
+/// already, so ``None`` here is unreachable behind it.
+fn token_counts_end(payload: &[u8]) -> Option<usize> {
+    let tok = find(payload, LIST_TOKEN, 0, payload.len())?;
+    if tok > 64 {
+        return None;
+    }
+    let p = tok + 5;
+    let (_, np) = read_count_checked(payload, p)?;
+    let (_, np) = read_count_checked(payload, np)?;
+    Some(np)
+}
+
+/// One walk-exact zero-block extent candidate — the twin's
+/// ``_table_decode_extents`` result tuples ``(e, elements, skips,
+/// region_end_rel, write_count)``.
+struct TableExtent {
+    /// The extent (the number of zero groups the table starts after).
+    #[allow(dead_code)]
+    extent: usize,
+    /// The decoded element space.
+    elements: Vec<Element>,
+    /// The skip-slot count.
+    #[allow(dead_code)]
+    skips: u32,
+    /// The payload-relative region end.
+    region_end_rel: usize,
+    /// The declared write count.
+    write_count: u32,
+}
+
+/// The stage-3b table walk with the zero-block EXTENT as a candidate
+/// (stage-8 artifact 2; ported from ``mixedwrite_decode.table_decode``
+/// — not re-derived) — the twin's ``_table_decode_extents``.
+///
+/// The committed :fn:`layout` skips ALL consecutive zero groups after
+/// the counts; when the region opens with >= 16 full-write slots the
+/// 2-bit table's own leading bytes form whole zero groups, the skip
+/// overshoots INTO the table, and the P1g count reads misaligned
+/// (38/133 decoded table reps, 36 stores; 221df959's "declared 194").
+/// The extent law: the table may start at ``counts_end + 4*e`` for
+/// ``e`` in ``1..k`` (``k`` = the zero-group run after the counts);
+/// exactly one extent must yield the walk-exact decode (the walk
+/// consumes exactly the declared write count, every coordinate finite
+/// and plausible) — several decode, the extent stays fail-closed
+/// (ambiguous); none, this is not a table store. The committed
+/// layout() is untouched: a store whose committed skip misaligns
+/// fails the primary walk and lands on this path, so the candidates
+/// cover the artifact's full incidence without re-routing walk-OK
+/// stores (measured: extents inside the zero block read a zero count
+/// and can never walk exact — the committed skip position is the only
+/// other candidate the law can select).
+///
+/// Returns the unique walk-exact extent, ``Err(())`` when several
+/// decode (ambiguous), or ``None``.
+// ``(n + 3) / 4`` is the twin's expression shape (see layout).
+#[allow(clippy::manual_div_ceil, clippy::type_complexity)]
+fn table_decode_extents(
+    payload: &[u8],
+    element_count: u32,
+    counts_end: usize,
+) -> Option<Result<TableExtent, ()>> {
+    if !is_zero4(payload, counts_end) {
+        return None;
+    }
+    let mut ext = 1usize;
+    while is_zero4(payload, counts_end + 4 * ext) {
+        ext += 1;
+    }
+    let table_len = (element_count as usize + 3) / 4;
+    let mut results: Vec<TableExtent> = Vec::new();
+    for e in 1..=ext {
+        let table_start = counts_end + 4 * e;
+        let count_pos = table_start + table_len;
+        if count_pos >= payload.len() {
+            continue;
+        }
+        let Some((wc, region_start)) = read_count_checked(payload, count_pos) else {
+            continue;
+        };
+        if wc > 3 * element_count {
+            continue;
+        }
+        let region_end = region_start + 4 * wc as usize;
+        if region_end > payload.len() {
+            continue;
+        }
+        let mut pos = region_start;
+        let mut elements: Vec<Element> = Vec::with_capacity(element_count as usize);
+        let mut skips = 0u32;
+        let mut ok = true;
+        // the initial LCP state is the origin (P1i)
+        #[allow(unused_assignments)]
+        let (mut x, mut y, mut z) = (0.0f64, 0.0f64, 0.0f64);
+        for i in 0..element_count as usize {
+            let v = (payload[table_start + i / 4] >> (2 * (i % 4))) & 3;
+            let shape = SHAPES[v as usize];
+            if shape == 0 {
+                skips += 1;
+                elements.push((v, None));
+                continue;
+            }
+            if pos + 4 * shape > region_end {
+                ok = false;
+                break;
+            }
+            match shape {
+                3 => {
+                    x = f32_widen(payload, pos);
+                    y = f32_widen(payload, pos + 4);
+                    z = f32_widen(payload, pos + 8);
+                }
+                2 => {
+                    y = f32_widen(payload, pos);
+                    z = f32_widen(payload, pos + 4);
+                }
+                _ => {
+                    z = f32_widen(payload, pos);
+                }
+            }
+            // the written values only (the twin's vals construction)
+            let vals = [x, y, z];
+            let written = match shape {
+                3 => &vals[..],
+                2 => &vals[1..],
+                _ => &vals[2..],
+            };
+            if !written.iter().all(|c| nice(*c)) {
+                ok = false;
+                break;
+            }
+            pos += 4 * shape;
+            elements.push((v, Some((x, y, z))));
+        }
+        if ok && pos == region_end {
+            results.push(TableExtent {
+                extent: e,
+                elements,
+                skips,
+                region_end_rel: region_end,
+                write_count: wc,
+            });
+        }
+    }
+    match results.len() {
+        1 => Some(Ok(results.pop().expect("len 1"))),
+        0 => None,
+        _ => Some(Err(())),
+    }
+}
+
+/// The twin's 4-byte zero-group test at ``at``: a short slice at the
+/// payload edge is NOT four zeros (Python's short slice != the
+/// constant), mirroring the twin's slice comparisons.
+fn is_zero4(payload: &[u8], at: usize) -> bool {
+    at + 4 <= payload.len() && payload[at..at + 4] == [0u8; 4]
+}
+
+/// The stage-4a raw-array start rule + fit rates on one node payload
+/// (ported from ``mixedwrite_decode.raw_probe``) — the twin's
+/// ``_raw_escape_probe``: the UNIQUE 4-aligned start in
+/// ``[32, RAW_MAX_START]`` whose full elem_decl span fits and whose
+/// trail-escape byte ``payload[start + 12*elem_decl]`` is ``0xFF``,
+/// with the per-triple nice rate (the scan's :fn:`raw_nice` predicate
+/// — 1e-6 floor kept verbatim) and the x-ascending rate. Returns
+/// ``(start, nice_rate, asc_rate)`` or ``None`` (zero or several
+/// candidates — fail-closed).
+fn raw_escape_probe(payload: &[u8], element_count: u32) -> Option<(usize, f64, f64)> {
+    let ed = element_count as usize;
+    let cands: Vec<usize> = (32..=RAW_MAX_START)
+        .step_by(4)
+        .filter(|&s| s + 12 * ed < payload.len() && payload[s + 12 * ed] == 0xFF)
+        .collect();
+    if cands.len() != 1 {
+        return None;
+    }
+    let s = cands[0];
+    let mut nicec = 0u32;
+    let mut xs: Vec<f64> = Vec::with_capacity(element_count as usize);
+    for k in 0..element_count as usize {
+        let x = f32_widen(payload, s + 12 * k);
+        let y = f32_widen(payload, s + 12 * k + 4);
+        let z = f32_widen(payload, s + 12 * k + 8);
+        if raw_nice(x) && raw_nice(y) && raw_nice(z) {
+            nicec += 1;
+        }
+        xs.push(x);
+    }
+    let rate = f64::from(nicec) / f64::from(element_count);
+    let asc = if element_count > 1 {
+        xs.windows(2).filter(|w| w[1] >= w[0] - 1e-6).count() as f64 / (element_count as f64 - 1.0)
+    } else {
+        1.0
+    };
+    Some((s, rate, asc))
+}
+
+/// One node's mixedwrite decode — the twin's ``_decode_node_mixedwrite``
+/// return tuple ``(law, elements, pts, region_end_rel, write_count,
+/// failure)`` with ``law`` in ``{table, raw, flat, None}``; raw/flat
+/// elements are all written (the stage-6 raw path's shape).
+struct NodeMixedwrite {
+    law: Option<&'static str>,
+    elements: Vec<Element>,
+    pts: Vec<(f64, f64, f64)>,
+    region_end_rel: usize,
+    write_count: usize,
+    failure: String,
+}
+
+/// Decode one token-node payload with the stage-8 law set (ported from
+/// ``mixedwrite_decode.decode_node`` — not re-derived), in the
+/// census's order — the twin's ``_decode_node_mixedwrite``:
+///
+/// (a) the stage-3b table law with the zero-block extent candidates
+///     (:fn:`table_decode_extents`);
+/// (b) the stage-4a raw law — the committed start rule and fit
+///     criteria (RAW_FIT_RATE, the scan's :fn:`raw_nice`). The
+///     pool-absorption gate is NOT applied here: the composition
+///     judges absorption per rep (a multi-rep store's pool spans
+///     several regions);
+/// (c) the flat law (the stage-7 container PART-1 reading; stage-8
+///     artifact 3): ``element_count`` full triples straight after the
+///     4-B tail field — start pinned by ``counts_end``, NO escape
+///     required, no zero block or table — all-nice under :fn:`nice`
+///     (the exporter predicate; the raw scan's 1e-6 floor rejects
+///     real near-zero coordinates on these stores), x-ascending >=
+///     RAW_FIT_RATE OR the pool fully re-listed verbatim (junk spans
+///     absorb nothing and fail here).
+fn decode_node_mixedwrite(
+    payload: &[u8],
+    element_count: u32,
+    counts_end: usize,
+    poolv: &[(f64, f64, f64)],
+) -> NodeMixedwrite {
+    match table_decode_extents(payload, element_count, counts_end) {
+        Some(Ok(td)) => {
+            let pts: Vec<(f64, f64, f64)> = td.elements.iter().filter_map(|e| e.1).collect();
+            return NodeMixedwrite {
+                law: Some("table"),
+                elements: td.elements,
+                pts,
+                region_end_rel: td.region_end_rel,
+                write_count: td.write_count as usize,
+                failure: String::new(),
+            };
+        }
+        Some(Err(())) => {
+            return NodeMixedwrite {
+                law: None,
+                elements: Vec::new(),
+                pts: Vec::new(),
+                region_end_rel: 0,
+                write_count: 0,
+                failure: "table: ambiguous zero-block extent".to_string(),
+            };
+        }
+        None => {}
+    }
+    if let Some((s, rate, asc)) = raw_escape_probe(payload, element_count)
+        && rate >= RAW_FIT_RATE
+        && asc >= RAW_FIT_RATE
+    {
+        let pts: Vec<(f64, f64, f64)> = payload[s..s + 12 * element_count as usize]
+            .as_chunks::<12>()
+            .0
+            .iter()
+            .map(|t| (f32_widen(t, 0), f32_widen(t, 4), f32_widen(t, 8)))
+            .collect();
+        return NodeMixedwrite {
+            law: Some("raw"),
+            // raw elements are all written, slot value 0
+            elements: pts.iter().map(|&pt| (0, Some(pt))).collect(),
+            pts,
+            region_end_rel: s + 12 * element_count as usize,
+            write_count: 3 * element_count as usize,
+            failure: String::new(),
+        };
+    }
+    // The flat law: start pinned by counts_end (the 4-B tail field),
+    // no escape required; the exporter predicate (_nice), and
+    // x-ascending >= RAW_FIT_RATE OR the pool fully re-listed.
+    let s = counts_end + 4;
+    if s + 12 * element_count as usize <= payload.len() && element_count >= 2 {
+        let mut ok = true;
+        let mut xs: Vec<f64> = Vec::with_capacity(element_count as usize);
+        for k in 0..element_count as usize {
+            let x = f32_widen(payload, s + 12 * k);
+            let y = f32_widen(payload, s + 12 * k + 4);
+            let z = f32_widen(payload, s + 12 * k + 8);
+            if !(nice(x) && nice(y) && nice(z)) {
+                ok = false;
+                break;
+            }
+            xs.push(x);
+        }
+        if ok {
+            let asc = xs.windows(2).filter(|w| w[1] >= w[0] - 1e-6).count() as f64
+                / (element_count as f64 - 1.0);
+            let pts: Vec<(f64, f64, f64)> = payload[s..s + 12 * element_count as usize]
+                .as_chunks::<12>()
+                .0
+                .iter()
+                .map(|t| (f32_widen(t, 0), f32_widen(t, 4), f32_widen(t, 8)))
+                .collect();
+            let pset: HashSet<(u64, u64, u64)> = poolv.iter().copied().map(vkey).collect();
+            let hits = pset
+                .intersection(&pts.iter().copied().map(vkey).collect::<HashSet<_>>())
+                .count();
+            if asc >= RAW_FIT_RATE || (!pset.is_empty() && hits == pset.len()) {
+                return NodeMixedwrite {
+                    law: Some("flat"),
+                    elements: pts.iter().map(|&pt| (0, Some(pt))).collect(),
+                    pts,
+                    region_end_rel: s + 12 * element_count as usize,
+                    write_count: 3 * element_count as usize,
+                    failure: String::new(),
+                };
+            }
+        }
+    }
+    if let Some((s, rate, asc)) = raw_escape_probe(payload, element_count) {
+        return NodeMixedwrite {
+            law: None,
+            elements: Vec::new(),
+            pts: Vec::new(),
+            region_end_rel: 0,
+            write_count: 0,
+            failure: format!("raw-weak-fit@{s} nice={rate:.4} asc={asc:.4}"),
+        };
+    }
+    NodeMixedwrite {
+        law: None,
+        elements: Vec::new(),
+        pts: Vec::new(),
+        region_end_rel: 0,
+        write_count: 0,
+        failure: "table: no walk-exact zero-block extent".to_string(),
+    }
+}
+
+/// One law-decoded rep of the mixedwrite composition — the per-rep
+/// ``DecodedRep`` plus the law that decoded it. Built by reusing
+/// :struct:`DecodedRep` with ``law`` set.
+struct MixedRep {
+    rep: DecodedRep,
+    law: &'static str,
+}
+
+/// The stage-8 mixed-write per-rep composition (stage 9, #34) — the
+/// twin's ``_decode_mixedwrite``: the stage-5 per-rep decomposition
+/// applied to the walk-mismatch residue over the FULL-body window,
+/// with the stage-8 locator/predicate laws per node
+/// (:fn:`decode_node_mixedwrite`).
+///
+/// Rep k = (pool group k, the k-th law-decoded token node in body
+/// order — the diagonal, measured on the census population: all 81
+/// region-absorbable stores pair diagonally with exact f32 —, that
+/// node's record territory ``[region_end_k, next decoded node)``).
+/// The store exports only when EVERY pool vertex is absorbed by its
+/// diagonal rep's region (exact f32, then the stage-4b noise
+/// tolerance capped at 10,000-vertex pools): vertices no region
+/// re-lists are the sub-node record route's residue — their element
+/// slots are unpinned, the store stays fail-closed for export (the
+/// stage-8 note's integration item (e); bad44bdf's class). Per rep:
+/// the M2b refs gate against the rep's own element count, records
+/// parsed with the committed width laws, strip/polygon
+/// triangulation; merged meshes concatenate the exported reps'
+/// written points. A rep whose gated references leave its own
+/// element space stays unexported with the reason named (stage-5
+/// per-rep fail-closed); reps beyond the pool groups have no pool to
+/// re-list and stay unexported (stage-5 O2).
+///
+/// Raises ``undecoded-variant`` with the specific gap when no node
+/// decodes, absorption is not established, or no rep exports.
+fn decode_mixedwrite(
+    data: &[u8],
+    lo: usize,
+    hi: usize,
+    groups: &[PoolGroup],
+) -> Result<CompositeDecode, ExportError> {
+    let poolv: Vec<(f64, f64, f64)> = groups
+        .iter()
+        .flat_map(|g| g.vertices.iter().copied())
+        .collect();
+    let pool_set: HashSet<(u64, u64, u64)> = poolv.iter().copied().map(vkey).collect();
+    let nodes = scan_token_nodes(data, lo, hi);
+    let n_nodes = nodes.len();
+    let mut decoded: Vec<MixedRep> = Vec::new();
+    let mut law_counts = RepLaws {
+        table: 0,
+        raw: 0,
+        flat: 0,
+    };
+    let mut node_failures: Vec<String> = Vec::new();
+    for node in &nodes {
+        let payload = &data[node.plo..node.phi];
+        let Some(counts_end) = token_counts_end(payload) else {
+            // unreachable behind scan_token_nodes
+            continue;
+        };
+        let nd = decode_node_mixedwrite(payload, node.elem, counts_end, &poolv);
+        let Some(law) = nd.law else {
+            node_failures.push(if nd.failure.is_empty() {
+                format!("node@{}: undecoded", node.pos)
+            } else {
+                format!("node@{}: {}", node.pos, nd.failure)
+            });
+            continue;
+        };
+        match law {
+            "table" => law_counts.table += 1,
+            "raw" => law_counts.raw += 1,
+            _ => law_counts.flat += 1,
+        }
+        decoded.push(MixedRep {
+            rep: DecodedRep {
+                pos: node.pos,
+                payload_len: node.phi - node.plo,
+                elem: node.elem,
+                elements: nd.elements,
+                pts: nd.pts,
+                // absolute end of the point region (the territory start)
+                region_end: node.pos + 4 + nd.region_end_rel,
+                write_count: nd.write_count as u32,
+                table_bytes: 0,
+            },
+            law,
+        });
+    }
+    if decoded.is_empty() {
+        return Err(ExportError::new(
+            UNDECODED_VARIANT,
+            format!(
+                "the stage-8 mixed-write per-rep composition decodes none \
+                 of the {} token nodes over the full-body \
+                 window (table/raw/flat laws; {})",
+                n_nodes,
+                if node_failures.is_empty() {
+                    "no token nodes".to_string()
+                } else {
+                    format!("first: {}", node_failures[0])
+                }
+            ),
+        ));
+    }
+    // Store-level absorption precondition: every pool vertex in its
+    // diagonal rep's region (exact f32, then the stage-4b noise
+    // tolerance; the census measured exact f32 on all 81). Vertices no
+    // region re-lists are the sub-node record route's residue — their
+    // element slots are unpinned, the store stays fail-closed (named).
+    let mut uncovered = 0usize;
+    for (k, g) in groups.iter().enumerate() {
+        let rep = decoded.get(k).map(|m| &m.rep);
+        let mut seen: HashSet<(u64, u64, u64)> = HashSet::new();
+        let mut distinct_vals: Vec<(f64, f64, f64)> = Vec::new();
+        for &v in &g.vertices {
+            if seen.insert(vkey(v)) {
+                distinct_vals.push(v);
+            }
+        }
+        let Some(rep) = rep else {
+            uncovered += distinct_vals.len();
+            continue;
+        };
+        let pts_set: HashSet<(u64, u64, u64)> = rep.pts.iter().copied().map(vkey).collect();
+        let mut missing: Vec<(f64, f64, f64)> = distinct_vals
+            .iter()
+            .copied()
+            .filter(|v| !pts_set.contains(&vkey(*v)))
+            .collect();
+        if !missing.is_empty() && distinct_vals.len() <= 10_000 {
+            missing.retain(|v| match tol_match(*v, &rep.pts) {
+                None => true,
+                Some(best) => best > NOISE_REL,
+            });
+        }
+        uncovered += missing.len();
+    }
+    if uncovered > 0 {
+        return Err(ExportError::new(
+            UNDECODED_VARIANT,
+            format!(
+                "the stage-8 mixed-write per-rep composition does not \
+                 establish pool absorption: {uncovered} of {} \
+                 pool vertices are absent from every decoded rep region \
+                 ({} law-decoded reps for {} pool \
+                 groups; vertices re-listed only by the 05 08 01 sub-node \
+                 records have unpinned element indices — fail-closed for \
+                 export until the sub-node element-index law pins them)",
+                pool_set.len(),
+                decoded.len(),
+                groups.len()
+            ),
+        ));
+    }
+    let mut points: Vec<(f64, f64, f64)> = Vec::new();
+    let mut triangles: Vec<(u32, u32, u32)> = Vec::new();
+    let mut degenerate = 0u32;
+    let mut loops_exported = 0u32;
+    let mut loops_curve_entry = 0u32;
+    let mut skipped_markers: BTreeMap<u8, u32> = BTreeMap::new();
+    let mut facet_candidates = 0usize;
+    let mut facet_records = 0usize;
+    let mut write_count = 0usize;
+    let mut table_bytes = 0usize;
+    let mut element_decl = 0usize;
+    let mut curve_entries = 0usize;
+    let mut node_bytes = 0usize;
+    let mut reps_unexported: Vec<String> = Vec::new();
+    for (k, m) in decoded.iter().enumerate() {
+        let d = &m.rep;
+        node_bytes += d.payload_len;
+        if k >= groups.len() {
+            reps_unexported.push(format!(
+                "rep {k}: no pool group to re-list ({} pool \
+                 groups for {} law-decoded reps; per-rep \
+                 absorption unestablished)",
+                groups.len(),
+                decoded.len()
+            ));
+            continue;
+        }
+        let nxt = if k + 1 < decoded.len() {
+            decoded[k + 1].rep.pos
+        } else {
+            hi
+        };
+        let (records, n_hdrs) =
+            parse_strip_records(data, d.region_end, nxt, d.elem, Some(&d.elements));
+        let grefs: Vec<u32> = records
+            .iter()
+            .filter(|r| GATED.contains(&r.marker))
+            .flat_map(|r| r.refs.iter().copied())
+            .collect();
+        if let Some(&mx) = grefs.iter().max()
+            && mx >= d.elem
+        {
+            reps_unexported.push(format!(
+                "rep {k}: facet references beyond the rep's element \
+                 space (max ref {mx} >= element count {}, \
+                 M2b identity per rep)",
+                d.elem
+            ));
+            continue;
+        }
+        let base = points.len();
+        let (tri_k, deg_k, stats_k) = triangulate(&d.elements, &records);
+        // stage-10 E0-b candidate lands with stage 3 (the None case
+        // recorded too — the unpinnable veto; merged at the store
+        // level below, only when the whole mesh is empty).
+        points.extend(d.pts.iter().copied());
+        triangles.extend(
+            tri_k
+                .iter()
+                .map(|&(a, b, c)| (a + base as u32, b + base as u32, c + base as u32)),
+        );
+        degenerate += deg_k;
+        loops_exported += stats_k.loops_exported;
+        loops_curve_entry += stats_k.loops_curve_entry;
+        facet_candidates += n_hdrs;
+        facet_records += records.len();
+        write_count += d.write_count as usize;
+        // the twin's ``table_bytes += (d["elem"] + 3) // 4`` — the
+        // table-law reps' declared table length only
+        #[allow(clippy::manual_div_ceil)]
+        if m.law == "table" {
+            table_bytes += (d.elem as usize + 3) / 4;
+        }
+        element_decl += d.elem as usize;
+        curve_entries += d.elements.len() - d.pts.len();
+        for rec in &records {
+            if !matches!(rec.marker, 0x42 | 0x4A | 0x4C) {
+                *skipped_markers.entry(rec.marker).or_insert(0) += 1;
+            }
+        }
+    }
+    if points.is_empty() {
+        return Err(ExportError::new(
+            UNDECODED_VARIANT,
+            format!(
+                "the stage-8 mixed-write per-rep composition exports no \
+                 rep: {}",
+                if reps_unexported.is_empty() {
+                    "no reps".to_string()
+                } else {
+                    reps_unexported.join("; ")
+                }
+            ),
+        ));
+    }
+    // Stage-10 E0-b store-level gate lands with stage 3.
+    let info = CompositeInfo {
+        stage: "identity-mixedwrite-reps",
+        element_decl,
+        node_points: points.len(),
+        curve_entries,
+        write_count: Some(write_count),
+        table_bytes: Some(table_bytes),
+        facet_candidates,
+        facet_records,
+        skipped_markers,
+        node_bytes,
+        reps_decoded: Some(decoded.len()),
+        reps_exported: Some(decoded.len() - reps_unexported.len()),
+        reps_unexported: Some(reps_unexported.len()),
+        rep_reasons: Some(reps_unexported),
+        rep_laws: Some(law_counts),
+        raw_start: None,
+        raw_nice_rate: None,
+        raw_x_asc_rate: None,
+        raw_trail_bytes: None,
+        raw_count3: None,
+        loops_exported,
+        loops_curve_entry,
+        curve_entry_law: None,
+        loops_curve_entry_exported: None,
+        unordered_dedup_dropped: None,
+        unordered_dedup_declined: None,
+    };
+    // Stage-15 unordered-triangle dedup lands with stage 3 (the
+    // store-level gate, as in decode_per_rep).
+    Ok(CompositeDecode {
+        points,
+        triangles,
+        degenerate,
+        info,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1518,6 +2500,28 @@ mod tests {
         assert_eq!(elements[0], (0, Some((1.0, 2.0, 3.0))));
         assert_eq!(elements[1], (1, None));
         assert_eq!(elements[2], (2, Some((1.0, 2.0, 7.0))));
+    }
+
+    /// The twin's ``round(rate, 4)`` ground truth (Python's
+    /// correct-rounding of the exact binary value, ties-to-even):
+    /// values computed with ``python3 -c`` on the corpus machine.
+    #[test]
+    fn py_round4_matches_python() {
+        let cases: [(f64, f64); 10] = [
+            (157.0 / 160.0, 0.9812), // 0.98124999... -> 0.9812
+            (31.0 / 32.0, 0.9688),   // exact 0.96875, tie -> up (odd digit)
+            (63.0 / 64.0, 0.9844),   // exact 0.984375 -> digit5=7
+            (127.0 / 128.0, 0.9922),
+            (41.0 / 42.0, 0.9762),
+            (5.0 / 6.0, 0.8333),
+            (0.98, 0.98),
+            (0.987654321, 0.9877),
+            (137.0 / 140.0, 0.9786),
+            (1.0, 1.0),
+        ];
+        for (x, expected) in cases {
+            assert_eq!(py_round4(x), expected, "py_round4({x})");
+        }
     }
 
     /// The ``-0.0 == 0.0`` set collapse: the twin's set membership

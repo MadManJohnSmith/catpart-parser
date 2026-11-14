@@ -216,7 +216,7 @@ COMPOSITE_EXPORT_STAGES: dict[int, tuple[str, ...]] = {
 #: one commit at a time; 3 = the full landed model). The fixture-mode
 #: export matrix covers the stages landed so far; the composite-path
 #: comparison semantic flips with it (see :func:`compare_row_export`).
-COMPOSITE_EXPORT_STAGE = 1
+COMPOSITE_EXPORT_STAGE = 2
 
 SLICE_L1 = "l1"
 SLICE_L2 = "l2"
