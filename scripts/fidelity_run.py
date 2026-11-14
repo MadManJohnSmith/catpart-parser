@@ -34,27 +34,26 @@ Diff definitions (§3.2):
   exception there; the A2 fixture table pins short-file → crash), and
   the port's stderr JSON line carries the same single-class L1
   vocabulary (``bin/fidelity-cli.rs``).
-- **L2 export slice** (V2): the export summary is compared by
+- **L2 export slice** (V2 + V3): the export summary is compared by
   parsed-document equality AND the PLY bytes byte-identical; a failed
   run is compared by ``error_class`` string equality (the geometry
   vocabulary of ``catpart.geometry.errors``, at the same raise sites
   both sides). ``detail`` is never compared byte-wise. The
-  composite-path EXPORTS (the Python summary carries the additive
-  ``composite`` key — the twin emits it on every composite-path decode)
-  are **excluded** at V2 as the outcome ``excluded-composite-path``
-  (the ticket #41 hard stop: the composite decode is V3, #42; a
-  composite-store row must appear as an error-class-equal refusal or be
-  excluded, never as a false match). The corpus sample is biased away
-  from that family via the stage-15 roster
-  (``docs/evidence/data/stage15-identity-export-files.csv``:
-  ``element_decl > 0`` marks the stores the identity law decoded —
-  spec §4: "the stage CSVs name the per-family stores, so V2/V3
-  samples can bias to the families under work") and toward the
-  fail-closed classes (``undecoded-variant``, ``missing-geometry-store``,
-  the malformed-* families) with a seat weight of 3; the run-time
-  composite-key check stays armed as the authoritative exclusion (it
-  caught the two warning-free composite exports in the V2 smoke run —
-  the roster is the sample-time bias, the summary key is the truth).
+  composite-path semantics carry the V2->V3 flip (#42): while the
+  composite decode is partially ported (V3 stages 1-2), composite-path
+  EXPORTS (the Python summary carries the additive ``composite`` key)
+  with a port refusal are **excluded** as the outcome
+  ``excluded-composite-path`` (the ticket #41 hard stop; the corpus
+  sample stays biased away from the identity-law families via the
+  stage-15 roster) and the fixture export matrix covers only the
+  landed stages (:data:`COMPOSITE_EXPORT_STAGES`). With the full
+  composite model landed (V3 stage 3) the exclusion lifts: composite
+  exports compare fully (a port refusal against a twin export is a
+  mismatch), the fixture matrix covers every composite family, and the
+  corpus sampler gains the composite-family stratification
+  (``--sample composite-stratified:N`` — drawn per-family from the
+  stage-15 roster, every firing law and the fail-closed composite
+  class included; V2's ``stratified:N`` stays available unchanged).
 
 Any harness-level failure (timeout, missing binary, unreadable output)
 is recorded as its own outcome class and NEVER counts as a match — the
@@ -152,6 +151,72 @@ CSV_COLUMNS = (
     "python_seconds",
     "port_seconds",
 )
+
+#: The composite-family export-matrix additions by port stage (ticket
+#: #42's internal order; the fixture work lands where the families are
+#: known, spec §6 V3). Stage 1: the table-walk + per-rep families and
+#: the routing/fail-closed shapes of those families (the stage-13
+#: unrouted route, the N1/walk-mismatch/unabsorbed refusals, the
+#: recovered composite stores). Stage 2: the raw-array + mixedwrite
+#: families (positives and fail-closed negatives). Stage 3: the dup-pin
+#: and dedup families (the stage-14 ceiling set's fixture twins and
+#: the review-F1 dedup shapes).
+COMPOSITE_EXPORT_STAGES: dict[int, tuple[str, ...]] = {
+    1: (
+        "geometry-composite-law",
+        "geometry-composite-law-big",
+        "geometry-composite-law-slanted",
+        "geometry-composite-law-curve-entries",
+        "geometry-composite-law-u16be",
+        "geometry-composite-law-u24be",
+        "geometry-composite-law-width-plane",
+        "geometry-composite-law-multi-rep",
+        "geometry-composite-law-multi-rep-partial",
+        "geometry-othercontainer-composite-law",
+        "geometry-unrouted-elementspace-refs-beyond",
+        "geometry-unrouted-elementspace-no-pool",
+        "geometry-unrouted-elementspace-no-node",
+        "geometry-unrouted-elementspace-walk-mismatch",
+        "geometry-composite-law-walk-mismatch",
+        "geometry-composite-law-unabsorbed",
+        "geometry-composite-law-walk-nan",
+        "geometry-composite-index-space",
+        "geometry-seebody-composite",
+        "geometry-othercontainer-composite",
+    ),
+    2: (
+        "geometry-composite-law-raw-array",
+        "geometry-composite-law-raw-array-strip-false-match",
+        "geometry-composite-law-table-overshoot",
+        "geometry-composite-law-flat-near-zero",
+        "geometry-composite-law-mixedwrite-multi-rep",
+        "geometry-composite-law-raw-array-wrong-offset",
+        "geometry-composite-law-raw-array-unabsorbed",
+        "geometry-composite-law-mixedwrite-multi-rep-subnode",
+    ),
+    3: (
+        "geometry-composite-law-e0b-dup-pin",
+        "geometry-composite-law-e0b-single-loop",
+        "geometry-composite-law-e0b-nonplanar",
+        "geometry-composite-law-e0b-normal-less",
+        "geometry-composite-law-e0b-nonempty",
+        "geometry-composite-law-e0b-multi-rep-conservative",
+        "geometry-composite-law-e0b-multi-rep-unsupported-veto",
+        "geometry-composite-law-e0b-unpinnable",
+        "geometry-composite-law-e0b-relaxed-not-manifold",
+        "geometry-composite-law-e0b-multi-rep-relaxed",
+        "geometry-composite-law-dedup-unordered",
+        "geometry-composite-law-dedup-manifold-no-fire",
+        "geometry-composite-law-dedup-declined",
+        "geometry-composite-law-dedup-degenerate",
+    ),
+}
+
+#: The port's landed composite stage (V3 #42's internal order — grows
+#: one commit at a time; 3 = the full landed model). The fixture-mode
+#: export matrix covers the stages landed so far; the composite-path
+#: comparison semantic flips with it (see :func:`compare_row_export`).
+COMPOSITE_EXPORT_STAGE = 1
 
 SLICE_L1 = "l1"
 SLICE_L2 = "l2"
@@ -391,16 +456,30 @@ def compare_row_export(
     timeout: float,
     ply_py_path: Path,
     ply_port_path: Path,
+    composite_exclusion: bool = False,
 ) -> tuple[str, str, str]:
-    """Compare one (python, port) export pair (§3.2, V2).
+    """Compare one (python, port) export pair (§3.2, V2 + V3).
 
     Returns ``(outcome, first_divergence, ply_equal)`` — ``ply_equal``
     is ``"true"``/``"false"`` when compared, ``""`` when not (refused
-    or excluded rows write no comparable PLY pair). The composite-path
-    exclusion: a Python summary carrying the additive ``composite`` key
-    with a port refusal is ``excluded-composite-path`` (the ticket #41
-    hard stop — the composite decode is V3; never a false match). With
-    the port ALSO succeeding the row compares fully (V3-proof).
+    rows write no comparable PLY pair). The ``composite_exclusion``
+    flag selects the composite-path semantic (V2 vs V3, #42):
+
+    - ``True`` (the V2-biased corpus sample while the composite decode
+      is partially ported): a Python summary carrying the additive
+      ``composite`` key with a port refusal is
+      ``excluded-composite-path`` (the ticket #41 hard stop — never a
+      false match; a measurement intentionally not made).
+    - ``False`` (V3: the port claims the composite decode — the
+      fixture matrix and the composite-stratified corpus sample): a
+      Python composite-path export with a port refusal is an
+      ``output-mismatch`` — the port must reproduce the twin's
+      composite exports, so a refusal is a divergence, never an
+      exclusion.
+
+    With the port ALSO succeeding the row compares fully on both
+    semantics (the composite block included in the parsed-document
+    equality).
     """
     if py.timed_out or port.timed_out:
         side = "python" if py.timed_out else "port"
@@ -422,9 +501,13 @@ def compare_row_export(
         if err:
             return OUTCOME_HARNESS_ERROR, err, ""
     if py_doc is not None and COMPOSITE_SUMMARY_KEY in py_doc and port_doc is None:
-        # The hard stop (ticket #41): a composite-path export with no
-        # port decode is excluded, never a false match.
-        return OUTCOME_EXCLUDED_COMPOSITE, "python summary carries the composite key (V3 decode, #42); port refused", ""
+        if composite_exclusion:
+            # The V2 hard stop (ticket #41): a composite-path export
+            # with no port decode is excluded, never a false match.
+            return OUTCOME_EXCLUDED_COMPOSITE, "python summary carries the composite key (V3 decode, #42); port refused", ""
+        # V3 (ticket #42): the port claims the composite decode — a
+        # refusal against a twin export is a divergence.
+        return OUTCOME_OUTPUT_MISMATCH, "python summary carries the composite key and exported; the port refused (V3 covers the composite path)", ""
     if py.failed and port.failed:
         py_class = parse_error_class(py)
         if py_class is None:
@@ -516,7 +599,7 @@ def fixture_matrix() -> list[dict]:
 
 
 def export_fixture_matrix() -> list[dict]:
-    """The export-comparison fixture population (§3.2 L2, V2 #41).
+    """The export-comparison fixture population (§3.2 L2, V2 #41 + V3 #42).
 
     All geometry-bearing A2 variants (the canonical store, the recovery
     variants, the corrupted classes — the ticket's acceptance set) at
@@ -524,11 +607,14 @@ def export_fixture_matrix() -> list[dict]:
     and the plain corrupted families) which refuse
     ``missing-geometry-store`` / the short-file path — the fail-closed
     vocabulary on fixtures. kind=part only: the L2 population is the
-    runner's part rows (§3.1). The composite-law and
-    unrouted-elementspace variants are V3 scope (#42) — the composite
-    decode is not ported, so they are excluded from the export matrix
-    (their refusals are compared on the corpus via the exclusion rule
-    where the twin refuses them).
+    runner's part rows (§3.1).
+
+    V3 (#42): the composite-family variants join the export matrix as
+    their port stage lands (:data:`COMPOSITE_EXPORT_STAGES` grown by
+    :data:`COMPOSITE_EXPORT_STAGE` — walk + per-rep, then raw-array +
+    mixedwrite, then dup-pin + dedup). One seed each: the composite
+    store body is a pure function of the variant (the seed drives the
+    file framing's GUIDs and padding, which the decode does not read).
     """
     gen = load_fixtures_gen()
     plain = {"dual-region", "bad-magic", "truncated-table", "missing-trailer", "junk-payload", "oversized-dword", "short-file"}
@@ -538,6 +624,9 @@ def export_fixture_matrix() -> list[dict]:
     for variant in sorted(set(gen.GEOMETRY_VARIANTS)):
         for seed in (0, 7):
             matrix.append({"kind": "part", "seed": seed, "variant": variant})
+    for stage in range(1, COMPOSITE_EXPORT_STAGE + 1):
+        for variant in COMPOSITE_EXPORT_STAGES[stage]:
+            matrix.append({"kind": "part", "seed": 0, "variant": variant})
     return matrix
 
 
@@ -626,22 +715,25 @@ def run_fixture_mode(csv_path: Path, note_path: Path, timeout: float, port_bin: 
 
 
 def fixture_slice_note(slice_name: str) -> str:
-    """The fixture-mode slice note (the composite exclusion named)."""
+    """The fixture-mode slice note (the composite coverage named)."""
     if slice_name == SLICE_L1:
         return "L1 slice (inspect document equality); --slice l1: the L2 export rows skipped"
+    composite_note = (
+        f"; composite-family variants covered through port stage "
+        f"{COMPOSITE_EXPORT_STAGE} of 3 (ticket #42's internal order: walk + "
+        "per-rep -> raw-array + mixedwrite -> dup-pin + dedup + curve exposure)"
+    )
     if slice_name == SLICE_L2:
         return (
             "L2 export slice on fixtures (summary parsed-document equality + PLY "
             "byte-identical + error_class equality, §3.2): the geometry-bearing A2 "
-            "variants + the store-less refusals; the composite-law and "
-            "unrouted-elementspace variants are V3 scope (ticket #42) and excluded "
-            "from the export matrix"
+            "variants + the store-less refusals"
+            + composite_note
         )
     return (
         "L1 slice (inspect document equality) + L2 export slice on fixtures "
-        "(summary + PLY bytes + error classes, §3.2); the composite-law and "
-        "unrouted-elementspace variants are V3 scope (ticket #42) and excluded "
-        "from the export matrix"
+        "(summary + PLY bytes + error classes, §3.2)"
+        + composite_note
     )
 
 
@@ -896,19 +988,30 @@ def run_corpus_mode(csv_path: Path, note_path: Path, split: str, slice_name: str
         if sample is not None:
             method, count = sample
             if method != "stratified":
+                # composite-stratified:N lands with port stage 3 (the
+                # composite decode must be complete before its sample
+                # compares fully).
                 raise SystemExit(f"fidelity_run: unknown --sample method {method!r} (only stratified:N)")
             sampled, l2_stats = biased_l2_sample(part_rows, report, count)
             rows = sorted(sampled, key=lambda row: row["sha256"])
         else:
             _, l2_stats = biased_l2_sample(part_rows, report, len(part_rows))
             rows = sorted(part_rows, key=lambda row: row["sha256"])
-        slice_note = (
-            "L2-export slice (§3.1: the kind=part rows): summary parsed-document "
-            "equality + PLY byte-identical + error_class equality on double "
-            "refusals (§3.2); composite-path exports excluded "
-            "(excluded-composite-path — the ticket #41 hard stop, the composite "
-            "decode is V3 #42)"
-        )
+        if COMPOSITE_EXPORT_STAGE >= 3:
+            slice_note = (
+                "L2-export slice (§3.1: the kind=part rows): summary parsed-document "
+                "equality + PLY byte-identical + error_class equality on double "
+                "refusals (§3.2); the composite path is ported (V3 #42) — composite-path "
+                "exports compare fully (a port refusal against a twin export is a mismatch)"
+            )
+        else:
+            slice_note = (
+                "L2-export slice (§3.1: the kind=part rows): summary parsed-document "
+                "equality + PLY byte-identical + error_class equality on double "
+                "refusals (§3.2); composite-path exports excluded "
+                "(excluded-composite-path — the ticket #41 hard stop, the composite "
+                "decode is V3 #42)"
+            )
     else:
         slice_note = "L1-JSON slice (§3.1: ALL manifest rows — parts, products and the magic_ok=no junk)"
         if sample is not None:
@@ -972,7 +1075,15 @@ def run_corpus_mode(csv_path: Path, note_path: Path, split: str, slice_name: str
                 ply_port = Path(ply_dir) / f"{row['sha256'][:24]}.port.ply"
                 py = run_seam(python_export, path, timeout, ("-o", str(ply_py)))
                 port = run_seam(port_export, path, timeout, (str(ply_port),))
-                outcome, divergence, ply_equal = compare_row_export(py, port, timeout, ply_py, ply_port)
+                # The V2 composite exclusion stays armed while the
+                # composite decode is partially ported (stages 1-2 of
+                # #42); with the full model landed (stage 3) the
+                # composite path compares everywhere — a port refusal
+                # against a twin export is a mismatch.
+                outcome, divergence, ply_equal = compare_row_export(
+                    py, port, timeout, ply_py, ply_port,
+                    composite_exclusion=COMPOSITE_EXPORT_STAGE < 3,
+                )
                 result_rows.append({
                     **base_row,
                     "row_id": f"{row['sha256']}|export",

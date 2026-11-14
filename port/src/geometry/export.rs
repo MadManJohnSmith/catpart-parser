@@ -37,25 +37,22 @@
 //! siblings), same law, probed only when the named families found
 //! nothing.
 //!
-//! # The V2 fail-closed composite arms (ticket #41; composite is V3, #42)
+//! # The composite route (V3, ticket #42 — the V2 fail-closed interim is lifted)
 //!
 //! The twin routes three shapes into the composite decode
-//! (``_export_composite_store`` — V3 scope, port stub ``composite.rs``):
-//! stores whose kinds carry the composite markers (the F8 gate), and
-//! the stage-13 second-chance element-space route from the no-pool and
-//! refs-beyond raise sites. At V2 the port fails closed with the same
-//! machine class the twin produces on the compared population —
-//! ``undecoded-variant`` — so every composite-path REFUSAL is
-//! error-class-equal on the harness (§3.2), while composite-path
-//! EXPORTS (the summary carries the twin's additive ``composite`` key)
-//! are excluded per the harness's exclusion rule, never false matches
-//! (the ticket's hard stop; the corpus sample is biased away from that
-//! family via the stage-15 roster). The no-pool and refs-beyond details
-//! stay the twin's verbatim (those are the errors the twin itself
-//! re-raises when its route declines); the F8-gate detail names the V2
-//! gap explicitly (the twin's detail here comes from inside the
-//! composite decode and differs per gap — the machine contract is the
-//! class).
+//! (``_export_composite_store``): stores whose kinds carry the
+//! composite markers (the F8 gate), and the stage-13 second-chance
+//! element-space route from the no-pool and refs-beyond raise sites.
+//! At V2 the port failed closed with the twin's class for every
+//! composite-path refusal (ticket #41's hard stop; the harness
+//! excluded composite-path exports as ``excluded-composite-path``).
+//! V3 (ticket #42) ports the decode — the route is real, the summary
+//! carries the twin's additive ``composite`` block on composite-path
+//! exports, and the composite decode's own error vocabulary is the
+//! twin's ``undecoded-variant`` at its exact raise sites
+//! (``composite.rs``). The stage-13 second-chance route re-raises the
+//! ORIGINAL clean-path error when the composite decode declines
+//! (fail-closed, row-identical).
 //!
 //! Evidence: the twin's docstring cites no dedicated evidence note —
 //! it composes the sibling modules' models (each cites its own note;
@@ -85,10 +82,11 @@
 
 use serde::Serialize;
 
+use super::composite::{CompositeDecode, CompositeInfo};
 use super::errors::{
     ExportError, IO_ERROR, MISSING_GEOMETRY_STORE, UNDECODED_VARIANT, UNREADABLE_FILE,
 };
-use super::{facets, mesh, ply, pool, store};
+use super::{composite, facets, mesh, ply, pool, store};
 
 /// The summary's schema version (twin: ``EXPORT_SCHEMA_VERSION``).
 pub const EXPORT_SCHEMA_VERSION: u32 = 1;
@@ -99,6 +97,11 @@ pub const WARN_DEGENERATE: &str = "degenerate-triangles-skipped";
 pub const WARN_OPEN_SHELL: &str = "open-shell";
 pub const WARN_UNUSED_VERTICES: &str = "unused-pool-vertices";
 pub const WARN_NO_FACETS: &str = "no-facet-records";
+/// The composite-path warning classes (stage-10/12/15 #34; V3, #42).
+pub const WARN_CURVE_ENTRY: &str = "curve-entry-loops-unexported";
+pub const WARN_CURVE_ENTRY_EXPORTED: &str = "curve-entry-loops-exported-dup-pin";
+pub const WARN_DEDUP: &str = "duplicate-triangles-deduped";
+pub const WARN_DEDUP_DECLINED: &str = "duplicate-triangles-dedup-declined";
 
 /// One ordered warning of the summary (the twin's ``{"class": ...,
 /// "detail": ...}`` dict; field order = the twin's construction).
@@ -182,6 +185,12 @@ pub struct ExportSummary {
     pub degenerate_triangle_count: usize,
     /// The mesh invariants block.
     pub mesh: MeshBlock,
+    /// The twin's additive composite-only block (stage-2c/3d #34;
+    /// present only on composite-path exports — V3, ticket #42;
+    /// consumers ignore unknown properties, schema
+    /// ``additionalProperties: true``).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub composite: Option<CompositeInfo>,
     /// The stage-3a/12 recovery provenance; absent on stores the
     /// shipped law located.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -452,18 +461,10 @@ fn export_store(
     let (groups, kinds) = pool::scan_pool_groups(data, span.body_lo, span.body_hi)?;
     if pool::has_composite_space(&kinds) {
         // G6 stage 2c (#34): composite stores decode under the recovered
-        // merge law (the pool + the list node's decoded points, M2b).
-        // V2 (ticket #41): the composite decode is the V3 slice (#42) —
-        // the port fails closed with the twin's class for every
-        // composite-path refusal (see the module header).
-        return Err(ExportError::new(
-            UNDECODED_VARIANT,
-            "the store body carries the composite index space (an `01 02` \
-             edge group or a trailer-opener wrapper, G3 claim F8): its \
-             decode — the recovered identity law — is the V3 slice \
-             (ticket #42); the port fails closed at V2 with no composite \
-             decode",
-        ));
+        // identity law — V3 (ticket #42) ports the decode (the
+        // module-header note above documented the V2 fail-closed
+        // interim; the route is real from V3 stage 1).
+        return export_composite_store(data, span, ordinal, &groups, &kinds, false);
     }
     let flat: Vec<(f64, f64, f64)> = groups
         .iter()
@@ -472,15 +473,21 @@ fn export_store(
     if flat.is_empty() {
         // The twin routes the no-pool raise through the stage-13
         // second-chance element-space route (#34): the composite decode
-        // (V3) either exports (a composite-path export — excluded on
-        // the harness) or declines and THIS original error re-raises
-        // unchanged (fail-closed, row-identical). The port's V2
-        // fail-closed answer is the original: same class, same detail.
-        return Err(ExportError::new(
-            UNDECODED_VARIANT,
-            "no 01 06 vertex pool decoded from the store body (G2 P8 \
-             family: strips without a pool, or an empty store)",
-        ));
+        // either exports (a composite-path export) or declines and
+        // THIS original error re-raises unchanged (fail-closed,
+        // row-identical).
+        return unrouted_element_space(
+            data,
+            span,
+            ordinal,
+            &groups,
+            &kinds,
+            ExportError::new(
+                UNDECODED_VARIANT,
+                "no 01 06 vertex pool decoded from the store body (G2 P8 \
+                 family: strips without a pool, or an empty store)",
+            ),
+        );
     }
     let lex = facets::lex_rank_map(&flat);
     // The store-width context is bounded to the clean store class (#35,
@@ -497,15 +504,22 @@ fn export_store(
     if beyond >= flat.len() as i64 {
         // The twin routes the refs-beyond raise through the same
         // stage-13 second-chance route (see the no-pool arm above).
-        return Err(ExportError::new(
-            UNDECODED_VARIANT,
-            format!(
-                "facet references beyond the pool: max ref {beyond} >= pool \
-                 size {} (G3 open question 2 — a further element source or \
-                 a second pool form; no guessing)",
-                flat.len()
+        return unrouted_element_space(
+            data,
+            span,
+            ordinal,
+            &groups,
+            &kinds,
+            ExportError::new(
+                UNDECODED_VARIANT,
+                format!(
+                    "facet references beyond the pool: max ref {beyond} >= pool \
+                     size {} (G3 open question 2 — a further element source or \
+                     a second pool form; no guessing)",
+                    flat.len()
+                ),
             ),
-        ));
+        );
     }
     let soup = facets::decode_soup(&flat, &lex, &scan);
 
@@ -616,6 +630,7 @@ fn export_store(
             oriented: stats.oriented,
             boundary_edge_count: stats.boundary_edges,
         },
+        composite: None,
         store_recovery: None,
     };
     if span.container != store::CONTAINER_STDCONT || span.tail_law != store::TAIL_LAW_SHIPPED {
@@ -645,6 +660,241 @@ fn marker_names(skipped: &std::collections::BTreeMap<u8, u32>) -> String {
         .map(|(mk, n)| format!("0x{mk:02x}={n}"))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// The twin's :func:`catpart.geometry.export._unrouted_element_space`
+/// (the stage-13 second-chance element-space route, #34, 2026-11-13).
+///
+/// Fires ONLY where the clean path was about to raise the no-pool
+/// error (G2 P8: no ``01 06`` vertex pool decoded) or the refs-beyond
+/// error (G3 open question 2: facet references beyond the pool) — the
+/// two failure classes the stage-13 census measured. A store whose
+/// body carries a token-bearing list node is routed through the
+/// UNCHANGED composite decode (``allow_unrouted_elements`` skips only
+/// the marker-routing check; the stage-13 finding: the element space
+/// beyond the pool IS the list node's point region, the composite
+/// structure without its markers — docs/evidence/
+/// 2026-11-13-stage13-elementspace.md sections 2-3). Every store the
+/// route does not cover re-raises the ORIGINAL clean-path error
+/// unchanged (fail-closed, row-identical); every previously-exporting
+/// store returned before this function existed.
+fn unrouted_element_space(
+    data: &[u8],
+    span: &store::StoreSpan,
+    ordinal: usize,
+    groups: &[pool::PoolGroup],
+    kinds: &[Vec<u8>],
+    original: ExportError,
+) -> Result<ExportOutcome, ExportError> {
+    match export_composite_store(data, span, ordinal, groups, kinds, true) {
+        Ok(outcome) => Ok(outcome),
+        Err(_) => Err(original),
+    }
+}
+
+/// The twin's
+/// :func:`catpart.geometry.export._export_composite_store`: decode one
+/// composite store span under the identity law and build the
+/// composite-path summary (V3, ticket #42).
+///
+/// The G6 stage-3d integration (#34, 2026-11-11): the list node's
+/// point region decodes through the deterministic 2-bit table walk
+/// (both forms), facet/edge references resolve as 0-based element
+/// indices in region order (M2b identity — no sigma search; the
+/// stage-2c shift-profile solver is superseded), and vertices are the
+/// written points (the pool is re-listed verbatim on every store the
+/// law decodes). Fail-closed: any law gap raises
+/// ``undecoded-variant`` with the specific reason from
+/// :fn:`composite::decode_composite_store` (layout, walk-exact,
+/// non-finite coordinates, unabsorbed pool, references beyond the
+/// element space). Loops referencing skip slots (curve entries, U4)
+/// are not exported — their coordinates are not pinned — and surface
+/// as the ``curve-entry-loops-unexported`` warning; the dup-pin law is
+/// the one exception (composite.py; stage-10 2026-11-12, RELAXED
+/// stage-15 2026-11-13 owner-authorized — the E0-b battery criterion
+/// removed): on an otherwise-empty primary triangulation whose every
+/// referenced skip slot has a preceding written element to weld to,
+/// those loops export and surface as
+/// ``curve-entry-loops-exported-dup-pin`` (stage 3). A not-manifold
+/// assembled mesh whose duplicate unordered index triples resolve it
+/// drops the later copies (``duplicate-triangles-deduped``; the
+/// stage-15 law, review F1 family) — a store whose duplicates do not
+/// resolve the over-use keeps its emitted triangles and surfaces
+/// ``duplicate-triangles-dedup-declined`` (stage 3).
+fn export_composite_store(
+    data: &[u8],
+    span: &store::StoreSpan,
+    ordinal: usize,
+    groups: &[pool::PoolGroup],
+    kinds: &[Vec<u8>],
+    allow_unrouted_elements: bool,
+) -> Result<ExportOutcome, ExportError> {
+    let CompositeDecode {
+        points,
+        triangles,
+        degenerate,
+        info,
+    } = composite::decode_composite_store(data, span, groups, kinds, allow_unrouted_elements)?;
+    let stats = mesh::mesh_stats(&triangles);
+    let mut warnings: Vec<Warning> = Vec::new();
+    if degenerate > 0 {
+        warnings.push(Warning {
+            class: WARN_DEGENERATE.to_string(),
+            detail: format!(
+                "{degenerate} degenerate strip triangles \
+                 skipped (G3 F7 export convention, composite decode)"
+            ),
+        });
+    }
+    if info.loops_curve_entry > 0 {
+        warnings.push(Warning {
+            class: WARN_CURVE_ENTRY.to_string(),
+            detail: format!(
+                "{} facet loops \
+                 reference skip slots (curve entries): their coordinates \
+                 live in the curve records (U4, open) so those loops are \
+                 not exported — no guessing; the store's other loops \
+                 export under the identity mapping",
+                info.loops_curve_entry
+            ),
+        });
+    }
+    if info.curve_entry_law.is_some() {
+        warnings.push(Warning {
+            class: WARN_CURVE_ENTRY_EXPORTED.to_string(),
+            detail: format!(
+                "{} facet \
+                 loops referencing skip slots (curve entries) exported \
+                 under the dup-pin law (#34; stage-10 2026-11-12, \
+                 RELAXED stage-15 2026-11-13 owner-authorized — the \
+                 E0-b battery criterion removed): the store's primary \
+                 triangulation is empty (E0) and every referenced skip \
+                 slot is welded to the written vertex of its \
+                 immediately preceding written element (no new \
+                 vertices — the U4-D dup law); normal-less and \
+                 nonplanar dropped loops export under the same weld",
+                info.loops_curve_entry_exported.unwrap_or(0)
+            ),
+        });
+    }
+    if let Some(dropped) = info.unordered_dedup_dropped {
+        warnings.push(Warning {
+            class: WARN_DEDUP.to_string(),
+            detail: format!(
+                "{dropped} duplicate \
+                 triangles dropped under the unordered-triangle dedup \
+                 law (#34, stage-15 2026-11-13, review F1 family): the \
+                 same three element indices re-written from a second \
+                 record/loop (opposite winding — the writer re-listed \
+                 the facet; territory overlap 0); the emitted mesh was \
+                 not-manifold and the deduplicated mesh is manifold, \
+                 so the later copies dropped (first occurrence's \
+                 winding kept; degenerate skips untouched)"
+            ),
+        });
+    }
+    if let Some(declined) = info.unordered_dedup_declined {
+        warnings.push(Warning {
+            class: WARN_DEDUP_DECLINED.to_string(),
+            detail: format!(
+                "{declined} duplicate \
+                 triangles found (the review F1 mechanism) but their \
+                 removal leaves the mesh not-manifold — the dedup \
+                 declined fail-closed and the emitted triangles are \
+                 kept verbatim (the over-use joins distinct triangles; \
+                 the L2 gate records not-manifold)"
+            ),
+        });
+    }
+    if !info.skipped_markers.is_empty() {
+        warnings.push(Warning {
+            class: WARN_UNRESOLVED_FAMILY.to_string(),
+            detail: format!(
+                "facet records of families whose primitive \
+                 reading G3 has not pinned: {} (G3 open questions \
+                 3-5, composite body)",
+                marker_names(&info.skipped_markers)
+            ),
+        });
+    }
+    if triangles.is_empty() {
+        warnings.push(Warning {
+            class: WARN_NO_FACETS.to_string(),
+            detail: "composite element space decoded without \
+                     exportable facet records; vertices exported without \
+                     faces (the node point region decodes under the \
+                     recovered law, the facet loops do not map)"
+                .to_string(),
+        });
+    }
+    if !triangles.is_empty() && stats.boundary_edges > 0 {
+        warnings.push(Warning {
+            class: WARN_OPEN_SHELL.to_string(),
+            detail: format!(
+                "{} boundary edges: the \
+                 mesh is a manifold but not closed (G3 F6: sheet-like \
+                 open shells are legitimate geometry)",
+                stats.boundary_edges
+            ),
+        });
+    }
+    if !triangles.is_empty() {
+        let unused = points.len() - mesh::used_vertex_count(&triangles, points.len());
+        if unused > 0 {
+            warnings.push(Warning {
+                class: WARN_UNUSED_VERTICES.to_string(),
+                detail: format!(
+                    "{unused} of {} element-space \
+                     vertices are not referenced by any exported triangle",
+                    points.len()
+                ),
+            });
+        }
+    }
+
+    let (bbox_min, bbox_max) = mesh::bounding_box(&points).expect(
+        "the twin's zip(*points) ValueError arm: unreachable on the \
+         compared population (every composite export path carries points)",
+    );
+    let mut summary = ExportSummary {
+        schema_version: EXPORT_SCHEMA_VERSION,
+        vertex_count: points.len(),
+        triangle_count: triangles.len(),
+        bounding_box: BoundingBox {
+            min: bbox_min,
+            max: bbox_max,
+        },
+        warnings,
+        store_ordinal: ordinal,
+        origin_kind: span.origin_kind.to_string(),
+        pool_group_count: groups.len(),
+        facet_candidate_count: info.facet_candidates,
+        facet_record_count: info.facet_records,
+        degenerate_triangle_count: degenerate as usize,
+        mesh: MeshBlock {
+            edge_count: stats.edge_count,
+            manifold: stats.manifold,
+            closed: stats.closed,
+            oriented: stats.oriented,
+            boundary_edge_count: stats.boundary_edges,
+        },
+        composite: Some(info),
+        store_recovery: None,
+    };
+    if span.container != store::CONTAINER_STDCONT || span.tail_law != store::TAIL_LAW_SHIPPED {
+        // Stage 3a/12 (#34): recovered stores name HOW on every decode
+        // path (the stage-12 corpus passes export through here).
+        summary.store_recovery = Some(
+            store_recovery_record(data, span).expect("a recovered span always yields a record"),
+        );
+    }
+    // The twin's _self_check: the typed struct IS the schema shape (no
+    // validator dependency; see the module header).
+    Ok(ExportOutcome {
+        summary,
+        vertices: points,
+        triangles,
+    })
 }
 
 #[cfg(test)]
@@ -808,17 +1058,42 @@ mod tests {
     }
 
     #[test]
-    fn composite_index_space_refuses_fail_closed_at_v2() {
+    fn composite_store_without_a_list_node_refuses_undecoded_variant() {
         let mut body = store_body(&geometry_pool(), &faces());
-        // An `01 02` edge-group wrapper (G3 F8's composite marker).
+        // An `01 02` edge-group wrapper (G3 F8's composite marker):
+        // the composite route runs, finds no token-bearing list node
+        // before the first facet header and refuses (the N1 law —
+        // 939/939 composite stores carry one).
         body.extend_from_slice(pool::FULL_WRAP);
         body.extend_from_slice(pool::EDGE_SUBKIND);
         body.extend_from_slice(&[0x02, 0x02, 0x00, 0x01, 0x00, 0x02]);
         let file = file_with(&body);
         let err = export_data(&file).unwrap_err();
         assert_eq!(err.error_class, UNDECODED_VARIANT);
-        assert!(err.detail.contains("composite index space"));
-        assert!(err.detail.contains("V3"));
+        assert!(err.detail.contains("without a token-bearing list node"));
+        assert!(err.detail.contains("N1"));
+    }
+
+    #[test]
+    fn unrouted_second_chance_rejects_and_re_raises_the_original_error() {
+        // The stage-13 route's fail-closed arm: a store whose pool
+        // wrapper is established-but-insane (the count window exceeds
+        // the body — kinds recorded, no group) reaches the no-pool
+        // raise site, the second-chance route finds no token-bearing
+        // list node and the ORIGINAL clean-path error re-raises
+        // (row-identical, the twin's ``raise original from None``).
+        let mut body = Vec::new();
+        body.extend_from_slice(pool::FULL_WRAP);
+        body.extend_from_slice(pool::POOL_SUBKIND);
+        body.push(0xFF);
+        body.extend_from_slice(&1_000_001u32.to_le_bytes()); // > MAX_COUNT
+        let file = file_with(&body);
+        let err = export_data(&file).unwrap_err();
+        assert_eq!(err.error_class, UNDECODED_VARIANT);
+        assert!(
+            err.detail
+                .contains("no 01 06 vertex pool decoded from the store body")
+        );
     }
 
     #[test]

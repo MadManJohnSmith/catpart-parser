@@ -20,10 +20,12 @@ rows as at V1, plus the L2 export comparison (summary parsed-document
 equality + PLY byte-identical + error_class equality, §3.2) over the
 geometry-bearing A2 variants (the canonical store, the recovery
 variants, the corrupted classes) and the store-less refusal shapes.
-The composite-law and unrouted-elementspace variants stay in the L1
-matrix (inspect parity holds — inspect does not decode geometry) and
-are excluded from the export matrix: their composite decode is V3
-(#42), the ticket's hard stop.
+
+V3 (ticket #42): the composite-family variants join the export matrix
+as their port stage lands — the harness's staged composite matrix
+(``COMPOSITE_EXPORT_STAGES``/``COMPOSITE_EXPORT_STAGE``) covers walk +
+per-rep at stage 1, raw-array + mixedwrite at stage 2, dup-pin + dedup
+at stage 3, and this pin asserts exactly that coverage per stage.
 
 The harness lives in ``scripts/fidelity_run.py`` — imported by file
 path (the ``publish_fitness.py`` convention: a standalone stdlib
@@ -92,15 +94,26 @@ def test_port_fidelity_fixture_mode(tmp_path: Path) -> None:
         assert name in compared, f"A2 variant {variant!r} missing from the fixture-mode population"
     # The L2 export matrix covers every geometry-bearing variant (the
     # canonical store, the recovery variants, the corrupted classes)
-    # and none of the composite-family variants (V3 scope, #42).
+    # plus the composite-family variants whose port stage has landed
+    # (V3 #42's staged matrix): the landed stages' variants are in,
+    # the not-yet-landed stages' variants are out.
     export_variants = {row["row_id"].rsplit("|", 1)[0].split("|")[0] for row in l2_rows}
-    composite_family = set(gen.COMPOSITE_VARIANTS)
     for variant in set(gen.GEOMETRY_VARIANTS):
         assert variant in export_variants, f"geometry variant {variant!r} missing from the export matrix"
-    for variant in composite_family:
-        assert variant not in export_variants, (
-            f"composite-family variant {variant!r} must not be in the V2 export matrix (V3, #42)"
-        )
+    assert fidelity.COMPOSITE_EXPORT_STAGE in fidelity.COMPOSITE_EXPORT_STAGES
+    for stage, variants in fidelity.COMPOSITE_EXPORT_STAGES.items():
+        if stage <= fidelity.COMPOSITE_EXPORT_STAGE:
+            for variant in variants:
+                assert variant in export_variants, (
+                    f"landed composite variant {variant!r} missing from the "
+                    f"export matrix (port stage {fidelity.COMPOSITE_EXPORT_STAGE})"
+                )
+        else:
+            for variant in variants:
+                assert variant not in export_variants, (
+                    f"not-yet-landed composite variant {variant!r} must not be in "
+                    f"the export matrix (port stage {fidelity.COMPOSITE_EXPORT_STAGE})"
+                )
     # The fail-closed arms were exercised on both slices: the L1
     # refusal classes are the crash class; the L2 refusal classes are
     # the geometry vocabulary (never invented, never finer).
