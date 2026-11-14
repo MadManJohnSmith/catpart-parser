@@ -84,7 +84,7 @@ inference) and [#10](https://github.com/MadManJohnSmith/catpart-parser/issues/10
 (L1 parser). Updated as tickets close; authoritative state lives in the
 issue tracker.
 
-**Specs A/B/C complete (17/17, 2026-11-09). Phase 4 complete: spec D (#28, L2 geometry) 6/6 tickets (G6 #34 closed 2026-11-13 — L2 at 74.80%, the bar re-adjusted to the measured ceiling per the pre-authorized rule).**
+**Specs A/B/C complete (17/17, 2026-11-09). Phase 4 complete: spec D (#28, L2 geometry) 6/6 tickets (G6 #34 closed 2026-11-13 — L2 at 74.80%, the bar re-adjusted to the measured ceiling per the pre-authorized rule). Phase 5 opened (spec E, #39 — design authority `docs/specs/phase5-viewer-spec.md`): V0 landed.**
 
 | Spec | Ticket | State |
 |---|---|---|
@@ -111,6 +111,7 @@ issue tracker.
 | D | [#32](https://github.com/MadManJohnSmith/catpart-parser/issues/32) G4 catpart-export CLI + geometry fixtures | done |
 | D | [#33](https://github.com/MadManJohnSmith/catpart-parser/issues/33) G5 L2 fitness + publication | done |
 | D | [#34](https://github.com/MadManJohnSmith/catpart-parser/issues/34) G6 grind L2 to the bar (Phase 4 close) | done (closed at 74.80%) |
+| E | [#51](https://github.com/MadManJohnSmith/catpart-parser/issues/51) V0 Rust toolchain + port crate skeleton + CI wiring (Phase 5 opens) | done |
 
 ## Roadmap
 
