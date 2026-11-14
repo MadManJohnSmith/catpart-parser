@@ -115,6 +115,7 @@ issue tracker.
 | E | [#40](https://github.com/MadManJohnSmith/catpart-parser/issues/40) V1 port L1 slice + Fidelity harness (L1 fidelity at the seam) | done |
 | E | [#41](https://github.com/MadManJohnSmith/catpart-parser/issues/41) V2 port geometry core non-composite (numeric contract live; keystone arm seam-covered) | done |
 | E | [#42](https://github.com/MadManJohnSmith/catpart-parser/issues/42) V3 port composite decode — the whale (decode pipeline complete in Rust) | done |
+| E | [#43](https://github.com/MadManJohnSmith/catpart-parser/issues/43) V4 WASM boundary + viewer shell (decode in the browser) | done |
 
 ## Roadmap
 
