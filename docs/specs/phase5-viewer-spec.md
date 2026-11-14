@@ -1,22 +1,24 @@
-# Phase 5 spec DRAFT — Web viewer, parts (L2 delivery surface)
+# Phase 5 spec — Web viewer, parts (L2 delivery surface)
 
-**Status: DRAFT, coordinator review pending. Nothing here is published to
-GitHub yet.** This document is the design deliverable for the Phase 5
-spec: it pins what the ROADMAP's Phase 5 section (opened 2026-11-13 per
-ADR-0004) leaves to design judgment — the port architecture, the
-Fidelity harness, the ticket graph, the CI shape, the risks — and
-proposes the publication shape (spec doc vs issue, section 9). Policy
-already decided stays cited, never re-derived: ROADMAP Phase 5 +
-"Terminal state and closure", ADR-0004 (Rust→WASM, Fidelity mandatory,
-closure at v1.0), ADR-0001 (fitness protocol, Python is the seam),
-ADR-0002 (Python-first stands for the reference implementation),
-ADR-0003 (corpus local-only, gh-pages publication), GLOSSARY
-(**Fidelity**, **Port**, **Viewer**).
+**Status: SPEC — the Phase 5 design authority.** Coordinator review
+PASSED and owner decisions recorded 2026-11-13 (§8, §11); published on
+main; the V-tickets (#39-V0…V6) cite this document's sections the way
+Python docstrings cite evidence notes. Drafted on branch
+`t3/phase5-spec-draft` @ `1c0e13c` off main `6c6b3e8`; renamed from
+`phase5-viewer-spec-draft.md` at publication. This document pins what
+the ROADMAP's Phase 5 section (opened 2026-11-13 per ADR-0004) leaves
+to design judgment — the port architecture, the Fidelity harness, the
+ticket graph, the CI shape, the risks — and the publication shape
+(spec doc vs issue, section 9). Policy already decided stays cited,
+never re-derived: ROADMAP Phase 5 + "Terminal state and closure",
+ADR-0004 (Rust→WASM, Fidelity mandatory, closure at v1.0), ADR-0001
+(fitness protocol, Python is the seam), ADR-0002 (Python-first stands
+for the reference implementation), ADR-0003 (corpus local-only,
+gh-pages publication), GLOSSARY (**Fidelity**, **Port**, **Viewer**).
 
-Branch: `t3/phase5-spec-draft` off main `6c6b3e8` (Phase 4 closed
-2026-11-13: L2 Dev 1,033/1,381 = 74.80% margin 0, held-out 56/61,
-exports 1,173; no-regret intact). Docs-only change: the gate stays at
-365 passed + 7 skipped.
+Context: Phase 4 closed 2026-11-13 (L2 Dev 1,033/1,381 = 74.80%
+margin 0, held-out 56/61, exports 1,173; no-regret intact). Docs-only
+change: the gate stays at 365 passed + 7 skipped.
 
 ---
 
@@ -44,7 +46,8 @@ exports 1,173; no-regret intact). Docs-only change: the gate stays at
   decoded polyline tables, classified-failure display.
 - The **in-browser reproduction run**: automated headless-browser run
   over the L2 population; its sanity rate equals the published L2
-  scalar within the declared margin (section 3.4: margin 0).
+  scalar within the declared margin (section 3.4 — the margin is
+  declared at V5's opening, before the run, owner-approved).
 - CI extended to cover the Port with the A2 synthetic fixtures
   (section 7). The corpus never enters CI (ADR-0003 untouched).
 
@@ -147,7 +150,9 @@ reference (verified by reading the modules, 2026-11-13):
   (`composite.py:524`); re-listing matching uses `NOISE_REL = 1e-5`
   with the exact `max(1.0, abs(...), ...)` scale expression
   (`composite.py:1002-1018`); the L2 sanity gate pins
-  `MAX_DEGENERATE_TRIANGLES = 0` (`fitness/runner.py:265`).
+  `MAX_DEGENERATE_TRIANGLES = 0`
+  (`src/catpart/fitness/runner.py:265` — path corrected at
+  publication, 2026-11-13).
 
 Therefore the port MUST:
 
@@ -301,12 +306,32 @@ documented as a reference correction (dated, never massaged).
 
 ### 3.4 In-browser reproduction margin
 
-**Declared margin: 0.** The in-browser sanity rate must equal the
-published L2 scalar exactly, per split (Dev and held-out). Rationale:
-the browser runs the same crate the harness proved byte-faithful;
-IEEE arithmetic inside WASM is fixed; there is no legitimate source
-of rate variance, only bugs — and margin 0 makes any of them a hard,
-visible failure ("never hidden"). The one declared exclusion:
+**Declared at V5's opening, before the run** (owner decision
+2026-11-13, deferring the draft's margin-0 declaration: the value is
+chosen with the harness evidence V1-V4 will have produced). The
+ROADMAP wording ("within a declared margin") stays satisfied by the
+declaration discipline below — declared-before-observed, unchanged:
+
+- The declaration is **V5's first acceptance item**: owner-approved,
+  dated in §11, recorded before the in-browser reproduction run
+  executes.
+- The declaration may cite native Fidelity evidence (the V1-V4 corpus
+  runs) but **not any in-browser measurement** — the margin governs
+  the run; it is never chosen after seeing in-browser results.
+- Once declared, the in-browser sanity rate must equal the published
+  L2 scalar within that margin, per split (Dev and held-out). A
+  mismatch is a bug to repair or a declared exclusion (below) — the
+  margin is **never re-declared to absorb a failing run**.
+
+Rationale recorded from the draft (the owner's deferral weighs it
+against measured data, it does not overturn it): the browser runs the
+same crate the harness proved byte-faithful; IEEE arithmetic inside
+WASM is fixed; there is no legitimate source of rate variance, only
+bugs — so the expected declaration is 0, and any nonzero declaration
+must name the measured phenomenon it tolerates and why repair is not
+the response.
+
+The one declared exclusion, independent of the margin value:
 **harness-error files** (browser crash, timeout, OOM on a
 pathological file) drop out of the compared rate and are reported
 per-file in the run note — excluded from the arithmetic, never
@@ -317,6 +342,8 @@ same check order (empty → manifold → finite plausible bbox →
 degenerate ≤ 0), same constants. V5's harness compares **per-file
 per-check outcomes** against the Python fitness record, not only the
 aggregate scalar — stronger than the ROADMAP wording, adopted here.
+This per-file comparison is the drift detector that does not depend
+on the margin value at all.
 
 ## 4. Fidelity harness design
 
@@ -516,12 +543,13 @@ acceptance.
   computes (§3.4 gate mirror), aggregates per split, writes note +
   CSV (#37-composable). Playwright + pinned Chromium, local-only,
   never CI.
-- **Acceptance**: full-population run recorded; rate equals the
-  published L2 scalar with **margin 0** per split (§3.4);
-  per-file outcomes match the Python fitness records' per-check
-  outcomes; harness-error files excluded-but-reported; the run
-  note states the margin declaration and the exclusion list
-  explicitly.
+- **Acceptance**: the margin **declared first** (owner-approved,
+  dated in §11, before the run — §3.4); full-population run
+  recorded; rate equals the published L2 scalar within the declared
+  margin per split (§3.4); per-file outcomes match the Python
+  fitness records' per-check outcomes; harness-error files
+  excluded-but-reported; the run note states the margin declaration
+  and the exclusion list explicitly.
 - **Depends**: V4. **Estimate: M.**
 
 ### V6 — Acceptance + publication — **M** (re-scopes #44)
@@ -533,10 +561,11 @@ acceptance.
   with the acceptance evidence.
 - **Acceptance**: ROADMAP Phase 5 acceptance criteria verbatim:
   Fidelity-1 (0 mismatches); in-browser sanity = published scalar
-  ± 0; mesh, metadata panel, curve overlay operational; every
-  failure classified, never hidden; close artifacts landed (note +
-  CSVs + status blocks), no-regret untouched (the phase changes no
-  fitness row — the Python reference is not modified).
+  ± the declared margin (declared at V5, §3.4); mesh, metadata
+  panel, curve overlay operational; every failure classified, never
+  hidden; close artifacts landed (note + CSVs + status blocks),
+  no-regret untouched (the phase changes no fitness row — the
+  Python reference is not modified).
 - **Depends**: V1 V2 V3 V4 V5. **Estimate: M.**
 
 **Totals: 3 L + 3 M + 1 S.** Effort shape: the whale is V3
@@ -591,11 +620,25 @@ committed artifacts, vendored pinned three.js, no-bundler policy
 (§5); ticket graph V0-V6 with estimates and acceptance (§6); CI
 shape and honest weight (§7).
 
-Left to the owner (review points, not blockers): the issue-vs-doc
-recommendation below (§9) needs a yes; the committed-build-artifacts
-decision (§5) and the margin-0 declaration (§3.4) are
-owner-reviewable before publication; the gate's new toolchain
-requirement (§7) lands with V0 and should be noted at publication.
+Owner decisions recorded at review (2026-11-13; §11 has the dated
+register entries):
+
+- **Committed build artifacts: COMMIT** (§5 as written) — `port/pkg/`
+  and the vendored three.js land in the repo; the publish flow stays
+  stdlib-only and gh-pages stays a pure function of committed
+  content.
+- **In-browser margin: DEFERRED to V5's opening** — §3.4 amended: the
+  declaration is V5's first acceptance item, owner-approved, dated,
+  recorded before the reproduction run executes; it may cite native
+  Fidelity evidence but never an in-browser measurement; it is never
+  re-declared to absorb a failing run.
+- **Publication shape: HYBRID** (§9 as written) — this document is
+  the design authority; one spec issue (#39, re-scoped) carries the
+  acceptance checklist; the V-tickets are sub-issues.
+
+Noted at publication: the gate's new toolchain requirement (§7) lands
+with V0 — the Rust toolchain becomes a required dev dependency from
+V0 on, and `scripts/check.sh` grows the cargo steps.
 
 ## 9. Recommendation: spec doc + spec issue + tickets (hybrid)
 
@@ -655,9 +698,12 @@ create V0 and V5, set dependencies per §6, apply labels.
    before the corpus sees it.
 4. **In-browser gate drift** — the JS gate reimplements
    `_score_export`; logic drift would move the measured rate
-   silently. Mitigation: §3.4's margin 0 plus per-file per-check
-   comparison against the Python fitness records (not just the
-   aggregate).
+   silently. Mitigation: the per-file per-check comparison against
+   the Python fitness records (not just the aggregate — independent
+   of the margin value), plus the §3.4 declared margin once
+   declared at V5's opening (the deferral does not weaken this
+   detector; it only moves the aggregate pass threshold's
+   definition to where the evidence exists).
 5. **Committed build artifacts** — `port/pkg/` and vendored three.js
    put binary blobs in review diffs; wasm builds are not guaranteed
    byte-stable across toolchain versions. Mitigation: pinned
@@ -690,3 +736,22 @@ create V0 and V5, set dependencies per §6, apply labels.
 
 - 2026-11-13: initial draft (branch `t3/phase5-spec-draft`, off main
   `6c6b3e8`). Coordinator review pending; nothing published.
+- 2026-11-13: coordinator review PASSED — §2.2's keystone re-derived
+  against the code (every cited line verified verbatim: `_f32`
+  widening, `_nice` 1e9, `PLANE_TOL` 2e-3, `NOISE_REL` 1e-5 scale
+  expression, raw-array predicate, the `(0.0, 0.0, 0.0)` degenerate
+  tuple at `facets.py:305`, `MAX_DEGENERATE_TRIANGLES = 0`,
+  `math.isfinite` the only library call in the decode path); the
+  §5 publication claim verified against `scripts/publish_fitness.py`
+  (site/ copied verbatim); §3.1/§3.4 arithmetic consistent
+  (1,824 = 1751+73; 1,442 = 1,381+61); Fidelity definition
+  consistent with ADR-0003; no ADR-0004 re-litigation. Citation fix:
+  §2.2's runner path corrected to `src/catpart/fitness/runner.py:265`.
+- 2026-11-13: owner decisions (§8) — committed-build-artifacts =
+  COMMIT; publication shape = HYBRID; **in-browser margin = deferred
+  to V5's opening** (§3.4 amended: declared-before-the-run
+  discipline, native-evidence-only inputs, never re-declared to
+  absorb a failing run; the draft's margin-0 declaration superseded —
+  its rationale retained as the expected value). File renamed
+  `phase5-viewer-spec-draft.md` → `phase5-viewer-spec.md` at
+  publication; published on main; V-tickets cite this document.

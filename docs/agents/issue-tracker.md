@@ -2,6 +2,8 @@
 
 Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
 
+Amended 2026-11-13 (Phase 5 hybrid, spec `docs/specs/phase5-viewer-spec.md` §9): the **design document** for a spec lives as a versioned repo file under `docs/specs/` — reviewable and correctable by git diff — while the **spec issue** still exists on GitHub, linking the doc and carrying the acceptance checklist; child tickets cite the doc's sections instead of restating its design.
+
 ## Conventions
 
 - **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
