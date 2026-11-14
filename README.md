@@ -140,6 +140,7 @@ issue tracker.
 | E | [#43](https://github.com/MadManJohnSmith/catpart-parser/issues/43) V4 WASM boundary + viewer shell (decode in the browser) | done |
 | E | [#52](https://github.com/MadManJohnSmith/catpart-parser/issues/52) V5 in-browser reproduction — margin 0 declared pre-run; 1,442/1,442 match, both splits WITHIN exact | done |
 | E | [#44](https://github.com/MadManJohnSmith/catpart-parser/issues/44) V6 Phase 5 acceptance + publication (Fidelity-1 full run 3,266/3,266; viewer live on gh-pages — Phase 5 close) | done |
+| F | [#46](https://github.com/MadManJohnSmith/catpart-parser/issues/46) P1 product census (Phase 6 opens; 382/382 classified, ceiling published, assembly records located) | done |
 
 ## Roadmap
 
