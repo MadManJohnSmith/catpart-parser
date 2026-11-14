@@ -1,0 +1,12 @@
+# Toolchain pin (spec docs/specs/phase5-viewer-spec.md §2.1, risk §10.5):
+# wasm builds are not byte-stable across toolchain versions, so the
+# crate compiles under one pinned toolchain on the dev machine, the
+# gate and CI alike. `rustup toolchain install` run inside port/
+# installs exactly this (channel + minimal profile + clippy/rustfmt +
+# the wasm32 target). Verified 2026-11-13 on the corpus machine
+# (rustup 1.29.3, ticket #51): channel 1.99.1 green, native and wasm32.
+[toolchain]
+channel = "1.99.1"
+profile = "minimal"
+components = ["clippy", "rustfmt"]
+targets = ["wasm32-unknown-unknown"]

@@ -21,3 +21,7 @@ corpus/
 
 # REA evidence bundles can be large; keep dated reports, not bundles
 evidence-bundles/
+
+# Rust port (Phase 5, ticket #51): cargo build output stays out.
+# port/Cargo.lock IS committed — the dependency pin (spec §10.5).
+port/target/
