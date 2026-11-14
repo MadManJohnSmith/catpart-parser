@@ -1147,8 +1147,9 @@ def run_corpus_mode(csv_path: Path, note_path: Path, split: str, slice_name: str
             slice_note = (
                 "L2-export slice (§3.1: the kind=part rows): summary parsed-document "
                 "equality + PLY byte-identical + error_class equality on double "
-                "refusals (§3.2); the composite path is ported (V3 #42) — composite-path "
-                "exports compare fully (a port refusal against a twin export is a mismatch)"
+                "refusals (§3.2); the composite path is ported (V3 #42) — "
+                + composite_prose(COMPOSITE_EXPORT_STAGE)
+                + " (a port refusal against a twin export is a mismatch)"
             )
         else:
             slice_note = (
@@ -1180,8 +1181,8 @@ def run_corpus_mode(csv_path: Path, note_path: Path, split: str, slice_name: str
             slice_note += (
                 "; --slice both: the L2 export comparison runs on the part rows "
                 "of the same sample (summary + PLY bytes + error classes; "
-                "composite-path exports compare fully — ported at V3 #42, "
-                "corrected 2026-11-14 per the V6 close flag)"
+                + composite_prose(COMPOSITE_EXPORT_STAGE)
+                + ")"
             )
     if slice_name == SLICE_L1 and l2_stats is None:
         pass  # the L1-only shape: no export pass
@@ -1271,6 +1272,17 @@ def write_csv(csv_path: Path, rows: list[dict]) -> None:
         writer.writerow(CSV_COLUMNS)
         for row in rows:
             writer.writerow([row[column] for column in CSV_COLUMNS])
+
+
+def composite_prose(stage: int) -> str:
+    """The composite-coverage sentence, single-sourced from
+    ``COMPOSITE_EXPORT_STAGE`` (the Phase 5 retro, candidate 2: the V6
+    close note's stale 'excluded' prose was a duplicated literal that
+    the stage constant drove elsewhere — a duplicated sentence drifts;
+    make the prose a function of the stage so it cannot)."""
+    if stage >= 3:
+        return "composite-path exports compare fully (ported at V3 #42)"
+    return "composite-path exports excluded (ticket #41 hard stop)"
 
 
 def write_note(note_path: Path, run_kind: str, population_rows: list[dict], wall_clock: float, csv_path: Path, slice_note: str, l2_stats: dict | None = None) -> None:
