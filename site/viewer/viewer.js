@@ -309,6 +309,13 @@ async function loadFile(file) {
       triangle_count: summary.triangle_count,
       degenerate_triangle_count: summary.degenerate_triangle_count,
       manifold: summary.mesh.manifold,
+      // V5 phase A (ticket #52): mechanical exposure additions for the
+      // reproduction harness — the full mesh block and the ordered
+      // warnings, exactly what the boundary's summary carries and what
+      // the Python fitness record's l2 shape holds (runner.py). No
+      // gate change: scoreExport's checks and record shape untouched.
+      mesh: summary.mesh,
+      warnings: summary.warnings || [],
     };
     viewerState.gate = renderGate(summary);
     refreshToggles(viewerState.curveCount);
