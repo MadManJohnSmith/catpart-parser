@@ -37,10 +37,10 @@ disk; FACT):
 | byte-verified CATIA documents | 380 (0.995) | product-files (`class` != non-catia) |
 | manifest-kind misfits | 2 (non-CATIA placeholder/text files saved as .CATProduct) | product-files |
 | header law H1 (dword8+dword12==size) | 379/380 CATIA files; 1 exception (unknown bucket) | product-files (`header_h1`) |
-| detected-version buckets | 33 raw values; R15..R26 + `unknown` (102) | product-files |
+| detected-version buckets | 33 raw values; R15..R26 + `unknown` (104) | product-files |
 
-The 2 misfits: `8046a05915207b5a` (11 B, content `placeholder`) and
-`4097889236a2af26` (464 B, a markdown-ish file listing naming
+The 2 misfits: `4097889236a2af26` (11 B, content `placeholder`) and
+`8046a05915207b5a` (464 B, a markdown-ish file listing naming
 `fpb_skin_panel.CATPart` etc. — the source of the Phase-1-era raw
 `.CATPart` string hits; neither is a CATIA document). The census
 classifies them `non-catia` and does not fold them into any CATIA class.
@@ -53,9 +53,9 @@ are separate columns, the label is their join):
 | Class | Files | Definition |
 |---|---|---|
 | `table-pool-pos-refs` | 14 | name table + structure pool + `_Position` + child doc refs |
-| `table-pool-pos` | 250 | name table + structure pool + `_Position` |
+| `table-pool-pos` | 246 | name table + structure pool + `_Position` |
 | `table-pool-refs` | 8 | name table + structure pool + child doc refs, no `_Position` |
-| `table-pool` | 102 | name table + structure pool |
+| `table-pool` | 106 | name table + structure pool |
 | `catia-notable` | 6 | CATIA blocks, NO container-name table (the CAA sample family: 5× `CAAPstPrdFileSel_Prd*.CATProduct` B31CAADoc + `Gardena.CATProduct`; all `unknown` bucket) |
 | `non-catia` | 2 | the manifest misfits above |
 
@@ -96,12 +96,12 @@ distinct from the block-string law:
 The pool carries the product-structure vocabulary: class tokens
 (`ASMPRODUCT` 221 files, `PRDREP` 183, `PRDBAGREP` 227), attribute
 tokens (`_Component` 380, `_PartNumber` 380, `_RefProduct` 375,
-`_InstanceName` 315, `_Position` 264), instance names shaped
+`_InstanceName` 315, `_Position` 260), instance names shaped
 `<name>.<N>` (`Part001.1`), relation long strings (u32le-length-prefixed —
 length @0x2477, string @0x247b of the worked example,
 e.g. `CtorToProd:Product!ProdToRep:Shape 1!RepToShape:Shape!Geometry:...`). Rates: product-files CSV
 (`pool_tokens`, `instance_name_strings` — 290 files carry ≥1
-`name.N`-shaped pool string; median 3, max 208).
+`name.N`-shaped pool string; median 5.0, max 208).
 
 The pool proves the records EXIST to decode (instances declared with
 names and a position attribute); the pairing structure (which instance
@@ -117,7 +117,7 @@ CATIA products (6515 region entries; the 107 non-walking files are
 89 `unknown` + 18 across R15-R21 — the CAA/other-writer generations; an
 open class, §6). Attribution of the instance markers to the file's own
 region names (marker_regions column; occurrences per region name,
-markers `_InstanceName`/`_Position`): `Project` (175/138),
+markers `_InstanceName`/`_Position`): `Project` (175/141),
 `CATIA` (27/24), `ProjectHeader` (20/17), pre-block bulk (18/16),
 `CATProduct` (13/14), then a tail of catalog namings. The region NAME
 varies by writer generation; the LOCATION does not: the pool sits in
@@ -132,8 +132,9 @@ Validated law-A strings ending in a document extension: **261, all
 `.CATProduct`, all `9f`-terminated, zero `.CATPart`** (a validated
 `.CATPart` child reference does not occur in this corpus — the earlier
 raw `.CATPart` string hits were the markdown misfit file's text). Per
-file (reference-resolution CSV): 254 files carry at least their own
-document name — 232 carry ONLY their own name (the CATIA block's
+file (reference-resolution CSV): 254 files carry at least one document
+reference — 239 carry their own document name (232 own-only + 7 both;
+15 child-only) — 232 carry ONLY their own name (the CATIA block's
 self-reference), 7 carry both their own and a child reference; **22
 files carry 22 child `.CATProduct` references** (sub-assembly links);
 child resolution against the manifest: 3 by basename, 8 by relative-path
@@ -195,6 +196,15 @@ discriminate. Transform-value presence is claimed ONLY via the
   on the preceding byte; does NOT verify chain consistency beyond the
   token (a coincidental `len+1` byte before a printable run validates).
   The join rate's exposure is quantified by the cross-repo control (§3.3).
+- **`position_attr` detector** (`position_attr_present`, added by the
+  P1 review F1 amendment): counts `_Position` only when LAW-B-VALIDATED
+  at the occurrence offset; does NOT discriminate the attribute's
+  semantic role (a coincidental law-B-valid `_Position` string would
+  count). The raw-substring version miscounted 4 Elec_X/Y/Z_Position
+  wrapper files as placed instances (264 → 260; identity 116 → 120).
+  Edge pinned by selftest: the law-B-valid Elec_X_Position wrapper
+  negative, the law-B-valid `_Position` positive, the raw-substring
+  negative.
 - **Stem-join**: does NOT discriminate a true `_PartNumber` reference
   from a coincidental stem collision (control: 40/382 cross-repo floor).
   Same-repo scoping + pool context mitigate; P2 must decode the actual
@@ -254,8 +264,8 @@ Open classes (named, never folded):
   table — the CAA sample family + Gardena; structure pool present
   (pool_flag holds on all 6), name table absent.
 - **`_Position` value encoding: UNKNOWN.** The attribute is present in
-  264 files across every bucket (R15 8/14 ... R19 97/105 ... unknown
-  59/104 — product-files CSV); where the 12 numbers live and their
+  260 files across every bucket (R15 8/14 ... R19 97/105 ... unknown
+  55/104 — product-files CSV); where the 12 numbers live and their
   encoding is undecoded. No per-instance transform value is claimed.
 
 ## 7. Ceiling arithmetic — what an assembly bar CAN demand (ceiling CSV)
@@ -268,8 +278,8 @@ claim (all 382-row population):
 | byte-verified products | 380 | 0.995 | census |
 | container table + kind law verified | 374 | 0.979 | shipped model, full scale |
 | instance records DECLARED (structure pool) | 380 | 0.995 | pool law B — decode is P2 |
-| identity placement (pool without `_Position`) | 116 | 0.304 | `_Position` absence |
-| placed instances (`_Position` attribute present) | 264 | 0.691 | value encoding UNKNOWN — ceiling, not a delivery promise |
+| identity placement (pool without `_Position`) | 120 | 0.314 | `_Position` absence |
+| placed instances (`_Position` attribute present) | 260 | 0.681 | value encoding UNKNOWN — ceiling, not a delivery promise |
 | sub-assembly links by filename, resolving IN CORPUS | 8 | 0.021 | law A + manifest join |
 | part references joining same-repo corpus parts (candidate) | 248 | 0.649 | stem join + control (40/382 floor) |
 | geometry from the product file itself | 0 | 0.000 | G1 negative — geometry MUST come from referenced parts |
@@ -283,7 +293,7 @@ join (candidate, 248 files) gives the user-supplied-files bar its
 in-corpus rehearsal surface. A defensible bar: **assemble the 380
 pool-carrying products' instance lists (names + part numbers), identity
 placement on all of them, and placed instances pending the `_Position`
-value decode (264-file ceiling)** — with documented negatives for
+value decode (260-file ceiling)** — with documented negatives for
 product-internal geometry (0) and name-table hierarchies (0).
 
 ## 8. P2 decode dispatch proposal (what the next ticket builds)
@@ -309,7 +319,7 @@ Priority by ceiling-per-unit-work (the resume-template ordering):
    bind container names to stream offsets — the prerequisite for
    claiming WHICH region is the product-structure stream by law rather
    than by localization.
-4. **`_Position` values** (the 264-file placed-instance ceiling): only
+4. **`_Position` values** (the 260-file placed-instance ceiling): only
    after 1 — the values presumably ride the pool's record layer.
    Explicitly NOT promised by P1; the census's only transform claim is
    attribute presence.
@@ -328,6 +338,9 @@ population).
     # CSV hygiene (the gate covers this family via the *claims*.csv glob)
     python3 -I scripts/triage/check_claims_csv_quoting.py --root .
     # single-class re-checks, e.g. the CB0001 class
+    # WARNING (P1 review F4): --sha16 REWRITES the committed CSVs at the
+    # OUT_* paths with the subset — run it in a scratch checkout, or
+    # restore the CSVs from git afterwards (git checkout -- <paths>).
     python3 -I scripts/triage/p1_product_census.py --census --sha16 1f93f165fc0e3ec5
 
 Worked-example files (by sha16, resolvable through the manifest):

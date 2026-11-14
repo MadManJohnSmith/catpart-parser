@@ -2,8 +2,8 @@ ceiling_id,products,population,rate,example_sha16,evidence_claim,note
 population-byte-verified,380,382,0.9948,8046a05915207b5a,census-files,manifest kind=product rows that are byte-level CATIA documents
 container-table-parsed (kind law K1),374,382,0.9791,8046a05915207b5a,census-files,"shipped name-table model + kind law, full product population"
 structure-pool (instances declared),380,382,0.9948,8046a05915207b5a,census-files,law-B pool >= 3 tokens: instance records exist to decode (P2)
-pool + _Position attribute,264,382,0.6911,8046a05915207b5a,census-files,ceiling for PLACED instances; value encoding undecoded (unknown)
-pool without _Position (identity-only candidates),116,382,0.3037,8046a05915207b5a,census-files,assembly bar can demand identity placement here
+pool + _Position attribute,260,382,0.6806,8046a05915207b5a,census-files,ceiling for PLACED instances; value encoding undecoded (unknown)
+pool without _Position (identity-only candidates),120,382,0.3141,8046a05915207b5a,census-files,assembly bar can demand identity placement here
 child document refs (any),22,382,0.0576,8046a05915207b5a,census-files,law-A .CATProduct child strings (sub-products; zero .CATPart)
 child refs resolving to corpus,8,382,0.0209,8046a05915207b5a,reference-resolution,basename or relative-path tail joins a manifest path
 partnumber -> same-repo part stem join,248,382,0.6492,8046a05915207b5a,reference-resolution,law-B pool string equals a same-repo part file stem; stem equality is not a decoded reference
@@ -11,4 +11,4 @@ partnumber join NEGATIVE CONTROL (cross-repo stems),40,382,0.1047,8046a05915207b
 geometry store in the product itself,0,382,0.0,8046a05915207b5a,absence-sweeps,"G1 sweeps at 382 scale: no CGMGeom/CATStdCont/CATSeeBodyCont/CATCGRCont/BRepMode block, no nested store, no strip records"
 name-table instance hierarchy,0,382,0.0,8046a05915207b5a,absence-sweeps,T1: the #24 negative re-measured at product scale
 CATXDocLinkCont container,2,382,0.0052,8046a05915207b5a,census-files,name-table rows + block names; the link table is rare in this corpus
-class-distribution,6,382,1.0,,census-files,catia-notable=6|non-catia=2|table-pool=102|table-pool-pos=250|table-pool-pos-refs=14|table-pool-refs=8
+class-distribution,6,382,1.0,,census-files,catia-notable=6|non-catia=2|table-pool=106|table-pool-pos=246|table-pool-pos-refs=14|table-pool-refs=8

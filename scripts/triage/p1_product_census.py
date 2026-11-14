@@ -215,6 +215,20 @@ def law_b_valid(token: bytes, data: bytes, i: int) -> bool:
     len(token) + 1 (the pool's char-count+1 length encoding)."""
     return i >= 1 and data[i - 1] == len(token) + 1
 
+def position_attr_present(data: bytes) -> int:
+    """1 when ``_Position`` appears as a LAW-B-VALIDATED string (P1
+    review F1, ticket #46): a raw whole-file substring also matches
+    Elec_X_Position / Elec_Y_Position / Elec_Z_Position pool strings (4
+    files miscounted as placed instances on the first run). The law-B
+    check at the occurrence offset rejects embedded occurrences: a
+    law-B length prefix for "_Position" (9+1) disagrees with the longer
+    wrapper string's prefix."""
+    for m in re.finditer(re.escape(b"_Position"), data):
+        if law_b_valid(b"_Position", data, m.start()):
+            return 1
+    return 0
+
+
 
 def strip_records_robust(data: bytes) -> int:
     """Verified strip-index records (geometry-payloads note, V5 grammar),
@@ -408,7 +422,7 @@ def census_one(r: dict) -> dict:
         if INSTANCE_SHAPE.match(s.decode("ascii")) and law_b_valid(s, data, m.start()):
             seen_inst.add(s.decode("ascii"))
     out["instance_name_strings"] = len(seen_inst)
-    out["position_attr"] = int(b"_Position" in data)
+    out["position_attr"] = position_attr_present(data)
     if walk_ok and spans:
         # attribution prefers the file's own tail-catalog region names
         # (the catalog tiles [64, dword8)); block-walk regions are the
@@ -992,6 +1006,16 @@ def selftest() -> int:
     bad = bytearray(rec)
     bad[16] ^= 0xFF  # corrupt f5
     check("synth-negative-corrupt", parse_container_table(bytes(bad)), [])
+
+    # position_attr detector (P1 review F1): a law-B-valid
+    # Elec_X_Position wrapper must NOT count as a _Position attribute;
+    # a law-B-valid _Position must; a raw substring without a valid
+    # prefix must not.
+    elec = b"\x10Elec_X_Position"  # len 16 = chars+1 (15 chars)
+    check("lawB-elec-wrapper", law_b_valid(b"Elec_X_Position", elec, elec.find(b"Elec_X_Position")), True)
+    check("position-attr-negative-embedded", position_attr_present(elec), 0)
+    check("position-attr-positive-lawb", position_attr_present(b"\x0a_Position"), 1)
+    check("position-attr-negative-raw", position_attr_present(b"junk_Positionjunk"), 0)
 
     # region attribution
     blocks = [(0x100, "CATIA"), (0x200, "CATProduct")]
