@@ -18,7 +18,8 @@ else
   # mismatch surfaced only as a skip-count difference).
   "$PY" -c "import catpart" 2>/dev/null || {
     echo "check: FAIL — no .venv here and the system python3 cannot import catpart." >&2
-    echo "        Set up first: python -m venv .venv && .venv/bin/pip install -e '.[test]'" >&2
+    echo "        Set up first: python -m venv .venv && .venv/bin/pip install -e '.[test,lint]'" >&2
+    echo "        ('.[test]' alone misses the pinned ruff — review F3, ticket #51)." >&2
     exit 1
   }
 fi
