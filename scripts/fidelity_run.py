@@ -104,6 +104,23 @@ DATA_DIR = REPO_ROOT / "docs" / "evidence" / "data"
 #: ``element_decl > 0``).
 COMPOSITE_ROSTER_PATH = DATA_DIR / "stage15-identity-export-files.csv"
 
+#: The stage-14 committed CSVs naming the two stage-15 levers' firing
+#: sets — the dup-pin ceiling (26 rows) and the not-manifold mechanism
+#: census (33 rows, the dedup fire surface; disjoint sets). The
+#: composite sample force-includes their union (59 stores) so every
+#: firing law is represented BY NAME, not by sampling luck
+#: (docs/evidence/2026-11-13-stage15-two-levers.md: the pre-declaration
+#: subset is exactly this union).
+DUP_PIN_CEILING_PATH = DATA_DIR / "stage14-dup-pin-ceiling.csv"
+NOTMANIFOLD_CENSUS_PATH = DATA_DIR / "stage14-notmanifold-mechanism.csv"
+
+#: The composite sample's per-family seat quota (spec §6 V3: ">= 100
+#: stores drawn per-family from the accepted stage-15 CSV, incl. every
+#: firing law and the fail-closed composite class"). A family with a
+#: smaller population runs in FULL — it cannot yield seats it does not
+#: have; the note names that arithmetic per family.
+COMPOSITE_FAMILY_SEATS = 100
+
 #: The L1 slice's single error class (see the module docstring and
 #: ``port/src/bin/fidelity-cli.rs``): the Python side's exit 1 on the
 #: shipped inspect seam is the fitness class ``crash``.
@@ -216,7 +233,7 @@ COMPOSITE_EXPORT_STAGES: dict[int, tuple[str, ...]] = {
 #: one commit at a time; 3 = the full landed model). The fixture-mode
 #: export matrix covers the stages landed so far; the composite-path
 #: comparison semantic flips with it (see :func:`compare_row_export`).
-COMPOSITE_EXPORT_STAGE = 2
+COMPOSITE_EXPORT_STAGE = 3
 
 SLICE_L1 = "l1"
 SLICE_L2 = "l2"
@@ -966,6 +983,112 @@ def biased_l2_sample(rows: list[dict], report: dict, count: int) -> tuple[list[d
     return sample, stats
 
 
+def load_stage14_firing_sets() -> tuple[set[str], set[str]]:
+    """The two stage-15 levers' named firing sets (sha256 sets).
+
+    The dup-pin ceiling (26 rows, ``stage14-dup-pin-ceiling.csv``) and
+    the not-manifold mechanism census (33 rows,
+    ``stage14-notmanifold-mechanism.csv`` — the dedup fire surface),
+    disjoint (the stage-15 note's pre-declaration measurement).
+    """
+
+    def read_shas(path: Path) -> set[str]:
+        with path.open(newline="", encoding="utf-8") as fh:
+            return {row["sha256"] for row in csv.DictReader(fh)}
+
+    return read_shas(DUP_PIN_CEILING_PATH), read_shas(NOTMANIFOLD_CENSUS_PATH)
+
+
+def composite_stratified_sample(rows: list[dict], report: dict, seats: int) -> tuple[list[dict], dict]:
+    """The V3 composite-family-stratified sample (ticket #42, spec §6).
+
+    ``seats`` (the ``N`` of ``--sample composite-stratified:N``) is the
+    PER-FAMILY seat quota. The stage-15 roster
+    (:data:`COMPOSITE_ROSTER_PATH`) names every store's law family by
+    its ``stage`` column (``identity-table-walk`` / ``identity-per-rep``
+    / ``identity-raw-array`` / ``identity-mixedwrite-reps``); the
+    fail-closed composite class is the roster's ``undecoded-variant``
+    refusal rows (the composite ladder's fail-closed exits — the roster
+    cannot separate composite-ladder refusals from clean-path
+    ``undecoded-variant`` refusals, so the sample includes both; both
+    compare identically at stage 3: error-class equality on double
+    refusals). Every family draws ``min(seats, population)`` rows,
+    evenly spaced over the sha256-sorted members — no RNG; the same N
+    yields the same sample. On top, the two levers' named firing sets
+    (the 26 dup-pin ceiling rows + the 33 not-manifold census rows,
+    :func:`load_stage14_firing_sets`) are force-included so every
+    firing law is represented by name, not by sampling luck.
+
+    Deterministic; no RNG. Returns ``(sample, stats)`` where ``stats``
+    names the per-family arithmetic for the note.
+    """
+    roster_rows: dict[str, dict] = {}
+    with COMPOSITE_ROSTER_PATH.open(newline="", encoding="utf-8") as fh:
+        roster_rows = {row["sha256"]: row for row in csv.DictReader(fh)}
+    dup_pin_set, notmanifold_set = load_stage14_firing_sets()
+    families: dict[str, list[dict]] = {}
+    for row in rows:
+        roster_row = roster_rows.get(row["sha256"])
+        if roster_row is None:
+            raise SystemExit(
+                f"fidelity_run: part row {row['sha256'][:16]} is not in the "
+                "stage-15 roster — a stale stratification basis; the "
+                "composite-family sample cannot be applied fail-closed"
+            )
+        if roster_row["export_ok"] == "1" and roster_row["stage"]:
+            family = roster_row["stage"]
+        elif roster_row["export_ok"] == "0" and roster_row["error_class"] == "undecoded-variant":
+            family = "composite-fail-closed"
+        else:
+            # missing-geometry-store and the never-parsed rows: not
+            # composite-family (no composite store was decoded).
+            continue
+        families.setdefault(family, []).append(row)
+    for members in families.values():
+        members.sort(key=lambda row: row["sha256"])
+    forced_shas = dup_pin_set | notmanifold_set
+    forced = [row for row in rows if row["sha256"] in forced_shas]
+    picked: set[str] = set()
+    per_family: dict[str, dict] = {}
+    for family, members in sorted(families.items()):
+        quota = min(seats, len(members))
+        if quota == len(members):
+            ranks = list(range(len(members)))
+        else:
+            ranks = sorted({round(i * (len(members) - 1) / (quota - 1)) for i in range(quota)})
+            if len(ranks) < quota:  # rounding collision: fill by lowest rank
+                ranks = sorted(set(range(len(members))) | set(ranks))[:quota]
+        for rank in ranks:
+            picked.add(members[rank]["sha256"])
+        per_family[family] = {
+            "population": len(members),
+            "drawn": quota,
+            "ran_in_full": quota == len(members) and quota < seats,
+        }
+    # The forced rows join on top: a law's named rows must be in the
+    # run even when the even-spacing missed them.
+    for row in forced:
+        picked.add(row["sha256"])
+    for family, members in sorted(families.items()):
+        covered = sum(1 for row in members if row["sha256"] in picked)
+        per_family[family]["drawn"] = covered
+    sample = [row for row in rows if row["sha256"] in picked]
+    by_sha = {record["sha256"]: record for record in report["files"]}
+    stats = {
+        "kind": "composite-stratified",
+        "seats_per_family": seats,
+        "families": per_family,
+        "forced_rows": len(forced),
+        "forced_from": (
+            "stage14-dup-pin-ceiling.csv (26 dup-pin firing rows) + "
+            "stage14-notmanifold-mechanism.csv (33 dedup-fire-surface rows)"
+        ),
+        "sampled": len(sample),
+        "by_class": dict(sorted(Counter(export_outcome_class(by_sha[row["sha256"]]) for row in sample).items())),
+    }
+    return sample, stats
+
+
 def run_corpus_mode(csv_path: Path, note_path: Path, split: str, slice_name: str, sample: tuple[str, int] | None, timeout: float, port_bin: Path | None) -> int:
     """Walk the manifest, apply the slice population, diff both seams."""
     manifest = read_manifest()
@@ -985,19 +1108,42 @@ def run_corpus_mode(csv_path: Path, note_path: Path, split: str, slice_name: str
         # weight); without --sample the FULL non-composite population
         # runs (the V6 shape).
         part_rows = [row for row in rows if row["kind"] == "part"]
+        composite_method = False
         if sample is not None:
             method, count = sample
-            if method != "stratified":
-                # composite-stratified:N lands with port stage 3 (the
-                # composite decode must be complete before its sample
-                # compares fully).
-                raise SystemExit(f"fidelity_run: unknown --sample method {method!r} (only stratified:N)")
-            sampled, l2_stats = biased_l2_sample(part_rows, report, count)
+            if method == "stratified":
+                sampled, l2_stats = biased_l2_sample(part_rows, report, count)
+            elif method == "composite-stratified":
+                # The V3 composite-family sample (ticket #42): needs the
+                # FULL composite decode (the comparison covers the
+                # composite block, so a partial port would mismatch).
+                if COMPOSITE_EXPORT_STAGE < 3:
+                    raise SystemExit(
+                        "fidelity_run: --sample composite-stratified:N needs "
+                        "the full composite decode (port stage 3 of 3)"
+                    )
+                sampled, l2_stats = composite_stratified_sample(part_rows, report, count)
+                composite_method = True
+            else:
+                raise SystemExit(
+                    f"fidelity_run: unknown --sample method {method!r} "
+                    "(stratified:N or composite-stratified:N)"
+                )
             rows = sorted(sampled, key=lambda row: row["sha256"])
         else:
             _, l2_stats = biased_l2_sample(part_rows, report, len(part_rows))
             rows = sorted(part_rows, key=lambda row: row["sha256"])
-        if COMPOSITE_EXPORT_STAGE >= 3:
+        if composite_method:
+            slice_note = (
+                "L2-export slice (§3.1: the kind=part rows), V3 composite-family-"
+                "stratified sample (ticket #42: per-family seats from the stage-15 "
+                "roster, every firing law and the fail-closed composite class "
+                "included): summary parsed-document equality + PLY byte-identical + "
+                "error_class equality on double refusals (§3.2); the composite path "
+                "is ported — composite-path exports compare fully incl. the "
+                "composite block (a port refusal against a twin export is a mismatch)"
+            )
+        elif COMPOSITE_EXPORT_STAGE >= 3:
             slice_note = (
                 "L2-export slice (§3.1: the kind=part rows): summary parsed-document "
                 "equality + PLY byte-identical + error_class equality on double "
@@ -1079,10 +1225,12 @@ def run_corpus_mode(csv_path: Path, note_path: Path, split: str, slice_name: str
                 # composite decode is partially ported (stages 1-2 of
                 # #42); with the full model landed (stage 3) the
                 # composite path compares everywhere — a port refusal
-                # against a twin export is a mismatch.
+                # against a twin export is a mismatch. The composite
+                # sample exists only at stage 3 and always compares
+                # fully.
                 outcome, divergence, ply_equal = compare_row_export(
                     py, port, timeout, ply_py, ply_port,
-                    composite_exclusion=COMPOSITE_EXPORT_STAGE < 3,
+                    composite_exclusion=COMPOSITE_EXPORT_STAGE < 3 and not composite_method,
                 )
                 result_rows.append({
                     **base_row,
@@ -1154,13 +1302,28 @@ def write_note(note_path: Path, run_kind: str, population_rows: list[dict], wall
             f"composite decode is V3, #42; never matches, never mismatches): {excluded}",
         ]
     if l2_stats is not None:
-        lines += [
-            f"- V2 sample bias (stage-15 roster): {l2_stats['part_rows_in_split']} part rows in the "
-            f"split, {l2_stats['composite_family_excluded']} composite-family rows excluded "
-            f"(element_decl > 0), pool {l2_stats['non_composite_pool']}, sampled {l2_stats['sampled']} "
-            f"(fail-closed classes weight {FAIL_CLOSED_WEIGHT}); sampled by export outcome class: "
-            f"{l2_stats['by_class']}",
-        ]
+        if l2_stats.get("kind") == "composite-stratified":
+            family_lines = "; ".join(
+                f"{family}: {counts['population']} in the roster, "
+                f"{counts['drawn']} drawn"
+                + (" (ran in full — the family is smaller than the seat quota)" if counts["ran_in_full"] else "")
+                for family, counts in l2_stats["families"].items()
+            )
+            lines += [
+                f"- V3 composite-family sample (stage-15 roster, ticket #42): "
+                f"{l2_stats['seats_per_family']} seats per family, sampled "
+                f"{l2_stats['sampled']}; per family — {family_lines}",
+                f"- Forced firing-law rows ({l2_stats['forced_rows']}): {l2_stats['forced_from']}",
+                f"- Sampled by export outcome class: {l2_stats['by_class']}",
+            ]
+        else:
+            lines += [
+                f"- V2 sample bias (stage-15 roster): {l2_stats['part_rows_in_split']} part rows in the "
+                f"split, {l2_stats['composite_family_excluded']} composite-family rows excluded "
+                f"(element_decl > 0), pool {l2_stats['non_composite_pool']}, sampled {l2_stats['sampled']} "
+                f"(fail-closed classes weight {FAIL_CLOSED_WEIGHT}); sampled by export outcome class: "
+                f"{l2_stats['by_class']}",
+            ]
     if population_rows:
         by_split = Counter(row["split"] for row in population_rows)
         by_kind = Counter(row["kind"] for row in population_rows)

@@ -734,6 +734,10 @@ fn export_composite_store(
         triangles,
         degenerate,
         info,
+        // The §2.3 curve exposure rides on the decode for the V4 WASM
+        // boundary; the export surface (summary + PLY) never emits it
+        // (additive, NOT part of the Fidelity definition — §3.2).
+        curves: _curves,
     } = composite::decode_composite_store(data, span, groups, kinds, allow_unrouted_elements)?;
     let stats = mesh::mesh_stats(&triangles);
     let mut warnings: Vec<Warning> = Vec::new();

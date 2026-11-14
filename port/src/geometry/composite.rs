@@ -117,6 +117,7 @@ use serde::Serialize;
 
 use super::errors::{ExportError, UNDECODED_VARIANT};
 use super::facets;
+use super::mesh;
 use super::pool::{EDGE_SUBKIND, PoolGroup};
 use super::store::{StoreSpan, find};
 
@@ -193,13 +194,36 @@ pub struct CompositeRecord {
 }
 
 /// The loop counters of one :fn:`triangulate` call — the twin's
-/// ``stats`` dict minus the stage-3 ``dup_pin`` candidate.
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// ``stats`` dict: the two loop counters plus the stage-10 ``dup_pin``
+/// candidate (present exactly when this call's primary triangulation
+/// is empty and dropped curve-entry loops exist).
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct LoopStats {
     /// Loops exported (no skip reference).
     pub loops_exported: u32,
     /// Loops dropped for referencing a skip slot (the curve entries).
     pub loops_curve_entry: u32,
+    /// The stage-10 ``stats["dup_pin"]`` key: ``Some(None)`` =
+    /// evaluated but UNPINNABLE (a referenced skip slot with no
+    /// preceding written element — the fail-closed veto);
+    /// ``Some(Some(_))`` = pinnable (the merge candidate);
+    /// ``None`` = not evaluated (triangles exported, or no dropped
+    /// loops).
+    pub dup_pin: Option<Option<DupPin>>,
+}
+
+/// The stage-10 E0-b dup-pin candidate (RELAXED 2026-11-13 stage 15,
+/// owner-authorized — the battery criterion removed): the pinned
+/// loops' triangles (written-rank indexed), the degenerate count and
+/// the pinned loop count.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DupPin {
+    /// The pinned loops' triangles (written-rank indexed).
+    pub triangles: Vec<(u32, u32, u32)>,
+    /// The pinned loops' degenerate skips.
+    pub degenerate: u32,
+    /// The pinned loop count (``len(dropped)``).
+    pub loops: u32,
 }
 
 /// The mixedwrite ``rep_laws`` block — the twin's
@@ -304,9 +328,9 @@ pub struct CompositeInfo {
 }
 
 /// The decoded export of one composite store span — the twin's
-/// ``(points, triangles, degenerate, info)`` return tuple (the
-/// duplicate ``points`` of the summary's ``vertices`` kept separate so
-/// the stage-3 curve exposure can hang off the same decode).
+/// ``(points, triangles, degenerate, info)`` return tuple plus the
+/// §2.3 curve exposure (additive, NOT part of the Fidelity definition
+/// — see the boundary note above :fn:`curve_sequence`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct CompositeDecode {
     /// The written points in region order (the exported vertices).
@@ -317,6 +341,11 @@ pub struct CompositeDecode {
     pub degenerate: u32,
     /// The composite summary block.
     pub info: CompositeInfo,
+    /// The §2.3 curve exposure: every dropped curve-entry loop's
+    /// pre-weld point sequence (in dropped-loop encounter order, per
+    /// exported rep on the per-rep paths). NEVER serialized into the
+    /// summary or the PLY — the harness must not see it (§3.2).
+    pub curves: Vec<Vec<(f64, f64, f64)>>,
 }
 
 /// The twin's ``_f32`` (composite.py:222): the ONE widening point —
@@ -906,11 +935,26 @@ fn parse_strip_records(
 /// coordinates (the dup-pin law — the one exception — lands with
 /// stage 3). Strip triangles (0x42/0x4a) skip the degenerate ones
 /// (repeated coordinates or exactly-zero cross product, G3 F7);
-/// polygon fans (0x4c) skip repeated coordinates.
-fn triangulate(
-    elements: &[Element],
-    records: &[CompositeRecord],
-) -> (Vec<(u32, u32, u32)>, u32, LoopStats) {
+/// polygon fans (0x4c) skip repeated coordinates. The dropped
+/// curve-entry loops and the written rank ride on the result for the
+/// stage-3 laws (the dup-pin evaluation and the §2.3 curve exposure).
+struct Triangulation {
+    /// The emitted triangles (written-rank indexed).
+    triangles: Vec<(u32, u32, u32)>,
+    /// The degenerate skips.
+    degenerate: u32,
+    /// The loop counters (the twin's ``stats`` minus ``dup_pin``).
+    loops_exported: u32,
+    loops_curve_entry: u32,
+    /// The stage-10 ``stats["dup_pin"]`` candidate.
+    dup_pin: Option<Option<DupPin>>,
+    /// The dropped curve-entry loops (marker, loop refs) in encounter
+    /// order — the dup-pin input and the §2.3 curve exposure's raw
+    /// material (pre-weld).
+    dropped_loops: Vec<(u8, Vec<u32>)>,
+}
+
+fn triangulate(elements: &[Element], records: &[CompositeRecord]) -> Triangulation {
     let mut written_rank: HashMap<usize, usize> = HashMap::new();
     let mut skips: HashSet<usize> = HashSet::new();
     for (i, (_v, pt)) in elements.iter().enumerate() {
@@ -924,7 +968,9 @@ fn triangulate(
 
     let mut triangles: Vec<(u32, u32, u32)> = Vec::new();
     let mut degenerate = 0u32;
-    let mut stats = LoopStats::default();
+    let mut loops_exported = 0u32;
+    let mut loops_curve_entry = 0u32;
+    let mut dropped_loops: Vec<(u8, Vec<u32>)> = Vec::new();
     for rec in records {
         if !matches!(rec.marker, 0x42 | 0x4A | 0x4C) {
             continue;
@@ -940,10 +986,11 @@ fn triangulate(
                 continue;
             }
             if loop_refs.iter().any(|&r| skips.contains(&(r as usize))) {
-                stats.loops_curve_entry += 1;
+                loops_curve_entry += 1;
+                dropped_loops.push((rec.marker, loop_refs.to_vec()));
                 continue;
             }
-            stats.loops_exported += 1;
+            loops_exported += 1;
             let idxs: Vec<u32> = loop_refs
                 .iter()
                 .map(|&r| {
@@ -958,7 +1005,27 @@ fn triangulate(
             triangles.extend(tris);
         }
     }
-    (triangles, degenerate, stats)
+    // The stage-10 candidate: this call's primary triangulation is
+    // empty and dropped loops exist — evaluate (the None case rides
+    // for the per-rep unpinnable veto, stage-10 review F1).
+    let dup_pin = if triangles.is_empty() && !dropped_loops.is_empty() {
+        Some(e0b_dup_pin(
+            elements,
+            &points,
+            &written_rank,
+            &dropped_loops,
+        ))
+    } else {
+        None
+    };
+    Triangulation {
+        triangles,
+        degenerate,
+        loops_exported,
+        loops_curve_entry,
+        dup_pin,
+        dropped_loops,
+    }
 }
 
 /// Every token-bearing list node in ``[lo, hi)`` (stage-4b scan) —
@@ -1120,6 +1187,8 @@ fn decode_per_rep(
     let mut curve_entries = 0usize;
     let mut node_bytes = 0usize;
     let mut reps_unexported: Vec<String> = Vec::new();
+    let mut reps_dup_pin: Vec<(usize, Option<DupPin>)> = Vec::new();
+    let mut curves: Vec<Vec<(f64, f64, f64)>> = Vec::new();
     for (k, d) in decoded.iter().enumerate() {
         node_bytes += d.payload_len;
         if k >= groups.len() {
@@ -1195,19 +1264,36 @@ fn decode_per_rep(
             continue;
         }
         let base = points.len();
-        let (tri_k, deg_k, stats_k) = triangulate(&d.elements, &records);
-        // stage-10 E0-b candidate for this rep lands with stage 3
-        // (its store-level merge gate is the whole-mesh-empty one);
-        // the loop counters here are already the twin's.
+        let tri_res = triangulate(&d.elements, &records);
+        // stage-10 E0-b candidate for this rep (its own triangulation
+        // is empty and its dropped loops were dup-pin-evaluated):
+        // recorded even when the law REJECTED (None — an unpinnable
+        // referenced skip slot) — a rep with an unpinnable dropped loop
+        // must veto another rep's fire at the store-level gate below
+        // (stage-10 review F1: dropping the None candidate made that
+        // veto dead code and zeroed the curve-entry counters while
+        // unexported loops remained). Merged at the STORE level below
+        // only when the whole store's mesh is empty — a rep-level fire
+        // inside an otherwise-exporting store would be the
+        // 471-passing-stores downside exposure.
+        if let Some(dp) = &tri_res.dup_pin {
+            reps_dup_pin.push((base, dp.clone()));
+        }
         points.extend(d.pts.iter().copied());
         triangles.extend(
-            tri_k
+            tri_res
+                .triangles
                 .iter()
                 .map(|&(a, b, c)| (a + base as u32, b + base as u32, c + base as u32)),
         );
-        degenerate += deg_k;
-        loops_exported += stats_k.loops_exported;
-        loops_curve_entry += stats_k.loops_curve_entry;
+        degenerate += tri_res.degenerate;
+        loops_exported += tri_res.loops_exported;
+        loops_curve_entry += tri_res.loops_curve_entry;
+        // The §2.3 curve exposure: this exported rep's dropped loops'
+        // pre-weld sequences (additive, outside Fidelity).
+        for (_mk, loop_refs) in &tri_res.dropped_loops {
+            curves.push(curve_sequence(loop_refs, &d.elements));
+        }
         facet_candidates += n_hdrs;
         facet_records += records.len();
         write_count += d.write_count as usize;
@@ -1236,9 +1322,28 @@ fn decode_per_rep(
             ),
         ));
     }
-    // Stage-10 E0-b store-level gate lands with stage 3 (the fire
-    // needs the candidates the dup-pin evaluation produces).
-    let info = CompositeInfo {
+    // Stage-10 E0-b store-level gate: fire only when the WHOLE store's
+    // mesh is empty and every rep with dropped loops is pinnable; one
+    // unpinnable rep keeps everything conservative.
+    let mut curve_entry_law = 0u32;
+    if triangles.is_empty()
+        && !reps_dup_pin.is_empty()
+        && reps_dup_pin.iter().all(|(_b, c)| c.is_some())
+    {
+        for (b, c) in &reps_dup_pin {
+            let dp = c.as_ref().expect("all(...) guarded");
+            triangles.extend(
+                dp.triangles
+                    .iter()
+                    .map(|&(a, s, t)| (a + *b as u32, s + *b as u32, t + *b as u32)),
+            );
+            degenerate += dp.degenerate;
+            loops_exported += dp.loops;
+            curve_entry_law += dp.loops;
+        }
+        loops_curve_entry = 0;
+    }
+    let mut info = CompositeInfo {
         stage: "identity-per-rep",
         element_decl,
         node_points: points.len(),
@@ -1266,14 +1371,209 @@ fn decode_per_rep(
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
     };
-    // Stage-15 unordered-triangle dedup lands with stage 3 (the
-    // store-level gate; the reps' element spaces are disjoint).
+    if curve_entry_law > 0 {
+        info.curve_entry_law = Some("e0b-dup-pin");
+        info.loops_curve_entry_exported = Some(curve_entry_law);
+    }
+    // Stage-15 unordered-triangle dedup (see apply_unordered_dedup):
+    // the store-level gate — the reps' element spaces are disjoint, so
+    // same-rep duplicates are the only possible matches, and a passing
+    // store's mesh is never touched.
+    let triangles = apply_unordered_dedup(triangles, &mut info);
     Ok(CompositeDecode {
         points,
         triangles,
         degenerate,
         info,
+        curves,
     })
+}
+
+/// The U4-D dup law over one call's dropped loops — the twin's
+/// ``_e0b_dup_pin`` (the curve-entry coordinate law; see the module
+/// header). Ported from the stage-4a decoder's ``dup_prev``, not
+/// re-derived: a loop-referenced skip slot carries the bit-exact
+/// coordinates of the written vertex of its immediately preceding
+/// written element (the per-face copy — no new vertices). RELAXED
+/// 2026-11-13 (stage 15, #34; owner-authorized overturn of the
+/// stage-10 U4 conservative rule, handoff cont. 23): the stage-10 E0-b
+/// battery criterion (every dropped loop normal-carrying AND coplanar
+/// against its record normal with the dup-pinned coordinates) is
+/// REMOVED — normal-less and nonplanar dropped loops export under the
+/// dup pin exactly like the battery-supported ones (stage-14
+/// probe-measured: 25/26 pinned meshes pass every gate check incl.
+/// degenerate, docs/evidence/2026-11-13-stage14-export-failures.md
+/// section 2 + the review's C4). The fail-closed arm stays: a
+/// loop-referenced skip slot with NO preceding written element to weld
+/// to (element 0 — unpinnable) rejects the whole store onto the
+/// conservative non-export rule.
+///
+/// Returns ``Some`` (the pinned loops' triangles, written-rank
+/// indexed) when every referenced skip slot is pinnable, ``None``
+/// otherwise.
+fn e0b_dup_pin(
+    elements: &[Element],
+    points: &[(f64, f64, f64)],
+    written_rank: &HashMap<usize, usize>,
+    dropped: &[(u8, Vec<u32>)],
+) -> Option<DupPin> {
+    let skips: HashSet<usize> = elements
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, pt))| pt.is_none())
+        .map(|(i, _)| i)
+        .collect();
+    let mut pin: HashMap<usize, usize> = HashMap::new();
+    for (_mk, loop_refs) in dropped {
+        for &r in loop_refs {
+            let r = r as usize;
+            if skips.contains(&r) && !pin.contains_key(&r) {
+                let mut j = r as i64 - 1;
+                while j >= 0 && elements[j as usize].1.is_none() {
+                    j -= 1;
+                }
+                if j >= 0 {
+                    pin.insert(r, j as usize);
+                }
+                // j < 0: no preceding written element — unpinnable
+            }
+        }
+    }
+    if dropped.iter().any(|(_mk, loop_refs)| {
+        loop_refs.iter().any(|&r| {
+            let r = r as usize;
+            skips.contains(&r) && !pin.contains_key(&r)
+        })
+    }) {
+        return None;
+    }
+    // The battery criterion is removed (owner-authorized 2026-11-13,
+    // see the docstring): normal-less and nonplanar dropped loops
+    // export under the dup pin — the weld's written ranks are exact
+    // (the pinned coordinates are bit-identical to the pin target's,
+    // so the mesh never needed them; only the battery did).
+    let mut triangles: Vec<(u32, u32, u32)> = Vec::new();
+    let mut degenerate = 0u32;
+    for (mk, loop_refs) in dropped {
+        let resolved: Vec<u32> = loop_refs
+            .iter()
+            .map(|&r| {
+                let r = r as usize;
+                pin.get(&r).copied().unwrap_or(r) as u32
+            })
+            .collect();
+        let idxs: Vec<u32> = resolved
+            .iter()
+            .map(|&r| {
+                u32::try_from(written_rank[&(r as usize)]).expect(
+                    "guarded: the pin targets and non-skip refs are all \
+                     written elements (ranked in the caller)",
+                )
+            })
+            .collect();
+        let (tris, deg) = loop_triangles(*mk, &idxs, points);
+        triangles.extend(tris);
+        degenerate += deg;
+    }
+    Some(DupPin {
+        triangles,
+        degenerate,
+        loops: dropped.len() as u32,
+    })
+}
+
+/// The unordered-triangle dedup at one store's assembled mesh — the
+/// twin's ``_apply_unordered_dedup`` (stage 15, 2026-11-13, #34; the
+/// stage-14 review F1 family, owner-authorized).
+///
+/// The mechanism (review F1, byte-verified): the same three ELEMENT
+/// indices emitted twice — from two different records 13-42 B apart in
+/// the same rep, from two loops of one record, or from two records in
+/// the same order — the writer re-listed the facet; territory overlap
+/// 0 (two parses never). The second copy's winding is opposite (the
+/// plane normals are exact opposites), so the pair over-uses nothing
+/// TOGETHER — each shared edge is used once per copy — but every edge
+/// shared with the surrounding mesh counts the extra use, and the
+/// corpus stores' over-edges resolve when the later copy is dropped.
+///
+/// Fail-closed fire gate (the law applies ONLY where it resolves the
+/// store's over-use): the emitted mesh must be NOT manifold (an
+/// over-use) AND the deduplicated list must be manifold. A manifold
+/// (passing) store is never touched — its row must not change; a
+/// not-manifold store whose duplicates do NOT resolve the over-use
+/// keeps its exact emitted triangles (the L2 gate names not-manifold)
+/// and the declined dedup is named on the summary. Degenerate
+/// triangles never enter the dedup (skipped at emission and counted
+/// separately); a repeated-index triple is never deduped regardless.
+///
+/// Records the outcome on ``info``: ``unordered_dedup_dropped`` (fired:
+/// N later duplicate copies dropped, the mesh is manifold) or
+/// ``unordered_dedup_declined`` (fired and declined: N duplicates
+/// found, removal leaves the mesh not-manifold, the emitted list is
+/// kept verbatim).
+fn apply_unordered_dedup(
+    triangles: Vec<(u32, u32, u32)>,
+    info: &mut CompositeInfo,
+) -> Vec<(u32, u32, u32)> {
+    if triangles.len() < 2 || mesh::mesh_stats(&triangles).manifold {
+        return triangles;
+    }
+    let mut seen: HashSet<[u32; 3]> = HashSet::new();
+    let mut kept: Vec<(u32, u32, u32)> = Vec::new();
+    let mut dropped = 0u32;
+    for tri in &triangles {
+        if tri.0 == tri.1 || tri.1 == tri.2 || tri.0 == tri.2 {
+            kept.push(*tri); // degenerate-shaped: never deduped
+            continue;
+        }
+        let mut key = [tri.0, tri.1, tri.2];
+        key.sort_unstable();
+        if !seen.insert(key) {
+            dropped += 1; // the later copy: first occurrence's winding wins
+            continue;
+        }
+        kept.push(*tri);
+    }
+    if dropped == 0 {
+        return triangles;
+    }
+    if mesh::mesh_stats(&kept).manifold {
+        info.unordered_dedup_dropped = Some(dropped);
+        return kept;
+    }
+    // The duplicates do not explain the over-use (fins/coplanar
+    // residue alongside): fail-closed — keep the emitted list, name
+    // the gap.
+    info.unordered_dedup_declined = Some(dropped);
+    triangles
+}
+
+// --- stage 3: the §2.3 curve exposure for the viewer's overlay ----------
+//
+// SPEC BOUNDARY (docs/specs/phase5-viewer-spec.md §2.3, pinned): the
+// curve-entry point sequences are ADDITIVE and NOT part of the
+// Fidelity definition. The Python reference has no counterpart
+// artifact (the curve-entry laws land the loops either unexported or
+// dup-pinned *into the mesh*; the overlay shows the pre-weld decoded
+// point sequences) — nothing here is compared by the harness, and no
+// ``curves`` key may enter the summary JSON or the PLY (that would
+// silently widen the §3.2 diff). The artifact exists for the V4 WASM
+// boundary (``decode_export``'s ``curves: Array<Float32Array>``);
+// V4 converts these widened f64 values to the boundary's f32 arrays.
+//
+// Reading (pinned here): the pre-weld decoded point sequence of one
+// dropped curve-entry loop = the loop's WRITTEN elements' coordinates
+// in loop order (repeats kept). A skip slot contributes nothing — its
+// coordinates live in the curve records (U4, open; risk 9 pins
+// re-decoding the ``33 3X``/polyline-table families OUT of this
+// phase), and the dup-pin weld is a MESH law, never applied to the
+// overlay's sequences (spec §2.3: "the overlay shows the pre-weld
+// decoded point sequences").
+fn curve_sequence(loop_refs: &[u32], elements: &[Element]) -> Vec<(f64, f64, f64)> {
+    loop_refs
+        .iter()
+        .filter_map(|&r| elements[r as usize].1)
+        .collect()
 }
 
 /// Decode one composite store span under the identity law (stage 3d;
@@ -1421,17 +1721,36 @@ pub fn decode_composite_store(
         ));
     }
 
-    let (triangles, degenerate, loop_stats) = triangulate(&elements, &records);
-    // Stage-10 E0-b dup-pin law lands with stage 3 (single-rep path:
-    // the merge fires on this call's empty primary triangulation when
-    // every dropped curve-entry loop is pinnable).
+    let tri_res = triangulate(&elements, &records);
+    let mut triangles = tri_res.triangles;
+    let mut degenerate = tri_res.degenerate;
+    let mut loops_exported = tri_res.loops_exported;
+    let mut loops_curve_entry = tri_res.loops_curve_entry;
+    // Stage-10 E0-b dup-pin law (2026-11-12, #34; RELAXED 2026-11-13
+    // stage 15, #34 — the E0-b battery criterion removed,
+    // owner-authorized overturn, handoff cont. 23): the primary
+    // triangulation is empty (the census's empty-mesh class) and every
+    // dropped curve-entry loop is pinnable under the dup pin — the
+    // loops export with their skip slots welded (single-rep path, so
+    // this call IS the store-level mesh). ``None`` (unpinnable, or no
+    // candidate) keeps the conservative non-export rule and its
+    // warning; the U4-M mid law stays unsupported and is not
+    // implemented.
+    let mut curve_entry_law = 0u32;
+    if let Some(Some(dp)) = &tri_res.dup_pin {
+        triangles.extend(dp.triangles.iter().copied());
+        degenerate += dp.degenerate;
+        loops_exported += dp.loops;
+        curve_entry_law = dp.loops;
+        loops_curve_entry = 0;
+    }
     let mut skipped_markers: BTreeMap<u8, u32> = BTreeMap::new();
     for rec in &records {
         if !matches!(rec.marker, 0x42 | 0x4A | 0x4C) {
             *skipped_markers.entry(rec.marker).or_insert(0) += 1;
         }
     }
-    let info = CompositeInfo {
+    let mut info = CompositeInfo {
         stage: "identity-table-walk",
         element_decl: elem_decl as usize,
         node_points: points.len(),
@@ -1455,21 +1774,35 @@ pub fn decode_composite_store(
         raw_x_asc_rate: None,
         raw_trail_bytes: None,
         raw_count3: None,
-        loops_exported: loop_stats.loops_exported,
-        loops_curve_entry: loop_stats.loops_curve_entry,
+        loops_exported,
+        loops_curve_entry,
         curve_entry_law: None,
         loops_curve_entry_exported: None,
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
     };
-    // Stage-15 unordered-triangle dedup lands with stage 3 (fires
-    // only on a not-manifold assembled mesh whose duplicate unordered
-    // triples resolve it — a passing store's mesh is never touched).
+    if curve_entry_law > 0 {
+        info.curve_entry_law = Some("e0b-dup-pin");
+        info.loops_curve_entry_exported = Some(curve_entry_law);
+    }
+    // Stage-15 unordered-triangle dedup (see apply_unordered_dedup):
+    // fires only on a not-manifold assembled mesh whose duplicate
+    // unordered triples resolve it — a passing store's mesh is never
+    // touched.
+    let triangles = apply_unordered_dedup(triangles, &mut info);
+    // The §2.3 curve exposure: the dropped loops' pre-weld sequences
+    // (additive, outside Fidelity — see the boundary note).
+    let curves: Vec<Vec<(f64, f64, f64)>> = tri_res
+        .dropped_loops
+        .iter()
+        .map(|(_mk, loop_refs)| curve_sequence(loop_refs, &elements))
+        .collect();
     Ok(CompositeDecode {
         points,
         triangles,
         degenerate,
         info,
+        curves,
     })
 }
 
@@ -1738,7 +2071,14 @@ fn decode_raw_array_path(
             ),
         ));
     }
-    let (triangles, degenerate, loop_stats) = triangulate(&elements, &records);
+    // The raw element space has no skip slots, so no dropped
+    // curve-entry loops exist and the dup-pin candidate is never
+    // evaluated (triangles-empty-with-dropped is unreachable here).
+    let tri_res = triangulate(&elements, &records);
+    let triangles = tri_res.triangles;
+    let degenerate = tri_res.degenerate;
+    let loops_exported = tri_res.loops_exported;
+    let loops_curve_entry = tri_res.loops_curve_entry;
     let mut skipped_markers: BTreeMap<u8, u32> = BTreeMap::new();
     for rec in &records {
         if !matches!(rec.marker, 0x42 | 0x4A | 0x4C) {
@@ -1766,23 +2106,29 @@ fn decode_raw_array_path(
         raw_x_asc_rate: Some(raw_info.raw_x_asc_rate),
         raw_trail_bytes: Some(raw_info.raw_trail_bytes),
         raw_count3: raw_info.raw_count3,
-        loops_exported: loop_stats.loops_exported,
-        loops_curve_entry: loop_stats.loops_curve_entry,
+        loops_exported,
+        loops_curve_entry,
         curve_entry_law: None,
         loops_curve_entry_exported: None,
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
     };
-    // Stage-15 unordered-triangle dedup (see apply_unordered_dedup at
-    // stage 3): the raw path triangulates facet records like the other
-    // paths, so the same duplicated-writer-content mechanism is in
-    // scope (measured corpus incidence 0 — no identity-raw-array row
-    // is not-manifold).
+    // Stage-15 unordered-triangle dedup (see apply_unordered_dedup):
+    // the raw path triangulates facet records like the other paths, so
+    // the same duplicated-writer-content mechanism is in scope
+    // (measured corpus incidence 0 — no identity-raw-array row is
+    // not-manifold).
+    let mut info = info;
+    let triangles = apply_unordered_dedup(triangles, &mut info);
+    // The §2.3 curve exposure: the raw element space has NO skip
+    // slots, so no dropped curve-entry loops exist and the artifact is
+    // empty (measured corpus incidence 0).
     Ok(CompositeDecode {
         points,
         triangles,
         degenerate,
         info,
+        curves: Vec::new(),
     })
 }
 
@@ -2313,6 +2659,8 @@ fn decode_mixedwrite(
     let mut curve_entries = 0usize;
     let mut node_bytes = 0usize;
     let mut reps_unexported: Vec<String> = Vec::new();
+    let mut reps_dup_pin: Vec<(usize, Option<DupPin>)> = Vec::new();
+    let mut curves: Vec<Vec<(f64, f64, f64)>> = Vec::new();
     for (k, m) in decoded.iter().enumerate() {
         let d = &m.rep;
         node_bytes += d.payload_len;
@@ -2350,19 +2698,29 @@ fn decode_mixedwrite(
             continue;
         }
         let base = points.len();
-        let (tri_k, deg_k, stats_k) = triangulate(&d.elements, &records);
-        // stage-10 E0-b candidate lands with stage 3 (the None case
-        // recorded too — the unpinnable veto; merged at the store
-        // level below, only when the whole mesh is empty).
+        let tri_res = triangulate(&d.elements, &records);
+        // stage-10 E0-b candidate (see decode_per_rep; the None case
+        // recorded too — the unpinnable veto, stage-10 review F1):
+        // merged at the store level below, only when the whole mesh is
+        // empty.
+        if let Some(dp) = &tri_res.dup_pin {
+            reps_dup_pin.push((base, dp.clone()));
+        }
         points.extend(d.pts.iter().copied());
         triangles.extend(
-            tri_k
+            tri_res
+                .triangles
                 .iter()
                 .map(|&(a, b, c)| (a + base as u32, b + base as u32, c + base as u32)),
         );
-        degenerate += deg_k;
-        loops_exported += stats_k.loops_exported;
-        loops_curve_entry += stats_k.loops_curve_entry;
+        degenerate += tri_res.degenerate;
+        loops_exported += tri_res.loops_exported;
+        loops_curve_entry += tri_res.loops_curve_entry;
+        // The §2.3 curve exposure: this exported rep's dropped loops'
+        // pre-weld sequences (additive, outside Fidelity).
+        for (_mk, loop_refs) in &tri_res.dropped_loops {
+            curves.push(curve_sequence(loop_refs, &d.elements));
+        }
         facet_candidates += n_hdrs;
         facet_records += records.len();
         write_count += d.write_count as usize;
@@ -2394,8 +2752,26 @@ fn decode_mixedwrite(
             ),
         ));
     }
-    // Stage-10 E0-b store-level gate lands with stage 3.
-    let info = CompositeInfo {
+    // Stage-10 E0-b store-level gate (see decode_per_rep).
+    let mut curve_entry_law = 0u32;
+    if triangles.is_empty()
+        && !reps_dup_pin.is_empty()
+        && reps_dup_pin.iter().all(|(_b, c)| c.is_some())
+    {
+        for (b, c) in &reps_dup_pin {
+            let dp = c.as_ref().expect("all(...) guarded");
+            triangles.extend(
+                dp.triangles
+                    .iter()
+                    .map(|&(a, s, t)| (a + *b as u32, s + *b as u32, t + *b as u32)),
+            );
+            degenerate += dp.degenerate;
+            loops_exported += dp.loops;
+            curve_entry_law += dp.loops;
+        }
+        loops_curve_entry = 0;
+    }
+    let mut info = CompositeInfo {
         stage: "identity-mixedwrite-reps",
         element_decl,
         node_points: points.len(),
@@ -2423,13 +2799,19 @@ fn decode_mixedwrite(
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
     };
-    // Stage-15 unordered-triangle dedup lands with stage 3 (the
-    // store-level gate, as in decode_per_rep).
+    if curve_entry_law > 0 {
+        info.curve_entry_law = Some("e0b-dup-pin");
+        info.loops_curve_entry_exported = Some(curve_entry_law);
+    }
+    // Stage-15 unordered-triangle dedup (see apply_unordered_dedup):
+    // the store-level gate, as in decode_per_rep.
+    let triangles = apply_unordered_dedup(triangles, &mut info);
     Ok(CompositeDecode {
         points,
         triangles,
         degenerate,
         info,
+        curves,
     })
 }
 
@@ -2500,6 +2882,125 @@ mod tests {
         assert_eq!(elements[0], (0, Some((1.0, 2.0, 3.0))));
         assert_eq!(elements[1], (1, None));
         assert_eq!(elements[2], (2, Some((1.0, 2.0, 7.0))));
+    }
+
+    /// The stage-10 dup-pin law (relaxed): a loop-referenced skip slot
+    /// welds to the immediately preceding written element; element 0
+    /// (no predecessor) is unpinnable and vetoes.
+    #[test]
+    fn dup_pin_welds_to_the_preceding_written_element() {
+        let elements: Vec<Element> = vec![
+            (0, Some((0.0, 0.0, 0.0))),
+            (1, None), // the curve entry
+            (0, Some((1.0, 0.0, 0.0))),
+            (0, Some((0.0, 1.0, 0.0))),
+        ];
+        let mut written_rank = HashMap::new();
+        for (i, (_v, pt)) in elements.iter().enumerate() {
+            if pt.is_some() {
+                written_rank.insert(i, written_rank.len());
+            }
+        }
+        let points: Vec<(f64, f64, f64)> = elements.iter().filter_map(|e| e.1).collect();
+        // One dropped loop referencing the skip slot 1.
+        let dropped = vec![(0x4Au8, vec![1u32, 2, 3])];
+        let pin = e0b_dup_pin(&elements, &points, &written_rank, &dropped).expect("pinnable");
+        assert_eq!(pin.loops, 1);
+        // The skip slot resolved to element 0 (its predecessor): the
+        // loop's ranks are [0, 1, 2] -> one strip triangle.
+        assert_eq!(pin.triangles, vec![(0u32, 1u32, 2u32)]);
+        // Element 0 as a skip slot: no preceding written element.
+        let elements0: Vec<Element> = vec![(1, None), (0, Some((1.0, 2.0, 3.0)))];
+        let mut rank0 = HashMap::new();
+        for (i, (_v, pt)) in elements0.iter().enumerate() {
+            if pt.is_some() {
+                rank0.insert(i, rank0.len());
+            }
+        }
+        let points0: Vec<(f64, f64, f64)> = elements0.iter().filter_map(|e| e.1).collect();
+        let dropped0 = vec![(0x4Au8, vec![0u32, 1])];
+        assert!(e0b_dup_pin(&elements0, &points0, &rank0, &dropped0).is_none());
+    }
+
+    /// The stage-15 unordered-triangle dedup: fires on a not-manifold
+    /// mesh whose duplicate unordered triple resolves it; declines
+    /// when the duplicates do not explain the over-use; a manifold
+    /// mesh is never touched; degenerate-shaped triples never dedup.
+    #[test]
+    fn unordered_dedup_fires_declines_and_passes_through() {
+        // A dup + a third triangle over-using {0,1}: not-manifold; the
+        // dup's removal resolves it.
+        let mut info = CompositeInfo {
+            stage: "identity-table-walk",
+            element_decl: 4,
+            node_points: 4,
+            curve_entries: 0,
+            write_count: None,
+            table_bytes: None,
+            facet_candidates: 0,
+            facet_records: 0,
+            skipped_markers: BTreeMap::new(),
+            node_bytes: 0,
+            reps_decoded: None,
+            reps_exported: None,
+            reps_unexported: None,
+            rep_reasons: None,
+            rep_laws: None,
+            raw_start: None,
+            raw_nice_rate: None,
+            raw_x_asc_rate: None,
+            raw_trail_bytes: None,
+            raw_count3: None,
+            loops_exported: 0,
+            loops_curve_entry: 0,
+            curve_entry_law: None,
+            loops_curve_entry_exported: None,
+            unordered_dedup_dropped: None,
+            unordered_dedup_declined: None,
+        };
+        let tris = vec![(0u32, 1u32, 2u32), (2, 1, 0), (0, 1, 3)];
+        let kept = apply_unordered_dedup(tris, &mut info);
+        assert_eq!(kept, vec![(0, 1, 2), (0, 1, 3)]);
+        assert_eq!(info.unordered_dedup_dropped, Some(1));
+        assert_eq!(info.unordered_dedup_declined, None);
+        // Declined: a fin that is NOT a duplicate keeps the mesh
+        // over-used after the dup's removal.
+        let mut info2 = info.clone();
+        info2.unordered_dedup_dropped = None;
+        info2.unordered_dedup_declined = None;
+        let tris2 = vec![(0u32, 1u32, 2u32), (2, 1, 0), (0, 1, 3), (1, 0, 4)];
+        let kept2 = apply_unordered_dedup(tris2, &mut info2);
+        assert_eq!(kept2, vec![(0, 1, 2), (2, 1, 0), (0, 1, 3), (1, 0, 4)]);
+        assert_eq!(info2.unordered_dedup_dropped, None);
+        assert_eq!(info2.unordered_dedup_declined, Some(1));
+        // A manifold two-sided sheet never fires (the zero-regression
+        // direction).
+        let mut info3 = info.clone();
+        info3.unordered_dedup_dropped = None;
+        let sheet = vec![(0u32, 1u32, 2u32), (2, 1, 0)];
+        let kept3 = apply_unordered_dedup(sheet, &mut info3);
+        assert_eq!(kept3, vec![(0, 1, 2), (2, 1, 0)]);
+        assert_eq!(info3.unordered_dedup_dropped, None);
+        // Degenerate-shaped triples are never deduped.
+        let mut info4 = info.clone();
+        info4.unordered_dedup_dropped = None;
+        let degenerate = vec![(0u32, 0u32, 1u32), (0, 0, 1)];
+        let kept4 = apply_unordered_dedup(degenerate, &mut info4);
+        assert_eq!(kept4, vec![(0, 0, 1), (0, 0, 1)]);
+    }
+
+    /// The §2.3 curve exposure: a dropped loop's pre-weld sequence is
+    /// its WRITTEN elements' coordinates in loop order (the skip slot
+    /// contributes nothing — U4 open, the weld never applied).
+    #[test]
+    fn curve_sequence_is_preweld_written_elements_only() {
+        let elements: Vec<Element> = vec![
+            (0, Some((1.0, 2.0, 3.0))),
+            (1, None), // the curve entry: no coordinates in the region
+            (0, Some((4.0, 5.0, 6.0))),
+        ];
+        let seq = curve_sequence(&[0, 1, 2, 0], &elements);
+        assert_eq!(seq, vec![(1.0, 2.0, 3.0), (4.0, 5.0, 6.0), (1.0, 2.0, 3.0)]);
     }
 
     /// The twin's ``round(rate, 4)`` ground truth (Python's
