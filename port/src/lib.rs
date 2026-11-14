@@ -86,8 +86,12 @@
 //! `wasm-bindgen` (+ `wasm-bindgen-test` dev) — the boundary and the
 //! headless WASM tests (V4); `serde` + `serde_json` — the summary
 //! structs mirroring `export-summary-v1.json` / schema-v1 (field
-//! declaration order = Python dict construction order). No other
-//! runtime crates. Toolchain pinned by `port/rust-toolchain.toml`.
+//! declaration order = Python dict construction order). Added at V4
+//! (ticket #43, the §2.3 boundary): `serde-wasm-bindgen` — the
+//! §2.3-prescribed summary->JsValue conversion — and `js-sys` — the
+//! typed-array constructors the §2.3 boundary shapes require (same
+//! wasm-bindgen family, same release cadence). No other runtime
+//! crates. Toolchain pinned by `port/rust-toolchain.toml`.
 //!
 //! # Status
 //!
@@ -108,10 +112,28 @@
 //!   composite route fails closed until V3) — and ``fidelity-cli``
 //!   grows export mode (spec §2.4). ``geometry/composite.rs`` remains
 //!   the V0 stub until V3 (#42).
+//! - V3 (ticket #42, 2026-11-14): ``geometry/composite.rs`` — the
+//!   whale, ported verbatim-faithful (table walk, per-rep, raw-array,
+//!   mixedwrite, dup-pin, unordered dedup, the composite summary
+//!   block, the §2.3 curve exposure riding ``CompositeDecode``).
+//! - V4 (ticket #43, 2026-11-14): the WASM boundary —
+//!   ``wasm_boundary.rs`` (``decode_inspect``/``decode_export``, the
+//!   classified-error objects, the typed-array shapes), the shared
+//!   ``inspect.rs`` document builder (field order single-sourced with
+//!   the CLI seam), and ``ExportOutcome``'s additive ``curves``; the
+//!   shipped artifact builds via pinned wasm-pack (`--target web`) and
+//!   runs under Node via the wasm-bindgen tests (§7).
 
 pub mod containers;
 pub mod geometry;
 pub mod header;
 pub mod identity;
+pub mod inspect;
 pub mod trailer;
 pub mod version;
+
+/// The WASM boundary (spec §2.3) — compiled only for the shipped
+/// ``cdylib``; the native ``rlib`` the Fidelity harness drives has no
+/// JS runtime and never links it (see the module header).
+#[cfg(target_arch = "wasm32")]
+pub mod wasm_boundary;

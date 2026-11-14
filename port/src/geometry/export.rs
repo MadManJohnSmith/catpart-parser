@@ -198,7 +198,12 @@ pub struct ExportSummary {
 }
 
 /// The decoded export of one store: the summary plus the PLY payload
-/// (the flattened pool and the triangle soup).
+/// (the flattened pool and the triangle soup), plus the §2.3 curve
+/// exposure for the WASM boundary — additive and NOT part of the
+/// Fidelity definition (§2.3; the summary and the PLY never carry it,
+/// so the harness must not see it). Empty on the non-composite path:
+/// the clean path has no curve-entry loops, the composite decode is
+/// the only curve source.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExportOutcome {
     /// The schema-versioned summary.
@@ -207,6 +212,11 @@ pub struct ExportOutcome {
     pub vertices: Vec<(f64, f64, f64)>,
     /// The triangle soup (the PLY faces).
     pub triangles: Vec<(u32, u32, u32)>,
+    /// The dropped curve-entry loops' pre-weld point sequences (the
+    /// composite decode's ``curves``, passed through for the §2.3
+    /// boundary; every loop's coordinates in dropped-loop encounter
+    /// order).
+    pub curves: Vec<Vec<(f64, f64, f64)>>,
 }
 
 /// Export ``path``'s nested-store geometry to the PLY ``out_path`` —
@@ -644,11 +654,13 @@ fn export_store(
         );
     }
     // The twin's _self_check: the typed struct IS the schema shape (no
-    // validator dependency; see the module header).
+    // validator dependency; see the module header). The clean path has
+    // no curve source — the §2.3 curves ride empty.
     Ok(ExportOutcome {
         summary,
         vertices: flat,
         triangles: soup.triangles,
+        curves: Vec::new(),
     })
 }
 
@@ -736,8 +748,9 @@ fn export_composite_store(
         info,
         // The §2.3 curve exposure rides on the decode for the V4 WASM
         // boundary; the export surface (summary + PLY) never emits it
-        // (additive, NOT part of the Fidelity definition — §3.2).
-        curves: _curves,
+        // (additive, NOT part of the Fidelity definition — §3.2). It
+        // travels on ExportOutcome for the boundary only.
+        curves,
     } = composite::decode_composite_store(data, span, groups, kinds, allow_unrouted_elements)?;
     let stats = mesh::mesh_stats(&triangles);
     let mut warnings: Vec<Warning> = Vec::new();
@@ -893,11 +906,13 @@ fn export_composite_store(
         );
     }
     // The twin's _self_check: the typed struct IS the schema shape (no
-    // validator dependency; see the module header).
+    // validator dependency; see the module header). The §2.3 curves
+    // ride for the boundary only (never into the summary or the PLY).
     Ok(ExportOutcome {
         summary,
         vertices: points,
         triangles,
+        curves,
     })
 }
 

@@ -52,3 +52,23 @@ echo "check: cargo clippy -D warnings (port)"
 cargo clippy --locked -- -D warnings
 echo "check: cargo test (port)"
 cargo test --locked
+# V4 (ticket #43, spec §7 step 6): the shipped-artifact steps mirror
+# ci.yml's port job — wasm-pack pinned 0.15.1 (recorded on the ticket
+# per §2.1). The build goes to a check dir OUTSIDE the committed pkg/
+# (port/pkg/ + site/viewer/pkg/ are reviewed artifacts; refreshing them
+# is a deliberate maintainer step, never a gate side effect). The Node
+# tests RUN the shipped artifact on the §7 fixture subset. Playwright
+# stays LOCAL (scripts/viewer_acceptance.py — never CI, §7).
+if ! command -v wasm-pack >/dev/null 2>&1; then
+  echo "check: FAIL — wasm-pack not found. From V4 it is a required dev" >&2
+  echo "        dependency for these steps (spec §7 step 6; ticket #43)." >&2
+  echo "        Install the pinned release:" >&2
+  echo "        curl -sSLO https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15.1/wasm-pack-v0.15.1-x86_64-unknown-linux-musl.tar.gz" >&2
+  echo "        (sha256 410101009739b9d01c7d5affaaad6e9c9a24b4cba6791a4805db8e89b9bf7af2;" >&2
+  echo "        untar and put wasm-pack on PATH)." >&2
+  exit 1
+fi
+echo "check: wasm-pack build --target web --release (check dir)"
+wasm-pack build --target web --release --out-dir target/wasm-pack-check
+echo "check: wasm-pack test --node (the shipped artifact runs)"
+wasm-pack test --node

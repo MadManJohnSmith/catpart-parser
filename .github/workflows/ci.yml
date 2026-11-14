@@ -10,6 +10,14 @@
 # and corpus-free. From V0 the Rust toolchain is a required dev
 # dependency; the pinned toolchain lives in port/rust-toolchain.toml
 # (single source of truth — nothing pins the version again here).
+#
+# Amended 2026-11-14 (V4, ticket #43, spec §7 step 6): the port job
+# gains the shipped-artifact steps — wasm-pack build --target web
+# (wasm-pack pinned 0.15.1, recorded on the ticket per §2.1) and
+# wasm-bindgen-test under NODE on the §7 fixture subset (canonical
+# store + corrupted variants): CI *runs* the shipped artifact
+# headlessly, catching wasm-linkage-only bugs the native runs cannot
+# see. Playwright stays LOCAL (§7 — no browsers in Actions).
 
 name: CI
 
@@ -73,7 +81,7 @@ jobs:
         run: python -m pytest -v tests/test_fixturegen.py::test_no_real_catia_binaries_staged
 
   port:
-    name: "port (cargo: build native + wasm32, fmt, clippy, test)"
+    name: "port (cargo: build native + wasm32, fmt, clippy, test; wasm-pack web + node tests)"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -86,6 +94,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             port/target
+            ~/.cache/wasm-pack
           key: cargo-${{ runner.os }}-${{ hashFiles('port/Cargo.lock') }}
           restore-keys: |
             cargo-${{ runner.os }}-
@@ -95,6 +104,21 @@ jobs:
         # inside port/ installs exactly what it pins.
         working-directory: port
         run: rustup toolchain install
+      - name: Pin Node for the wasm-bindgen tests
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Install pinned wasm-pack (0.15.1, sha256-verified)
+        # The packaging tool, pinned per spec §2.1 and recorded on
+        # ticket #43; the digest is the release tarball's sha256
+        # (recorded in the ticket evidence too). No curl|sh installer.
+        run: |
+          curl -sSLo /tmp/wasm-pack.tar.gz \
+            https://github.com/wasm-bindgen/wasm-pack/releases/download/v0.15.1/wasm-pack-v0.15.1-x86_64-unknown-linux-musl.tar.gz
+          echo "410101009739b9d01c7d5affaaad6e9c9a24b4cba6791a4805db8e89b9bf7af2  /tmp/wasm-pack.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/wasm-pack.tar.gz -C /tmp
+          install /tmp/wasm-pack-v0.15.1-x86_64-unknown-linux-musl/wasm-pack /usr/local/bin/wasm-pack
+          wasm-pack --version
       - name: Build (native — the Fidelity-harness target)
         working-directory: port
         run: cargo build --locked
@@ -110,3 +134,14 @@ jobs:
       - name: Test (fixture-free micro tests)
         working-directory: port
         run: cargo test --locked
+      - name: wasm-pack build --target web (spec §7 step 6; the committed
+          pkg/ is port/pkg/ + site/viewer/pkg/ — owner decision 2026-11-13)
+        # Built to a check dir OUTSIDE the committed pkg/: CI proves the
+        # packaging step succeeds without touching the reviewed
+        # artifacts (wasm-pack would otherwise also write pkg/.gitignore).
+        working-directory: port
+        run: wasm-pack build --target web --release --out-dir target/wasm-pack-check
+      - name: wasm-bindgen-test under Node (the shipped artifact RUNS —
+          spec §7 step 6, the §7 fixture subset)
+        working-directory: port
+        run: wasm-pack test --node

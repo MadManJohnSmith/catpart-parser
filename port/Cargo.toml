@@ -20,6 +20,19 @@ crate-type = ["cdylib", "rlib"]
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 wasm-bindgen = "0.2.130"
+# V4 (ticket #43, spec §2.3): the boundary's summary->JsValue conversion
+# (the §2.3-prescribed dependency) and the typed-array constructors the
+# §2.3 shapes require (Float32Array/Uint32Array; same wasm-bindgen
+# family, same release cadence). No other crates (§2.1).
+serde-wasm-bindgen = "0.6"
+js-sys = "0.3"
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3.80"
+
+# V4 (ticket #43): the shipped artifact is rustc's output verbatim —
+# wasm-pack's release path would otherwise run binaryen's wasm-opt, a
+# re-optimization pass this crate does not want near the §2.2
+# bit-exact decode (and a second binary download CI does not need).
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = false

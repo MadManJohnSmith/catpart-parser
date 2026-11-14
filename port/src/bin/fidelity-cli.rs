@@ -67,36 +67,10 @@
 use std::io::Write;
 use std::process::ExitCode;
 
-use port::containers::{ContainerRecord, detect_kind, parse_container_table};
 use port::geometry::errors::ExportError;
 use port::geometry::export::build_export;
-use port::header::{HEADER_SIZE, HeaderInfo, parse_header};
-use port::identity::parse_document_name;
-use port::trailer::{TrailerInfo, parse_trailer};
-use port::version::detect_version;
+use port::inspect::{InspectDocument, build_inspect_document};
 use serde::Serialize;
-
-/// The schema-v1 inspect document (``catpart-inspect`` stdout; schema
-/// ``src/catpart/schema/v1.json``). Field declaration order = the
-/// Python dict construction order of ``build_inspect_report`` (spec
-/// §2.1: even byte JSON equality stays reachable, though Fidelity
-/// compares parsed documents, §3.2).
-#[derive(Serialize)]
-struct InspectDocument {
-    schema_version: u32,
-    magic: String,
-    header_dword: u32,
-    header_dword12: u32,
-    ff8_at_16_24: bool,
-    header_dword16: Option<u32>,
-    header_dword20: Option<u32>,
-    file_size: u64,
-    detected_version: String,
-    kind: &'static str,
-    document_name: Option<String>,
-    containers: Vec<ContainerRecord>,
-    trailer: Option<TrailerInfo>,
-}
 
 /// The classified error line (the ``catpart-export``/§3.2 shape:
 /// ``{"error_class": ..., "detail": ...}``, one JSON line on stderr,
@@ -106,10 +80,6 @@ struct ClassifiedError {
     error_class: &'static str,
     detail: String,
 }
-
-/// The schema version of the document this seam emits (twin:
-/// ``catpart.cli.SCHEMA_VERSION``).
-const SCHEMA_VERSION: u32 = 1;
 
 const USAGE: &str = "usage: fidelity-cli inspect <file>\n       fidelity-cli export <file> <ply-output>\n       (usage errors exit 2)";
 
@@ -125,53 +95,21 @@ fn main() -> ExitCode {
     }
 }
 
-/// The twin of ``catpart.cli.main_inspect`` +
-/// ``build_inspect_report``: the file-level refusals first (stat,
-/// 32-byte minimum), then the whole-buffer decode, then the document
-/// on stdout.
+/// The twin of ``catpart.cli.main_inspect``: the path-level refusals
+/// (stat, read — the OSError arm, the crash class), then the shared
+/// whole-buffer document build (``inspect.rs``, the builder the WASM
+/// boundary also drives), then the document on stdout.
 fn run_inspect(path: &str) -> ExitCode {
-    let file_size = match std::fs::metadata(path) {
-        Ok(metadata) => metadata.len(),
-        Err(err) => return emit_classified("crash", &format!("{path}: {err}")),
-    };
-    if file_size < HEADER_SIZE as u64 {
-        // The twin's ValueError prose (``build_inspect_report``), the
-        // detail of the same crash class.
-        return emit_classified(
-            "crash",
-            &format!("not a CATIA V5 container: header needs {HEADER_SIZE} bytes, got {file_size}"),
-        );
+    if let Err(err) = std::fs::metadata(path) {
+        return emit_classified("crash", &format!("{path}: {err}"));
     }
     let data = match std::fs::read(path) {
         Ok(data) => data,
         Err(err) => return emit_classified("crash", &format!("{path}: {err}")),
     };
-    let HeaderInfo {
-        magic,
-        header_dword,
-        header_dword12,
-        ff8_at_16_24,
-        header_dword16,
-        header_dword20,
-    } = match parse_header(&data[..HEADER_SIZE]) {
-        Ok(info) => info,
-        Err(err) => return emit_classified("crash", &err.to_string()),
-    };
-    let records = parse_container_table(&data);
-    let document = InspectDocument {
-        schema_version: SCHEMA_VERSION,
-        magic,
-        header_dword,
-        header_dword12,
-        ff8_at_16_24,
-        header_dword16,
-        header_dword20,
-        file_size,
-        detected_version: detect_version(&data),
-        kind: detect_kind(&records),
-        document_name: parse_document_name(&data),
-        containers: records,
-        trailer: parse_trailer(&data),
+    let document: InspectDocument = match build_inspect_document(&data) {
+        Ok(document) => document,
+        Err(refusal) => return emit_classified(refusal.error_class, &refusal.detail),
     };
     let stdout = std::io::stdout().lock();
     if let Err(err) = serde_json::to_writer_pretty(stdout, &document) {
