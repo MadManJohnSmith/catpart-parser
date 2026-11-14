@@ -1,0 +1,22 @@
+claim_id,sweep_term,term_kind,files_hit,population,occurrences,file_rate,buckets_hit,verdict,note
+G1,blockname-CGMGeom,sweep,0,382,0,0.0,-,absent,block NAME occurrence; contrast with the name-TABLE rows the container inventory counts
+G1,blockname-CATStdCont,sweep,18,382,18,0.0471,R15|R16|R17|R19|R21|unknown,present,
+G1,blockname-CATSeeBodyCont,sweep,0,382,0,0.0,-,absent,
+G1,blockname-CATBRepModeContainer,sweep,0,382,0,0.0,-,absent,
+G1,blockname-CATCGRCont,sweep,0,382,0,0.0,-,absent,
+G1,blockname-CATXDocLinkCont,sweep,2,382,2,0.0052,R21,present,
+G1,body-V5_CFV2>0,sweep,0,382,0,0.0,-,absent,V5_CFV2 within the body only; offset 0 is the outer header
+G1,body-CB0001>0,sweep,44,382,44,0.1152,R15|R16|unknown,present,"CB0001 within the body only; the tail region's own CB0001 (every file, law H1) is excluded by the scoping"
+G1,locate_store-any-block,sweep,0,382,0,0.0,-,absent,"shipped nested-store law on every body block (stage-3a/12 extension), regions bounded at dword8; hit = a store span validated"
+G1,utf16-SurfacicReps,sweep,0,382,0,0.0,-,absent,
+G1,utf16-SceneGraph,sweep,0,382,0,0.0,-,absent,
+G1,utf16-MainDataStream,sweep,0,382,0,0.0,-,absent,
+G1,utf16-Describe,sweep,0,382,0,0.0,-,absent,
+G1,utf16-Header,sweep,0,382,0,0.0,-,absent,
+G1,utf16-MAIN,sweep,0,382,0,0.0,-,absent,
+G1,strip-records,sweep,0,382,0,0.0,-,absent,"V5 strip-record grammar, verified count, body-scoped (signature, not a decode)"
+D1,bytes-CATXDocLinkCont,sweep,2,382,6,0.0052,R21,present,
+F1,tail-catalog-walks,sweep,273,382,6515,0.7147,R15|R16|R17|R18|R19|R20|R21|R23|R24|R26|unknown,present,the file's own tail catalog walks (decode_tail_region.scan_tail); occurrences = region entries
+X1,f64run>=8,sweep,380,382,380,0.9948,R15|R16|R17|R18|R19|R20|R21|R23|R24|R26|unknown,present,NON-DISCRIMINATING on this corpus: string pools unpack as plausible doubles; swept to commit the non-rate
+X1,f32run>=12,sweep,380,382,380,0.9948,R15|R16|R17|R18|R19|R20|R21|R23|R24|R26|unknown,present,"NON-DISCRIMINATING, same mechanism as f64"
+T1,parent_name-in-name1,hierarchy,374,382,230/2436,0.9791,-,negative,files resolving FULLY: 0 (the #24 negative at product scale; partial record-level resolution is the base-class annotation)

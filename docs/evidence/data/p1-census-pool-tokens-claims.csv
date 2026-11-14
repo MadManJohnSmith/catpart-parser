@@ -1,0 +1,15 @@
+claim_id,token,files,population,note
+structure-pool-vocabulary,ASMPRODUCT,221,382,raw byte presence; the law-B validated per-file count is pool_tokens in the product-files CSV
+structure-pool-vocabulary,PRDREP,183,382,raw byte presence; the law-B validated per-file count is pool_tokens in the product-files CSV
+structure-pool-vocabulary,PRDBAGREP,227,382,raw byte presence; the law-B validated per-file count is pool_tokens in the product-files CSV
+structure-pool-vocabulary,_Component,380,382,raw byte presence; the law-B validated per-file count is pool_tokens in the product-files CSV
+structure-pool-vocabulary,_PartNumber,380,382,raw byte presence; the law-B validated per-file count is pool_tokens in the product-files CSV
+structure-pool-vocabulary,_RefProduct,375,382,raw byte presence; the law-B validated per-file count is pool_tokens in the product-files CSV
+structure-pool-vocabulary,_InstanceName,315,382,raw byte presence; the law-B validated per-file count is pool_tokens in the product-files CSV
+structure-pool-vocabulary,_Position,264,382,raw byte presence; the law-B validated per-file count is pool_tokens in the product-files CSV
+structure-pool-vocabulary,CONNECTOR,230,382,raw byte presence; the law-B validated per-file count is pool_tokens in the product-files CSV
+structure-pool-vocabulary,CONNECTION,103,382,raw byte presence; the law-B validated per-file count is pool_tokens in the product-files CSV
+structure-pool-vocabulary,IsRoot,380,382,raw byte presence; the law-B validated per-file count is pool_tokens in the product-files CSV
+structure-pool-vocabulary,_Version,339,382,raw byte presence; the law-B validated per-file count is pool_tokens in the product-files CSV
+structure-pool-vocabulary,_Reps,380,382,raw byte presence; the law-B validated per-file count is pool_tokens in the product-files CSV
+structure-pool-vocabulary,3DIC,380,382,raw byte presence; the law-B validated per-file count is pool_tokens in the product-files CSV
