@@ -1,0 +1,11 @@
+row_id,path,split,kind,detected_version,outcome,python_status,viewer_status,python_failed_check,viewer_failed_check,python_error_class,viewer_error_class,python_vertex_count,viewer_vertex_count,python_triangle_count,viewer_triangle_count,python_degenerate_triangle_count,viewer_degenerate_triangle_count,mesh_equal,bbox_equal,warnings_equal,first_divergence,viewer_seconds,harness_note
+geometry,geometry.CATPart,fixture,part,V5R21SP0HF0,match,pass,pass,,,,,8,8,12,12,0,0,true,true,true,,0.108,
+geometry-composite-law-curve-entries,geometry-composite-law-curve-entries.CATPart,fixture,part,V5R21SP0HF0,match,pass,pass,,,,,12,12,12,12,0,0,true,true,true,,0.018,
+geometry-composite-law-dedup-unordered,geometry-composite-law-dedup-unordered.CATPart,fixture,part,V5R21SP0HF0,match,pass,pass,,,,,12,12,12,12,0,0,true,true,true,,0.062,
+geometry-composite-law-e0b-relaxed-not-manifold,geometry-composite-law-e0b-relaxed-not-manifold.CATPart,fixture,part,V5R21SP0HF0,match,fail,fail,not-manifold,not-manifold,,,12,12,4,4,0,0,true,true,true,,0.010,
+geometry-composite-law-dedup-degenerate,geometry-composite-law-dedup-degenerate.CATPart,fixture,part,V5R21SP0HF0,match,fail,fail,degenerate-triangles,degenerate-triangles,,,12,12,12,12,1,1,true,true,true,,0.055,
+geometry-open-shell,geometry-open-shell.CATPart,fixture,part,V5R21SP0HF0,match,fail,fail,degenerate-triangles,degenerate-triangles,,,8,8,10,10,1,1,true,true,true,,0.014,
+geometry-nan-coords,geometry-nan-coords.CATPart,fixture,part,V5R21SP0HF0,match,fail,fail,,,malformed-pool-vertex,malformed-pool-vertex,,,,,,,true,true,true,,0.014,
+geometry-out-of-range-refs,geometry-out-of-range-refs.CATPart,fixture,part,V5R21SP0HF0,match,fail,fail,,,undecoded-variant,undecoded-variant,,,,,,,true,true,true,,0.010,
+geometry-seebody-empty,geometry-seebody-empty.CATPart,fixture,part,V5R21SP0HF0,match,fail,fail,,,missing-geometry-store,missing-geometry-store,,,,,,,true,true,true,,0.009,
+geometry-othercontainer-bad-tail,geometry-othercontainer-bad-tail.CATPart,fixture,part,V5R21SP0HF0,match,fail,fail,,,malformed-store-header,malformed-store-header,,,,,,,true,true,true,,0.008,
