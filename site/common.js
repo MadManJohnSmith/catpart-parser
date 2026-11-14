@@ -1,10 +1,11 @@
 /* Shared chrome for the catpart-parser Pages site: nav, footer, helpers.
-   Each page carries <nav data-page="index|format|gallery|evidence|grind"></nav>
+   Each page carries <nav data-page="index|format|viewer|gallery|evidence|grind"></nav>
    and a <footer data-common></footer> placeholder. */
 (function () {
   var PAGES = [
     ["index", "Home", "index.html"],
     ["format", "Format docs", "format.html"],
+    ["viewer", "Viewer", "viewer.html"],
     ["gallery", "Gallery", "gallery.html"],
     ["evidence", "Evidence", "evidence.html"],
     ["grind", "The grind", "grind.html"],

@@ -1,0 +1,112 @@
+/* Viewer-only styles (the shared sheet is ../style.css). Same design
+   tokens; no rules that touch the other pages. */
+
+.viewer-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(260px, 3fr);
+  gap: 16px;
+  margin-top: 18px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .viewer-grid { grid-template-columns: 1fr; }
+}
+
+.stage { padding: 16px; }
+
+.drop {
+  border: 2px dashed var(--card-edge);
+  border-radius: 12px;
+  padding: 26px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.drop:hover, .drop:focus-visible, .drop.over { border-color: var(--accent); background: rgba(56, 225, 255, .05); outline: none; }
+.drop svg { width: 44px; height: 44px; }
+.drop p { margin-top: 8px; }
+.dim { color: var(--ink-dim); }
+.drop .dim { font-size: 13px; }
+/* After a load, the drop zone slims to a one-line "load another" bar. */
+.drop.compact { padding: 10px 16px; }
+.drop.compact .drop-inner > * { display: none; }
+.drop.compact .drop-inner::before {
+  content: "Load another .CATPart — click or drop here.";
+  font-size: 13.5px;
+  color: var(--ink-dim);
+}
+
+.scene {
+  display: block;
+  width: 100%;
+  height: 420px;
+  margin-top: 14px;
+  border-radius: 10px;
+  background: var(--bg-soft);
+  border: 1px solid var(--card-edge);
+  touch-action: none;
+  cursor: grab;
+}
+.scene:active { cursor: grabbing; }
+/* The hidden attribute must beat the .scene display rule. */
+.scene[hidden] { display: none; }
+
+.statusline { margin-top: 10px; font-size: 13.5px; }
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  font-size: 13px;
+  flex-wrap: wrap;
+}
+.controls button {
+  background: var(--bg-soft);
+  border: 1px solid var(--card-edge);
+  color: var(--ink);
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.controls button:hover:not(:disabled) { border-color: var(--accent); }
+.controls button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.controls button:disabled { opacity: .45; cursor: not-allowed; }
+.controls .hint { margin-left: auto; }
+
+.error-panel {
+  margin-top: 14px;
+  border: 1px solid var(--bad);
+  border-radius: 10px;
+  background: rgba(255, 122, 122, .07);
+  padding: 14px 16px;
+}
+.error-title { font-weight: 600; color: var(--bad); }
+.error-title code { color: var(--bad); font-size: 14px; }
+.error-detail { margin-top: 8px; color: var(--ink-dim); font-size: 13.5px; line-height: 1.5; overflow-wrap: anywhere; }
+
+.pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.pill.good { background: rgba(61, 220, 151, .14); color: var(--good); }
+.pill.bad { background: rgba(255, 122, 122, .14); color: var(--bad); }
+
+.gate-head { display: flex; align-items: center; gap: 10px; }
+
+.kv {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  margin-top: 9px;
+  font-size: 13.5px;
+}
+.kv > span:first-child { min-width: 110px; color: var(--ink-faint); }
+.kv code, .warns code { overflow-wrap: anywhere; }
+
+.warns { margin: 6px 0 0 16px; color: var(--ink-dim); font-size: 13px; line-height: 1.6; }
+
+.ctable { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 12.5px; }
+.ctable th { text-align: left; color: var(--ink-faint); font-weight: 600; text-transform: uppercase; letter-spacing: .6px; font-size: 11px; }
+.ctable th, .ctable td { padding: 6px 8px; border-bottom: 1px solid var(--card-edge); font-family: var(--mono); }

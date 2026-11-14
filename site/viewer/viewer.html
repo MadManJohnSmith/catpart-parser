@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>catpart-parser — Viewer</title>
+<meta name="description" content="Decode a CATIA V5 .CATPart in your browser: the Rust port compiled to WebAssembly. Static files only — the file never leaves your machine.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1120'/%3E%3Cpath d='M22 10a8 8 0 1 0 0 12' stroke='%2338e1ff' stroke-width='3.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+<div class="page"><div class="wrap">
+
+  <nav data-page="viewer"></nav>
+
+  <header class="page-head">
+    <div class="crumb">Phase 5 · the Port compiled to WebAssembly</div>
+    <h1>Viewer</h1>
+    <p class="lead">Drop a <strong>.CATPart</strong> and the Rust decode pipeline — the same code the
+    Fidelity harness proves against the Python reference — runs in your browser. Static files only:
+    nothing is uploaded, the file never leaves your machine. Desktop target (the largest corpus
+    files are ~120&nbsp;MB and decode at ≈3× transient memory peak).</p>
+  </header>
+
+  <div class="viewer-grid">
+    <section class="stage panel">
+      <div id="drop" class="drop" role="button" tabindex="0" aria-label="Choose or drop a .CATPart file">
+        <input type="file" id="file-input" accept=".CATPart,.catpart" hidden>
+        <div class="drop-inner">
+          <svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M24 6v24m0 0 8-8m-8 8-8-8" stroke="#38e1ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 34v6h32v-6" stroke="#8b7bff" stroke-width="3" stroke-linecap="round"/></svg>
+          <p><strong>Drop a .CATPart here</strong> — or click to choose a file.</p>
+          <p class="dim">Decoded locally by the WebAssembly port (spec §2.3). Failures show their
+          classified error, never a blank screen.</p>
+        </div>
+      </div>
+      <canvas id="scene" class="scene" width="640" height="420"></canvas>
+      <div id="status" class="statusline dim">loading the decoder…</div>
+      <div class="controls">
+        <button id="wire-toggle" type="button" aria-pressed="false">Wireframe</button>
+        <button id="curve-toggle" type="button" aria-pressed="false" disabled>Curve overlay</button>
+        <span id="curve-state" class="dim">0 loops</span>
+        <span class="dim hint">drag to orbit · wheel to zoom</span>
+      </div>
+      <div id="error-panel" class="error-panel" hidden>
+        <div class="error-title">Decode failed — <code id="error-class"></code></div>
+        <p id="error-detail" class="error-detail"></p>
+      </div>
+    </section>
+
+    <aside class="side">
+      <section class="panel">
+        <h2>Sanity gate</h2>
+        <p class="lede">The in-browser gate mirrors <code>_score_export</code> exactly —
+        same check order, same constants (spec §3.4).</p>
+        <div id="gate" class="gate"><p class="dim">no file loaded</p></div>
+      </section>
+      <section class="panel">
+        <h2>Metadata</h2>
+        <p class="lede">The schema-v1 inspect document (spec §2.3).</p>
+        <div id="meta" class="meta"><p class="dim">no file loaded</p></div>
+      </section>
+    </aside>
+  </div>
+
+  <footer data-common></footer>
+</div></div>
+<script type="module" src="viewer.js"></script>
+<script src="../common.js"></script>
+</body>
+</html>
