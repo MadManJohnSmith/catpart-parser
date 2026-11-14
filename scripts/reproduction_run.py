@@ -757,12 +757,27 @@ def build_reference_records_smoke(fixture_dir: Path, variants: list[str]) -> tup
     return reference_records(report), report, report_path
 
 
+def load_playwright():
+    """The one non-stdlib dependency (the viewer_acceptance.py
+    precedent): import it lazily and fail with the pinned install
+    command when absent."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        raise RunError(
+            "playwright is not installed. Local-only (spec §7): "
+            "python -m pip install 'playwright==1.65.2' && "
+            "python -m playwright install chromium"
+        ) from exc
+    return sync_playwright
+
+
 def run_smoke(csv_path: Path, note_path: Path, port: int, per_file_timeout: float) -> int:
     """The machinery smoke over the fixed fixture population. The rows
     it writes prove the machinery (page load, feed, per-check read,
     comparison, CSV write) — the outcome data is mechanical validation
     ONLY: never a rate, never a margin input (§3.4's letter)."""
-    from playwright.sync_api import sync_playwright
+    sync_playwright = load_playwright()
 
     variants = [name for name, _ in SMOKE_VARIANTS]
     with tempfile.TemporaryDirectory(prefix="repro-smoke-") as tmp:
@@ -868,7 +883,7 @@ def run_corpus(csv_path: Path, note_path: Path, manifest_path: Path, corpus_root
     """The full L2 population run (§3.1: all 1,442 kind=part rows today
     — successes AND fail-closed alike). Requires the owner's declared
     margin (the --margin gate above)."""
-    from playwright.sync_api import sync_playwright
+    sync_playwright = load_playwright()
 
     report, report_path = resolve_reference_report(fitness_dir, explicit_report)
     check_corpus_binding(report, manifest_path)
