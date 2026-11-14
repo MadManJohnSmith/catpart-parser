@@ -77,6 +77,41 @@ files:
 - Decisions are final (ADRs + issue map #1). If evidence contradicts a
   documented assumption, record the correction (precedent: B1's
   +12 -> +18) instead of massaging.
+- A new evidence-data CSV family lands in the same stage as its
+  mechanical hygiene check (2026-11-13 retro, candidate 1: the
+  unquoted-comma debt spanned stage-5-era CSVs — ~52 rows, 8 files —
+  while `scripts/triage/check_format_claims.py` already carried the
+  identical check pattern for `docs/format/`; the 30-row semantic
+  repair + delegate cycle was the interest on it). `*claims*.csv` is
+  auto-covered by `scripts/triage/check_claims_csv_quoting.py` via the
+  gate; a data directory outside that glob gets its own width/format
+  checker at introduction, not at phase close.
+- Every figure in a note's prose is derivable from a committed
+  artifact (a CSV row or a committed `*-anchor.csv`) at dispatch time,
+  before the review dispatch (2026-11-13 retro, candidate 3: ~10 of
+  the stage 10-14 review corrections were prose-vs-data drift rooted
+  in ad-hoc session-dir anchors — stage-13 F1's five byte-position
+  errors, stage-14 F4-F6). This sharpens the #37 CSV-composability
+  convention from a merge-time hand-check into a dispatch-time
+  obligation; the probes' `--sha16`/`--include-sha16` anchor modes
+  produce the committed anchor CSVs.
+- A classifier or census mechanism whose labels feed a ceiling table
+  or an owner decision states, per class, one explicit line — what
+  this detector does NOT discriminate (ordering, sign, scope) — and
+  carries a committed synthetic negative fixture for its discriminating
+  edge, as a `--selftest` mode or pinned rows (2026-11-13 retro,
+  candidate 4: stage-14 F1's ordered-triples-only detector measured
+  family 1 instead of 8 and reopened a Phase-B gate; stage-12 F1's
+  ceiling sum omitted its own cap-raisers, 144 vs 181 — owner-facing
+  arithmetic. Declared-before-observed is self-referential and
+  structurally cannot catch an unstated detector assumption; the
+  independent-method review catches it, at review cost).
+- A stage's own deliverable lands as
+  `docs/evidence/<date>-stage<N>-<topic>.md`; dated corrections to
+  other stages' notes stay as dated sections inside the owning note
+  (2026-11-13 retro, candidate 7: stage 11's deliverable is an
+  addendum inside the stage-8-era mixedwrite-reps note, resolvable
+  only by grep).
 - At most 2 concurrent subagents on this host (owner update 2026-11-09;
   supersedes the earlier 1-at-a-time limit). Background dispatches
   preferred so the coordinator loop stays responsive. The second slot
@@ -114,3 +149,52 @@ files:
   executed — they are diffed and read only; corpus runs use committed
   code. Verdicts, expected deltas and re-scopes live in the ticket
   (#35 comment 2026-11-10).
+
+## Provider-failure playbook (2026-11-13 retro, candidate 2)
+
+Practiced through the three 3008 failures of 2026-11-13 (stage-15
+impl, stage-15 review, CSV repair — all recovered on re-dispatch);
+written here because it lived only in a handoff marked SUPERSEDED and
+was re-derived by hand each time:
+
+1. On a failed child, verify terminal state FIRST (`task_status` or
+   the child thread's activity): a "failed" turn may have committed
+   its deliverable before dying.
+2. Clean the residual before re-dispatching. The failure signature:
+   an empty worktree plus a zero-unique-commit branch named for the
+   dispatch (stage-15 review and the CSV repair left exactly this;
+   stage-15 impl left none). Remove the worktree, delete the branch.
+3. A fresh review worktree's branch arrives parked at main's head
+   (harness behavior, rediscovered by hand in all five stage-11-15
+   review dispatches): reset it to the child's head before reviewing.
+4. Never dispatch delegates or arm scheduled tasks from a
+   notification-woken run (`parent_not_active` — it cost 4 wasted
+   orchestrator calls to learn, handoff-2026-11-11 cont. 10-12):
+   dispatch from a user-woken turn.
+5. Re-dispatch as a NEW `delegate_task` with the same brief verbatim;
+   3008 and 1005 recovered this way every observed time. Never resume
+   or continue the failed delegate.
+
+## Owner-decision protocol (2026-11-13 retro, candidate 5)
+
+The pattern that worked five times across the grind (2026-11-12 →
+2026-11-13), now written down — it governs the V5 margin declaration
+and every later owner-facing decision:
+
+1. Present decisions only on post-review, verified arithmetic — no
+   unverified figure reaches the owner (the cont. 16 and cont. 20
+   asks both followed review corrections).
+2. Enumerate the options with one honest recommendation, including
+   what it costs, and state the not-recommended option honestly —
+   the owner may rationally pick it (cont. 17 did, recorded as
+   rational on the stage-7→9 precedent).
+3. Anchor risky continuations on measured precedent, not hope.
+4. Record the decision dated, with declined alternatives, rationale,
+   and sub-decisions to the digit (cont. 23's shape).
+5. Pre-authorize recurring decision classes as standing rules so only
+   parameters remain to decide (the ROADMAP bar-revision rule:
+   written 2026-11-10, applied 2026-11-13 at margin 0 with zero new
+   negotiation).
+6. Overturning a standing conservative decision is a STOP-and-report,
+   never a unilateral call (stage-14 §6 → cont. 23's dated
+   authorization is what unblocked stage 15).
