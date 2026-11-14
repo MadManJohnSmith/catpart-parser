@@ -97,10 +97,17 @@
 //!   bodies — ``header.rs``, ``containers.rs``, ``trailer.rs``,
 //!   ``version.rs``, ``identity.rs`` (the Python twins' behavior
 //!   mirrored 1:1, fail-closed arms included) — and the native CLI
-//!   seam ``bin/fidelity-cli.rs`` (inspect mode only; export is V2,
-//!   #41). The geometry modules (``store``/``pool``/``facets``/
-//!   ``mesh``/``ply``/``errors``/``export``/``composite``) remain V0
-//!   stubs until V2/V3.
+//!   seam ``bin/fidelity-cli.rs`` in inspect mode.
+//! - V2 (ticket #41, 2026-11-13): the non-composite geometry slice
+//!   carries real bodies — ``geometry/store.rs`` (G1 + the stage-3a/12
+//!   recovery probes), ``geometry/pool.rs`` (G2, THE f32 -> f64
+//!   widening point), ``geometry/facets.rs`` (G3 tiling + soup, the
+//!   cross-product degenerate keystone), ``geometry/mesh.rs``,
+//!   ``geometry/ply.rs``, ``geometry/errors.rs``,
+//!   ``geometry/export.rs`` (the orchestration + recovery; the
+//!   composite route fails closed until V3) — and ``fidelity-cli``
+//!   grows export mode (spec §2.4). ``geometry/composite.rs`` remains
+//!   the V0 stub until V3 (#42).
 
 pub mod containers;
 pub mod geometry;
