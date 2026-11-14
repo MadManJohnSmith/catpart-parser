@@ -283,6 +283,24 @@ def is_token(t: str) -> bool:
     return t.startswith("_")
 
 
+def hist_str(c: Counter) -> str:
+    """A Counter as a deterministic 'text×N;...' string (top 8)."""
+    return ";".join(f"{k}×{v}" for k, v in sorted(c.items(),
+                                                  key=lambda kv: (-kv[1], kv[0]))[:8])
+
+
+def merge_hist(s: str) -> Counter:
+    """Inverse of hist_str over merged per-file strings."""
+    c: Counter = Counter()
+    for part in (s or "").split(";"):
+        if not part:
+            continue
+        k, _, v = part.rpartition("×")
+        if k:
+            c[k] += int(v)
+    return c
+
+
 BINARY_SENTINEL = "\x00binary"  # never matches is_token or the name shapes
 
 
@@ -357,16 +375,20 @@ def classify_pairings(texts: list[str]) -> dict:
                 out["inst_triple"] += 1
                 if DOT_SHAPE.match(next_t):
                     out["inst_triple_dotnext"] += 1
+                out.setdefault("_pred_hist", Counter())[prev_t[:24]] += 1
             if i >= 2 and texts[i - 2] == "_DescriptionInst" and not is_token(texts[i - 1]):
                 out["desc_block"] += 1
         elif t == "_Position":
             out["position_tokens"] += 1
             if next_t is None:
                 out["position_succ_token"] += 1  # chain end: no value follows
+                out.setdefault("_succ_hist", Counter())["<chain-end>"] += 1
             elif is_token(next_t) or next_t in CLASS_TOKENS:
                 out["position_succ_token"] += 1
+                out.setdefault("_succ_hist", Counter())[next_t[:24]] += 1
             else:
                 out["position_succ_value"] += 1
+                out.setdefault("_succ_hist", Counter())["<value>"] += 1
                 try:
                     float(next_t)
                     out["position_succ_numeric"] += 1
@@ -458,6 +480,7 @@ def analyze_one(r: dict) -> dict:
         row["hdr_off"] = hex(pool["hdr"])
         row["u32le"] = pool["ln"]
         row["tail_bytes"] = pool["tail"]
+        row["tail_hex"] = data[pool["hdr"] + 7 : pool["hdr"] + 7 + pool["tail"]].hex()
         row["pool_start"] = hex(pool["start"])
         row["pool_end"] = hex(pool["end"])
         row["pool_span"] = pool["end"] - pool["start"]
@@ -479,7 +502,11 @@ def analyze_one(r: dict) -> dict:
         if texts[:4] == ["CATCatalogManager", "catalogManager", "catalogLinks", ""]:
             row["head_skeleton"] = 1
         pr = classify_pairings(texts)
+        succ_hist = pr.pop("_succ_hist", Counter())
+        pred_hist = pr.pop("_pred_hist", Counter())
         row.update(pr)
+        row["position_succ_hist"] = hist_str(succ_hist)
+        row["inst_pred_hist"] = hist_str(pred_hist)
         row["asmp_succ_stem"] = int(any(
             texts[i + 1] == row["self_stem"]
             for i, t in enumerate(texts) if t == "ASMPRODUCT" and i + 1 < len(texts)
@@ -495,7 +522,8 @@ def analyze_one(r: dict) -> dict:
 FILES_FIELDS = [
     "sha16", "bucket", "size_bytes", "self_stem", "pool_form", "candidates",
     "cand_with_vocab",
-    "hdr_off", "u32le", "tail_bytes", "pool_start", "pool_end", "pool_span",
+    "hdr_off", "u32le", "tail_bytes", "tail_hex", "pool_start", "pool_end",
+    "pool_span",
     "length_law_ok", "natural_break_ok", "n_items", "n_short", "n_long",
     "n_binary", "long_rel", "head_skeleton", "pool_vocab_tokens",
     "inst_marker", "inst_triple", "inst_triple_dotnext", "desc_block",
@@ -506,6 +534,7 @@ FILES_FIELDS = [
     "prdrep_count", "prdrep_succ_value", "connection_succ_value",
     "asmgeom_succ_value", "isroot_present", "isroot_last",
     "partnumber_vocab_pos", "r15_entries",
+    "position_succ_hist", "inst_pred_hist",
 ]
 
 
@@ -558,6 +587,11 @@ def run_pairing() -> list[dict]:
     pos_tok_total = sum(int(x["position_tokens"]) for x in framed)
     pos_succ_tok = sum(int(x["position_succ_token"]) for x in framed)
     pos_succ_num = sum(int(x["position_succ_numeric"]) for x in framed)
+    succ_total: Counter = Counter()
+    pred_total: Counter = Counter()
+    for x in framed:
+        succ_total += merge_hist(x["position_succ_hist"])
+        pred_total += merge_hist(x["inst_pred_hist"])
     inst_triples = sum(int(x["inst_triple"]) for x in framed)
     triple_dots = sum(int(x["inst_triple_dotnext"]) for x in framed)
     bare = sum(int(x["bare_pair"]) for x in framed)
@@ -573,7 +607,10 @@ def run_pairing() -> list[dict]:
               "measure/spec pools) ride the same framing and are excluded "
               "by the vocabulary gate",
               detail=f"framing candidates per file: "
-                     f"{sum(int(x['candidates']) for x in verified)} total"),
+                     f"{sum(int(x['candidates']) for x in verified)} total; "
+                     f"tail byte(s) all-high-bit: "
+                     f"{sum(1 for x in framed if x['tail_hex'] and all(b & 0x80 for b in bytes.fromhex(x['tail_hex'])))}"
+                     f"/{len(framed)}"),
         claim("P2-length-law",
               "u32le ln counts from the 7c marker through the pool's last "
               "byte (ln == 6 + tail_bytes + pool_span), AND on all-text "
@@ -605,7 +642,8 @@ def run_pairing() -> list[dict]:
               framed, lambda x: x["inst_triple"] > 0, "fact",
               "the census's _InstanceName pairing, decoded as adjacency",
               detail=f"triples {inst_triples}, dot-shaped instance names "
-                     f"{triple_dots}"),
+                     f"{triple_dots}; triple predecessors (top): "
+                     + hist_str(pred_total)),
         claim("P2-identity-triple-dotname",
               "triple files whose marked instance name is dot-shaped "
               "(the census's INSTANCE_SHAPE)",
@@ -634,7 +672,8 @@ def run_pairing() -> list[dict]:
               detail=f"in-chain _Position tokens {pos_tok_total}; successors "
                      f"token/class {pos_succ_tok}, value "
                      f"{sum(int(x['position_succ_value']) for x in framed)}, "
-                     f"numeric {pos_succ_num}"),
+                     f"numeric {pos_succ_num}; successor histogram (top): "
+                     + hist_str(succ_total)),
         claim("P2-asmp-anchor",
               "ASMPRODUCT's successor is a value (the save-time document "
               "name); stem-equality subrate in asmp_succ_stem",
