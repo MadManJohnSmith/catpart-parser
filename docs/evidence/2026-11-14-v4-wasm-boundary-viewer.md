@@ -67,7 +67,7 @@ branch only.
   `410101009739b9d01c7d5affaaad6e9c9a24b4cba6791a4805db8e89b9bf7af2`
   (verified locally and re-verified in CI's install step).
 - `wasm-pack build --target web --release` produces `port/pkg/` —
-  **committed** (port.js glue 14,999 B; port_bg.wasm 222,531 B, sha256
+  **committed** (port.js glue 14,999 B; port_bg.wasm 305,474 B, sha256
   `8c8bc1c73484271b334dbc8ff1a44678d817a20a3b40f44008405b5e60f43e4f`;
   port.d.ts / port_bg.wasm.d.ts / package.json alongside). The
   publication copy `site/viewer/pkg/` is committed byte-identical
