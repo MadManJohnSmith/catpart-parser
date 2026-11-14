@@ -284,7 +284,7 @@ Figures block (verbatim, and MACHINERY VALIDATION ONLY — NOT A RATE):
 - Page requests: 10 total; external: 0 (§5's zero-external property,
   re-proven for the harness's own session)
 - Wall-clock: 0.8 s (measured); per-file viewer seconds: n=10, mean
-  0.031, max 0.108
+  0.031, max 0.107
 - Outcomes: {'match': 10} — counts, mesh invariants, exact bbox
   floats and warnings class sequences equal on every row
 - Comparison branches exercised: {'degenerate-triangles': 2,
