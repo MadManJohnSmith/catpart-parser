@@ -149,7 +149,7 @@ citations per §2.1 and ADR-0002's discipline):
 
 ## Fixture-mode parity (§4 fixture mode, the gate)
 
-- Population: **292 fixtures = 235 L1 rows + 57 L2 export rows** — the
+- Population: **292 fixtures = 238 L1 rows + 54 L2 export rows** — the
   L1 matrix as at V1 (every A2 variant incl. the composite-law
   families: inspect parity holds — inspect does not decode geometry),
   plus the export matrix: all 23 geometry-bearing variants (the
@@ -159,6 +159,9 @@ citations per §2.1 and ADR-0002's discipline):
   refuse `missing-geometry-store` / exercise the short-file path. The
   composite-law and unrouted-elementspace variants are excluded from
   the export matrix (V3 scope, #42 — named in the note).
+  (Arithmetic corrected 2026-11-14 per review F2, ticket #41: the
+  draft said 235+57; the committed CSV says 238 L1 + 54 L2 = 292 —
+  #37: prose traces to the CSV.)
 - Command (repo root, this worktree):
 
   ```
@@ -251,6 +254,20 @@ verified against the Python seam at both seeds before commit):
   vertices, exactly-zero cross product, skipped (the open-shell
   fixture's repeated-vertex record never reaches this arm). Exports
   with `degenerate-triangles-skipped` + `open-shell`.
+  **(Correction 2026-11-14, review F1, ticket #41: as landed this
+  fixture did NOT export** — `pool_count_field` stayed 8 while
+  `pool_walk` grew to 9 records, so the walk stopped at 8, the
+  re-threaded ranks landed beyond the pool, and BOTH twins refused
+  `undecoded-variant` identically ("facet references beyond the pool:
+  max ref 8 >= pool size 8") — parity intact, the seam arm untested.
+  Fix: the count field states 9 for this variant
+  (`tests/fixtures_gen.py`, coordinator commit). Verified post-fix:
+  the fixture exports — 9 vertices, 12 triangles,
+  `degenerate_triangle_count` 1, the two warnings above — and the
+  port's PLY is byte-identical at the seam (the fixture-mode CSV's
+  `geometry-degenerate-cross ... |l2` rows: `outcome=match`,
+  `ply_equal=true`). The §2.2 keystone arm is now seam-covered; the
+  committed fixture CSV regenerated accordingly.)
 - `geometry-second-store-exports` — the candidate walk: two
   `CATStdCont` blocks, the first store's tail matching neither
   recovery family (the shipped `malformed-store-header` rejection),

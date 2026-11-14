@@ -2169,7 +2169,15 @@ def _geometry_store(variant: str) -> bytes:
     # variant (the P1g escape path); 8 everywhere else — the
     # truncated-pool corruption REQUIRES the field to stay 8 while the
     # walked records drop to 6 (the G2 P2g violation under test).
-    pool_count_field = 300 if variant == "geometry-u16be-facets" else 8
+    # Exception (review F1, ticket #41, 2026-11-14): degenerate-cross
+    # grows pool_walk to 9 records the re-threaded strip references —
+    # the field must state 9, or the walk stops at 8, the 9th rank
+    # lands beyond the pool, and BOTH twins refuse undecoded-variant
+    # before reaching the (0.0, 0.0, 0.0) cross arm the fixture exists
+    # to exercise at the seam.
+    pool_count_field = 300 if variant == "geometry-u16be-facets" else (
+        9 if variant == "geometry-degenerate-cross" else 8
+    )
     body_parts = [
         NESTED_FULL_WRAP
         + NESTED_POOL_SUBKIND
