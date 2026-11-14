@@ -827,7 +827,8 @@ def run_smoke(csv_path: Path, note_path: Path, port: int, per_file_timeout: floa
                     )
 
                 links = prepare_links(feed_paths, Path(tmp) / "links")
-                drive_population(driver, links, 0, on_state, on_harness_error)
+                drive_population(driver, links, list(range(len(feed_paths))), 0,
+                                 on_state, on_harness_error)
                 requests_total = driver.requests_total
                 external_requests = list(driver.external_requests)
                 driver.close()
@@ -1077,11 +1078,21 @@ def write_note(note_path: Path, mode: str, rows: list[dict], wall: float, csv_pa
             matched = sum(1 for row in compared if row["outcome"] == OUTCOME_MATCH)
             harness_errors = [row for row in split_rows if row["outcome"] == OUTCOME_HARNESS_ERROR]
             ref_unavailable = [row for row in split_rows if row["outcome"] == OUTCOME_REFERENCE_UNAVAILABLE]
-            rate = (matched / len(compared)) if compared else None
+            # §3.4's declared quantity is the in-browser PASS RATE (the
+            # share of compared files whose viewer decode passed the
+            # sanity gate) — the published scalar's own definition — NOT
+            # the agreement rate (matched/compared, the per-file drift
+            # detector, which is 1.0 in any perfect run and would make
+            # the printed verdict nonsensical; V5-B review fix, ticket
+            # #52: the phase-B note as produced printed EXCEEDED on a
+            # perfect run because of exactly this conflation).
+            viewer_passes = sum(1 for row in compared if row["viewer_status"] == "pass")
+            rate = (viewer_passes / len(compared)) if compared else None
             pub = (published or {}).get(split)
             lines += [
                 f"- Split {split}: population {len(split_rows)}, compared {len(compared)}, "
-                f"matched {matched}, mismatched {len(compared) - matched}, "
+                f"viewer passes {viewer_passes}, "
+                f"per-file agreement matched {matched}, mismatched {len(compared) - matched}, "
                 f"harness-errors {len(harness_errors)} (excluded per §3.4, named below), "
                 f"reference-unavailable {len(ref_unavailable)} (named below)",
             ]
@@ -1091,7 +1102,7 @@ def write_note(note_path: Path, mode: str, rows: list[dict], wall: float, csv_pa
                 # same split's rate with the harness-errors counted as
                 # not-pass (the published scalar's own unavailable-as-not-
                 # pass convention) — both figures CSV-composable.
-                conservative_rate = matched / len(split_rows) if split_rows else None
+                conservative_rate = viewer_passes / len(split_rows) if split_rows else None
                 conservative_line = ""
                 if conservative_rate is not None and harness_errors:
                     conservative_line = (

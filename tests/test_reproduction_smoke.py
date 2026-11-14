@@ -230,3 +230,36 @@ def test_drive_population_carries_population_indices():
         on_harness_error=lambda i, note: seen.append(("harness", i)),
     )
     assert seen == [("state", 3), ("state", 7)]
+
+
+def test_note_verdict_uses_viewer_pass_rate(tmp_path):
+    """V5-B review fix pin (ticket #52): the note's §3.4 verdict compares
+    the in-browser PASS rate (the viewer_status pass share) against the
+    published scalar — NOT the per-file agreement rate, which is 1.0 in
+    any perfect run and made the phase-B note print EXCEEDED on a
+    perfect margin-0 run."""
+    rows = []
+    for i in range(10):
+        status = "pass" if i < 7 else "fail"
+        rec = {
+            "status": status,
+            "failed_check": None if status == "pass" else "empty-mesh",
+            "error_class": None,
+            "vertex_count": 8, "triangle_count": 12,
+            "degenerate_triangle_count": 0,
+        }
+        rows.append(rr.csv_row(
+            f"{i:064x}", f"p{i}.CATPart", "dev", "part", "V5R19",
+            rr.OUTCOME_MATCH, rec, rec, True, True, True, None, 0.01, "",
+        ))
+    note = tmp_path / "n.md"
+    rr.write_note(
+        note, mode="corpus", rows=rows, wall=1.0, csv_path=tmp_path / "c.csv",
+        reference_note="r", margin=0.0, published={"dev": 0.7, "held-out": None},
+        served_command="x", per_file_timeout=60, requests_total=0,
+        external_requests=[],
+    )
+    text = note.read_text()
+    assert "WITHIN" in text, "the perfect run must be WITHIN at margin 0"
+    assert "EXCEEDED" not in text, "the agreement rate must not drive the verdict"
+    assert "viewer passes 7" in text
