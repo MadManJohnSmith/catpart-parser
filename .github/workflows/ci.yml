@@ -3,6 +3,13 @@
 # in CI: not committed (dispatch-recipes hard rule), not downloaded, not
 # cached, not referenced by any step. Real fitness runs locally on the
 # machine holding corpus/ and publishes to gh-pages.
+#
+# Amended 2026-11-13 (Phase 5 spec §7 — the A5 amendment ADR-0004
+# requires; ticket #51): the port/ crate adds cargo build (native +
+# wasm32-unknown-unknown), fmt, clippy and test — still fixture-free
+# and corpus-free. From V0 the Rust toolchain is a required dev
+# dependency; the pinned toolchain lives in port/rust-toolchain.toml
+# (single source of truth — nothing pins the version again here).
 
 name: CI
 
@@ -64,3 +71,42 @@ jobs:
         # fails this job. Logic lives in tests/test_fixturegen.py — run,
         # not duplicated.
         run: python -m pytest -v tests/test_fixturegen.py::test_no_real_catia_binaries_staged
+
+  port:
+    name: "port (cargo: build native + wasm32, fmt, clippy, test)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Cache cargo (registry, git deps, target dir)
+        # Spec §7: "cargo cached". The lockfile hash keys the cache; a
+        # dependency bump re-builds, everything else stays warm.
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            port/target
+          key: cargo-${{ runner.os }}-${{ hashFiles('port/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+      - name: Install pinned toolchain
+        # rust-toolchain.toml (channel, components, wasm32 target) is
+        # the single source of truth; bare `rustup toolchain install`
+        # inside port/ installs exactly what it pins.
+        working-directory: port
+        run: rustup toolchain install
+      - name: Build (native — the Fidelity-harness target)
+        working-directory: port
+        run: cargo build --locked
+      - name: Build (wasm32-unknown-unknown — the viewer artifact)
+        working-directory: port
+        run: cargo build --locked --target wasm32-unknown-unknown
+      - name: Format
+        working-directory: port
+        run: cargo fmt --check
+      - name: Clippy (the numeric-contract lint policy, spec §2.2)
+        working-directory: port
+        run: cargo clippy --locked -- -D warnings
+      - name: Test (fixture-free micro tests)
+        working-directory: port
+        run: cargo test --locked
