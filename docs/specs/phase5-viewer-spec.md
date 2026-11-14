@@ -139,8 +139,20 @@ reference (verified by reading the modules, 2026-11-13):
   `composite.py:222`, pool records at `pool.py`). Every downstream
   value is an f64 derived from these or from integers.
 - **Every decision arithmetic is IEEE-exact**: `+ - * /` and
-  comparisons only. There are no transcendentals, no `sqrt`, no
-  library calls beyond `math.isfinite` in the decode path. The
+  comparisons only — plus the ONE power lowering the draft's "no
+  sqrt" claim missed (corrected 2026-11-14, V3 review): the plane
+  tiebreak's norm `(n0**2+n1**2+n2**2)**0.5` at `composite.py:532`
+  is reached in the decode path (all four `parse_strip_records` call
+  sites, winners and losing candidates alike); CPython lowers `**0.5`
+  to libm `pow` and the port matches with `powf` — probed on the real
+  decision surface (70,605 calls / 11,263 distinct f32 triples,
+  winners and losers): 0 bit divergences under either lowering, 0
+  status flips, no NaN ever reaches the law (the 382,793 figure in
+  the port header is the raw superset population; the decision
+  surface is what §3.2 compares). Decision margins dwarf any
+  re-rounding: the closest corpus call to the `PLANE_TOL` boundary
+  is 1.06e-5, min nonzero nn ≈ 1.0. No other transcendentals, no
+  other library calls beyond `math.isfinite` in the decode path. The
   decisive predicates are exact-equality or verbatim-constant
   comparisons: the degenerate-triangle test is tuple equality against
   `(0.0, 0.0, 0.0)` on a cross product (`facets.py:decode_soup`);
@@ -734,6 +746,7 @@ create V0 and V5, set dependencies per §6, apply labels.
 
 ## 11. Amendment register
 
+
 - 2026-11-13: initial draft (branch `t3/phase5-spec-draft`, off main
   `6c6b3e8`). Coordinator review pending; nothing published.
 - 2026-11-13: coordinator review PASSED — §2.2's keystone re-derived
@@ -755,3 +768,12 @@ create V0 and V5, set dependencies per §6, apply labels.
   its rationale retained as the expected value). File renamed
   `phase5-viewer-spec-draft.md` → `phase5-viewer-spec.md` at
   publication; published on main; V-tickets cite this document.
+- 2026-11-14: §2.2's "no sqrt" claim corrected (V3 review, ticket
+  #42): the plane tiebreak's `**0.5` at `composite.py:532` is in the
+  decode path; CPython lowers it to libm `pow`, the port matches with
+  `powf`; the real decision surface (70,605 calls / 11,263 distinct
+  f32 triples) shows 0 bit divergences and 0 status flips under
+  either lowering, no NaN reaches the law, and the decision margins
+  (1.06e-5 closest to the PLANE_TOL boundary) dwarf any re-rounding
+  — including a differently-rounded `pow` on wasm32 (V4 note: Rust's
+  wasm32 `powf` resolves to the libm crate, not glibc).
