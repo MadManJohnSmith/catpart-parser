@@ -1,0 +1,6 @@
+ceiling_id,p1_value,p2_value,delta,dated_note
+population-byte-verified,380,380,0,census cited unchanged (2026-11-14 P1 §7)
+instance-records-DECLARED (P1),380,253,SUPERSEDED-DATED,P1's 'declared' row is superseded by the decoded form: the pool is a framed typed chain on 253 files (R18-R26 100%; R15-generation + remainder = open classes)
+identity pairs DECODED (>=1 per file),-,225,NEW,"the assembly bar can demand decoded (PartNumber, InstanceName) identity pairs on these files — was only a ceiling in P1"
+placed instances (_Position attribute),260,191,0 (ceiling stands),P2 measured the VALUE's absence from the pool (position_succ_numeric=0 wherever the token appears); the 260 ceiling stays a ceiling — the value encoding remains the open class
+identity-only candidates (pool without _Position),120,-,0 (unchanged),per-file attribute presence unchanged by P2
