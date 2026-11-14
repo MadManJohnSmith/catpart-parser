@@ -1180,7 +1180,8 @@ def run_corpus_mode(csv_path: Path, note_path: Path, split: str, slice_name: str
             slice_note += (
                 "; --slice both: the L2 export comparison runs on the part rows "
                 "of the same sample (summary + PLY bytes + error classes; "
-                "composite-path exports excluded, ticket #41 hard stop)"
+                "composite-path exports compare fully — ported at V3 #42, "
+                "corrected 2026-11-14 per the V6 close flag)"
             )
     if slice_name == SLICE_L1 and l2_stats is None:
         pass  # the L1-only shape: no export pass
