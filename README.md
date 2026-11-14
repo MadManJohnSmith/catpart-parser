@@ -141,6 +141,7 @@ issue tracker.
 | E | [#52](https://github.com/MadManJohnSmith/catpart-parser/issues/52) V5 in-browser reproduction — margin 0 declared pre-run; 1,442/1,442 match, both splits WITHIN exact | done |
 | E | [#44](https://github.com/MadManJohnSmith/catpart-parser/issues/44) V6 Phase 5 acceptance + publication (Fidelity-1 full run 3,266/3,266; viewer live on gh-pages — Phase 5 close) | done |
 | F | [#46](https://github.com/MadManJohnSmith/catpart-parser/issues/46) P1 product census (Phase 6 opens; 382/382 classified, ceiling published, assembly records located) | done |
+| F | [#53](https://github.com/MadManJohnSmith/catpart-parser/issues/53) P2 structure pool pairing law (identity triples 216/253 fact; placed ceiling 260 reconciled) | done |
 
 ## Roadmap
 
