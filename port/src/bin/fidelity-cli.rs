@@ -3,33 +3,62 @@
 //! exactly the way it drives the Python console scripts, so a mismatch
 //! is attributable to the decoder, never to harness plumbing.
 //!
-//! V1 (ticket #40): **inspect mode only** — the L1 slice's schema-v1
+//! V1 (ticket #40): **inspect mode** — the L1 slice's schema-v1
 //! document, the I/O contract of ``catpart-inspect``
 //! (``src/catpart/cli.py::main_inspect``): one file-path argument, the
 //! summary JSON on stdout (field declaration order = the Python dict
 //! construction order of ``build_inspect_report`` — spec §2.1), and a
 //! classified error as one JSON line on stderr with exit 1. Usage
-//! errors exit 2 (argparse convention). Export mode is V2 (#41).
+//! errors exit 2 (argparse convention).
 //!
-//! # The L1 error-class vocabulary (one class: ``crash``)
+//! V2 (ticket #41): **export mode** — the non-composite geometry
+//! slice's seam, the I/O contract of ``catpart-export``
+//! (``src/catpart/cli.py::main_export``, spec §2.4): the file path
+//! argument, the PLY path as the second argument, the summary JSON on
+//! stdout (field declaration order = the Python dict construction
+//! order of ``_export_store``), the binary-LE PLY written to the
+//! second path only after the whole store decodes (failures leave no
+//! partial output), and a classified error as one JSON line on stderr
+//! with exit 1. Usage errors exit 2.
 //!
-//! The inspect seam's L1-reachable failure surface is exactly the two
-//! documented file-level refusals of ``build_inspect_report`` (its
-//! docstring; the twins' raise sites): the short-buffer
-//! :class:`ValueError` and path-level :class:`OSError`. The Python
-//! side's own classification for every one of them is the fitness class
-//! ``crash`` (``src/catpart/fitness/runner.py::_classify_file``:
-//! "``crash`` covers every exception raised while producing the output
-//! — the documented file-level refusals ... as well as unexpected
-//! parser exceptions"; the A2 fixture table pins the same mapping —
+//! # The error-class vocabularies
+//!
+//! Inspect (L1, one class: ``crash``): the inspect seam's L1-reachable
+//! failure surface is exactly the two documented file-level refusals
+//! of ``build_inspect_report`` (its docstring; the twins' raise sites):
+//! the short-buffer :class:`ValueError` and path-level
+//! :class:`OSError`. The Python side's own classification for every
+//! one of them is the fitness class ``crash``
+//! (``src/catpart/fitness/runner.py::_classify_file``: "``crash``
+//! covers every exception raised while producing the output — the
+//! documented file-level refusals ... as well as unexpected parser
+//! exceptions"; the A2 fixture table pins the same mapping —
 //! ``short-file`` → "the ``crash`` class"). This seam therefore emits
 //! ``{"error_class": "crash", "detail": ...}`` for both refusals: the
 //! vocabulary matches the Python side exactly for the L1-reachable
 //! classes, and the ``detail`` prose (never compared byte-wise, §3.2)
-//! keeps the two refusal modes distinguishable for humans. Any other
-//! failure of this binary (a decode panic, a malformed write) exits
-//! outside the 0/1 contract and the harness records a harness-level
-//! failure — which never counts as a match (§3.2).
+//! keeps the two refusal modes distinguishable for humans.
+//!
+//! Export (L2, the geometry vocabulary): the classified-failure seam
+//! of ``catpart.geometry.errors`` — ``missing-geometry-store``,
+//! ``undecoded-variant``, ``malformed-store-header``,
+//! ``malformed-pool-group``, ``malformed-pool-vertex``,
+//! ``unreadable-file``/``io-error`` — at the twin's exact raise sites
+//! (the port's ``geometry/errors.rs`` single-sources the strings; the
+//! §2.3 vocabulary). The Python side's own classes for the same raise
+//! sites are these kebab classes (one JSON line on stderr, exit 1);
+//! no finer class exists on either side, and none is invented here.
+//! The V2 fail-closed composite arms raise ``undecoded-variant`` (the
+//! twin's class for every composite-path refusal; composite-path
+//! EXPORTS are excluded by the harness, never false matches — the
+//! ticket's hard stop; see ``geometry/export.rs``).
+//!
+//! Any other failure of this binary (a decode panic, a malformed
+//! write) exits outside the 0/1 contract and the harness records a
+//! harness-level failure — which never counts as a match (§3.2). The
+//! panics mirror the twin's own unclassified crashes (the empty-file
+//! mmap ``ValueError`` and past-EOF ``IndexError`` arms), which the
+//! compared populations never reach.
 //!
 //! Numeric contract (spec §2.2): this file performs no arithmetic — it
 //! is assembly and I/O only, so unlike the decode modules it carries
@@ -39,6 +68,8 @@ use std::io::Write;
 use std::process::ExitCode;
 
 use port::containers::{ContainerRecord, detect_kind, parse_container_table};
+use port::geometry::errors::ExportError;
+use port::geometry::export::build_export;
 use port::header::{HEADER_SIZE, HeaderInfo, parse_header};
 use port::identity::parse_document_name;
 use port::trailer::{TrailerInfo, parse_trailer};
@@ -80,12 +111,13 @@ struct ClassifiedError {
 /// ``catpart.cli.SCHEMA_VERSION``).
 const SCHEMA_VERSION: u32 = 1;
 
-const USAGE: &str = "usage: fidelity-cli inspect <file>\n       (export mode lands with V2, ticket #41; usage errors exit 2)";
+const USAGE: &str = "usage: fidelity-cli inspect <file>\n       fidelity-cli export <file> <ply-output>\n       (usage errors exit 2)";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("inspect") if args.len() == 2 => run_inspect(&args[1]),
+        Some("export") if args.len() == 3 => run_export(&args[1], &args[2]),
         _ => {
             eprint!("{USAGE}");
             ExitCode::from(2)
@@ -100,18 +132,19 @@ fn main() -> ExitCode {
 fn run_inspect(path: &str) -> ExitCode {
     let file_size = match std::fs::metadata(path) {
         Ok(metadata) => metadata.len(),
-        Err(err) => return emit_crash(&format!("{path}: {err}")),
+        Err(err) => return emit_classified("crash", &format!("{path}: {err}")),
     };
     if file_size < HEADER_SIZE as u64 {
         // The twin's ValueError prose (``build_inspect_report``), the
         // detail of the same crash class.
-        return emit_crash(&format!(
-            "not a CATIA V5 container: header needs {HEADER_SIZE} bytes, got {file_size}"
-        ));
+        return emit_classified(
+            "crash",
+            &format!("not a CATIA V5 container: header needs {HEADER_SIZE} bytes, got {file_size}"),
+        );
     }
     let data = match std::fs::read(path) {
         Ok(data) => data,
-        Err(err) => return emit_crash(&format!("{path}: {err}")),
+        Err(err) => return emit_classified("crash", &format!("{path}: {err}")),
     };
     let HeaderInfo {
         magic,
@@ -122,7 +155,7 @@ fn run_inspect(path: &str) -> ExitCode {
         header_dword20,
     } = match parse_header(&data[..HEADER_SIZE]) {
         Ok(info) => info,
-        Err(err) => return emit_crash(&err.to_string()),
+        Err(err) => return emit_classified("crash", &err.to_string()),
     };
     let records = parse_container_table(&data);
     let document = InspectDocument {
@@ -142,17 +175,38 @@ fn run_inspect(path: &str) -> ExitCode {
     };
     let stdout = std::io::stdout().lock();
     if let Err(err) = serde_json::to_writer_pretty(stdout, &document) {
-        return emit_crash(&format!("cannot write the document: {err}"));
+        return emit_classified("crash", &format!("cannot write the document: {err}"));
     }
     let _ = std::io::stdout().lock().write_all(b"\n");
     ExitCode::SUCCESS
 }
 
-/// One JSON ``{"error_class": "crash", "detail": ...}`` line on
-/// stderr, exit 1 (the classified-failure contract, §3.2).
-fn emit_crash(detail: &str) -> ExitCode {
+/// The twin of ``catpart.cli.main_export`` + ``build_export``: the
+/// classified decode (the PLY is written only after the whole store
+/// decodes — failures leave no partial output), then the summary JSON
+/// on stdout.
+fn run_export(path: &str, out_path: &str) -> ExitCode {
+    match build_export(path, out_path) {
+        Ok(summary) => {
+            let stdout = std::io::stdout().lock();
+            if let Err(err) = serde_json::to_writer_pretty(stdout, &summary) {
+                return emit_classified("io-error", &format!("cannot write the summary: {err}"));
+            }
+            let _ = std::io::stdout().lock().write_all(b"\n");
+            ExitCode::SUCCESS
+        }
+        Err(ExportError {
+            error_class,
+            detail,
+        }) => emit_classified(error_class, &detail),
+    }
+}
+
+/// One JSON ``{"error_class": ..., "detail": ...}`` line on stderr,
+/// exit 1 (the classified-failure contract, §3.2).
+fn emit_classified(error_class: &'static str, detail: &str) -> ExitCode {
     let error = ClassifiedError {
-        error_class: "crash",
+        error_class,
         detail: detail.to_string(),
     };
     // The error line is the failure artifact — write it, then exit.
