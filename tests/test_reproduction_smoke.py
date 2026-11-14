@@ -4,7 +4,7 @@ Spec: docs/specs/phase5-viewer-spec.md §3.4 (the margin discipline AS
 AMENDED), §4 (outputs: note + CSV), §6 V5, §7 (real-browser runs stay
 LOCAL — never CI).
 
-Three pins, all FIXTURE- OR ARTIFACT-ONLY — none drives a population
+Five pins, all FIXTURE- OR ARTIFACT-ONLY — none drives a population
 subset (§3.4's letter: no in-browser rate data before the owner's
 margin declaration):
 
@@ -198,3 +198,35 @@ def test_reference_records_join_the_population() -> None:
         assert scalars[split] is not None, f"published scalar missing for {split}"
     splits = {row["split"] for row in population}
     assert splits == set(rr.SPLITS)
+
+
+def test_drive_population_carries_population_indices():
+    """F1 fix pin (V5-A review, ticket #52): ``drive_population`` hands
+    its callbacks POPULATION indices aligned 1:1 with the links — never
+    feedable-list positions. A missing file or a record-less file
+    shifts every later feedable position; a feedable-position index
+    paired a viewer outcome with the wrong file's python record."""
+    from pathlib import Path as _Path
+
+    class FakeDriver:
+        page_errors: list[str] = []
+
+        def feed(self, link):
+            return {"sha": str(link)}, 0.001
+
+        def recover(self):
+            pass
+
+        def restart(self):
+            pass
+
+    seen: list[tuple[str, int]] = []
+    rr.drive_population(
+        FakeDriver(),
+        [_Path("a"), _Path("b")],
+        [3, 7],
+        0,
+        on_state=lambda i, state, seconds: seen.append(("state", i)),
+        on_harness_error=lambda i, note: seen.append(("harness", i)),
+    )
+    assert seen == [("state", 3), ("state", 7)]

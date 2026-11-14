@@ -652,14 +652,19 @@ def csv_row(row_id: str, path: str, split: str, kind: str, detected_version: str
     return row
 
 
-def drive_population(driver: Driver, links: list[Path], restart_every: int,
+def drive_population(driver: Driver, links: list[Path], indices: list[int],
+                     restart_every: int,
                      on_state, on_harness_error) -> None:
     """Feed every file in the given order, containing failures per-file
-    (the §3.4 exclusion discipline). ``on_state`` receives
-    (index, state, seconds); ``on_harness_error`` receives
-    (index, note) — both record the row; the caller owns the rows."""
+    (the §3.4 exclusion discipline). ``indices`` are POPULATION indices
+    aligned 1:1 with ``links`` (the V5-A review F1 fix: feedable-list
+    positions must never index the full population — a missing file or
+    a record-less file shifts every later link). ``on_state`` receives
+    (population_index, state, seconds); ``on_harness_error`` receives
+    (population_index, note) — both record the row; the caller owns
+    the rows."""
     since_restart = 0
-    for i, link in enumerate(links):
+    for i, link in zip(indices, links):
         try:
             state, seconds = driver.feed(link)
             on_state(i, state, seconds)
@@ -897,7 +902,16 @@ def run_corpus(csv_path: Path, note_path: Path, manifest_path: Path, corpus_root
         file_paths.append(path if path.is_file() else None)
 
     with tempfile.TemporaryDirectory(prefix="repro-corpus-") as tmp:
-        feedable = [p for p in file_paths if p is not None]
+        # Feedable population indices, carried alongside the links (the
+        # V5-A review F1 fix): feedable-list positions must never index
+        # the full population — a shifted index pairs a viewer outcome
+        # with the wrong file's python record.
+        feedable: list[Path] = []
+        feedable_indices: list[int] = []
+        for i, p in enumerate(file_paths):
+            if p is not None:
+                feedable.append(p)
+                feedable_indices.append(i)
         links = prepare_links(feedable, Path(tmp))
         server = StaticServer(port)
         server.wait_ready()
@@ -936,10 +950,13 @@ def run_corpus(csv_path: Path, note_path: Path, manifest_path: Path, corpus_root
 
                 # The population loop: manifest order. Files missing on
                 # disk are pre-classified reference-unavailable and never
-                # fed (the browser could not measure them either); the
-                # rest feed through the driver with per-file containment.
-                indices = list(range(len(population)))
-                for i in indices:
+                # fed (the browser could not measure them either); so are
+                # files with no accepted-run record — nothing to compare
+                # against (the V5-A review O1 fix: the code now keeps the
+                # docstring's promise instead of mislabeling the row as a
+                # harness-error after a wasted feed); the rest feed
+                # through the driver with per-file containment.
+                for i in range(len(population)):
                     if file_paths[i] is None:
                         sha, path, split, py, version = fill_common(i)
                         note = "missing on disk: cannot be fed"
@@ -950,7 +967,16 @@ def run_corpus(csv_path: Path, note_path: Path, manifest_path: Path, corpus_root
                             OUTCOME_REFERENCE_UNAVAILABLE, py, None, False, False,
                             False, "", None, note,
                         )
-                drive_population(driver, links, restart_every, on_state, on_harness_error)
+                    elif i not in set(feedable_indices):
+                        sha, path, split, py, version = fill_common(i)
+                        rows[i] = csv_row(
+                            sha, path, split, L2_POPULATION_KIND, version,
+                            OUTCOME_REFERENCE_UNAVAILABLE, py, None, False, False,
+                            False, "", None,
+                            "no accepted-run record: nothing to compare against",
+                        )
+                drive_population(driver, links, feedable_indices, restart_every,
+                                 on_state, on_harness_error)
                 requests_total = driver.requests_total
                 external_requests = list(driver.external_requests)
                 driver.close()
@@ -959,6 +985,19 @@ def run_corpus(csv_path: Path, note_path: Path, manifest_path: Path, corpus_root
         wall = time.monotonic() - wall_started
 
     write_csv(csv_path, rows)
+    # Paths outside the repo print as-is (the V5-A review O2 fix: an
+    # explicit --fitness-report outside REPO_ROOT must not crash the
+    # note write).
+    report_disp = (
+        report_path.relative_to(REPO_ROOT)
+        if report_path.is_relative_to(REPO_ROOT)
+        else report_path
+    )
+    manifest_disp = (
+        manifest_path.relative_to(REPO_ROOT)
+        if manifest_path.is_relative_to(REPO_ROOT)
+        else manifest_path
+    )
     write_note(
         note_path,
         mode="corpus",
@@ -966,9 +1005,9 @@ def run_corpus(csv_path: Path, note_path: Path, manifest_path: Path, corpus_root
         wall=wall,
         csv_path=csv_path,
         reference_note=(
-            f"{report_path.relative_to(REPO_ROOT)} (run_id {report.get('run_id')}, "
+            f"{report_disp} (run_id {report.get('run_id')}, "
             f"corpus_digest {str(report.get('corpus_digest'))[:16]}…, manifest "
-            f"{manifest_path.relative_to(REPO_ROOT)} sha256-verified against it)"
+            f"{manifest_disp} sha256-verified against it)"
         ),
         margin=margin,
         published=scalars,
