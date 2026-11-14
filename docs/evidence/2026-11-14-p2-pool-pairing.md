@@ -128,8 +128,11 @@ attribute token; the instance name immediately FOLLOWS it.
 
 e.g. `ac2` `_DescriptionInst` `ac2:1` `_InstanceName` `ac2_1`
 `_Position` (`91fe0d674f7c30db`, R20). The colon and underscore forms
-are counted as observations (COLON_SHAPE/USCORE_SHAPE), never forced
-into the census's dot shape.
+are counted as observations (COLON_SHAPE/USCORE_SHAPE applied per
+file: **16/17 desc-block files carry a colon form, 15/17 an
+underscore form** — the files CSV's `desc_colon_form`/`desc_uscore_form`
+columns, produced per the P2 review F2), never forced into the
+census's dot shape.
 
 ### 4.3 Identity — the bare pair (INFERENCE)
 

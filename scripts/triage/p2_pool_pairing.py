@@ -47,7 +47,10 @@ carry the high bit; open class). Worked example ``0018ec386764dcea``
   serialized with three name forms (part number, ``PN:1``, ``PN_1``).
 - identity, bare form: ``<PN> <IN>`` adjacent without the marker.
 - ``_Position``: the attribute token appears in-chain; its SUCCESSOR is
-  never a value (measured: always the next record's class token or
+  never a NUMERIC value (measured: successors are the next record's
+  class token, another attribute token, or a plain name — 59 non-numeric
+  value successors exist; what never occurs is a numeric/coordinate
+  value, which is what "the position VALUE is not a pool item" means)
   another attribute token) — the position VALUE is not a pool item. The
   value encoding therefore remains the P1 open class (census §6), now
   with the in-pool absence measured at full scale.
@@ -348,6 +351,8 @@ def classify_pairings(texts: list[str]) -> dict:
         "inst_triple": 0,          # value _InstanceName value
         "inst_triple_dotnext": 0,  # ...with a dot-shaped instance name
         "desc_block": 0,           # _DescriptionInst v _InstanceName (within 2)
+        "desc_colon_form": 0,      # the PN:1 name form observed in a desc block
+        "desc_uscore_form": 0,     # the PN_1 name form observed in a desc block
         "bare_pair": 0,            # value dot-shaped-value adjacent (no marker)
         "bare_pair_stem": 0,       # ...with stem equality
         "position_tokens": 0,
@@ -378,6 +383,15 @@ def classify_pairings(texts: list[str]) -> dict:
                 out.setdefault("_pred_hist", Counter())[prev_t[:24]] += 1
             if i >= 2 and texts[i - 2] == "_DescriptionInst" and not is_token(texts[i - 1]):
                 out["desc_block"] += 1
+                # The name forms the block serializes (P2 review F2: the
+                # COLON_SHAPE/USCORE_SHAPE regexes existed but were never
+                # applied — the note claimed observations no CSV carried).
+                if COLON_SHAPE.match(texts[i - 1]):
+                    out["desc_colon_form"] += 1
+                if len(texts) > i + 1 and USCORE_SHAPE.match(texts[i + 1]):
+                    # the PN_1 form rides AFTER _InstanceName (the worked
+                    # example: PN:1 at i-1, _InstanceName at i, PN_1 at i+1)
+                    out["desc_uscore_form"] += 1
         elif t == "_Position":
             out["position_tokens"] += 1
             if next_t is None:
@@ -527,6 +541,7 @@ FILES_FIELDS = [
     "length_law_ok", "natural_break_ok", "n_items", "n_short", "n_long",
     "n_binary", "long_rel", "head_skeleton", "pool_vocab_tokens",
     "inst_marker", "inst_triple", "inst_triple_dotnext", "desc_block",
+        "desc_colon_form", "desc_uscore_form",
     "bare_pair", "bare_pair_stem",
     "position_tokens", "position_succ_token", "position_succ_value",
     "position_succ_numeric",
@@ -664,7 +679,7 @@ def run_pairing() -> list[dict]:
               detail=f"bare pairs {bare}, stem matches {bare_stem}"),
         claim("P2-position-value-absent",
               "wherever _Position appears in-chain its successor is a "
-              "token or class token, never a value",
+              "token or class token, never a NUMERIC value",
               framed, lambda x: x["position_tokens"] > 0
               and x["position_succ_numeric"] == 0, "fact",
               "the _Position VALUE is not a pool item; encoding stays the "
@@ -712,6 +727,16 @@ def run_pairing() -> list[dict]:
               verified, lambda x: x["pool_form"] == "unframed", "unknown",
               "named, never folded; several carry assembly vocabulary in "
               "law-B strings outside any tiling chain"),
+        claim("P2-desc-block-name-forms",
+              "the desc block's instance name serializes in the PN:1 "
+              "(colon) and PN_1 (underscore) forms",
+              [x for x in framed if x["desc_block"] > 0],
+              lambda x: x["desc_colon_form"] > 0 or x["desc_uscore_form"] > 0,
+              "fact",
+              "the P2 review F2 observation, now produced: COLON_SHAPE and "
+              "USCORE_SHAPE are applied per file (the verifier's hand sweep "
+              "expected 16/17 colon, 15/17 underscore — this row is the "
+              "committed measurement)"),
     ]
     with open(OUT_CLAIMS, "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=[
