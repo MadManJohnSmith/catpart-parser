@@ -155,6 +155,37 @@ reference); in-browser sanity = published L2 scalar ± declared margin;
 mesh, metadata panel and curve overlay operational in the browser;
 every failure classified, never hidden.
 
+**Status (2026-11-14): CLOSED — acceptance met in full.** V0-V5
+landed (#51/#40/#41/#42/#43/#52, each independently reviewed): the
+decode pipeline is ported to Rust compiled to WASM (`port/`, ADR-0004)
+— the numeric contract (spec §2.2), the classified error seam and the
+byte-identical PLY writer included — and the in-browser reproduction
+met the owner-declared margin **0** digit-for-digit (declared pre-run
+per spec §3.4/§11). The V6 close (#44): the **Fidelity-1 corpus run —
+one run, one CSV, both slices, full populations: 3,266/3,266 match, 0
+mismatches, 0 harness-errors** (L1-JSON 1,824/1,824 = ALL manifest
+rows incl. products and the magic_ok=no junk, the one junk failure
+reproduced as `crash` on both sides; L2-export 1,442/1,442 = ALL
+kind=part rows — 1,173 byte-identical-PLY exports + 269 classified
+double refusals agreeing pairwise: `undecoded-variant` 144,
+`missing-geometry-store` 125), wall-clock 255.9 s measured against
+the ≤ 2 h budget
+([docs/evidence/2026-11-14-v6-fidelity-full-corpus.md](../evidence/2026-11-14-v6-fidelity-full-corpus.md),
+CSV `docs/evidence/data/v6-fidelity-full-corpus-claims.csv`); the
+in-browser sanity = the published L2 scalar ± 0 per split (V5 #52:
+dev 1,033/1,381, held-out 56/61, WITHIN exact — cited, not re-run);
+mesh, metadata panel and curve overlay accepted in the browser by
+V4's scripted Playwright checks; every failure classified, never
+hidden (the classified vocabulary reproduced at the seam and displayed
+by the viewer). **The viewer is live on gh-pages** via the unchanged
+publish flow (§5): publication commit `e8c0ebc` — `viewer/` (11
+files incl. the committed pkg wasm + vendored three.js) byte-identical
+to `site/viewer/`. No-regret untouched: the phase changes no fitness
+row — the Python reference is unmodified, L1/L2 scalars stand (run
+`20261113T231506Z-c2ab64`). The full acceptance checklist against #39's
+verbatim criteria:
+[docs/evidence/2026-11-14-v6-phase5-close.md](../evidence/2026-11-14-v6-phase5-close.md).
+
 ## Phase 6 — Assemblies
 
 `.CATProduct` support in the viewer: load a product, resolve its

@@ -83,6 +83,28 @@ stores) viven en
 [docs/evidence/2026-11-13-phase4-close.md](docs/evidence/2026-11-13-phase4-close.md).
 Historia: `fitness/history.jsonl` (append-only).
 
+**Estado del visor (2026-11-14, FASE 5 CERRADA):** el pipeline de
+decode está portado a Rust compilado a WASM (ADR-0004) con Fidelity
+demostrada sobre el corpus — la corrida completa de ambos slices (un
+CSV, sin muestreo): **3,266/3,266 match, 0 mismatches, 0
+harness-errors** (L1-JSON las 1,824 filas del manifest; L2-export los
+1,442 parts: 1,173 PLYs byte-idénticos + 269 rechazos clasificados
+reproducidos exactamente, por pares — `undecoded-variant` 144,
+`missing-geometry-store` 125), wall-clock 255.9 s
+([docs/evidence/2026-11-14-v6-fidelity-full-corpus.md](docs/evidence/2026-11-14-v6-fidelity-full-corpus.md),
+`docs/evidence/data/v6-fidelity-full-corpus-claims.csv`). La corrida
+de reproducción en el navegador igualó el escalar L2 publicado
+dígito por dígito bajo el margen 0 declarado por el dueño (V5, #52:
+dev 1,033/1,381, held-out 56/61 — WITHIN exact). El visor está vivo
+en gh-pages: arrastra un `.CATPart` en
+[viewer/viewer.html](https://madmanjohnsmith.github.io/catpart-parser/viewer/viewer.html)
+— orbit/zoom, wireframe/solid, panel de metadatos, overlay de curvas,
+compuerta de sanidad en el navegador, display de fallos clasificados —
+publicado por el flujo `scripts/publish_fitness.py` sin cambios
+(commit gh-pages `e8c0ebc`). La referencia Python y fitness intactas
+(no-regret). El checklist completo de aceptación:
+[docs/evidence/2026-11-14-v6-phase5-close.md](docs/evidence/2026-11-14-v6-phase5-close.md).
+
 ## Progreso
 
 Tracker de implementación — 23 tickets bajo las specs
@@ -92,8 +114,13 @@ de formato) y [#10](https://github.com/MadManJohnSmith/catpart-parser/issues/10)
 (parser L1). Se actualiza a medida que se cierran los tickets; el estado
 autoritativo vive en el issue tracker.
 
-**Specs A/B/C completas (17/17, 2026-11-09). Fase 4 abierta: spec D (#28,
-geometría L2) con 6 tickets — 5/6 (G1-G5 hechos 2026-11-10).**
+**Specs A/B/C completas (17/17, 2026-11-09). Fase 4 completa: spec D (#28,
+geometría L2) 6/6 tickets (G6 #34 cerrada 2026-11-13 — L2 al 74.80%, la
+barra re-ajustada al techo medido por la regla pre-autorizada). Fase 5
+completa (spec E, #39 — autoridad de diseño `docs/specs/phase5-viewer-spec.md`):
+7/7 tickets V0-V6 (#51 #40 #41 #42 #43 #52 #44) cerrados 2026-11-14 —
+Fidelity-1 0 mismatches (3,266/3,266, corrida completa de ambos slices),
+reproducción en el navegador al margen 0 declarado, visor vivo en gh-pages.**
 
 | Spec | Ticket | Estado |
 |---|---|---|
@@ -120,6 +147,13 @@ geometría L2) con 6 tickets — 5/6 (G1-G5 hechos 2026-11-10).**
 | D | [#32](https://github.com/MadManJohnSmith/catpart-parser/issues/32) G4 catpart-export CLI + geometry fixtures | hecho |
 | D | [#33](https://github.com/MadManJohnSmith/catpart-parser/issues/33) G5 L2 fitness + publication | hecho |
 | D | [#34](https://github.com/MadManJohnSmith/catpart-parser/issues/34) G6 grind L2 to the bar (Phase 4 close) | hecho (cerrada al 74.80%) |
+| E | [#51](https://github.com/MadManJohnSmith/catpart-parser/issues/51) V0 Rust toolchain + port crate skeleton + CI wiring (Phase 5 opens) | hecho |
+| E | [#40](https://github.com/MadManJohnSmith/catpart-parser/issues/40) V1 port L1 slice + Fidelity harness (L1 fidelity at the seam) | hecho |
+| E | [#41](https://github.com/MadManJohnSmith/catpart-parser/issues/41) V2 port geometry core non-composite (numeric contract live; keystone arm seam-covered) | hecho |
+| E | [#42](https://github.com/MadManJohnSmith/catpart-parser/issues/42) V3 port composite decode — the whale (decode pipeline complete in Rust) | hecho |
+| E | [#43](https://github.com/MadManJohnSmith/catpart-parser/issues/43) V4 WASM boundary + viewer shell (decode in the browser) | hecho |
+| E | [#52](https://github.com/MadManJohnSmith/catpart-parser/issues/52) V5 in-browser reproduction — margin 0 declared pre-run; 1,442/1,442 match, both splits WITHIN exact | hecho |
+| E | [#44](https://github.com/MadManJohnSmith/catpart-parser/issues/44) V6 Phase 5 acceptance + publication (Fidelity-1 full run 3,266/3,266; viewer live on gh-pages — Phase 5 close) | hecho |
 
 ## Hoja de ruta
 

@@ -75,6 +75,28 @@ render-sanity gate (PASS, 6-store Dev subset) live in
 [docs/evidence/2026-11-13-phase4-close.md](docs/evidence/2026-11-13-phase4-close.md).
 History: `fitness/history.jsonl` (append-only).
 
+**Viewer status (2026-11-14, Phase 5 CLOSED):** the decode pipeline is
+ported to Rust compiled to WASM (ADR-0004) with Fidelity proven over
+the corpus — the full dual-slice run (one CSV, both slices, no
+sampling): **3,266/3,266 match, 0 mismatches, 0 harness-errors**
+(L1-JSON all 1,824 manifest rows; L2-export all 1,442 parts: 1,173
+byte-identical PLYs + 269 classified refusals reproduced exactly,
+pairwise — `undecoded-variant` 144, `missing-geometry-store` 125),
+wall-clock 255.9 s
+([docs/evidence/2026-11-14-v6-fidelity-full-corpus.md](docs/evidence/2026-11-14-v6-fidelity-full-corpus.md),
+`docs/evidence/data/v6-fidelity-full-corpus-claims.csv`). The
+in-browser reproduction run matched the published L2 scalar
+digit-for-digit under the owner-declared margin 0 (V5, #52: dev
+1,033/1,381, held-out 56/61 — WITHIN exact). The viewer is live on
+gh-pages: drag-drop a `.CATPart` at
+[viewer/viewer.html](https://madmanjohnsmith.github.io/catpart-parser/viewer/viewer.html)
+— orbit/zoom, wireframe/solid, metadata panel, curve overlay,
+in-browser sanity gate, classified-failure display — published by the
+unchanged `scripts/publish_fitness.py` flow (gh-pages commit
+`e8c0ebc`). Python reference and fitness untouched (no-regret). The
+full acceptance checklist:
+[docs/evidence/2026-11-14-v6-phase5-close.md](docs/evidence/2026-11-14-v6-phase5-close.md).
+
 ## Progress
 
 Implementation tracker — 23 tickets under specs
@@ -84,7 +106,7 @@ inference) and [#10](https://github.com/MadManJohnSmith/catpart-parser/issues/10
 (L1 parser). Updated as tickets close; authoritative state lives in the
 issue tracker.
 
-**Specs A/B/C complete (17/17, 2026-11-09). Phase 4 complete: spec D (#28, L2 geometry) 6/6 tickets (G6 #34 closed 2026-11-13 — L2 at 74.80%, the bar re-adjusted to the measured ceiling per the pre-authorized rule). Phase 5 opened (spec E, #39 — design authority `docs/specs/phase5-viewer-spec.md`): V0-V1 landed (the Fidelity harness is live in the gate — it caught a real port bug on its first run).**
+**Specs A/B/C complete (17/17, 2026-11-09). Phase 4 complete: spec D (#28, L2 geometry) 6/6 tickets (G6 #34 closed 2026-11-13 — L2 at 74.80%, the bar re-adjusted to the measured ceiling per the pre-authorized rule). Phase 5 complete (spec E, #39 — design authority `docs/specs/phase5-viewer-spec.md`): 7/7 tickets V0-V6 (#51 #40 #41 #42 #43 #52 #44) closed 2026-11-14 — Fidelity-1 0 mismatches (3,266/3,266, full dual-slice corpus run), in-browser reproduction at the declared margin 0, viewer live on gh-pages.**
 
 | Spec | Ticket | State |
 |---|---|---|
@@ -117,6 +139,7 @@ issue tracker.
 | E | [#42](https://github.com/MadManJohnSmith/catpart-parser/issues/42) V3 port composite decode — the whale (decode pipeline complete in Rust) | done |
 | E | [#43](https://github.com/MadManJohnSmith/catpart-parser/issues/43) V4 WASM boundary + viewer shell (decode in the browser) | done |
 | E | [#52](https://github.com/MadManJohnSmith/catpart-parser/issues/52) V5 in-browser reproduction — margin 0 declared pre-run; 1,442/1,442 match, both splits WITHIN exact | done |
+| E | [#44](https://github.com/MadManJohnSmith/catpart-parser/issues/44) V6 Phase 5 acceptance + publication (Fidelity-1 full run 3,266/3,266; viewer live on gh-pages — Phase 5 close) | done |
 
 ## Roadmap
 
