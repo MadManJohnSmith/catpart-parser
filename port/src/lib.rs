@@ -89,11 +89,18 @@
 //! declaration order = Python dict construction order). No other
 //! runtime crates. Toolchain pinned by `port/rust-toolchain.toml`.
 //!
-//! # V0 status (ticket #51)
+//! # Status
 //!
-//! Skeleton only: every module of the mapping is a documented stub
-//! (doc header + empty body). Bodies land with V1 (L1 slice + harness,
-//! #40), V2 (non-composite geometry, #41) and V3 (composite, #42).
+//! - V0 (ticket #51): skeleton — every module of the mapping a
+//!   documented stub (doc header + empty body).
+//! - V1 (ticket #40, 2026-11-13): the L1 slice carries real decode
+//!   bodies — ``header.rs``, ``containers.rs``, ``trailer.rs``,
+//!   ``version.rs``, ``identity.rs`` (the Python twins' behavior
+//!   mirrored 1:1, fail-closed arms included) — and the native CLI
+//!   seam ``bin/fidelity-cli.rs`` (inspect mode only; export is V2,
+//!   #41). The geometry modules (``store``/``pool``/``facets``/
+//!   ``mesh``/``ply``/``errors``/``export``/``composite``) remain V0
+//!   stubs until V2/V3.
 
 pub mod containers;
 pub mod geometry;
