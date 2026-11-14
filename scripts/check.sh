@@ -72,3 +72,15 @@ echo "check: wasm-pack build --target web --release (check dir)"
 wasm-pack build --target web --release --out-dir target/wasm-pack-check
 echo "check: wasm-pack test --node (the shipped artifact runs)"
 wasm-pack test --node
+# V4 review F1 (ticket #43, 2026-11-14): the two committed pkg copies
+# must never drift — the shipped viewer (site/viewer/pkg/, what
+# gh-pages serves verbatim) stays byte-identical to the built crate
+# (port/pkg/). Refresh both together or neither.
+echo "check: pkg sync (port/pkg vs site/viewer/pkg)"
+cd "$(git rev-parse --show-toplevel)"
+diff -q -r port/pkg site/viewer/pkg || {
+  echo "check: FAIL — port/pkg and site/viewer/pkg have diverged." >&2
+  echo "        Rebuild with wasm-pack and refresh BOTH copies together," >&2
+  echo "        or neither." >&2
+  exit 1
+}
