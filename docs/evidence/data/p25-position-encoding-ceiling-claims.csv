@@ -1,0 +1,8 @@
+ceiling_row,p1_p2,p25,delta
+population byte-verified products,380,380,0
+placed instances (_Position attribute),260 (191 framed + 69 legacy),260,0 — the P1/P2 ceiling stands
+placed files with >= 1 transform record (any region),— (open class),106,NEW — 106/260 file-level decode rate
+placed files with >= 1 ctorproxy-class record,— (open class),40,NEW — the placement-carrier class rate
+placed files with >= 1 non-identity (rotated) record,— (open class),40,NEW — the rotation layer is populated
+identity-only files with ctorproxy records (control),—,2,"NEW — the control residual, named"
+per-instance transform binding (record <-> instance),— (open class),OPEN,0 — the binding does not decode in this probe's bound: record counts do not match instance counts 1:1 and no name string rides the record layer
