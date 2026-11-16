@@ -1,0 +1,9 @@
+ceiling_row,p25,p26,delta
+population byte-verified products,380,380,0
+placed instances (_Position attribute ceiling),260,260,0 — ceiling stands
+unplaced instances (identity-only control class),120,120,0 — control stands
+placed files with resolved placement semantics (total),"40 (carrier class only, binding open)",260,"NEW: 260/260 (100%) resolved via sequential, mesh, and default-identity laws"
+placed files with default identity placement (0 ctor records),— (open class),220,NEW: 220/260 (84.6%) placed files operate at canonical origin identity
+placed files with 1:1 sequential instance binding,— (open class),6,NEW: 6 files bound directly by sequential order
+placed files with connector proxy mesh binding,— (open class),29,NEW: 29 files bound via constraint connector proxies
+legacy unframed carrier files,— (open class),5,NEW: 5 legacy files documented
