@@ -1,0 +1,13 @@
+claim_id,statement,files,population,buckets,label,detail
+P6-CB-1,"body CB0001 catalog population: exactly 44 product files carry a CB0001 catalog in [0, dword8)",44,380,R15:1;R16:4;unknown:39,fact,"all 44 belong to legacy generations (unknown 39, R16 4, R15 1); 0 in R17+"
+P6-CB-2,header dword16 identity: catalog start offset equals header.dword16 exactly (law H2),44,44,R15:1;R16:4;unknown:39,fact,dword16 is the explicit catalog pointer in the dual-region header (100.0%)
+P6-CB-3,dual-region header class: body CB0001 files have has_ff8 == False (44 of 45 corpus dual files),44,44,R15:1;R16:4;unknown:39,fact,the 45th dual-region product file (f4bfd20cb40d0a33) has d16 > d8 and carries no body catalog
+P6-CB-4,"CB0001 magic & header constants: magic b'CATIA_V5 CB0001\0', tag 0x4e, 1000, 64, 12, 28 zeros",44,44,R15:1;R16:4;unknown:39,fact,identical header layout to the standard tail catalog (docs/format/tail-catalog.md)
+P6-CB-5,catalog entry count law: cntB == cntA + 1 in the 20-byte catalog header,44,44,R15:1;R16:4;unknown:39,fact,cntA specifies named entry count + 1; cntB specifies total records including end block
+P6-CB-6,header dword20 catalog span law: header field val2 satisfies val2 == offset + dword20,44,44,R15:1;R16:4;unknown:39,fact,decodes dword20 as the exact allocated byte span of the embedded catalog region
+P6-CB-7,catalog walk completeness: full record walk to end block and CB__END trailer,43,44,R15:1;R16:4;unknown:38,fact,43/44 parse 100% of expected entries; 1 file (d8a3e505473ba1f4) has identical Cat1/Cat2 header
+P6-CB-8,"physical region tiling law: entries tile body from byte 64 to catalog offset (min(X)==64, max(X+Y)==d16)",44,44,R15:1;R16:4;unknown:39,fact,proves CB0001 is a physical storage region directory for the document body prior to the catalog
+P6-CB-9,container table GUID mapping (body catalog): container UUIDs map to paired <guid> and Cont_<guid> streams,22,44,R15:1;R16:4;unknown:17,fact,22/44 body catalogs define application container UUID streams; 40/44 define them across body+tail catalogs
+P6-CB-10,container table GUID mapping (any catalog): container UUIDs map to paired streams across file catalogs,41,44,R15:1;R16:4;unknown:36,fact,40/44 files have application container UUIDs directly matching catalog entries by hex-stripping
+P6-CB-11,"assembly semantic negative: 0/44 catalogs carry instance names, part numbers, or pool markers",0,44,all:0/44,fact,"proves CB0001 is purely a storage container table, not an assembly hierarchy or transform carrier"
+P6-CB-12,placed CATCtorProxyCont transform carrier overlap: placed files with ctorproxy records in CB0001 class,1,40,unknown:1/40,fact,only 1 of 40 placed ctorproxy files (fad540f761d4eebd) overlaps; 39 of 40 belong to modern ff8 releases
