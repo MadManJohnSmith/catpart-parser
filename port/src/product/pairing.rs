@@ -30,6 +30,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::binding::PlacementStatus;
 use super::pool::{
     BINARY_SENTINEL, is_class_token, is_colon_shape, is_dot_shape, is_token, is_uscore_shape,
 };
@@ -113,7 +114,7 @@ pub struct ProductInstanceRecord {
     pub part_number: String,
     pub pairing_rule: PairingRule,
     pub has_position_attr: bool,
-    pub placement_status: String,
+    pub placement_status: PlacementStatus,
     pub transform: Option<[f64; 7]>,
     pub object_tag: Option<u32>,
     pub classification_detail: Option<String>,
@@ -171,9 +172,9 @@ pub fn extract_instances(texts: &[String], pool_has_position: bool) -> Vec<Insta
                     let has_position =
                         (i + 2 < n && texts[i + 2] == "_Position") || pool_has_position;
                     let placement_status = if has_position {
-                        "placed".to_string()
+                        PlacementStatus::Placed
                     } else {
-                        "identity".to_string()
+                        PlacementStatus::Identity
                     };
                     records.push(InstanceRecord {
                         instance_name,
@@ -202,9 +203,9 @@ pub fn extract_instances(texts: &[String], pool_has_position: bool) -> Vec<Insta
                         let has_position =
                             (i + 2 < n && texts[i + 2] == "_Position") || pool_has_position;
                         let placement_status = if has_position {
-                            "placed".to_string()
+                            PlacementStatus::Placed
                         } else {
-                            "identity".to_string()
+                            PlacementStatus::Identity
                         };
                         records.push(InstanceRecord {
                             instance_name: next.clone(),
@@ -224,13 +225,15 @@ pub fn extract_instances(texts: &[String], pool_has_position: bool) -> Vec<Insta
         }
     }
 
-    // Pass 2: Bare pairs and remaining dot-shaped instances
+    // Pass 2: Bare pairs and remaining dot- or colon-shaped instances
     for i in 0..n {
         if consumed_indices.contains(&i) {
             continue;
         }
         let curr = &texts[i];
-        if !is_dot_shape(curr) || is_constraint_name(curr) || curr == BINARY_SENTINEL {
+        let is_dot = is_dot_shape(curr);
+        let is_colon = is_colon_shape(curr);
+        if (!is_dot && !is_colon) || is_constraint_name(curr) || curr == BINARY_SENTINEL {
             continue;
         }
         // If immediately preceded by ASMPRODUCT, this is the root product name
@@ -238,7 +241,11 @@ pub fn extract_instances(texts: &[String], pool_has_position: bool) -> Vec<Insta
             continue;
         }
 
-        let stem = curr.rsplit_once('.').unwrap().0;
+        let stem = if is_dot {
+            curr.rsplit_once('.').unwrap().0
+        } else {
+            curr.rsplit_once(':').unwrap().0
+        };
         let (pn, rule) = if i > 0
             && !is_token(&texts[i - 1])
             && !is_class_token(&texts[i - 1])
@@ -251,9 +258,9 @@ pub fn extract_instances(texts: &[String], pool_has_position: bool) -> Vec<Insta
 
         let has_position = (i + 1 < n && texts[i + 1] == "_Position") || pool_has_position;
         let placement_status = if has_position {
-            "placed".to_string()
+            PlacementStatus::Placed
         } else {
-            "identity".to_string()
+            PlacementStatus::Identity
         };
 
         records.push(InstanceRecord {
@@ -267,6 +274,9 @@ pub fn extract_instances(texts: &[String], pool_has_position: bool) -> Vec<Insta
             classification_detail: None,
         });
         consumed_indices.insert(i);
+        if is_colon && i + 1 < n && is_uscore_shape(&texts[i + 1]) {
+            consumed_indices.insert(i + 1);
+        }
     }
 
     records

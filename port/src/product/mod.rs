@@ -6,10 +6,16 @@
 
 #![allow(clippy::suboptimal_flops)]
 
+pub mod binding;
 pub mod framing;
 pub mod pairing;
 pub mod pool;
+pub mod transforms;
 
+pub use binding::{
+    BindingMode, IDENTITY_TRANSFORM, PlacementBinding, PlacementStatus, bind_instances,
+    compute_bindings,
+};
 pub use framing::{
     PoolCandidate, PoolForm, detect_pool_form, find_structure_pool, scan_framing_candidates,
     verify_length_law,
@@ -21,6 +27,11 @@ pub use pairing::{
 pub use pool::{
     BINARY_SENTINEL, ItemKind, PoolItem, decode_pool_texts, is_colon_shape, is_dot_shape, is_token,
     is_uscore_shape, walk_chain,
+};
+pub use transforms::{
+    TransformRecord, decode_129b_record, decode_r15_matrix_stream, is_81b_connector_record,
+    is_129b_magic, parse_run_length_floats, scan_modern_transform_records, scan_r15_matrix_streams,
+    scan_raw_56b_records,
 };
 
 use serde::{Deserialize, Serialize};
@@ -114,16 +125,44 @@ pub fn parse_product(data: &[u8]) -> Result<ProductStructureDocument, ProductErr
             }
 
             let pool_has_position = texts.iter().any(|t| t == "_Position");
-            let instances = extract_instances(&texts, pool_has_position);
+            let mut instances = extract_instances(&texts, pool_has_position);
+
+            // Scan for transform records:
+            // 1. Modern 129b records (with 81b connector record filtering)
+            let mut transform_records = scan_modern_transform_records(data);
+            // 2. R15 inline matrix streams fallback
+            if transform_records.is_empty() {
+                transform_records = scan_r15_matrix_streams(data);
+            }
+            // 3. Raw 56b ctorproxy records fallback
+            if transform_records.is_empty() {
+                transform_records = scan_raw_56b_records(data);
+            }
+
+            // Bind instances to transforms
+            let binding_mode =
+                bind_instances(&mut instances, &transform_records, pool_has_position);
+
+            let mut warnings = Vec::new();
+            if binding_mode == BindingMode::Undecodable {
+                warnings.push(ProductWarning {
+                    class: "undecodable-placement".to_string(),
+                    detail: format!(
+                        "constraint mesh override or unresolvable transform records ({} records for {} instances)",
+                        transform_records.len(),
+                        instances.len()
+                    ),
+                });
+            }
 
             let total_instances = instances.len();
             let placed_instances = instances
                 .iter()
-                .filter(|i| i.placement_status == "placed")
+                .filter(|i| i.placement_status == PlacementStatus::Placed)
                 .count();
             let identity_instances = instances
                 .iter()
-                .filter(|i| i.placement_status == "identity")
+                .filter(|i| i.placement_status == PlacementStatus::Identity)
                 .count();
 
             Ok(ProductStructureDocument {
@@ -135,7 +174,7 @@ pub fn parse_product(data: &[u8]) -> Result<ProductStructureDocument, ProductErr
                 placed_instances,
                 identity_instances,
                 instances,
-                warnings: Vec::new(),
+                warnings,
             })
         }
         PoolForm::R15Ref => Ok(ProductStructureDocument {
@@ -195,6 +234,11 @@ mod tests {
 
         data.extend_from_slice(&rec);
         data
+    }
+
+    fn push_pool_item(payload: &mut Vec<u8>, text: &str) {
+        payload.push((text.len() + 1) as u8);
+        payload.extend_from_slice(text.as_bytes());
     }
 
     #[test]
@@ -275,6 +319,244 @@ mod tests {
     }
 
     #[test]
+    fn parse_synthetic_placed_product_with_129b_transform() {
+        let mut payload = Vec::new();
+        payload.push(11);
+        payload.extend_from_slice(b"ASMPRODUCT");
+        payload.push(9);
+        payload.extend_from_slice(b"Product1");
+        payload.push(12);
+        payload.extend_from_slice(b"_PartNumber");
+        payload.push(8);
+        payload.extend_from_slice(b"Part001");
+        payload.push(14);
+        payload.extend_from_slice(b"_InstanceName");
+        payload.push(10);
+        payload.extend_from_slice(b"Part001.1");
+        payload.push(10);
+        payload.extend_from_slice(b"_Position");
+        payload.push(7);
+        payload.extend_from_slice(b"PRDREP");
+
+        let mut file_data = build_synthetic_product_data(&payload);
+
+        // Append a valid 129-byte transform record
+        let magic = transforms::RECORD_129B_MAGIC_R20;
+        let tag_id: u32 = 42;
+        let sep = transforms::SEPARATOR_BYTE;
+        let t = [12.5f64, -34.0, 56.78];
+        let q = [1.0f64, 0.0, 0.0, 0.0];
+        let flags = [1.0f64, 0.0, 0.0, 0.0];
+        let bbox = [10.0f64, 20.0, 30.0, 40.0];
+
+        let mut rec = Vec::with_capacity(129);
+        rec.extend_from_slice(&magic);
+        rec.extend_from_slice(&tag_id.to_le_bytes());
+        rec.push(sep);
+        for v in t {
+            rec.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in q {
+            rec.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in flags {
+            rec.extend_from_slice(&v.to_le_bytes());
+        }
+        for v in bbox {
+            rec.extend_from_slice(&v.to_le_bytes());
+        }
+
+        file_data.extend_from_slice(&rec);
+
+        let doc = parse_product(&file_data).unwrap();
+        assert_eq!(doc.total_instances, 1);
+        assert_eq!(doc.placed_instances, 1);
+        assert_eq!(doc.identity_instances, 0);
+        assert_eq!(doc.instances[0].placement_status, PlacementStatus::Placed);
+        assert_eq!(
+            doc.instances[0].transform,
+            Some([12.5, -34.0, 56.78, 1.0, 0.0, 0.0, 0.0])
+        );
+        assert_eq!(doc.instances[0].object_tag, Some(42));
+        assert!(doc.warnings.is_empty());
+    }
+
+    #[test]
+    fn parse_synthetic_product_root_plus_sequential() {
+        let mut payload = Vec::new();
+        push_pool_item(&mut payload, "ASMPRODUCT");
+        push_pool_item(&mut payload, "RootAssy");
+
+        // Instance 1: PartA PartA.1 _Position
+        push_pool_item(&mut payload, "_PartNumber");
+        push_pool_item(&mut payload, "PartA");
+        push_pool_item(&mut payload, "_InstanceName");
+        push_pool_item(&mut payload, "PartA.1");
+        push_pool_item(&mut payload, "_Position");
+        push_pool_item(&mut payload, "PRDREP");
+
+        // Instance 2: PartB PartB.1 _Position
+        push_pool_item(&mut payload, "_PartNumber");
+        push_pool_item(&mut payload, "PartB");
+        push_pool_item(&mut payload, "_InstanceName");
+        push_pool_item(&mut payload, "PartB.1");
+        push_pool_item(&mut payload, "_Position");
+        push_pool_item(&mut payload, "PRDREP");
+
+        let mut file_data = build_synthetic_product_data(&payload);
+
+        // Build 3 records (1 root group + 2 instance records)
+        let magic = transforms::RECORD_129B_MAGIC_R20;
+        let sep = transforms::SEPARATOR_BYTE;
+
+        for (i, t_x) in [0.0f64, 100.0, 200.0].iter().enumerate() {
+            let mut rec = Vec::with_capacity(129);
+            rec.extend_from_slice(&magic);
+            rec.extend_from_slice(&(100u32 + i as u32).to_le_bytes());
+            rec.push(sep);
+            for v in [*t_x, 0.0f64, 0.0f64] {
+                rec.extend_from_slice(&v.to_le_bytes());
+            }
+            for v in [1.0f64, 0.0f64, 0.0f64, 0.0f64] {
+                rec.extend_from_slice(&v.to_le_bytes());
+            }
+            for v in [0.0f64; 4] {
+                rec.extend_from_slice(&v.to_le_bytes());
+            }
+            for v in [0.0f64; 4] {
+                rec.extend_from_slice(&v.to_le_bytes());
+            }
+            file_data.extend_from_slice(&rec);
+        }
+
+        let doc = parse_product(&file_data).unwrap();
+        assert_eq!(doc.total_instances, 2);
+        assert_eq!(doc.placed_instances, 2);
+        assert_eq!(doc.identity_instances, 0);
+
+        // Instance 0 matches record 1 (skip root record 0)
+        assert_eq!(doc.instances[0].instance_name, "PartA.1");
+        assert_eq!(
+            doc.instances[0].transform,
+            Some([100.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])
+        );
+        assert_eq!(doc.instances[0].object_tag, Some(101));
+
+        // Instance 1 matches record 2
+        assert_eq!(doc.instances[1].instance_name, "PartB.1");
+        assert_eq!(
+            doc.instances[1].transform,
+            Some([200.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])
+        );
+        assert_eq!(doc.instances[1].object_tag, Some(102));
+        assert!(doc.warnings.is_empty());
+    }
+
+    #[test]
+    fn parse_synthetic_product_undecodable_mesh_anti_masking() {
+        let mut payload = Vec::new();
+        push_pool_item(&mut payload, "ASMPRODUCT");
+        push_pool_item(&mut payload, "MeshAssy");
+
+        // 2 instances with _Position
+        for name in &["PartA.1", "PartB.1"] {
+            push_pool_item(&mut payload, "_PartNumber");
+            push_pool_item(&mut payload, "PartX");
+            push_pool_item(&mut payload, "_InstanceName");
+            push_pool_item(&mut payload, name);
+            push_pool_item(&mut payload, "_Position");
+            push_pool_item(&mut payload, "PRDREP");
+        }
+
+        let mut file_data = build_synthetic_product_data(&payload);
+
+        // Append 5 records (mismatch with 2 instances -> undecodable constraint mesh)
+        let magic = transforms::RECORD_129B_MAGIC_R20;
+        let sep = transforms::SEPARATOR_BYTE;
+        for i in 0..5 {
+            let mut rec = Vec::with_capacity(129);
+            rec.extend_from_slice(&magic);
+            rec.extend_from_slice(&(i as u32).to_le_bytes());
+            rec.push(sep);
+            for v in [i as f64, 0.0f64, 0.0f64] {
+                rec.extend_from_slice(&v.to_le_bytes());
+            }
+            for v in [1.0f64, 0.0f64, 0.0f64, 0.0f64] {
+                rec.extend_from_slice(&v.to_le_bytes());
+            }
+            for v in [0.0f64; 4] {
+                rec.extend_from_slice(&v.to_le_bytes());
+            }
+            for v in [0.0f64; 4] {
+                rec.extend_from_slice(&v.to_le_bytes());
+            }
+            file_data.extend_from_slice(&rec);
+        }
+
+        let doc = parse_product(&file_data).unwrap();
+        assert_eq!(doc.total_instances, 2);
+        assert_eq!(doc.placed_instances, 0);
+        assert_eq!(doc.identity_instances, 0);
+
+        // Strict Anti-Masking: transform must be None, never origin identity!
+        for inst in &doc.instances {
+            assert_eq!(inst.placement_status, PlacementStatus::Undecodable);
+            assert!(inst.transform.is_none());
+        }
+        assert!(
+            doc.warnings
+                .iter()
+                .any(|w| w.class == "undecodable-placement")
+        );
+    }
+
+    #[test]
+    fn parse_corpus_coso_root_plus_sequential_if_available() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let path = manifest_dir
+            .join("../corpus/Apoloo13/ASE_III/diseño_3d/prueba_tensor_cable/coso.CATProduct");
+        if !path.exists() {
+            return;
+        }
+        let data = std::fs::read(&path).expect("read coso");
+        let doc = parse_product(&data).unwrap();
+        assert_eq!(doc.pool_form, "framed");
+        assert_eq!(doc.total_instances, 7);
+        assert_eq!(doc.placed_instances, 7);
+        assert_eq!(doc.identity_instances, 0);
+        for inst in &doc.instances {
+            assert_eq!(inst.placement_status, PlacementStatus::Placed);
+            assert!(inst.transform.is_some());
+        }
+        assert!(
+            !doc.warnings
+                .iter()
+                .any(|w| w.class == "undecodable-placement")
+        );
+    }
+
+    #[test]
+    fn parse_corpus_servo_sts3215_if_available() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let path = manifest_dir.join(
+            "../corpus/Apoloo13/ASE_III/diseño_3d/lengua/lengua_v2/servo_STS3215_03a v1.CATProduct",
+        );
+        if !path.exists() {
+            return;
+        }
+        let data = std::fs::read(&path).expect("read servo");
+        let doc = parse_product(&data).unwrap();
+        assert_eq!(doc.pool_form, "framed");
+        assert_eq!(doc.total_instances, 3);
+        assert_eq!(doc.placed_instances, 2);
+        // The first 2 instances are placed parts with valid transforms
+        assert_eq!(doc.instances[0].placement_status, PlacementStatus::Placed);
+        assert!(doc.instances[0].transform.is_some());
+        assert_eq!(doc.instances[1].placement_status, PlacementStatus::Placed);
+        assert!(doc.instances[1].transform.is_some());
+    }
+
+    #[test]
     fn parse_corpus_dictor_product1_if_available() {
         let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let path = manifest_dir.join("../corpus/Dictor/HaneulMyo/model/Product1.CATProduct");
@@ -320,6 +602,19 @@ mod tests {
                 "constraint {} leaked into instances!",
                 inst.instance_name
             );
+        }
+
+        // Anti-masking invariant: complex constraint mesh instances must be Undecodable with transform: None
+        assert!(
+            doc.warnings
+                .iter()
+                .any(|w| w.class == "undecodable-placement")
+        );
+        for inst in &doc.instances {
+            if inst.has_position_attr {
+                assert_eq!(inst.placement_status, PlacementStatus::Undecodable);
+                assert!(inst.transform.is_none());
+            }
         }
     }
 }
