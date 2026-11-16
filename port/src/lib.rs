@@ -129,6 +129,7 @@ pub mod geometry;
 pub mod header;
 pub mod identity;
 pub mod inspect;
+pub mod product;
 pub mod trailer;
 pub mod version;
 
