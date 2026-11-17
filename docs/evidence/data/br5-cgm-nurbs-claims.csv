@@ -1,0 +1,59 @@
+claim,release,observations,passes,rate,detail
+BR5-01a_cgm_identity_full,all,1089,1089,1.0,FINJPL writer id + Cont_ name + vendor/release footer
+BR5-01a_cgm_identity_full,R15,11,11,1.0,
+BR5-01a_cgm_identity_full,R16,59,59,1.0,
+BR5-01a_cgm_identity_full,R17,40,40,1.0,
+BR5-01a_cgm_identity_full,R18,14,14,1.0,
+BR5-01a_cgm_identity_full,R19,482,482,1.0,
+BR5-01a_cgm_identity_full,R20,147,147,1.0,
+BR5-01a_cgm_identity_full,R21,269,269,1.0,
+BR5-01a_cgm_identity_full,R23,13,13,1.0,
+BR5-01a_cgm_identity_full,R24,14,14,1.0,
+BR5-01a_cgm_identity_full,R25,1,1,1.0,
+BR5-01a_cgm_identity_full,R26,2,2,1.0,
+BR5-01a_cgm_identity_full,R28,1,1,1.0,
+BR5-01a_cgm_identity_full,R32,1,1,1.0,
+BR5-01a_cgm_identity_full,unk,35,35,1.0,
+BR5-01b_cgm_identity_writer,all,1089,1089,1.0,
+BR5-01c_cgm_identity_name,all,1089,1089,1.0,
+BR5-01d_cgm_identity_footer,all,1089,1089,1.0,
+BR5-02a_dictionary_idruns,all,1089,1082,0.9936,
+BR5-02a_dictionary_idruns,R15,11,11,1.0,
+BR5-02a_dictionary_idruns,R16,59,59,1.0,
+BR5-02a_dictionary_idruns,R17,40,40,1.0,
+BR5-02a_dictionary_idruns,R18,14,14,1.0,
+BR5-02a_dictionary_idruns,R19,482,481,0.9979,
+BR5-02a_dictionary_idruns,R20,147,145,0.9864,
+BR5-02a_dictionary_idruns,R21,269,265,0.9851,
+BR5-02a_dictionary_idruns,R23,13,13,1.0,
+BR5-02a_dictionary_idruns,R24,14,14,1.0,
+BR5-02a_dictionary_idruns,R25,1,1,1.0,
+BR5-02a_dictionary_idruns,R26,2,2,1.0,
+BR5-02a_dictionary_idruns,R28,1,1,1.0,
+BR5-02a_dictionary_idruns,R32,1,1,1.0,
+BR5-02a_dictionary_idruns,unk,35,35,1.0,
+BR5-02b_objects_total,all,1089,1082,0.9936,total_objects=5076186;max_objects_file=17930babf0fd01a8:872438
+BR5-02c_offset_markers_total,all,1089,1089,1.0,marker1_records=3100590
+BR5-03a_nurbs_knot_sig_cgm_region,all,1089,0,0.0,content-based knot-array signature (alias-guarded)
+BR5-03a_nurbs_knot_sig_cgm_region,R15,11,0,0.0,
+BR5-03a_nurbs_knot_sig_cgm_region,R16,59,0,0.0,
+BR5-03a_nurbs_knot_sig_cgm_region,R17,40,0,0.0,
+BR5-03a_nurbs_knot_sig_cgm_region,R18,14,0,0.0,
+BR5-03a_nurbs_knot_sig_cgm_region,R19,482,0,0.0,
+BR5-03a_nurbs_knot_sig_cgm_region,R20,147,0,0.0,
+BR5-03a_nurbs_knot_sig_cgm_region,R21,269,0,0.0,
+BR5-03a_nurbs_knot_sig_cgm_region,R23,13,0,0.0,
+BR5-03a_nurbs_knot_sig_cgm_region,R24,14,0,0.0,
+BR5-03a_nurbs_knot_sig_cgm_region,R25,1,0,0.0,
+BR5-03a_nurbs_knot_sig_cgm_region,R26,2,0,0.0,
+BR5-03a_nurbs_knot_sig_cgm_region,R28,1,0,0.0,
+BR5-03a_nurbs_knot_sig_cgm_region,R32,1,0,0.0,
+BR5-03a_nurbs_knot_sig_cgm_region,unk,35,0,0.0,
+BR5-03b_nurbs_weight_sig_cgm_region,all,1089,0,0.0,>=4 consecutive exact f64 1.0 inside the CGM region
+BR5-03c_nurbs_content_rate_vs_census,all,1089,0,0.0,census BR1 labels 100% from cgm_present alone; this is the content rate
+BR5-04a_top01_seebody_block,all,1089,1089,1.0,
+BR5-04b_top01_store_root,all,1089,1089,1.0,nested store root via the committed locator probe order
+BR5-05_xx0_reference_tags,all,1089,9,0.0083,
+BR5-05b_xx0_tags_total,all,1089,1089,1.0,tags=70148;knot_runs=0
+BR5-06a_top02_lump_ceiling,all,1089,0,0.0,no committed detector discriminates lump records; carrier-only
+BR5-06b_crv06_srf08_nurbs_ceiling,all,1089,0,0.0,payload framing parked; 0 knot/weight signatures corpus-wide
