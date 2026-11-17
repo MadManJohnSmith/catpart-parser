@@ -29,7 +29,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_test::wasm_bindgen_test;
 
 use js_sys::{Array, Float32Array, Object, Reflect, Uint32Array};
-use port::wasm_boundary::{decode_export, decode_inspect};
+use port::wasm_boundary::{decode_export, decode_inspect, decode_product_structure};
 use wasm_bindgen::JsCast;
 
 /// The classified error's ``error_class`` field off a thrown value.
@@ -215,4 +215,271 @@ fn export_empty_buffer_classifies_crash() {
     let err = decode_export(&[]).unwrap_err();
     assert_eq!(error_class(&err), "crash");
     assert!(!error_detail(&err).is_empty());
+}
+
+fn build_synthetic_product_fixture(product_name: &str, part_num: &str, inst_name: &str) -> Vec<u8> {
+    let mut payload = Vec::new();
+    payload.push((b"ASMPRODUCT".len() + 1) as u8);
+    payload.extend_from_slice(b"ASMPRODUCT");
+    payload.push((product_name.len() + 1) as u8);
+    payload.extend_from_slice(product_name.as_bytes());
+
+    payload.push((b"_PartNumber".len() + 1) as u8);
+    payload.extend_from_slice(b"_PartNumber");
+    payload.push((part_num.len() + 1) as u8);
+    payload.extend_from_slice(part_num.as_bytes());
+    payload.push((b"_InstanceName".len() + 1) as u8);
+    payload.extend_from_slice(b"_InstanceName");
+    payload.push((inst_name.len() + 1) as u8);
+    payload.extend_from_slice(inst_name.as_bytes());
+    payload.push((b"_Position".len() + 1) as u8);
+    payload.extend_from_slice(b"_Position");
+    payload.push((b"PRDREP".len() + 1) as u8);
+    payload.extend_from_slice(b"PRDREP");
+
+    let mut data = vec![0u8; 32];
+    data[..8].copy_from_slice(b"V5_CFV2\x00");
+    data.extend_from_slice(b"\x00\x00CNEXTINFOS\x00\x00V5R21SP0HF0\x00\x00");
+
+    let tb = 1;
+    let pool_span = payload.len();
+    let ln = (6 + tb + pool_span) as u32;
+
+    let mut rec = Vec::new();
+    rec.extend_from_slice(&[0xfe, 0x7c]);
+    rec.push(0x02);
+    rec.extend_from_slice(&ln.to_le_bytes());
+    rec.push(0xbf); // tb=1
+    rec.extend_from_slice(&payload);
+
+    data.extend_from_slice(&rec);
+
+    // Append 129-byte transform record (RECORD_129B_MAGIC_R20)
+    let magic = [0xb5, 0x13, 0x27, 0x79];
+    let tag_id: u32 = 42;
+    let sep = 0x80;
+    let t = [12.5f64, -34.0, 56.78];
+    let q = [1.0f64, 0.0, 0.0, 0.0];
+    let flags = [1.0f64, 0.0, 0.0, 0.0];
+    let bbox = [10.0f64, 20.0, 30.0, 40.0];
+
+    let mut trans_rec = Vec::with_capacity(129);
+    trans_rec.extend_from_slice(&magic);
+    trans_rec.extend_from_slice(&tag_id.to_le_bytes());
+    trans_rec.push(sep);
+    for v in t {
+        trans_rec.extend_from_slice(&v.to_le_bytes());
+    }
+    for v in q {
+        trans_rec.extend_from_slice(&v.to_le_bytes());
+    }
+    for v in flags {
+        trans_rec.extend_from_slice(&v.to_le_bytes());
+    }
+    for v in bbox {
+        trans_rec.extend_from_slice(&v.to_le_bytes());
+    }
+
+    data.extend_from_slice(&trans_rec);
+    data
+}
+
+#[wasm_bindgen_test]
+fn product_structure_empty_buffer_refuses_empty_buffer() {
+    let err = decode_product_structure(&[]).unwrap_err();
+    assert_eq!(error_class(&err), "empty-buffer");
+    assert!(!error_detail(&err).is_empty());
+}
+
+#[wasm_bindgen_test]
+fn product_structure_short_buffer_refuses_truncated_file() {
+    let err = decode_product_structure(&[0u8; 10]).unwrap_err();
+    assert_eq!(error_class(&err), "truncated-file");
+    assert!(!error_detail(&err).is_empty());
+}
+
+#[wasm_bindgen_test]
+fn product_structure_synthetic_valid_decode() {
+    let fixture = build_synthetic_product_fixture("AssemblyRoot", "PartA", "PartA.1");
+    let doc = decode_product_structure(&fixture).expect("synthetic product fixture decodes");
+
+    assert_eq!(
+        Reflect::get(&doc, &JsValue::from_str("schema_version"))
+            .unwrap()
+            .as_f64(),
+        Some(1.0)
+    );
+    assert_eq!(
+        Reflect::get(&doc, &JsValue::from_str("product_name"))
+            .unwrap()
+            .as_string(),
+        Some("AssemblyRoot".into())
+    );
+    assert_eq!(
+        Reflect::get(&doc, &JsValue::from_str("detected_version"))
+            .unwrap()
+            .as_string(),
+        Some("V5R21SP0HF0".into())
+    );
+    assert_eq!(
+        Reflect::get(&doc, &JsValue::from_str("pool_form"))
+            .unwrap()
+            .as_string(),
+        Some("framed".into())
+    );
+    assert_eq!(
+        Reflect::get(&doc, &JsValue::from_str("total_instances"))
+            .unwrap()
+            .as_f64(),
+        Some(1.0)
+    );
+    assert_eq!(
+        Reflect::get(&doc, &JsValue::from_str("placed_instances"))
+            .unwrap()
+            .as_f64(),
+        Some(1.0)
+    );
+    assert_eq!(
+        Reflect::get(&doc, &JsValue::from_str("identity_instances"))
+            .unwrap()
+            .as_f64(),
+        Some(0.0)
+    );
+
+    let instances = Reflect::get(&doc, &JsValue::from_str("instances"))
+        .unwrap()
+        .dyn_into::<Array>()
+        .unwrap();
+    assert_eq!(instances.length(), 1);
+
+    let inst0 = instances.get(0);
+    assert_eq!(
+        Reflect::get(&inst0, &JsValue::from_str("instance_name"))
+            .unwrap()
+            .as_string(),
+        Some("PartA.1".into())
+    );
+    assert_eq!(
+        Reflect::get(&inst0, &JsValue::from_str("part_number"))
+            .unwrap()
+            .as_string(),
+        Some("PartA".into())
+    );
+    assert_eq!(
+        Reflect::get(&inst0, &JsValue::from_str("pairing_rule"))
+            .unwrap()
+            .as_string(),
+        Some("triple".into())
+    );
+    assert_eq!(
+        Reflect::get(&inst0, &JsValue::from_str("has_position_attr"))
+            .unwrap()
+            .as_bool(),
+        Some(true)
+    );
+    assert_eq!(
+        Reflect::get(&inst0, &JsValue::from_str("placement_status"))
+            .unwrap()
+            .as_string(),
+        Some("placed".into())
+    );
+    assert_eq!(
+        Reflect::get(&inst0, &JsValue::from_str("object_tag"))
+            .unwrap()
+            .as_f64(),
+        Some(42.0)
+    );
+
+    let transform = Reflect::get(&inst0, &JsValue::from_str("transform"))
+        .unwrap()
+        .dyn_into::<Array>()
+        .unwrap();
+    assert_eq!(transform.length(), 7);
+    assert_eq!(transform.get(0).as_f64(), Some(12.5));
+    assert_eq!(transform.get(1).as_f64(), Some(-34.0));
+    assert_eq!(transform.get(2).as_f64(), Some(56.78));
+    assert_eq!(transform.get(3).as_f64(), Some(1.0));
+    assert_eq!(transform.get(4).as_f64(), Some(0.0));
+    assert_eq!(transform.get(5).as_f64(), Some(0.0));
+    assert_eq!(transform.get(6).as_f64(), Some(0.0));
+
+    let warnings = Reflect::get(&doc, &JsValue::from_str("warnings"))
+        .unwrap()
+        .dyn_into::<Array>()
+        .unwrap();
+    assert_eq!(warnings.length(), 0);
+}
+
+#[wasm_bindgen_test]
+fn product_structure_synthetic_identity_decode() {
+    let mut payload = Vec::new();
+    payload.push((b"ASMPRODUCT".len() + 1) as u8);
+    payload.extend_from_slice(b"ASMPRODUCT");
+    payload.push((b"IdentityAssy".len() + 1) as u8);
+    payload.extend_from_slice(b"IdentityAssy");
+
+    payload.push((b"_PartNumber".len() + 1) as u8);
+    payload.extend_from_slice(b"_PartNumber");
+    payload.push((b"PartB".len() + 1) as u8);
+    payload.extend_from_slice(b"PartB");
+    payload.push((b"_InstanceName".len() + 1) as u8);
+    payload.extend_from_slice(b"_InstanceName");
+    payload.push((b"PartB.1".len() + 1) as u8);
+    payload.extend_from_slice(b"PartB.1");
+    payload.push((b"PRDREP".len() + 1) as u8);
+    payload.extend_from_slice(b"PRDREP");
+
+    let mut data = vec![0u8; 32];
+    data[..8].copy_from_slice(b"V5_CFV2\x00");
+    data.extend_from_slice(b"\x00\x00CNEXTINFOS\x00\x00V5R21SP0HF0\x00\x00");
+
+    let tb = 1;
+    let pool_span = payload.len();
+    let ln = (6 + tb + pool_span) as u32;
+
+    let mut rec = Vec::new();
+    rec.extend_from_slice(&[0xfe, 0x7c]);
+    rec.push(0x02);
+    rec.extend_from_slice(&ln.to_le_bytes());
+    rec.push(0xbf);
+    rec.extend_from_slice(&payload);
+    data.extend_from_slice(&rec);
+
+    let doc = decode_product_structure(&data).expect("identity product fixture decodes");
+    assert_eq!(
+        Reflect::get(&doc, &JsValue::from_str("total_instances"))
+            .unwrap()
+            .as_f64(),
+        Some(1.0)
+    );
+    assert_eq!(
+        Reflect::get(&doc, &JsValue::from_str("placed_instances"))
+            .unwrap()
+            .as_f64(),
+        Some(0.0)
+    );
+    assert_eq!(
+        Reflect::get(&doc, &JsValue::from_str("identity_instances"))
+            .unwrap()
+            .as_f64(),
+        Some(1.0)
+    );
+
+    let instances = Reflect::get(&doc, &JsValue::from_str("instances"))
+        .unwrap()
+        .dyn_into::<Array>()
+        .unwrap();
+    let inst0 = instances.get(0);
+    assert_eq!(
+        Reflect::get(&inst0, &JsValue::from_str("placement_status"))
+            .unwrap()
+            .as_string(),
+        Some("identity".into())
+    );
+    assert_eq!(
+        Reflect::get(&inst0, &JsValue::from_str("has_position_attr"))
+            .unwrap()
+            .as_bool(),
+        Some(false)
+    );
 }

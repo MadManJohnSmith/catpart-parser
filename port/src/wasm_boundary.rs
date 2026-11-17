@@ -1,5 +1,6 @@
 //! The WASM boundary (spec §2.3 of ``docs/specs/phase5-viewer-
-//! spec.md``) — the two whole-buffer entries the viewer drives, no
+//! spec.md`` and §7.2 of ``docs/specs/phase6-assembly-viewer-
+//! spec.md``) — the three whole-buffer entries the viewer drives, no
 //! streaming. This module is compiled **only** for
 //! ``wasm32-unknown-unknown`` (the ``cdylib`` the viewer ships, §5);
 //! the native ``rlib`` the Fidelity harness drives has no JS runtime
@@ -8,7 +9,7 @@
 //! seam, assembly only: **it performs no decode arithmetic** (the V0
 //! lint policy, ``lib.rs``; no ``suboptimal_flops`` allow here).
 //!
-//! # The two entries (§2.3)
+//! # The three entries (§2.3 and §7.2)
 //!
 //! - ``decode_inspect(bytes) -> JsValue`` — the schema-v1 inspect
 //!   document (what the metadata panel renders), via
@@ -23,6 +24,11 @@
 //!   of the Fidelity definition** (§2.3; V3 carried it on
 //!   ``CompositeDecode`` for exactly this handoff) — the summary and
 //!   the PLY never contain it.
+//! - ``decode_product_structure(bytes) -> JsValue`` — the Phase 6
+//!   assembly product structure document (Ticket P3-V2 under Spec F #45,
+//!   §7.2), returning the parsed hierarchy, declared instances, resolution
+//!   keys, transform vectors, and classified refusal states via
+//!   :fn:`crate::product::parse_product`.
 //!
 //! # Failure: the classified error object
 //!
@@ -75,6 +81,7 @@ use crate::geometry::export::export_data;
 // citation. ``decode_export``'s one reachable arm is the twin's
 // unclassified empty-file ValueError — same runner classification.
 use crate::inspect::{INSPECT_CRASH, build_inspect_document};
+use crate::product::parse_product;
 use serde_wasm_bindgen::to_value;
 
 /// The classified error object ``{ error_class, detail }`` (§2.3's
@@ -180,4 +187,21 @@ pub fn decode_export(bytes: &[u8]) -> Result<JsValue, JsValue> {
     js_sys::Reflect::set(&result, &JsValue::from_str("curves"), &curves.into())
         .expect("a fresh Object accepts a string-keyed property");
     Ok(result.into())
+}
+
+/// The Phase 6 product structure entry point (spec §7.2 of
+/// ``docs/specs/phase6-assembly-viewer-spec.md``).
+/// Accepts raw bytes of a .CATProduct file and returns the parsed
+/// hierarchy, instance list, and transform vectors.
+#[wasm_bindgen]
+pub fn decode_product_structure(bytes: &[u8]) -> Result<JsValue, JsValue> {
+    match parse_product(bytes) {
+        Ok(doc) => to_value(&doc).map_err(|err| {
+            classified_error(
+                IO_ERROR,
+                &format!("cannot serialize product structure: {err}"),
+            )
+        }),
+        Err(refusal) => Err(classified_error(refusal.class, &refusal.detail)),
+    }
 }

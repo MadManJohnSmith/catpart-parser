@@ -16,12 +16,21 @@ export function decode_export(bytes: Uint8Array | number[]): any;
  */
 export function decode_inspect(bytes: Uint8Array | number[]): any;
 
+/**
+ * The Phase 6 product structure entry point (spec §7.2 of
+ * ``docs/specs/phase6-assembly-viewer-spec.md``).
+ * Accepts raw bytes of a .CATProduct file and returns the parsed
+ * hierarchy, instance list, and transform vectors.
+ */
+export function decode_product_structure(bytes: Uint8Array | number[]): any;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly decode_export: (a: number, b: number) => [number, number, number];
     readonly decode_inspect: (a: number, b: number) => [number, number, number];
+    readonly decode_product_structure: (a: number, b: number) => [number, number, number];
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
