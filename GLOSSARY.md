@@ -114,3 +114,31 @@ A recorded finding that something is absent or unreachable in the
 Corpus, with byte evidence and a reproduction command; it closes a
 claim or a Construct as definitively as a decode does.
 _Avoid_: known limitation, TODO
+
+### Assemblies
+
+**Assembly Bar (P4 Bar)**:
+The three-clause standard governing Phase 6: (1) 100% instance structure
+agreement against the committed pairing law on framed products; (2) PartNumber
+resolution without omission (unresolved parts remain classified in the tree);
+(3) 3D placement strictly with decoded transforms — zero identity-fallback
+masking.
+_Avoid_: loose assembly threshold, best-effort placement
+
+**Anti-masking invariant**:
+The non-negotiable rule that instances with undecodable or missing placement
+transforms must never be placed silently at origin $[0,0,0]$ or assigned an
+identity matrix; they must display classified as `undecodable` in the
+classification tree.
+_Avoid_: fallback to origin, default identity
+
+**Structure pool pairing law**:
+The deterministic sequence mapping component `PartNumber` strings to
+`InstanceName` strings from the `fe 7c 02` framed structure pool records.
+_Avoid_: heuristic pairing, name guessing
+
+**Virtual file catalog**:
+The client-side in-memory catalog built during folder, zip, or multi-file
+ingestion, enabling case-normalized stem resolution matching `.CATProduct`
+component declarations to uploaded `.CATPart` files.
+_Avoid_: file system cache, upload buffer

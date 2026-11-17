@@ -105,6 +105,36 @@ publicado por el flujo `scripts/publish_fitness.py` sin cambios
 (no-regret). El checklist completo de aceptación:
 [docs/evidence/2026-11-14-v6-phase5-close.md](docs/evidence/2026-11-14-v6-phase5-close.md).
 
+**Estado de ensamblajes (2026-11-16, FASE 6 CERRADA):** soporte de
+ensamblajes multi-archivo `.CATProduct` disponible en el navegador mediante
+WebAssembly bajo la Spec F #45 (autoridad de diseño
+[docs/specs/phase6-assembly-viewer-spec.md](docs/specs/phase6-assembly-viewer-spec.md)).
+La implementación cumple con la Barra de Ensamblaje P4 declarada
+([docs/evidence/2026-11-14-p4-assembly-bar.md](docs/evidence/2026-11-14-p4-assembly-bar.md))
+dígito por dígito en todas sus cláusulas:
+1. **Estructura de instancias**: 100% de acuerdo contra la ley de
+   emparejamiento confirmada (framing `fe 7c 02` y emparejamiento de pool
+   Ley B).
+2. **Resolución por PartNumber**: join por stem normalizado en minúsculas
+   según la ley de join de corpus 248/382; las piezas no encontradas se
+   mantienen y clasifican en el árbol — **nunca se ocultan**.
+3. **Colocación con transformaciones decodificadas**: `[tx, ty, tz, qw, qx, qy, qz]`
+   en `f64le` con filtro de cuaternión unitario y orden w-first; invariante
+   estricto de anti-enmascaramiento — transformaciones no decodificables se
+   clasifican como tales y **nunca caen por defecto al origen**.
+
+Las 5 cláusulas de aceptación de la Spec §9.2 fueron verificadas por el
+runner automatizado headless de Playwright
+([scripts/assembly_viewer_acceptance.py](scripts/assembly_viewer_acceptance.py),
+[tests/test_assembly_acceptance.py](tests/test_assembly_acceptance.py))
+sobre fixtures sintéticos canónicos (canónico espacial, identidad, parcial y
+no decodificable). El visor incluye ingesta nativa por arrastrar-soltar de
+carpetas y archivos `.zip`, renderizado 3D instanciado con compartición de
+mallas en GPU sin redundancia, control deslizante de vista explosionada y
+árbol de clasificación de 4 estados.
+Revisión independiente PASS:
+[docs/evidence/2026-11-16-p3-v6-acceptance-review.md](docs/evidence/2026-11-16-p3-v6-acceptance-review.md).
+
 ## Progreso
 
 Tracker de implementación — 23 tickets bajo las specs
@@ -114,13 +144,7 @@ de formato) y [#10](https://github.com/MadManJohnSmith/catpart-parser/issues/10)
 (parser L1). Se actualiza a medida que se cierran los tickets; el estado
 autoritativo vive en el issue tracker.
 
-**Specs A/B/C completas (17/17, 2026-11-09). Fase 4 completa: spec D (#28,
-geometría L2) 6/6 tickets (G6 #34 cerrada 2026-11-13 — L2 al 74.80%, la
-barra re-ajustada al techo medido por la regla pre-autorizada). Fase 5
-completa (spec E, #39 — autoridad de diseño `docs/specs/phase5-viewer-spec.md`):
-7/7 tickets V0-V6 (#51 #40 #41 #42 #43 #52 #44) cerrados 2026-11-14 —
-Fidelity-1 0 mismatches (3,266/3,266, corrida completa de ambos slices),
-reproducción en el navegador al margen 0 declarado, visor vivo en gh-pages.**
+**Specs A/B/C completas (17/17, 2026-11-09). Fase 4 completa: spec D (#28, geometría L2) 6/6 tickets (G6 #34 cerrada 2026-11-13 — L2 al 74.80%, la barra re-ajustada al techo medido por la regla pre-autorizada). Fase 5 completa (spec E, #39 — autoridad de diseño `docs/specs/phase5-viewer-spec.md`): 7/7 tickets V0-V6 (#51 #40 #41 #42 #43 #52 #44) cerrados 2026-11-14 — Fidelity-1 0 mismatches (3,266/3,266, corrida completa de ambos slices), reproducción en el navegador al margen 0 declarado, visor vivo en gh-pages. Fase 6 completa (spec F, #45 — autoridad de diseño `docs/specs/phase6-assembly-viewer-spec.md`): los 12 tickets cerrados 2026-11-16 — decodificación de ensamblajes .CATProduct y colocación 3D espacial en WebAssembly, barra P4 cumplida sin enmascaramiento de identidad, suite de aceptación headless verificada (8/8 passed).**
 
 | Spec | Ticket | Estado |
 |---|---|---|
@@ -154,15 +178,71 @@ reproducción en el navegador al margen 0 declarado, visor vivo en gh-pages.**
 | E | [#43](https://github.com/MadManJohnSmith/catpart-parser/issues/43) V4 WASM boundary + viewer shell (decode in the browser) | hecho |
 | E | [#52](https://github.com/MadManJohnSmith/catpart-parser/issues/52) V5 in-browser reproduction — margin 0 declared pre-run; 1,442/1,442 match, both splits WITHIN exact | hecho |
 | E | [#44](https://github.com/MadManJohnSmith/catpart-parser/issues/44) V6 Phase 5 acceptance + publication (Fidelity-1 full run 3,266/3,266; viewer live on gh-pages — Phase 5 close) | hecho |
+| F | [#46](https://github.com/MadManJohnSmith/catpart-parser/issues/46) P1 product census (382/382 clasificados, techo publicado, registros localizados) | hecho |
+| F | [#53](https://github.com/MadManJohnSmith/catpart-parser/issues/53) P2 structure pool pairing law (tripletas de identidad 216/253 hecho; techo 260 reconciliado) | hecho |
+| F | P4 Barra de ensamblaje de Fase 6 declarada (Opción 2 barra colocada, compuerta pre-compromiso) | hecho |
+| F | P2.5 Probe de codificación de valores _Position (cuaternión w-first [t, q] f64le decodificado) | hecho |
+| F | P2.6 Probe de binding de instancias (anatomía 129B/81B, tiling de contenedores, reconciliación) | hecho |
+| F | P3-V0 Rust product core (framing, pool, pairing en port/src/product/) | hecho |
+| F | P3-V1 Decodificadores de registros de transformación y motor de binding | hecho |
+| F | P3-V2 Límite WASM y empaquetado (decode_product_structure expuesto) | hecho |
+| F | Fixtures Generador de fixtures de ensamblaje multi-archivo sintéticos y suite de pruebas | hecho |
+| F | P3-V3 Ingesta multi-archivo y catálogo virtual (carpetas/zip/resolución de stems) | hecho |
+| F | P3-V4 Colocación 3D espacial y grafo de escena (instanciación, buffers GPU compartidos) | hecho |
+| F | P3-V5 UI de ensamblaje y árbol de clasificación (conteos de 4 estados, inspector) | hecho |
+| F | P3-V6 Runner de aceptación headless de Playwright y arnés de pruebas | hecho |
+
+### Pipeline Arquitectónico de Ensamblajes
+
+```mermaid
+flowchart TD
+    subgraph Ingestion["1. Ingesta Multi-Archivo (Navegador)"]
+        ZIP[".zip comprimido"] --> CAT["Catálogo Virtual de Archivos"]
+        DIR["Arrastrar carpeta"] --> CAT
+        FILES[".CATProduct + .CATParts"] --> CAT
+    end
+
+    subgraph RustWasm["2. Pipeline Rust WASM (port/src/product)"]
+        PROD[".CATProduct binario"] --> FRAME["Escáner de Framing y Pools\n(escáner fe 7c 02)"]
+        FRAME --> PAIR["Motor de Emparejamiento\n(PartNumber, InstanceName)"]
+        PROD --> TRANS["Decodificadores de Transformación\n(registros 129B / 81B / R15)"]
+        TRANS --> BIND["Motor de Binding\n(secuencial 1:1 / proxy)"]
+        PAIR --> WASM["Límite WASM\n(decode_product_structure)"]
+        BIND --> WASM
+    end
+
+    subgraph ViewerScene["3. Grafo de Escena 3D en Navegador (Three.js)"]
+        CAT --> STEM["Emparejador de Stems por Nombre"]
+        WASM --> STEM
+        STEM --> CACHE["Caché de Geometría\n(Asignación Única por Pieza)"]
+        CACHE --> INST["Nodos de Instanciación 3D\n(Buffers GPU Compartidos)"]
+        INST --> EXP["Transformación de Vista Explosionada"]
+        EXP --> CANVAS["Escena WebGL Canvas"]
+    end
+
+    subgraph Classification["4. Árbol UI e Invariante Anti-Enmascaramiento"]
+        STEM --> CLAS{"Estado de Instancia"}
+        CLAS -->|Pieza Cargada + Transformación Decodificada| PLACED["Colocada / Placed (Matriz Espacial T)"]
+        CLAS -->|Pieza Cargada + Sin _Position| IDENT["Identidad (Origen por Defecto)"]
+        CLAS -->|Pieza No Cargada| UNRES["Pieza No Resuelta (Preservada en Árbol)"]
+        CLAS -->|Transformación No Decodificable| UNDEC["No Decodificable (Clasificada, NUNCA en Origen)"]
+        PLACED --> TREE["Árbol de Ensamblaje y Conteos de 4 Estados"]
+        IDENT --> TREE
+        UNRES --> TREE
+        UNDEC --> TREE
+    end
+```
 
 ## Hoja de ruta
 
-| Nivel | Entregable | Estado |
+| Nivel / Fase | Entregable | Estado |
 |---|---|---|
 | L0 | Corpus público + triage a nivel de bytes con evidencia reproducible | hecho (Fases 0/1) |
 | L1 | Mapa de contenedores/secciones, metadatos, inventario de contenedores, nombres | hecho (Fase 3) |
 | L2 | Geometría básica: mallas y curvas exportables a STEP o renderizables | cerrada al 74.80% (barra re-ajustada por la regla pre-autorizada) |
-| L3 | B-rep paramétrico completo (sólidos CAD precisos) | planeado, el más difícil |
+| Fase 5 (Visor: Piezas) | Parseo de .CATPart en WebAssembly en cliente, render 3D WebGL | hecho (Fase 5) |
+| Fase 6 (Ensamblajes) | Parseo de .CATProduct en cliente, instanciación multi-pieza, colocación 3D | hecho (Fase 6) |
+| L3 | B-rep paramétrico completo (sólidos CAD precisos) | planeado, el más difícil (Fase 7) |
 
 ## Método
 

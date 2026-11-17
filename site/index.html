@@ -25,7 +25,8 @@
       <img alt="issues" src="https://img.shields.io/github/issues/MadManJohnSmith/catpart-parser?color=38e1ff">
     </div>
     <div class="cta">
-      <a class="btn primary" href="https://github.com/MadManJohnSmith/catpart-parser#readme">Get started</a>
+      <a class="btn primary" href="viewer/viewer.html">Open 3D Web Viewer</a>
+      <a class="btn" href="https://github.com/MadManJohnSmith/catpart-parser#readme">Get started</a>
       <a class="btn" href="format.html">Explore the format</a>
     </div>
 
@@ -33,7 +34,7 @@
       <div class="stat"><div class="k">L1 clean-parse (Dev)</div><div class="v good">99.66<span class="unit">%</span></div><div class="d">1,745 / 1,751 files · held-out 73/73</div></div>
       <div class="stat"><div class="k">L2 geometry-sanity (Dev)</div><div class="v accent" id="stat-l2">…<span class="unit">%</span></div><div class="d">1,033 / 1,381 parts · bar re-adjusted 74.80%</div></div>
       <div class="stat"><div class="k">L2 held-out</div><div class="v good">90.16<span class="unit">%</span></div><div class="d">55 / 61 unseen parts pass sanity</div></div>
-      <div class="stat"><div class="k">Decode climb</div><div class="v">5.5<span class="unit">→</span>74.8<span class="unit">%</span></div><div class="d">L2 progress across the #34 grind</div></div>
+      <div class="stat"><div class="k">Phase 6 Assemblies</div><div class="v good">100<span class="unit">%</span></div><div class="d">Product pairing &amp; 3D instancing · P4 bar met</div></div>
     </div>
   </header>
 
@@ -53,6 +54,7 @@
   <h2 class="section">Explore</h2>
   <p class="section-sub">Everything here is generated from the repository — the format documentation, real decoder output, committed evidence and the grind log.</p>
   <div class="explore">
+    <a class="card" href="viewer/viewer.html"><div class="ic">🌐</div><h3>3D Web Viewer</h3><p>Interactive client-side parser &amp; 3D viewer for <code>.CATPart</code> and <code>.CATProduct</code> assemblies in WebAssembly — with exploded view and instance classification.</p></a>
     <a class="card" href="format.html"><div class="ic">📐</div><h3>Format portal</h3><p>The reverse-engineered CATIA V5 structures: header, container table, payload blocks, geometry, trailer — rendered straight from <code>docs/format/</code>.</p></a>
     <a class="card" href="gallery.html"><div class="ic">Meshes</div><h3>Export gallery</h3><p>Real <code>catpart-export</code> output rendered in 3D — corpus-free fixtures plus the G3 precedent part, with the summary JSON each run emits.</p></a>
     <a class="card" href="evidence.html"><div class="ic">▤</div><h3>Evidence browser</h3><p>The committed claims and validation CSVs — searchable, sortable. The byte-ranged discipline behind every number.</p></a>
@@ -78,11 +80,13 @@ catpart-inspect bracket.CATPart</pre>
 
   <h2 class="section">Roadmap</h2>
   <table class="road">
-    <tr><th>Level</th><th>Deliverable</th><th>Status</th></tr>
-    <tr><td>L0</td><td>Public corpus + byte-level triage with reproducible evidence</td><td><span class="pill done">done</span></td></tr>
-    <tr><td>L1</td><td>Container map, metadata, inventory, names</td><td><span class="pill done">done</span></td></tr>
-    <tr><td>L2</td><td>Geometry: meshes exportable to STEP or renderable</td><td><span class="pill good">74.80% · closed</span></td></tr>
-    <tr><td>L3</td><td>Full parametric B-rep (precise CAD solids)</td><td><span class="pill plan">planned · hardest</span></td></tr>
+    <tr><th>Level / Phase</th><th>Deliverable</th><th>Status</th></tr>
+    <tr><td>L0 (Phases 0–1)</td><td>Public corpus + byte-level triage with reproducible evidence</td><td><span class="pill done">done</span></td></tr>
+    <tr><td>L1 (Phases 2–3)</td><td>Container map, metadata, inventory, names</td><td><span class="pill done">done</span></td></tr>
+    <tr><td>L2 (Phase 4)</td><td>Geometry: meshes exportable to STEP or renderable</td><td><span class="pill good">74.80% · closed</span></td></tr>
+    <tr><td>Phase 5</td><td>Web Viewer: client-side .CATPart parsing in WebAssembly</td><td><span class="pill done">done</span></td></tr>
+    <tr><td>Phase 6</td><td>Assemblies: .CATProduct pairing, spatial instancing &amp; UI tree</td><td><span class="pill done">done</span></td></tr>
+    <tr><td>L3 (Phase 7)</td><td>Full parametric B-rep (precise CAD solids)</td><td><span class="pill plan">planned · hardest</span></td></tr>
   </table>
 
   <footer data-common></footer>

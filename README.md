@@ -97,6 +97,34 @@ unchanged `scripts/publish_fitness.py` flow (gh-pages commit
 full acceptance checklist:
 [docs/evidence/2026-11-14-v6-phase5-close.md](docs/evidence/2026-11-14-v6-phase5-close.md).
 
+**Assembly status (2026-11-16, Phase 6 CLOSED):** multi-file `.CATProduct`
+assembly support shipped client-side in WebAssembly under Spec F #45
+(design authority
+[docs/specs/phase6-assembly-viewer-spec.md](docs/specs/phase6-assembly-viewer-spec.md)).
+The implementation satisfies the declared P4 Assembly Bar
+([docs/evidence/2026-11-14-p4-assembly-bar.md](docs/evidence/2026-11-14-p4-assembly-bar.md))
+digit-for-digit across all clauses:
+1. **Instance structure**: 100% agreement against the committed pairing
+   law (`fe 7c 02` framing and Law B string pool pairing).
+2. **Resolution by PartNumber**: case-normalized stem join matching the
+   248/382 corpus join law; unresolved parts are preserved and classified in
+   the instance tree — **never hidden**.
+3. **Placement with decoded transforms**: `[tx, ty, tz, qw, qx, qy, qz]`
+   in `f64le` with unit quaternion gate and w-first order; strict
+   anti-masking invariant — undecodable transforms are classified as such and
+   **never defaulted to identity origin**.
+
+The 5 acceptance clauses of Spec §9.2 are verified by the automated
+headless Playwright runner
+([scripts/assembly_viewer_acceptance.py](scripts/assembly_viewer_acceptance.py),
+[tests/test_assembly_acceptance.py](tests/test_assembly_acceptance.py))
+across canonical synthetic fixtures (canonical spatial, identity, partial,
+and undecodable). The viewer features native folder / `.zip` drag-and-drop
+ingestion, instanced 3D rendering with zero-redundancy GPU geometry sharing,
+an interactive exploded-view slider, and a 4-state classification tree.
+Independent review PASS:
+[docs/evidence/2026-11-16-p3-v6-acceptance-review.md](docs/evidence/2026-11-16-p3-v6-acceptance-review.md).
+
 ## Progress
 
 Implementation tracker — 23 tickets under specs
@@ -106,7 +134,7 @@ inference) and [#10](https://github.com/MadManJohnSmith/catpart-parser/issues/10
 (L1 parser). Updated as tickets close; authoritative state lives in the
 issue tracker.
 
-**Specs A/B/C complete (17/17, 2026-11-09). Phase 4 complete: spec D (#28, L2 geometry) 6/6 tickets (G6 #34 closed 2026-11-13 — L2 at 74.80%, the bar re-adjusted to the measured ceiling per the pre-authorized rule). Phase 5 complete (spec E, #39 — design authority `docs/specs/phase5-viewer-spec.md`): 7/7 tickets V0-V6 (#51 #40 #41 #42 #43 #52 #44) closed 2026-11-14 — Fidelity-1 0 mismatches (3,266/3,266, full dual-slice corpus run), in-browser reproduction at the declared margin 0, viewer live on gh-pages.**
+**Specs A/B/C complete (17/17, 2026-11-09). Phase 4 complete: spec D (#28, L2 geometry) 6/6 tickets (G6 #34 closed 2026-11-13 — L2 at 74.80%, the bar re-adjusted to the measured ceiling per the pre-authorized rule). Phase 5 complete (spec E, #39 — design authority `docs/specs/phase5-viewer-spec.md`): 7/7 tickets V0-V6 (#51 #40 #41 #42 #43 #52 #44) closed 2026-11-14 — Fidelity-1 0 mismatches (3,266/3,266, full dual-slice corpus run), in-browser reproduction at the declared margin 0, viewer live on gh-pages. Phase 6 complete (spec F, #45 — design authority `docs/specs/phase6-assembly-viewer-spec.md`): all 12 tickets closed 2026-11-16 — multi-file .CATProduct assembly decode & spatial 3D placement in WebAssembly, P4 bar met with zero identity masking, headless acceptance suite verified (8/8 passed).**
 
 | Spec | Ticket | State |
 |---|---|---|
@@ -140,17 +168,71 @@ issue tracker.
 | E | [#43](https://github.com/MadManJohnSmith/catpart-parser/issues/43) V4 WASM boundary + viewer shell (decode in the browser) | done |
 | E | [#52](https://github.com/MadManJohnSmith/catpart-parser/issues/52) V5 in-browser reproduction — margin 0 declared pre-run; 1,442/1,442 match, both splits WITHIN exact | done |
 | E | [#44](https://github.com/MadManJohnSmith/catpart-parser/issues/44) V6 Phase 5 acceptance + publication (Fidelity-1 full run 3,266/3,266; viewer live on gh-pages — Phase 5 close) | done |
-| F | [#46](https://github.com/MadManJohnSmith/catpart-parser/issues/46) P1 product census (Phase 6 opens; 382/382 classified, ceiling published, assembly records located) | done |
+| F | [#46](https://github.com/MadManJohnSmith/catpart-parser/issues/46) P1 product census (382/382 classified, ceiling published, assembly records located) | done |
 | F | [#53](https://github.com/MadManJohnSmith/catpart-parser/issues/53) P2 structure pool pairing law (identity triples 216/253 fact; placed ceiling 260 reconciled) | done |
+| F | P4 Phase 6 assembly bar declared (Option 2 placed bar, pre-commitment gating) | done |
+| F | P2.5 _Position transform value encoding probe (w-first quaternion [t, q] f64le decoded) | done |
+| F | P2.6 Instance binding probe (129B/81B anatomy, container tiling, count reconciliation) | done |
+| F | P3-V0 Rust product core (framing, pool, pairing in port/src/product/) | done |
+| F | P3-V1 Transform record decoders & instance binding engine | done |
+| F | P3-V2 WASM boundary & glue packaging (decode_product_structure exposed) | done |
+| F | Fixtures Synthetic multi-file assembly fixture generator & test suite | done |
+| F | P3-V3 Multi-file ingestion & virtual file catalog (folder/zip/stem resolution) | done |
+| F | P3-V4 3D spatial assembly placement & scene graph (instancing, GPU buffer sharing) | done |
+| F | P3-V5 Assembly UI & classification tree (4-state tallies, instance inspector) | done |
+| F | P3-V6 Headless Playwright assembly acceptance runner & test harness | done |
+
+### Assembly Architecture Pipeline
+
+```mermaid
+flowchart TD
+    subgraph Ingestion["1. Multi-File Ingestion (Browser)"]
+        ZIP[".zip archive"] --> CAT["Virtual File Catalog"]
+        DIR["Folder drop"] --> CAT
+        FILES[".CATProduct + .CATParts"] --> CAT
+    end
+
+    subgraph RustWasm["2. Rust WASM Pipeline (port/src/product)"]
+        PROD[".CATProduct binary"] --> FRAME["Framing & Pool Scanner\n(fe 7c 02 scanner)"]
+        FRAME --> PAIR["Pairing Engine\n(PartNumber, InstanceName)"]
+        PROD --> TRANS["Transform Decoders\n(129B / 81B / R15 records)"]
+        TRANS --> BIND["Binding Engine\n(sequential 1:1 / proxy)"]
+        PAIR --> WASM["WASM Boundary\n(decode_product_structure)"]
+        BIND --> WASM
+    end
+
+    subgraph ViewerScene["3. In-Browser 3D Scene Graph (Three.js)"]
+        CAT --> STEM["Case-Normalized Stem Matcher"]
+        WASM --> STEM
+        STEM --> CACHE["Geometry Cache\n(Unique Part Allocation)"]
+        CACHE --> INST["3D Instancing Nodes\n(Shared GPU Buffers)"]
+        INST --> EXP["Exploded View Transform"]
+        EXP --> CANVAS["WebGL Canvas Scene"]
+    end
+
+    subgraph Classification["4. UI Tree & Anti-Masking Invariant"]
+        STEM --> CLAS{"Instance Status"}
+        CLAS -->|Uploaded + Decoded Transform| PLACED["Placed (Spatial T)"]
+        CLAS -->|Uploaded + No _Position| IDENT["Identity (Origin Default)"]
+        CLAS -->|Part Not Uploaded| UNRES["Unresolved Part (Preserved in Tree)"]
+        CLAS -->|Undecodable Transform| UNDEC["Undecodable (Classified, NOT Origin)"]
+        PLACED --> TREE["Assembly Tree & 4-State Tallies"]
+        IDENT --> TREE
+        UNRES --> TREE
+        UNDEC --> TREE
+    end
+```
 
 ## Roadmap
 
-| Level | Deliverable | Status |
+| Level / Phase | Deliverable | Status |
 |---|---|---|
 | L0 | Public corpus + byte-level triage with reproducible evidence | done (Phase 0/1) |
 | L1 | Container/section map, metadata, container inventory, names | done (Phase 3) |
 | L2 | Geometry basics: meshes and curves exportable to STEP or renderable | closed at 74.80% (bar re-adjusted per the pre-authorized rule) |
-| L3 | Full parametric B-rep (precise CAD solids) | planned, hardest |
+| Phase 5 (Viewer: Parts) | Client-side .CATPart parsing in WebAssembly, 3D WebGL render | done (Phase 5) |
+| Phase 6 (Assemblies) | Client-side .CATProduct parsing, multi-part instancing, 3D placement | done (Phase 6) |
+| L3 | Full parametric B-rep (precise CAD solids) | planned, hardest (Phase 7) |
 
 ## Method
 

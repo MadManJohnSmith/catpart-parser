@@ -13,9 +13,18 @@
   ];
   var current = document.querySelector("nav[data-page]");
   var here = current ? current.getAttribute("data-page") : "index";
+  var isSubdir = (here === "viewer");
   var links = PAGES.map(function (p) {
     var cls = p[0] === here ? ' class="active"' : "";
-    return '<a' + cls + ' href="' + p[2] + '">' + p[1] + "</a>";
+    var href = p[2];
+    if (p[0] === "repo") {
+      href = p[2];
+    } else if (isSubdir) {
+      href = (p[0] === "viewer") ? "viewer.html" : "../" + p[2];
+    } else {
+      href = (p[0] === "viewer") ? "viewer/viewer.html" : p[2];
+    }
+    return '<a' + cls + ' href="' + href + '">' + p[1] + "</a>";
   }).join("");
   if (current) {
     current.innerHTML =

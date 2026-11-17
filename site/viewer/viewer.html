@@ -15,22 +15,19 @@
   <nav data-page="viewer"></nav>
 
   <header class="page-head">
-    <div class="crumb">Phase 5 · the Port compiled to WebAssembly</div>
-    <h1>Viewer</h1>
-    <p class="lead">Drop a <strong>.CATPart</strong> and the Rust decode pipeline — the same code the
-    Fidelity harness proves against the Python reference — runs in your browser. Static files only:
-    nothing is uploaded, the file never leaves your machine. Desktop target (the largest corpus
-    files are ~120&nbsp;MB and decode at ≈3× transient memory peak).</p>
+    <div class="crumb">Phase 6 · Parts &amp; Assemblies in WebAssembly</div>
+    <h1>3D CAD Viewer</h1>
+    <p class="lead">Drop a <strong>.CATPart</strong>, <strong>.CATProduct</strong>, or multi-part <strong>.zip</strong> and the Rust decode pipeline runs entirely in your browser via WebAssembly. Features spatial 3D assembly placement, instancing with zero-redundancy GPU memory sharing, exploded views, and hierarchical classification trees. Static files only: nothing is uploaded, your files never leave your machine.</p>
   </header>
 
   <div class="viewer-grid">
     <section class="stage panel">
-      <div id="drop" class="drop" role="button" tabindex="0" aria-label="Choose or drop a .CATPart file">
+      <div id="drop" class="drop" role="button" tabindex="0" aria-label="Choose or drop CATIA V5 files">
         <input type="file" id="file-input" accept=".CATPart,.catpart,.CATProduct,.catproduct,.zip" multiple hidden>
         <div class="drop-inner">
           <svg viewBox="0 0 48 48" fill="none" aria-hidden="true"><path d="M24 6v24m0 0 8-8m-8 8-8-8" stroke="#38e1ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 34v6h32v-6" stroke="#8b7bff" stroke-width="3" stroke-linecap="round"/></svg>
-          <p><strong>Drop a .CATPart here</strong> — or click to choose a file.</p>
-          <p class="dim">Decoded locally by the WebAssembly port (spec §2.3). Failures show their
+          <p><strong>Drop a .CATPart, .CATProduct, or .zip here</strong> — or click to choose files.</p>
+          <p class="dim">Decoded locally by the WebAssembly port. Failures show their
           classified error, never a blank screen.</p>
         </div>
       </div>

@@ -206,6 +206,24 @@ an assembly bar derived from the census arithmetic and met in the
 viewer under the same mechanical rules; documented negatives for
 everything the census shows unreachable.
 
+**Status (2026-11-16): CLOSED — acceptance met in full.**
+- **P1 (#46) Product Census closed**: 382/382 product rows classified (380 CATIA + 2 misfits). Verified 0/382 geometry stores, 0/374 name-table hierarchy, located assembly records (Law B string pool `len = chars+1` on 380/380; block strings with 261 product doc refs; `CATXDocLinkCont` 2/382). Review PASS ([docs/evidence/2026-11-14-p1-product-census.md](../evidence/2026-11-14-p1-product-census.md)).
+- **P2 (#53) Structure Pool Pairing Law closed**: framing `fe 7c 02 <u32le ln>`, SHORT/LONG typed items, identity triples 216/253 FACT (180/253 bare adjacency inference), `_Position` absence proven, ceiling reconciled as 191 framed + 69 legacy ([docs/evidence/2026-11-14-p2-pool-pairing.md](../evidence/2026-11-14-p2-pool-pairing.md)).
+- **P4 Assembly Bar Declared**: [docs/evidence/2026-11-14-p4-assembly-bar.md](../evidence/2026-11-14-p4-assembly-bar.md) (1: 100% instance structure agreement on 253 framed; 2: PartNumber resolution by part number without hiding; 3: placement with DECODED transforms — NO identity-fallback masking for undecodable transforms).
+- **P2.5 Transform Encoding probe closed**: `[tx, ty, tz, qw, qx, qy, qz]` in `f64le`, unit quaternion `|‖q‖²−1| ≤ 1e-9`, w-first `(w, x, y, z)` proven across 504 corpus contradictions, carrier class `Cont_*` tail regions ([docs/evidence/2026-11-14-p25-position-encoding.md](../evidence/2026-11-14-p25-position-encoding.md)).
+- **P2.6 Instance Binding probe closed**: 129B/81B record strides, container tiling (420B in `91fe`), count discrepancy solved (lengua 143 dot names = 112 constraints + 31 instances), binding laws established ([docs/evidence/2026-11-16-p26-binding-probe.md](../evidence/2026-11-16-p26-binding-probe.md), [docs/evidence/2026-11-16-p26-binding-review.md](../evidence/2026-11-16-p26-binding-review.md)).
+- **Legacy R15 decode closed**: `8d 81` inline matrix stream and $\mathrm{SO}(3)$ orthogonality verified across 45 R15 and 220 unoverridden files ([docs/evidence/2026-11-16-r15-position-review.md](../evidence/2026-11-16-r15-position-review.md)).
+- **CB0001 Catalog Census verified**: 12 claims verified with 100% agreement on 44 files ([docs/evidence/2026-11-16-cb0001-catalog-review.md](../evidence/2026-11-16-cb0001-catalog-review.md)).
+- **Design Authority**: [docs/specs/phase6-assembly-viewer-spec.md](../specs/phase6-assembly-viewer-spec.md) committed at `a2f6b55`.
+- **Implementation pipeline (P3-V0 through P3-V6) delivered & verified**:
+  - `P3-V0`: Rust product core framing, pool and pairing in `port/src/product/` ([docs/evidence/2026-11-16-p3-v0-core-review.md](../evidence/2026-11-16-p3-v0-core-review.md)).
+  - `P3-V1`: Transform record decoders & instance binding engine ([docs/evidence/2026-11-16-p3-v1-transforms-review.md](../evidence/2026-11-16-p3-v1-transforms-review.md)).
+  - `P3-V2`: WASM boundary exposing `decode_product_structure` ([docs/evidence/2026-11-16-p3-v2-wasm-review.md](../evidence/2026-11-16-p3-v2-wasm-review.md)).
+  - `Fixtures`: Synthetic multi-file assembly fixtures generator (`src/catpart/fixtures_assembly.py`) covering 4 canonical fixtures (canonical spatial, identity, partial, undecodable).
+  - `P3-V3 & P3-V4`: Multi-file drag-drop/folder/zip ingestion, virtual file catalog, 3D spatial scene graph with instancing and zero-redundancy GPU geometry sharing ([docs/evidence/2026-11-16-viewer-assembly-pipeline-review.md](../evidence/2026-11-16-viewer-assembly-pipeline-review.md)).
+  - `P3-V5`: Assembly UI, hierarchical tree, 4-state classification tallies (`placed`, `identity`, `unresolved`, `undecodable`), and strict anti-masking invariant ([docs/evidence/2026-11-16-p3-v5-assembly-ui-review.md](../evidence/2026-11-16-p3-v5-assembly-ui-review.md)).
+  - `P3-V6`: Headless Playwright acceptance runner (`scripts/assembly_viewer_acceptance.py`, `tests/test_assembly_acceptance.py`) independently verified PASS WITH FINDINGS ([docs/evidence/2026-11-16-p3-v6-acceptance-review.md](../evidence/2026-11-16-p3-v6-acceptance-review.md)), confirming all 5 clauses of Spec §9.2 digit-for-digit.
+
 ## Phase 7 — B-rep (L3)
 
 Precise B-rep extraction (exact solids, surfaces, curves; e.g. STEP
@@ -234,9 +252,9 @@ The project is **100% done** when, in order:
 
 1. **Phase 4 (L2)** closed: the 80% Dev bar met under no-regret on
    Held-out with every failure classified — or the bar re-adjusted by
-   the pre-authorized rule below.
-2. **Phase 5 (viewer, parts)** acceptance met.
-3. **Phase 6 (assemblies)** acceptance met.
+   the pre-authorized rule below (CLOSED 2026-11-13).
+2. **Phase 5 (viewer, parts)** acceptance met (CLOSED 2026-11-14).
+3. **Phase 6 (assemblies)** acceptance met (CLOSED 2026-11-16).
 4. **Phase 7 (B-rep)** acceptance met.
 5. **Closure artifacts shipped**: tag `v1.0` + release notes; final
    fitness report published (gh-pages); this ROADMAP with every phase
