@@ -204,23 +204,6 @@ def audit_part(mm) -> dict:
     return out
 
 
-def audit_part_census_counters(mm) -> tuple[int, int]:
-    """(accepted facet records, accepted 0x4a/0x4c records), census scan."""
-    try:
-        span = locate_store(mm)
-    except Exception:
-        return 0, 0
-    if span is None:
-        return 0, 0
-    lo, hi = span.body_lo, span.body_hi
-    try:
-        pool.scan_pool_groups(mm, lo, hi)
-    except Exception:
-        return 0, 0
-    scan = facets.scan_facets(mm, lo, hi)
-    return len(scan.records), sum(1 for r in scan.records if r.marker in (0x4A, 0x4C))
-
-
 def percentile(values: list[float], q: float) -> float:
     if not values:
         return 0.0
@@ -255,7 +238,7 @@ def run_corpus(args) -> list[dict]:
     unit_norm_max_dev = 0.0
     worst_poolonly_rel = 0.0
     worst_poolonly_sha = ""
-    files_with_store = files_l2 = 0
+    files_with_store = 0
     files_facet = files_planar = 0
     files_facet_l2 = files_planar_l2 = 0
     l2_total = 0
@@ -320,8 +303,6 @@ def run_corpus(args) -> list[dict]:
             files_planar += 1
             if is_l2:
                 files_planar_l2 += 1
-        if is_l2:
-            files_l2 += 1
 
     corpus = poolonly + composite
     print(f"stores located: {files_with_store} | pool-only {poolonly['stores']} | composite {composite['stores']}")
@@ -528,7 +509,7 @@ def run_corpus(args) -> list[dict]:
     )
     add(
         "BR2-16_strip_loops",
-        "0x4a/0x42/0x41 loops decoded as strip segments (not boundary cycles)",
+        "strip-kind loops of normal-bearing records (0x49/0x4a) decoded as strip segments (not boundary cycles; normal-less 0x41/0x42 records are outside the geometry-scan population)",
         "fact",
         "loops of accepted records, geometry scan",
         "all",
@@ -554,6 +535,26 @@ def run_corpus(args) -> list[dict]:
         "all",
         corpus["mk_0x49"],
         corpus["mk_0x49"],
+    )
+
+    # Store-class scope rows (the 281/1,036 split the note cites)
+    add(
+        "BR2-19_store_class_poolonly",
+        "located stores classified pool-only (store root + pool references; the geometry-validated scope of section 4)",
+        "fact",
+        "located stores, census scan",
+        "all",
+        files_with_store,
+        poolonly["stores"],
+    )
+    add(
+        "BR2-20_store_class_composite",
+        "located stores classified composite (composite index space - G3 F8; per-face geometry parked on BR5)",
+        "fact",
+        "located stores, census scan",
+        "all",
+        files_with_store,
+        composite["stores"],
     )
 
     print(f"\nclaims rows: {len(rows)}")
