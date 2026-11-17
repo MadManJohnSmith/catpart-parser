@@ -17,6 +17,8 @@ BR2-12c_spread_p95_rel,95th-percentile relative plane spread (max_dev/tol; rate 
 BR2-13_composite_plane_rate,composite-store in-pool faces passing the plane test (the composite index space is NOT pool-first - G3 F8 corroborated at plane level),fact,"composite stores, in-pool faces",all,33179,5420,0.163356
 BR2-14_outofpool_records,normal-bearing records whose references leave the pool (composite index space + clean-store variants),fact,"normal-bearing records, all stores",all,54265,19509,0.359513
 BR2-15_ring_loops,"0x4c loops decoded as closed rings (cyclic boundary cycles, TOP-05 reading)",fact,"loops of accepted records, geometry scan",all,6462,6462,1
-BR2-16_strip_loops,0x4a/0x42/0x41 loops decoded as strip segments (not boundary cycles),fact,"loops of accepted records, geometry scan",all,51673,51673,1
+BR2-16_strip_loops,strip-kind loops of normal-bearing records (0x49/0x4a) decoded as strip segments (not boundary cycles; normal-less 0x41/0x42 records are outside the geometry-scan population),fact,"loops of accepted records, geometry scan",all,51673,51673,1
 BR2-17_five_byte_form,accepted records on the 5-byte header form (01 mk ty b3 ff; outside BR2's marker slice),fact,"accepted records, geometry scan",all,118807,0,0
 BR2-18_triangle_list_normal_records,0x49 records (n == 3*type triangle lists) carrying a normal - planarity extension candidate,candidate,"0x49 records, geometry scan",all,3737,3737,1
+BR2-19_store_class_poolonly,located stores classified pool-only (store root + pool references; the geometry-validated scope of section 4),fact,"located stores, census scan",all,1317,281,0.213364
+BR2-20_store_class_composite,located stores classified composite (composite index space - G3 F8; per-face geometry parked on BR5),fact,"located stores, census scan",all,1317,1036,0.786636
