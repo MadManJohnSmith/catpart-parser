@@ -602,13 +602,19 @@ def fixture_assembly_partial(seed: int = 42) -> AssemblyFixture:
 
     framed_pool = encode_structure_pool_record(bytes(items))
 
-    # Transform records for supplied parts
+    # Transform records for all 4 declared instances
     recs = bytearray()
     recs += encode_129b_transform_record(
         (0.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0), object_id=201
     )
     recs += encode_129b_transform_record(
         (15.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0), object_id=202
+    )
+    recs += encode_129b_transform_record(
+        (30.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0), object_id=203
+    )
+    recs += encode_129b_transform_record(
+        (45.0, 0.0, 0.0), (1.0, 0.0, 0.0, 0.0), object_id=204
     )
 
     ctor_block = (
@@ -666,6 +672,7 @@ def fixture_assembly_undecodable(seed: int = 42) -> AssemblyFixture:
         "_Position",
         "Bracket",
         "Bracket.1",
+        "Bracket.2",
     )
     for tag in legacy_tags:
         legacy_payload += encode_r15_reference_entry(tag)
@@ -678,6 +685,7 @@ def fixture_assembly_undecodable(seed: int = 42) -> AssemblyFixture:
 
     expected_classifications = {
         "Bracket.1": "undecodable",
+        "Bracket.2": "undecodable",
     }
 
     return AssemblyFixture(

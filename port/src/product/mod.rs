@@ -17,8 +17,8 @@ pub use binding::{
     compute_bindings,
 };
 pub use framing::{
-    PoolCandidate, PoolForm, detect_pool_form, find_structure_pool, scan_framing_candidates,
-    verify_length_law,
+    PoolCandidate, PoolForm, detect_pool_form, extract_r15_instance_names, find_structure_pool,
+    scan_framing_candidates, verify_length_law,
 };
 pub use pairing::{
     InstanceRecord, PairingClassificationSummary, PairingRule, ProductInstanceRecord,
@@ -177,22 +177,45 @@ pub fn parse_product(data: &[u8]) -> Result<ProductStructureDocument, ProductErr
                 warnings,
             })
         }
-        PoolForm::R15Ref => Ok(ProductStructureDocument {
-            schema_version: 1,
-            product_name: crate::identity::parse_document_name(data)
-                .unwrap_or_else(|| "Product".to_string()),
-            detected_version,
-            pool_form: pool_form.as_str().to_string(),
-            total_instances: 0,
-            placed_instances: 0,
-            identity_instances: 0,
-            instances: Vec::new(),
-            warnings: vec![ProductWarning {
-                class: "r15-legacy-reference-form".to_string(),
-                detail: "R15 attribute-reference form detected; structure pool is unframed"
-                    .to_string(),
-            }],
-        }),
+        PoolForm::R15Ref => {
+            let inst_names = extract_r15_instance_names(data);
+            let instances: Vec<ProductInstanceRecord> = inst_names
+                .into_iter()
+                .map(|name| {
+                    let part_number = name
+                        .rsplit_once('.')
+                        .map_or(&name[..], |(stem, _)| stem)
+                        .to_string();
+                    ProductInstanceRecord {
+                        instance_name: name,
+                        part_number,
+                        pairing_rule: crate::product::pairing::PairingRule::BarePair,
+                        has_position_attr: true,
+                        placement_status: PlacementStatus::Undecodable,
+                        transform: None,
+                        object_tag: None,
+                        classification_detail: Some("r15-legacy-reference-form".to_string()),
+                    }
+                })
+                .collect();
+            let total_instances = instances.len();
+            Ok(ProductStructureDocument {
+                schema_version: 1,
+                product_name: crate::identity::parse_document_name(data)
+                    .unwrap_or_else(|| "Product".to_string()),
+                detected_version,
+                pool_form: pool_form.as_str().to_string(),
+                total_instances,
+                placed_instances: 0,
+                identity_instances: 0,
+                instances,
+                warnings: vec![ProductWarning {
+                    class: "r15-legacy-reference-form".to_string(),
+                    detail: "R15 attribute-reference form detected; structure pool is unframed"
+                        .to_string(),
+                }],
+            })
+        }
         PoolForm::Unframed => Ok(ProductStructureDocument {
             schema_version: 1,
             product_name: crate::identity::parse_document_name(data)

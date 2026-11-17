@@ -229,6 +229,43 @@ pub fn r15_reference_count(data: &[u8]) -> usize {
     count
 }
 
+/// Extract R15 legacy dot-shaped instance names (`\xfe\xfe?[\x01-\x7f][name]\x80`).
+pub fn extract_r15_instance_names(data: &[u8]) -> Vec<String> {
+    if data.len() < 10 {
+        return Vec::new();
+    }
+    let mut names = Vec::new();
+    let mut i = 0;
+    while i < data.len() - 6 {
+        if data[i] == 0xfe {
+            let mut off = i + 1;
+            if off < data.len() && data[off] == 0xfe {
+                off += 1;
+            }
+            if off < data.len() {
+                let len_byte = data[off];
+                if (1..=127).contains(&len_byte) {
+                    let str_len = len_byte as usize - 1;
+                    if (3..=60).contains(&str_len)
+                        && off + 1 + str_len < data.len()
+                        && data[off + 1 + str_len] == 0x80
+                        && data[off + 1..off + 1 + str_len]
+                            .iter()
+                            .all(|&b| (0x20..=0x7E).contains(&b))
+                        && let Ok(name_str) = std::str::from_utf8(&data[off + 1..off + 1 + str_len])
+                        && crate::product::pool::is_dot_shape(name_str)
+                        && !crate::product::pairing::is_constraint_name(name_str)
+                    {
+                        names.push(name_str.to_string());
+                    }
+                }
+            }
+        }
+        i += 1;
+    }
+    names
+}
+
 /// Classify the pool format of the document.
 pub fn detect_pool_form(data: &[u8]) -> PoolForm {
     if find_structure_pool(data).is_some() {

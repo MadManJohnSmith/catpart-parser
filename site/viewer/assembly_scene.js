@@ -795,8 +795,9 @@ export class AssemblyScene {
       throw new Error("Invalid product structure: missing instances array");
     }
 
-    // Reset previous assembly state
+    // Reset previous assembly state and GPU geometry pool (§5.3)
     this.clear();
+    this.geometryPool.dispose();
 
     const decodeFn = options.decodeExport;
 
@@ -850,10 +851,11 @@ export class AssemblyScene {
 
     return {
       totalInstances: this.instances.size,
-      placedInstances: this.getPlacedInstances().length,
+      placedInstances: this.getInstancesByStatus(STATUS_PLACED).length,
       identityInstances: this.getInstancesByStatus(STATUS_IDENTITY).length,
       unresolvedInstances: this.getInstancesByStatus(STATUS_UNRESOLVED).length,
       undecodableInstances: this.getInstancesByStatus(STATUS_UNDECODABLE).length,
+      spatialInstances: this.getPlacedInstances().length,
       uniqueGeometries: this.geometryPool.uniqueGeometryCount,
     };
   }
@@ -1022,6 +1024,16 @@ export class AssemblyScene {
       radius: this.worldBoundingSphere.radius,
       sphere: this.worldBoundingSphere.clone(),
     };
+  }
+
+  /**
+   * Retrieves or computes the aggregate bounding sphere.
+   *
+   * @param {"catia"|"world"} [space="world"]
+   * @returns {{ center: THREE.Vector3, radius: number, sphere: THREE.Sphere }}
+   */
+  getBoundingSphere(space = "world") {
+    return this.computeBoundingSphere(space);
   }
 
   /**

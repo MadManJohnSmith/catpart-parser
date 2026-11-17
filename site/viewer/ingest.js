@@ -552,7 +552,7 @@ export async function ingestFiles(inputs, options = {}) {
       continue;
     }
 
-    let candidateBytes = item.bytes || null;
+    let candidateBytes = (item.bytes instanceof Uint8Array) ? item.bytes : null;
     const candidateName = item.name || (typeof item === "string" ? item : "");
     const candidatePath = item.path || candidateName;
 
