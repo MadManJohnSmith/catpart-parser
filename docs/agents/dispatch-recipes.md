@@ -178,6 +178,11 @@ files:
   immediately (`git worktree remove ... && git branch -d ...`). Never
   leave merged delegate worktrees parked across session handoffs; an
   unpruned accumulation triggers an audit debt.
+- Direct execution over headless subagents (User Rule 2026-11-17): Never spawn
+  unmonitored background subagents (`invoke_subagent`). They cannot be supervised
+  or monitored by the user in the UI and lack wake notifications. All work is
+  executed directly in the coordinator/main thread for total transparency. If
+  delegation is explicitly requested, use T3 Code visible tasks (`delegate_task`).
 - Binary reverse-engineering briefs (Phase 6 retro, candidate 3): byte
   offsets in dispatch briefs must explicitly cite both bases
   (`+0x08 (8d)`) and trace to verified binary inspection scripts or
