@@ -1,0 +1,24 @@
+construct_id,family,name,carrier_container,record_signature,semantic_type,status,corpus_occurrences,rate_l2_pass
+TOP-01,topology,Solid/Body,CATSeeBodyCont/CGMGeom,CATSeeBodyCont block & store root,topology,frozen,1435,1.0
+TOP-02,topology,Lump,CATSeeBodyCont/CGMGeom,Lump boundary records in store & CGM,topology,frozen,1435,1.0
+TOP-03,topology,Shell,CATStdCont/CGMGeom,Closed manifold face sets,topology,frozen,1133,0.9982
+TOP-04,topology,Face,CATStdCont/CGMGeom,01 [41-4f] facet records & loop bounds,topology,frozen,1133,0.9982
+TOP-05,topology,Loop,CATStdCont/CGMGeom,01 4a/4c boundary cycle loops,topology,frozen,895,0.786
+TOP-06,topology,Edge,CATStdCont/CGMGeom,01 02/01 01 edge tables & curve families,topology,frozen,1311,1.0
+TOP-07,topology,Vertex,CATStdCont/CGMGeom,05 08 01 pool points & node point lists,topology,frozen,1282,1.0
+CRV-01,curve,Line/Segment,CATStdCont/CGMGeom,33 32 records ([P][Q][P]+|Q|) & 02 02 edges,analytic,frozen,1231,0.9853
+CRV-02,curve,Circle/Arc,CATStdCont/CGMGeom,33 37 / 33 38 circular arc records,analytic,frozen,1077,0.8503
+CRV-03,curve,Ellipse,CATStdCont/CGMGeom,33 38 elliptic records & CGM conic payloads,analytic,frozen,357,0.2874
+CRV-04,curve,Parabola,CATStdCont/CGMGeom,33 38 parabolic conic payloads,analytic,frozen,214,0.182
+CRV-05,curve,Hyperbola,CATStdCont/CGMGeom,33 38 hyperbolic conic payloads,analytic,frozen,143,0.115
+CRV-06,curve,NURBS/BSpline Curve,SurfacicReps/CGMGeom,SceneGraph / CGM spline curve records,nurbs,frozen,1435,1.0
+CRV-07,curve,Polyline,CATStdCont,01 02 polyline strip records (n > 2),analytic,frozen,996,0.8365
+CRV-08,curve,Trimmed Curve,CATStdCont/CGMGeom,Trimmed boundary curve parameter bounds,analytic,frozen,1280,0.975
+SRF-01,surface,Plane,CATStdCont/CGMGeom,01 4a/4c facet records with 12B f32le normal,analytic,frozen,895,0.786
+SRF-02,surface,Cylindrical Surface,CATStdCont/CGMGeom,Curved strip records & CGM cylinder streams,analytic,frozen,1128,0.9972
+SRF-03,surface,Conical Surface,CATStdCont/CGMGeom,Conical facet strip clusters & CGM cone records,analytic,frozen,542,0.465
+SRF-04,surface,Spherical Surface,CATStdCont/CGMGeom,Spherical cap clusters & CGM sphere records,analytic,frozen,412,0.354
+SRF-05,surface,Toroidal Surface,CATStdCont/CGMGeom,Toroidal fillet strips & CGM torus records,analytic,frozen,320,0.275
+SRF-06,surface,Surface of Revolution,CATStdCont/CGMGeom,Rotational profile sweeps & CGM revolution records,analytic,frozen,680,0.582
+SRF-07,surface,Extruded Surface,CATStdCont/CGMGeom,Linear extrusion profile strips & CGM tab cyl,analytic,frozen,890,0.795
+SRF-08,surface,NURBS/BSpline Surface,SurfacicReps/CGMGeom,SurfacicReps stream & CGM spline records,nurbs,frozen,1435,1.0

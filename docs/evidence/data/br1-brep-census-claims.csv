@@ -1,0 +1,7 @@
+claim,release,observations,passes,rate
+BR1-01_frozen_vocabulary_count,all,1442,1442,1.000
+BR1-02_topology_body_pass_rate,all,1089,1089,1.000
+BR1-03_topology_face_pass_rate,all,1089,1087,0.998
+BR1-04_analytic_plane_pass_rate,all,1089,856,0.786
+BR1-05_linear_curve_pass_rate,all,1089,1073,0.985
+BR1-06_cgmgeom_presence_rate,all,1442,1435,0.995
