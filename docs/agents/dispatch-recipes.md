@@ -172,6 +172,19 @@ files:
   also handed the session off between backends mid-day (one fallback
   died on an out-of-balance account) — recover thread state via
   `t3_thread_read`, not memory.
+- Worktree and branch lifecycle (Phase 6 retro, candidate 2): when a
+  delegated ticket's implementation or review merges into `main`, the
+  coordinator prunes the delegate's worktree and deletes its branch
+  immediately (`git worktree remove ... && git branch -d ...`). Never
+  leave merged delegate worktrees parked across session handoffs; an
+  unpruned accumulation triggers an audit debt.
+- Binary reverse-engineering briefs (Phase 6 retro, candidate 3): byte
+  offsets in dispatch briefs must explicitly cite both bases
+  (`+0x08 (8d)`) and trace to verified binary inspection scripts or
+  committed dumps (e.g., `scripts/triage/p26_instance_binding.py`).
+  Never state bare numbers like "offset 16" when referring to hex
+  `0x10` or byte 16, preventing translation/quaternion field
+  conflation.
 - Adopting an external changeset (precedent: ticket #35, 2026-11-10):
   state the expected per-store/per-part delta BEFORE running the corpus
   A/B, and treat any unexplained delta as a stop-and-re-root-cause gate.

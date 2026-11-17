@@ -84,3 +84,19 @@ diff -q -r port/pkg site/viewer/pkg || {
   echo "        or neither." >&2
   exit 1
 }
+
+# Phase 6 retro (candidate 1): wire Node.js frontend tests.
+if command -v node >/dev/null 2>&1; then
+  echo "check: node --test tests/*.mjs"
+  node --test tests/*.mjs
+else
+  echo "check: SKIP node tests — node not found on PATH."
+fi
+
+# Phase 6 retro (candidate 1): wire Playwright acceptance test if installed.
+if "$PY" -c "import playwright" >/dev/null 2>&1; then
+  echo "check: python scripts/assembly_viewer_acceptance.py"
+  "$PY" scripts/assembly_viewer_acceptance.py
+else
+  echo "check: SKIP assembly viewer acceptance — playwright not installed in $PY."
+fi
