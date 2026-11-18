@@ -69,7 +69,7 @@ L3_BLOCK = {
 }
 
 #: The last accepted committed row (the pre-#58 baseline; L3 still null).
-LAST_ACCEPTED_RUN_ID = "20261118T215424Z-a9c681"
+LAST_ACCEPTED_RUN_ID = "20261118T232016Z-64b2a1"
 
 
 def row_with_l3(l3: object) -> dict:
@@ -170,12 +170,12 @@ def test_every_committed_history_row_still_validates() -> None:
         for line in HISTORY_PATH.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    assert len(rows) == 16
+    assert len(rows) == 17
     for row in rows:
         validate(row, ROW_SCHEMA)
     # The 14 pre-#58 rows are unchanged; the two post-#58 rows carry L3.
-    assert all(row["scalars"]["L3"] is None for row in rows[:-2])
-    assert all(row["scalars"]["L3"] is not None for row in rows[-2:])
+    assert all(row["scalars"]["L3"] is None for row in rows[:-3])
+    assert all(row["scalars"]["L3"] is not None for row in rows[-3:])
 
 
 def test_last_accepted_row_keeps_its_recorded_verdict() -> None:
