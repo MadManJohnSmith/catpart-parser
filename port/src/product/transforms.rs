@@ -66,7 +66,10 @@ pub const R15_MATRIX_MARKER: [u8; 2] = [0x8d, 0x81];
 /// the product root carries `e8 e0 07 37`, an explicit instance position
 /// `e8 f4 07 37`, and an abbreviated identity position `e9 f4 07 04 37`.
 pub const POSITION_EXPLICIT_HEADER: [u8; 4] = [0xe8, 0xf4, 0x07, 0x37];
-/// Attribute header immediately preceding an identity instance position matrix.
+/// Attribute header immediately preceding an identity attribute frame.
+///
+/// This header is shared by constraint/connector objects and `_Reps`; it is an
+/// ordinal placeholder, not an instance `_Position`.
 pub const POSITION_IDENTITY_HEADER: [u8; 5] = [0xe9, 0xf4, 0x07, 0x04, 0x37];
 /// Attribute header immediately preceding the product-root position matrix.
 pub const POSITION_ROOT_HEADER: [u8; 4] = [0xe8, 0xe0, 0x07, 0x37];
@@ -158,7 +161,9 @@ pub fn is_129b_magic(magic: &[u8]) -> bool {
 pub enum PositionKind {
     /// Explicit instance `_Position` (`e8 f4 07 37`). Decodes to a real transform.
     Explicit,
-    /// Abbreviated identity instance `_Position` (`e9 f4 07 04 37`).
+    /// Abbreviated identity attribute frame (`e9 f4 07 04 37`). Shared by
+    /// constraint/connector objects and `_Reps`; it is an ordinal placeholder,
+    /// never an instance transform.
     Identity,
 }
 
@@ -474,7 +479,7 @@ pub fn scan_r15_matrix_streams(data: &[u8]) -> Vec<TransformRecord> {
     let marker = &R15_MATRIX_MARKER;
     let mut idx = 0;
 
-    while idx + 2 < data.len() {
+    while idx + 2 <= data.len() {
         if let Some(pos) = data[idx..]
             .windows(2)
             .position(|w| w == marker)
@@ -502,7 +507,7 @@ pub fn scan_position_matrix_streams(data: &[u8]) -> Vec<PositionRecord> {
     let mut records = Vec::new();
     let mut idx = 0;
 
-    while idx + 2 < data.len() {
+    while idx + 2 <= data.len() {
         let Some(pos) = data[idx..]
             .windows(2)
             .position(|w| w == R15_MATRIX_MARKER)

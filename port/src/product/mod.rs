@@ -588,12 +588,37 @@ mod tests {
         let doc = parse_product(&data).unwrap();
         assert_eq!(doc.pool_form, "framed");
         assert_eq!(doc.total_instances, 7);
-        assert_eq!(doc.placed_instances, 7);
+        assert_eq!(doc.placed_instances, 6);
         assert_eq!(doc.identity_instances, 0);
-        for inst in &doc.instances {
-            assert_eq!(inst.placement_status, PlacementStatus::Placed);
-            assert!(inst.transform.is_some());
-        }
+        assert_eq!(
+            doc.instances
+                .iter()
+                .filter(|i| i.placement_status == PlacementStatus::Undecodable)
+                .count(),
+            1
+        );
+        assert!(
+            doc.warnings
+                .iter()
+                .any(|w| w.class == "position-stream-8d81")
+        );
+        // Part5.1 is the identity frame placeholder: undecodable, never identity.
+        assert_eq!(doc.instances[1].instance_name, "Part5.1");
+        assert_eq!(
+            doc.instances[1].placement_status,
+            PlacementStatus::Undecodable
+        );
+        assert!(doc.instances[1].transform.is_none());
+        assert!(
+            doc.instances[1]
+                .classification_detail
+                .as_deref()
+                .is_some_and(|d| d.contains("constraint/connector placeholder"))
+        );
+        // The order did not shift: Part5.1.2 keeps the third explicit record.
+        assert_eq!(doc.instances[2].instance_name, "Part5.1.2");
+        assert_eq!(doc.instances[2].placement_status, PlacementStatus::Placed);
+        assert!(doc.instances[2].transform.is_some());
         assert!(
             !doc.warnings
                 .iter()
@@ -615,11 +640,28 @@ mod tests {
         assert_eq!(doc.pool_form, "framed");
         assert_eq!(doc.total_instances, 3);
         assert_eq!(doc.placed_instances, 2);
+        assert!(
+            doc.warnings
+                .iter()
+                .any(|w| w.class == "position-stream-8d81")
+        );
         // The first 2 instances are placed parts with valid transforms
         assert_eq!(doc.instances[0].placement_status, PlacementStatus::Placed);
         assert!(doc.instances[0].transform.is_some());
         assert_eq!(doc.instances[1].placement_status, PlacementStatus::Placed);
         assert!(doc.instances[1].transform.is_some());
+        // The root reference has an explicit record (row 3), excluded by precedence.
+        assert_eq!(
+            doc.instances[2].placement_status,
+            PlacementStatus::Undecodable
+        );
+        assert!(doc.instances[2].transform.is_none());
+        assert!(
+            doc.instances[2]
+                .classification_detail
+                .as_deref()
+                .is_some_and(|d| d.contains("positional precedence"))
+        );
     }
 
     #[test]

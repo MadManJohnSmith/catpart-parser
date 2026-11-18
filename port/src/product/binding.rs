@@ -15,11 +15,12 @@
 //!    `[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]` as explicit CATIA default.
 //! 4. **`undecodable`**: Files with constraint mesh overrides or unresolvable records ($N_{\text{rec}} \ne N_{\text{inst}}$)
 //!    are marked [`PlacementStatus::Undecodable`] with `transform: None`.
-//! 5. **`position_stream_8d81`**: Placement is read from the `_Position` value layer
-//!    (`8d 81` matrices with the explicit/identity attribute header), not from the
-//!    `CATCtorProxyCont` 129-byte constraint records. Bound only when the counted
-//!    position records match the positioned instances; otherwise the strict path
-//!    marks them undecodable.
+//! 5. **`position_stream_8d81`**: Placement is read from the explicit `_Position`
+//!    value layer (`8d 81` matrices with the `e8 f4 07 37` header), not from the
+//!    `CATCtorProxyCont` 129-byte constraint records. Identity frames
+//!    (`e9 f4 07 04 37`) keep their ordinal position but are never bound. Bound
+//!    only when the counted records match the positioned instances; otherwise the
+//!    strict path marks them undecodable.
 //!
 //! # The Anti-Masking Invariant (Clause 3 of the Declared P4 Assembly Bar)
 //!
@@ -349,10 +350,14 @@ pub fn bind_instances(
 ///
 /// The binding is accepted only under a counted law:
 /// - `explicit == positioned` -> bind the explicit records in document order;
-/// - `explicit + identity == positioned` -> bind all position records in document order
-///   (identity records fill the instances that carry an abbreviated identity position);
+/// - `explicit + identity == positioned` -> bind in document order, keeping every
+///   identity record as an ordinal placeholder (undecodable, `transform: None`);
 /// - a trailing root-assembly reference (`main*`) is excluded and the first
 ///   `positioned - 1` explicit records bind the child instances (servo law).
+///
+/// Identity (`e9 f4 07 04 37`) is an attribute frame shared by constraint and
+/// connector objects, not an instance `_Position`; it advances the order but is
+/// never written as a transform (Clause 3).
 ///
 /// Any other count is rejected (`None`): the caller must mark the positioned
 /// instances [`PlacementStatus::Undecodable`], never identity.
@@ -379,16 +384,30 @@ pub fn bind_position_layer(
         .filter(|p| p.kind == PositionKind::Explicit)
         .collect();
 
-    let chosen: Vec<&PositionRecord> = if last_is_root_ref {
+    let (chosen, root_ref_detail): (Vec<&PositionRecord>, Option<String>) = if last_is_root_ref {
         let n_bind = n_positioned.saturating_sub(1);
         if n_bind == 0 || explicit.len() < n_bind {
             return None;
         }
-        explicit[..n_bind].to_vec()
+        let detail = explicit.get(n_bind).map_or_else(
+            || "root assembly reference excluded by positional precedence".to_string(),
+            |record| {
+                let t = record.transform.translation;
+                format!(
+                    "root assembly reference excluded by positional precedence (explicit row {} exists: T=({:.3}, {:.3}, {:.3}); rows 1..{} bind the children)",
+                    n_bind + 1,
+                    t[0],
+                    t[1],
+                    t[2],
+                    n_bind
+                )
+            },
+        );
+        (explicit[..n_bind].to_vec(), Some(detail))
     } else if explicit.len() == n_positioned {
-        explicit
+        (explicit, None)
     } else if positions.len() == n_positioned {
-        positions.iter().collect()
+        (positions.iter().collect(), None)
     } else {
         return None;
     };
@@ -409,24 +428,36 @@ pub fn bind_position_layer(
             inst.placement_status = PlacementStatus::Undecodable;
             inst.transform = None;
             inst.object_tag = None;
-            inst.classification_detail =
-                Some("root assembly reference has no instance position record".to_string());
+            inst.classification_detail.clone_from(&root_ref_detail);
             continue;
         }
 
-        if let Some(record) = chosen.get(cursor) {
-            inst.placement_status = PlacementStatus::Placed;
-            inst.transform = Some(record.to_transform_7());
-            inst.object_tag = None;
-            inst.classification_detail = None;
-            cursor += 1;
-        } else {
-            inst.placement_status = PlacementStatus::Undecodable;
-            inst.transform = None;
-            inst.object_tag = None;
-            inst.classification_detail =
-                Some("position layer exhausted before this instance".to_string());
+        match chosen.get(cursor) {
+            Some(record) if record.kind == PositionKind::Explicit => {
+                inst.placement_status = PlacementStatus::Placed;
+                inst.transform = Some(record.to_transform_7());
+                inst.object_tag = None;
+                inst.classification_detail = None;
+            }
+            Some(record) => {
+                // Identity frame: keep the ordinal position, never bind its matrix.
+                inst.placement_status = PlacementStatus::Undecodable;
+                inst.transform = None;
+                inst.object_tag = None;
+                inst.classification_detail = Some(format!(
+                    "identity 8d81 frame at 0x{:x} is a constraint/connector placeholder, not an instance _Position (Clause 3)",
+                    record.offset
+                ));
+            }
+            None => {
+                inst.placement_status = PlacementStatus::Undecodable;
+                inst.transform = None;
+                inst.object_tag = None;
+                inst.classification_detail =
+                    Some("position layer exhausted before this instance".to_string());
+            }
         }
+        cursor += 1;
     }
 
     Some(BindingMode::PositionStream8d81)
@@ -622,8 +653,8 @@ mod tests {
     }
 
     #[test]
-    fn position_layer_binds_explicit_then_identity_in_document_order() {
-        // Coso shape: 7 instanced parts, 6 explicit + 1 identity position record.
+    fn position_layer_keeps_identity_record_as_undecodable_placeholder() {
+        // Coso shape: 7 instanced parts, 6 explicit + 1 identity frame.
         let mut instances: Vec<ProductInstanceRecord> = [
             "Part4.1",
             "Part5.1",
@@ -653,19 +684,20 @@ mod tests {
             instances[0].transform,
             Some([-10.0, 11.0, 2.0, 1.0, 0.0, 0.0, 0.0])
         );
-        // The identity record occupies document position 1 -> Part5.1.
-        assert_eq!(
-            instances[1].transform,
-            Some([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])
-        );
+        // The identity frame keeps ordinal position 1 -> Part5.1, but is never bound.
+        assert_eq!(instances[1].placement_status, PlacementStatus::Undecodable);
+        assert!(instances[1].transform.is_none());
+        // The following explicit record still binds Part5.1.2: the order did not shift.
         assert_eq!(
             instances[2].transform,
             Some([9.0, 11.0, 6.0, 1.0, 0.0, 0.0, 0.0])
         );
-        assert!(
+        assert_eq!(
             instances
                 .iter()
-                .all(|i| i.placement_status == PlacementStatus::Placed)
+                .filter(|i| i.placement_status == PlacementStatus::Placed)
+                .count(),
+            6
         );
     }
 
@@ -696,6 +728,12 @@ mod tests {
         );
         assert_eq!(instances[2].placement_status, PlacementStatus::Undecodable);
         assert!(instances[2].transform.is_none());
+        let detail = instances[2]
+            .classification_detail
+            .as_deref()
+            .expect("detail");
+        assert!(detail.contains("positional precedence"));
+        assert!(detail.contains("43.200"));
     }
 
     #[test]

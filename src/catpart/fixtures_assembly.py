@@ -60,8 +60,9 @@ RECORD_129B_MAGIC_R20_ALT = b"\xb5\x03\x27\x79"
 SEPARATOR_BYTE = 0x80
 
 # `_Position` value-layer headers (P3 position-layer segmentation). The 8d81
-# matrix that follows is an explicit instance position, an abbreviated identity
-# position, or the product-root position (excluded).
+# matrix that follows is an explicit instance position, an identity attribute
+# frame (constraint/connector placeholder, never bound), or the product-root
+# position (excluded).
 POSITION_EXPLICIT_HEADER = b"\xe8\xf4\x07\x37"
 POSITION_IDENTITY_HEADER = b"\xe9\xf4\x07\x04\x37"
 POSITION_ROOT_HEADER = b"\xe8\xe0\x07\x37"
@@ -970,7 +971,7 @@ def parse_position_matrix_records(data: bytes) -> list[dict[str, Any]]:
         vals = _parse_run_length_floats(data[pos + 2 :], 12)
         if vals is not None:
             r = [vals[0:3], vals[3:6], vals[6:9]]
-            if _is_proper_rotation(r):
+            if _is_proper_rotation(r) and all(abs(x) <= 1e7 for x in vals[9:12]):
                 records.append({
                     "kind": kind,
                     "translation": vals[9:12],
@@ -1083,10 +1084,21 @@ def _bind_position_layer(
         if n_bind == 0 or len(explicit) < n_bind:
             return None
         chosen = explicit[:n_bind]
+        if len(explicit) > n_bind:
+            t = explicit[n_bind]["translation"]
+            root_ref_detail = (
+                "root assembly reference excluded by positional precedence "
+                f"(explicit row {n_bind + 1} exists: T=({t[0]:.3f}, {t[1]:.3f}, {t[2]:.3f}); "
+                f"rows 1..{n_bind} bind the children)"
+            )
+        else:
+            root_ref_detail = "root assembly reference excluded by positional precedence"
     elif len(explicit) == n_positioned:
         chosen = explicit
+        root_ref_detail = None
     elif len(records) == n_positioned:
         chosen = records
+        root_ref_detail = None
     else:
         return None
 
@@ -1103,21 +1115,31 @@ def _bind_position_layer(
             inst["placement_status"] = "undecodable"
             inst["transform"] = None
             inst["object_tag"] = None
-            inst["classification_detail"] = "root assembly reference has no instance position record"
+            inst["classification_detail"] = root_ref_detail
             continue
         if cursor < len(chosen):
             rec = chosen[cursor]
-            t, q = rec["translation"], rec["quaternion"]
-            inst["transform"] = [t[0], t[1], t[2], q[0], q[1], q[2], q[3]]
-            inst["object_tag"] = None
-            inst["placement_status"] = "placed"
-            inst["classification_detail"] = None
-            cursor += 1
+            if rec["kind"] == "identity":
+                # Identity frame: keep the ordinal position, never bind its matrix.
+                inst["placement_status"] = "undecodable"
+                inst["transform"] = None
+                inst["object_tag"] = None
+                inst["classification_detail"] = (
+                    f"identity 8d81 frame at 0x{rec['offset']:x} is a "
+                    "constraint/connector placeholder, not an instance _Position (Clause 3)"
+                )
+            else:
+                t, q = rec["translation"], rec["quaternion"]
+                inst["transform"] = [t[0], t[1], t[2], q[0], q[1], q[2], q[3]]
+                inst["object_tag"] = None
+                inst["placement_status"] = "placed"
+                inst["classification_detail"] = None
         else:
             inst["placement_status"] = "undecodable"
             inst["transform"] = None
             inst["object_tag"] = None
             inst["classification_detail"] = "position layer exhausted before this instance"
+        cursor += 1
     return "position_stream_8d81"
 
 

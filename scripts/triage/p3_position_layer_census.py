@@ -70,6 +70,13 @@ CLASS_TOKENS = {
 }
 BINARY_SENTINEL = "\0binary"
 
+# Review census (b3d283f): these files' explicit-header matrices sit under
+# representation attributes, not `_Position`; they do not count as instance
+# placements even when the explicit count happens to close.
+EXPLICIT_LAYER_EXCLUSIONS = {
+    "688fa042838a318a": "explicit-header matrices are representation frames (_Reps), not _Position (review census)",
+}
+
 FILES_FIELDS = [
     "sha16", "bucket", "scope", "n_inst", "n_positioned", "n_129b",
     "n_pos_explicit", "n_pos_identity", "n_pos_root", "legacy_gate",
@@ -313,7 +320,8 @@ def position_law(n_explicit: int, n_identity: int, n_pos: int, instances: list[d
     if n_explicit == n_pos:
         return "position_stream_8d81_explicit", n_pos
     if n_explicit + n_identity == n_pos:
-        return "position_stream_8d81_document_order", n_pos
+        # Identity frames are ordinal placeholders, never transforms.
+        return "position_stream_8d81_document_order", n_explicit
     return "undecodable", 0
 
 
@@ -361,12 +369,16 @@ def analyze(sha16: str, row: dict, data: bytes) -> dict:
         "after_placed": after_placed,
         "after_undecodable": n_pos - after_placed,
         "note": (
-            "existing R15 fallback keeps its 9 placements; the position layer also closes (8 explicit + 1 identity)"
-            if law.startswith("r15_fallback") and after_placed > 0
+            EXPLICIT_LAYER_EXCLUSIONS[sha16]
+            if sha16 in EXPLICIT_LAYER_EXCLUSIONS
             else (
-                "count-consistent position layer, not enabled (order attribution unproven)"
-                if (n_exp == n_pos or n_exp + n_id == n_pos) and after_placed == 0 and n_pos > 0
-                else ""
+                "existing R15 fallback keeps its 9 placements; the position layer also closes (8 explicit + 1 identity)"
+                if law.startswith("r15_fallback") and after_placed > 0
+                else (
+                    "count-consistent explicit position layer, not enabled (order attribution unproven)"
+                    if n_exp == n_pos and after_placed == 0 and n_pos > 0
+                    else ""
+                )
             )
         ),
         "_n_other": n_other,
@@ -457,44 +469,55 @@ def main() -> int:
     mesh_undec = sum(r["after_undecodable"] for r in mesh_rows)
     consistent = [
         r for r in mesh_rows
-        if r["n_inst"] > 0 and (r["n_pos_explicit"] == r["n_positioned"]
-                                or r["n_pos_explicit"] + r["n_pos_identity"] == r["n_positioned"])
+        if r["n_inst"] > 0
+        and r["n_pos_explicit"] == r["n_positioned"]
+        and r["sha16"] not in EXPLICIT_LAYER_EXCLUSIONS
     ]
+    consistent_instances = sum(r["n_pos_explicit"] for r in consistent)
     unclassified = sum(r["_n_other"] for r in out_rows)
 
     claims = [
         {
             "claim_id": "P3PL-1",
-            "title": "8d81 `_Position` header law: explicit (e8 f4 07 37), identity (e9 f4 07 04 37), product-root (e8 e0 07 37)",
+            "title": "8d81 headers: explicit (e8 f4 07 37) is an instance _Position; identity (e9 f4 07 04 37) is a constraint/connector frame placeholder; root (e8 e0 07 37) is excluded",
             "population": len(out_rows),
             "satisfied": sum(1 for r in out_rows if r["n_pos_explicit"] + r["n_pos_identity"] + r["n_pos_root"] > 0),
             "percentage": "",
             "buckets": "",
             "status": "fact",
-            "detail": f"643 valid matrices in scope (631 across the 29 mesh files + 12 in coso/servo); "
-            f"{sum(r['n_pos_explicit'] + r['n_pos_identity'] for r in out_rows)} are position records, "
-            f"{sum(r['n_pos_root'] for r in out_rows)} are root positions (excluded), "
-            f"{unclassified} are outside both headers",
+            "detail": (
+                f"{sum(r['n_pos_explicit'] + r['n_pos_identity'] + r['n_pos_root'] + r['_n_other'] for r in out_rows)} valid matrices in scope "
+                f"({sum(r['n_pos_explicit'] + r['n_pos_identity'] + r['n_pos_root'] + r['_n_other'] for r in mesh_rows)} mesh, "
+                f"{sum(r['n_pos_explicit'] + r['n_pos_identity'] + r['n_pos_root'] + r['_n_other'] for r in dual_rows if r['sha16'] not in mesh_shas)} coso/servo); "
+                f"{sum(r['n_pos_explicit'] for r in out_rows)} explicit, "
+                f"{sum(r['n_pos_identity'] for r in out_rows)} identity frames (never bound), "
+                f"{sum(r['n_pos_root'] for r in out_rows)} root (excluded), "
+                f"{unclassified} outside all headers"
+            ),
         },
         {
             "claim_id": "P3PL-2",
-            "title": "129-byte CATCtorProxyCont records are constraint/connector frames, not instance placement",
+            "title": "129-byte CATCtorProxyCont records and identity 8d81 frames are constraint/connector layers, not instance placement",
             "population": len(dual_rows),
             "satisfied": sum(1 for r in dual_rows if r["legacy_placed"] > 0),
             "percentage": "",
             "buckets": "",
             "status": "fact",
-            "detail": "only coso (81b1fe65) and servo (91fe0d67) pass the legacy gate; both switch to 8d81",
+            "detail": (
+                "legacy gate places: "
+                + ", ".join(r["sha16"] for r in dual_rows if r["legacy_placed"] > 0)
+                + "; both switch to the explicit 8d81 _Position layer"
+            ),
         },
         {
             "claim_id": "P3PL-3",
-            "title": "Dual-layer preference: coso 7 + servo 2 instances bind from the 8d81 `_Position` layer",
-            "population": 9,
-            "satisfied": 9,
+            "title": "Dual-layer preference: coso 6 + servo 2 real transforms bind from the explicit 8d81 layer",
+            "population": 8,
+            "satisfied": 8,
             "percentage": "100.00%",
             "buckets": "",
             "status": "fact",
-            "detail": "coso document-order (6 explicit + 1 identity); servo first 2 explicit, main:1 stays undecodable",
+            "detail": "coso: 6 explicit placed, Part5.1 identity frame undecodable; servo: 2 explicit placed, main:1 root reference excluded by positional precedence",
         },
         {
             "claim_id": "P3PL-4",
@@ -508,13 +531,17 @@ def main() -> int:
         },
         {
             "claim_id": "P3PL-5",
-            "title": "Count-consistent mesh position layers: 15/29 close under the counts, 14 remain disabled because order attribution is not proven",
+            "title": "Explicit-only count-consistent mesh layers: 10/29 close (95 instances), not enabled because object->instance order is unproven",
             "population": len(mesh_rows),
             "satisfied": len(consistent),
             "percentage": f"{100.0 * len(consistent) / len(mesh_rows):.2f}%",
             "buckets": "",
             "status": "fact",
-            "detail": ";".join(r["sha16"] for r in consistent),
+            "detail": (
+                f"{consistent_instances} instances; "
+                + ";".join(r["sha16"] for r in consistent)
+                + ("; excluded: " + ";".join(EXPLICIT_LAYER_EXCLUSIONS) if EXPLICIT_LAYER_EXCLUSIONS else "")
+            ),
         },
     ]
     with open(OUT_CLAIMS, "w", newline="") as fh:
