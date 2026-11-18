@@ -47,7 +47,10 @@ L2-pass files):
   does not distinguish rational from non-rational splines (non-rational
   splines store no weight array), and does not distinguish curve knots
   from surface knots.  The corpus measurement of these signatures is
-  the ceiling arithmetic behind BR5's NURBS outcome.
+  the ceiling arithmetic behind BR5's NURBS outcome.  Which guard
+  carries that zero is measured, not assumed: ``knot_guard_sweep``
+  (BR5-03d) shows the value floor and the distinct-2/chain pair are the
+  only edges that move the count.
 
 ``data`` is any bytes-like buffer supporting slicing, ``find()`` and
 ``len()`` (``bytes`` or a read-only :class:`mmap.mmap`).
@@ -209,6 +212,38 @@ class NurbsSignatures:
     @property
     def present(self) -> bool:
         return bool(self.knot_runs or self.weight_runs)
+
+
+@dataclasses.dataclass(frozen=True)
+class KnotGuardSweep:
+    """What each knot-detector guard rejects on one span (BR5 near misses).
+
+    Every count is the number of runs the *shipped* walk would additionally
+    accept under one guard relaxation, counted once per physical array
+    (cross-phase overlaps suppressed as in :func:`nurbs_signatures`).  A
+    zero therefore means "this guard is not what removed the candidates",
+    never "this guard is inert": a run rejected by an earlier guard is not
+    attributed here.
+
+    ``value_floor_per_phase`` repeats ``value_floor_dropped`` without the
+    overlap suppression, i.e. it counts the same physical array once per
+    even byte phase (up to four times): it exists only to reconcile figures
+    quoted that way.
+
+    ``distinct_2_runs`` is the joint relaxation the BR5 audit measured
+    (distinct >= 2 *and* the chain guard dropped); zero-heavy two-value
+    arrays chain as u32 aliases, so the distinct edge alone yields nothing
+    (``distinct_2_with_chain_guard``).
+    """
+
+    shipped: int
+    chain_guard_dropped: int
+    odd_phases: int
+    value_floor_dropped: int
+    value_floor_per_phase: int
+    distinct_2_runs: int
+    distinct_2_with_chain_guard: int
+    weight_min_run_2: int
 
 
 def valid_regions(data) -> list[tuple[int, str, int]]:
@@ -448,27 +483,54 @@ def nurbs_signatures(data, lo: int, hi: int) -> NurbsSignatures:
     array is not proven to belong to a NURBS record (the exact-model
     record framing is not decoded), and non-rational splines carry no
     weight array at all.  See the module docstring's honesty line.
+    :func:`knot_guard_sweep` reports what each guard would add if
+    relaxed.
     """
-    # --- weight runs (exact 1.0 f64)
-    weight_runs: list[tuple[int, int]] = []
+    return NurbsSignatures(
+        knot_runs=_knot_runs(data, lo, hi),
+        weight_runs=_weight_runs(data, lo, hi),
+    )
+
+
+def _weight_runs(
+    data, lo: int, hi: int, minimum: int = 4
+) -> tuple[tuple[int, int], ...]:
+    """Runs of >= ``minimum`` consecutive exact f64 ``1.0`` (rational weights)."""
+    runs: list[tuple[int, int]] = []
     pos = lo
     while True:
         i = data.find(_ONE_F64, pos, hi)
         if i < 0:
-            break
+            return tuple(runs)
         j = i
         while j + 8 <= hi and bytes(data[j: j + 8]) == _ONE_F64:
             j += 8
         count = (j - i) // 8
-        if count >= 4:
-            weight_runs.append((i, count))
+        if count >= minimum:
+            runs.append((i, count))
         pos = max(j, i + 1)
-    # --- knot-array runs (batched f64 unpack, all even byte phases:
-    # the corpus's record fields sit at 2- or 4-byte alignment, so an
-    # f64 payload array can start at any even offset; odd-start arrays
-    # are structurally implausible and remain a named limitation)
+
+
+def _knot_runs(
+    data,
+    lo: int,
+    hi: int,
+    *,
+    phases: tuple[int, ...] = (0, 2, 4, 6),
+    floor: float = _KNOT_FLOOR,
+    min_distinct: int = 3,
+    require_repeat: bool = True,
+    chain_guard: bool = True,
+    min_count: int = 8,
+    suppress_overlap: bool = True,
+) -> tuple[KnotRun, ...]:
+    """Scan ``[lo, hi)`` for knot-array runs; keywords relax one guard each.
+
+    The shipped policy is the all-defaults call (:func:`nurbs_signatures`);
+    :func:`knot_guard_sweep` passes one non-default keyword at a time.
+    """
     accepted: list[KnotRun] = []
-    for phase in (0, 2, 4, 6):
+    for phase in phases:
         start = lo + ((phase - lo) % 8)
         n = (hi - start) // 8
         run_start = None
@@ -479,7 +541,7 @@ def nurbs_signatures(data, lo: int, hi: int) -> NurbsSignatures:
                 v = struct.unpack_from("<d", data, off)[0]
                 ok = (
                     math.isfinite(v)
-                    and (v == 0.0 or v >= _KNOT_FLOOR)
+                    and (v == 0.0 or v >= floor)
                     and v < 1e7
                     and (prev is None or v >= prev - 1e-9)
                 )
@@ -489,13 +551,45 @@ def nurbs_signatures(data, lo: int, hi: int) -> NurbsSignatures:
                     prev = v
                     continue
             if run_start is not None:
-                cand = _accept_knot_run(data, run_start, start + idx * 8)
-                if cand is not None and not _overlaps(accepted, cand):
+                cand = _accept_knot_run(
+                    data,
+                    run_start,
+                    start + idx * 8,
+                    min_count=min_count,
+                    min_distinct=min_distinct,
+                    require_repeat=require_repeat,
+                    chain_guard=chain_guard,
+                )
+                if cand is not None and (
+                    not suppress_overlap or not _overlaps(accepted, cand)
+                ):
                     accepted.append(cand)
             run_start = None
             prev = None
-    return NurbsSignatures(
-        knot_runs=tuple(accepted), weight_runs=tuple(weight_runs)
+    return tuple(accepted)
+
+
+def knot_guard_sweep(data, lo: int, hi: int) -> KnotGuardSweep:
+    """Quantify the near misses each knot-detector guard removes (BR5-03d).
+
+    Run over the CGM region on every file, the shipped detector finds 0
+    knot arrays.  This sweep answers *why*: it reruns the same walk with
+    one guard relaxed at a time (plus the joint distinct>=2 + chain-off
+    relaxation), so the note can state which edges are load-bearing
+    instead of implying that every guard does work.
+    """
+    def count(**kwargs) -> int:
+        return len(_knot_runs(data, lo, hi, **kwargs))
+
+    return KnotGuardSweep(
+        shipped=count(),
+        chain_guard_dropped=count(chain_guard=False),
+        odd_phases=count(phases=(1, 3, 5, 7)),
+        value_floor_dropped=count(floor=0.0),
+        value_floor_per_phase=count(floor=0.0, suppress_overlap=False),
+        distinct_2_runs=count(min_distinct=2, chain_guard=False),
+        distinct_2_with_chain_guard=count(min_distinct=2),
+        weight_min_run_2=len(_weight_runs(data, lo, hi, minimum=2)),
     )
 
 
@@ -506,17 +600,30 @@ def _overlaps(accepted: list[KnotRun], cand: KnotRun) -> bool:
     )
 
 
-def _accept_knot_run(data, run_start: int, run_end: int) -> KnotRun | None:
+def _accept_knot_run(
+    data,
+    run_start: int,
+    run_end: int,
+    *,
+    min_count: int = 8,
+    min_distinct: int = 3,
+    require_repeat: bool = True,
+    chain_guard: bool = True,
+) -> KnotRun | None:
     count = (run_end - run_start) // 8
-    if count < 8:
+    if count < min_count:
         return None
     vals = struct.unpack_from(f"<{count}d", data, run_start)
     distinct = len(set(vals))
-    if distinct < 3 or count - distinct < 1:
+    if distinct < min_distinct or (require_repeat and count - distinct < 1):
         return None
-    words = [bytes(data[run_start + k * 8: run_start + k * 8 + 8]) for k in range(count)]
-    if _chain_fraction(words) >= 0.75:
-        return None
+    if chain_guard:
+        words = [
+            bytes(data[run_start + k * 8: run_start + k * 8 + 8])
+            for k in range(count)
+        ]
+        if _chain_fraction(words) >= 0.75:
+            return None
     return KnotRun(
         offset=run_start,
         count=count,
