@@ -35,12 +35,21 @@ Model (docs/evidence/2026-11-09-facet-semantics.md):
   segments — (r_t, r_{t+1}, r_{t+2}) with the flip on odd t, phase reset
   per loop; 0x4c loops are closed polygons in ring order, fan-
   triangulated from the first corner (orientation-preserving for the CCW
-  ring order). 0x41/0x49 satisfy the byte law n == 3*type but their
-  primitive reading is not established. Both DO carry count bytes on the
-  corpus: 0x49 under the per-record count-width law (BR2 / ticket #54:
-  br2-planar-claims.csv BR2-07b resolves 3,657 of the 3,737 0x49
-  records; the remaining 80 are count-encoding variants), so their loop
-  structure is decoded while the primitive semantics stay open (F10).
+  ring order). 0x41/0x49 satisfy the byte law n == 3*type. 0x49 is a
+  TRIANGLE LIST on the composite path (2026-11-18,
+  docs/evidence/2026-11-18-composite-0x49.md): its record carries no
+  count table — n == 3*ty u16be element refs, three per triangle
+  (270,270/270,270 in-space corpus candidates coplanar against the
+  stored normal at 2e-3; 269,905/270,762 exact tiles) — so the composite
+  reader emits three-ref strip loops for it
+  (``composite.parse_049_record``) and the strip window
+  (``composite._loop_triangles``) triangulates them.  This module's
+  generic count-table reader
+  (``parse_facet_record``) is unchanged and still sees 0x49 under the
+  count law on the clean path (BR2 / ticket #54: BR2-07b resolves 3,657
+  of the 3,737 0x49 records); the no-count law's clean-path adoption is
+  a follow-up, not this ticket's change. 0x41's primitive reading is not
+  established.
   0x41 carries 88 loops over 61 corpus records in TWO subsets — 45
   records resolve under the count law (53 loops: BR2-27), and 16 are
   count-variant and contribute 35 loops through the byte-parse fallback
