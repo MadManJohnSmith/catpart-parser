@@ -60,6 +60,20 @@ pub const TRANSLATION_BOUND_MAX: f64 = 1e7;
 /// Marker for R15 inline matrix stream: `[0x8d, 0x81]`.
 pub const R15_MATRIX_MARKER: [u8; 2] = [0x8d, 0x81];
 
+/// Attribute header immediately preceding an explicit instance `_Position` matrix.
+///
+/// The 8d81 stream is the `_Position` value layer (P3 position-layer segmentation):
+/// the product root carries `e8 e0 07 37`, an explicit instance position
+/// `e8 f4 07 37`, and an abbreviated identity position `e9 f4 07 04 37`.
+pub const POSITION_EXPLICIT_HEADER: [u8; 4] = [0xe8, 0xf4, 0x07, 0x37];
+/// Attribute header immediately preceding an identity attribute frame.
+///
+/// This header is shared by constraint/connector objects and `_Reps`; it is an
+/// ordinal placeholder, not an instance `_Position`.
+pub const POSITION_IDENTITY_HEADER: [u8; 5] = [0xe9, 0xf4, 0x07, 0x04, 0x37];
+/// Attribute header immediately preceding the product-root position matrix.
+pub const POSITION_ROOT_HEADER: [u8; 4] = [0xe8, 0xe0, 0x07, 0x37];
+
 /// Header constant table offset threshold below which fixed false-positives reside.
 pub const HEADER_FP_MAX_OFFSET: usize = 0x400;
 
@@ -139,6 +153,51 @@ impl TransformRecord {
 /// Check if a 4-byte slice matches any modern 129-byte transform record magic.
 pub fn is_129b_magic(magic: &[u8]) -> bool {
     magic == RECORD_129B_MAGIC_R20 || magic == RECORD_129B_MAGIC_R20_ALT
+}
+
+/// The attribute class of an 8d81 matrix in the `_Position` value layer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PositionKind {
+    /// Explicit instance `_Position` (`e8 f4 07 37`). Decodes to a real transform.
+    Explicit,
+    /// Abbreviated identity attribute frame (`e9 f4 07 04 37`). Shared by
+    /// constraint/connector objects and `_Reps`; it is an ordinal placeholder,
+    /// never an instance transform.
+    Identity,
+}
+
+/// One matrix of the `_Position` value layer, in document order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PositionRecord {
+    /// Attribute class (explicit or identity).
+    pub kind: PositionKind,
+    /// Decoded transform record.
+    pub transform: TransformRecord,
+    /// Byte offset of the `8d 81` marker.
+    pub offset: usize,
+}
+
+impl PositionRecord {
+    /// Export the 7-tuple `[tx, ty, tz, qw, qx, qy, qz]`.
+    pub fn to_transform_7(&self) -> [f64; 7] {
+        self.transform.to_transform_7()
+    }
+}
+
+/// Classify the attribute header immediately preceding an `8d 81` marker.
+///
+/// Returns `None` for the product-root position (`e8 e0 07 37`) and for any
+/// other matrix that is not part of the instance `_Position` layer.
+pub fn position_kind_before(data: &[u8], marker: usize) -> Option<PositionKind> {
+    let pre = &data[..marker];
+    if pre.ends_with(&POSITION_IDENTITY_HEADER) {
+        Some(PositionKind::Identity)
+    } else if pre.ends_with(&POSITION_EXPLICIT_HEADER) {
+        Some(PositionKind::Explicit)
+    } else {
+        None
+    }
 }
 
 /// Check if a slice starts with the 81-byte connector point record header.
@@ -420,7 +479,7 @@ pub fn scan_r15_matrix_streams(data: &[u8]) -> Vec<TransformRecord> {
     let marker = &R15_MATRIX_MARKER;
     let mut idx = 0;
 
-    while idx + 2 < data.len() {
+    while idx + 2 <= data.len() {
         if let Some(pos) = data[idx..]
             .windows(2)
             .position(|w| w == marker)
@@ -433,6 +492,39 @@ pub fn scan_r15_matrix_streams(data: &[u8]) -> Vec<TransformRecord> {
         } else {
             break;
         }
+    }
+
+    records
+}
+
+/// Scan the `_Position` value layer: valid `8d 81` matrices whose attribute
+/// header is an explicit (`e8 f4 07 37`) or identity (`e9 f4 07 04 37`) instance
+/// position. The product-root position (`e8 e0 07 37`) and every other matrix
+/// are excluded.
+///
+/// Records are returned in document order (the serialization order).
+pub fn scan_position_matrix_streams(data: &[u8]) -> Vec<PositionRecord> {
+    let mut records = Vec::new();
+    let mut idx = 0;
+
+    while idx + 2 <= data.len() {
+        let Some(pos) = data[idx..]
+            .windows(2)
+            .position(|w| w == R15_MATRIX_MARKER)
+            .map(|p| idx + p)
+        else {
+            break;
+        };
+        if let Some(kind) = position_kind_before(data, pos)
+            && let Some((t, q)) = decode_r15_matrix_stream(&data[pos + 2..])
+        {
+            records.push(PositionRecord {
+                kind,
+                transform: TransformRecord::from_placement(t, q, 0),
+                offset: pos,
+            });
+        }
+        idx = pos + 2;
     }
 
     records
@@ -736,6 +828,79 @@ mod tests {
     }
 
     #[test]
+    fn position_kind_before_recognizes_position_headers() {
+        let identity_stream = [
+            0xE7, 0xE8, 0xE8, 0xE8, 0xE7, 0xE8, 0xE8, 0xE8, 0xE7, 0xE8, 0xE8, 0xE8,
+        ];
+
+        let mut explicit = POSITION_EXPLICIT_HEADER.to_vec();
+        explicit.extend_from_slice(&R15_MATRIX_MARKER);
+        assert_eq!(
+            position_kind_before(&explicit, explicit.len() - R15_MATRIX_MARKER.len()),
+            Some(PositionKind::Explicit)
+        );
+
+        let mut identity = POSITION_IDENTITY_HEADER.to_vec();
+        identity.extend_from_slice(&R15_MATRIX_MARKER);
+        assert_eq!(
+            position_kind_before(&identity, identity.len() - R15_MATRIX_MARKER.len()),
+            Some(PositionKind::Identity)
+        );
+
+        let mut root = POSITION_ROOT_HEADER.to_vec();
+        root.extend_from_slice(&R15_MATRIX_MARKER);
+        assert_eq!(
+            position_kind_before(&root, root.len() - R15_MATRIX_MARKER.len()),
+            None
+        );
+
+        // A non-position header is not attributed.
+        let mut other = vec![0x00, 0x01, 0x02, 0x03];
+        other.extend_from_slice(&R15_MATRIX_MARKER);
+        assert_eq!(
+            position_kind_before(&other, other.len() - R15_MATRIX_MARKER.len()),
+            None
+        );
+
+        assert_eq!(identity_stream.len(), 12);
+    }
+
+    #[test]
+    fn scan_position_streams_excludes_root_and_keeps_document_order() {
+        let mut data = Vec::new();
+        // Root position (excluded).
+        data.extend_from_slice(&POSITION_ROOT_HEADER);
+        data.extend_from_slice(&R15_MATRIX_MARKER);
+        data.extend_from_slice(&[
+            0xE7, 0xE8, 0xE8, 0xE8, 0xE7, 0xE8, 0xE8, 0xE8, 0xE7, 0xE8, 0xE8, 0xE8,
+        ]);
+        data.push(0xFE);
+        // Explicit position.
+        data.extend_from_slice(&POSITION_EXPLICIT_HEADER);
+        data.extend_from_slice(&R15_MATRIX_MARKER);
+        data.extend_from_slice(&[0xE7, 0xE8, 0xE8, 0xE8, 0xE7, 0xE8, 0xE8, 0xE8, 0xE7, 0xE6]);
+        data.extend_from_slice(&12.5f64.to_le_bytes());
+        data.push(0xE6);
+        data.extend_from_slice(&0.0f64.to_le_bytes());
+        data.push(0xE6);
+        data.extend_from_slice(&14.4f64.to_le_bytes());
+        data.push(0xFE);
+        // Identity position.
+        data.extend_from_slice(&POSITION_IDENTITY_HEADER);
+        data.extend_from_slice(&R15_MATRIX_MARKER);
+        data.extend_from_slice(&[
+            0xE7, 0xE8, 0xE8, 0xE8, 0xE7, 0xE8, 0xE8, 0xE8, 0xE7, 0xE8, 0xE8, 0xE8,
+        ]);
+
+        let records = scan_position_matrix_streams(&data);
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].kind, PositionKind::Explicit);
+        assert_eq!(records[0].transform.translation, [12.5, 0.0, 14.4]);
+        assert_eq!(records[1].kind, PositionKind::Identity);
+        assert_eq!(records[1].transform.translation, [0.0, 0.0, 0.0]);
+    }
+
+    #[test]
     fn corpus_records_on_coso_and_servo_if_available() {
         let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         // Coso: 8 records, root_plus_sequential
@@ -745,6 +910,22 @@ mod tests {
             let data = std::fs::read(&coso_path).expect("read coso");
             let recs = scan_modern_transform_records(&data);
             assert_eq!(recs.len(), 8);
+            let positions = scan_position_matrix_streams(&data);
+            assert_eq!(positions.len(), 7);
+            assert_eq!(
+                positions
+                    .iter()
+                    .filter(|p| p.kind == PositionKind::Explicit)
+                    .count(),
+                6
+            );
+            assert_eq!(
+                positions
+                    .iter()
+                    .filter(|p| p.kind == PositionKind::Identity)
+                    .count(),
+                1
+            );
         }
 
         // Servo: 2 records, sequential_1to1
@@ -755,6 +936,15 @@ mod tests {
             let data = std::fs::read(&servo_path).expect("read servo");
             let recs = scan_modern_transform_records(&data);
             assert_eq!(recs.len(), 2);
+            let positions = scan_position_matrix_streams(&data);
+            assert_eq!(positions.len(), 4);
+            assert_eq!(
+                positions
+                    .iter()
+                    .filter(|p| p.kind == PositionKind::Explicit)
+                    .count(),
+                3
+            );
         }
     }
 }
