@@ -286,6 +286,19 @@ def test_l3_fall_is_rejected_even_when_dev_rises() -> None:
     assert verdict.dev_rose is True  # the Dev rise does not rescue the fall
 
 
+def test_l3_fall_does_not_mask_an_l1_dev_fall() -> None:
+    # Precedence regression: before the fix, an L3 fall was reported as the
+    # reason even when L1 Dev also fell, hiding the Dev regression.
+    verdict = evaluate_no_regret(
+        split_scores(l1_dev=(3, 3)),
+        split_scores(l1_dev=(2, 3)),
+        baseline_l3=coverage(),
+        current_l3=coverage(20),
+    )
+    assert verdict.accepted is False
+    assert verdict.reason == REASON_REJECTED_L1_DEV
+
+
 def test_dropping_the_l3_scalar_an_accepted_row_carries_is_rejected() -> None:
     verdict = evaluate_no_regret(
         split_scores(),
