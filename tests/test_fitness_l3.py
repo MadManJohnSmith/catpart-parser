@@ -38,6 +38,8 @@ from catpart.fitness.l3 import (
     L2_PASS_PARTS,
     PENDING_MERGE,
     RESOLUTION_REGISTRY,
+    RESOLVED_OUTCOMES,
+    UNRESOLVED_OUTCOMES,
     Resolution,
     VOCABULARY_PATH,
     L3Error,
@@ -123,11 +125,13 @@ def test_real_repo_headline_is_the_frozen_denominator_coverage() -> None:
     assert document["by_outcome"] == {
         "decoded": 14,
         "documented-negative": 3,
-        "documented-open": 4,
-        "candidate": 2,
+        "documented-open": 6,
+        "candidate": 0,
         "pending-merge": 0,
     }
-    assert score.resolved + score.by_outcome[PENDING_MERGE] == score.total
+    assert score.resolved + sum(
+        score.by_outcome[outcome] for outcome in UNRESOLVED_OUTCOMES
+    ) == score.total
 
 
 def test_real_repo_every_row_cites_a_claim_in_a_committed_csv() -> None:
@@ -157,14 +161,48 @@ def test_real_repo_construct_verdicts_are_the_committed_ones() -> None:
     assert outcomes["CRV-04"] == DOCUMENTED_OPEN
     assert outcomes["CRV-05"] == DOCUMENTED_OPEN
     assert outcomes["CRV-06"] == DOCUMENTED_NEGATIVE
-    assert outcomes["CRV-08"] == CANDIDATE
+    assert outcomes["CRV-08"] == DOCUMENTED_OPEN
     assert outcomes["SRF-02"] == DECODED
     assert outcomes["SRF-03"] == DECODED
     assert outcomes["SRF-04"] == DECODED
     assert outcomes["SRF-05"] == DOCUMENTED_OPEN
     assert outcomes["SRF-06"] == DOCUMENTED_OPEN
-    assert outcomes["SRF-07"] == CANDIDATE
+    assert outcomes["SRF-07"] == DOCUMENTED_OPEN
     assert outcomes["SRF-08"] == DOCUMENTED_NEGATIVE
+
+
+def test_candidate_row_is_not_counted_as_resolved(tmp_path: Path) -> None:
+    """A candidate verdict is reported but never resolves the construct.
+
+    2026-11-18 (ticket #47): the outcome set used to include ``candidate``,
+    which overstated the headline by exactly the candidate row count. CRV-03's
+    direction-law row is labelled ``candidate`` and attributed to CRV-03, so
+    declaring that construct a candidate is a live citation, not a bypass.
+    """
+    assert CANDIDATE not in RESOLVED_OUTCOMES
+    assert PENDING_MERGE not in RESOLVED_OUTCOMES
+    root = fixture_root(tmp_path)
+    registry = with_row(
+        "CRV-03",
+        dataclasses.replace(
+            REGISTRY_BY_ID["CRV-03"],
+            outcome=CANDIDATE,
+            claim_id="C03_conic_dir_law",
+        ),
+    )
+    score = score_l3(root, registry)
+    assert score.total == 23
+    assert score.by_outcome[CANDIDATE] == 1
+    assert score.resolved == 22
+    assert score.to_json()["headline"] == {
+        "resolved": 22,
+        "total": 23,
+        "rate": 22 / 23,
+        "exact": "22/23",
+    }
+    summary = render_summary(score)
+    assert "22/23 resolved" in summary
+    assert "candidate 1" in summary
 
 
 def test_real_repo_family_counts_cover_the_23_constructs() -> None:
@@ -218,8 +256,8 @@ def test_summary_reports_headline_outcomes_and_corpus_rate() -> None:
     summary = render_summary(score_l3(REPO_ROOT))
     assert "23/23 resolved" in summary
     assert "decoded 14" in summary
-    assert "documented-open 4" in summary
-    assert "candidate 2" in summary
+    assert "documented-open 6" in summary
+    assert "candidate 0" in summary
     assert "documented-negative 3" in summary
     assert "pending-merge 0" in summary
     assert "never gating" in summary

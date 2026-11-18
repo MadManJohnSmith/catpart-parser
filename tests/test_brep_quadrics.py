@@ -127,6 +127,18 @@ def test_extruded_ellipse_negative_pencil_noncyl():
     assert fit.residual > fit.tol
 
 
+def test_circular_extrusion_lands_cylinder_not_pencil_noncyl():
+    # The SRF-07 CEILING edge (BR4 note §8): an extrusion of a circular
+    # profile is a cylinder (the same surface), so it never reaches the
+    # pencil-noncyl signature.  The signature therefore cannot bound
+    # extrusions — the 5,517 pencil-noncyl loops are a floor on the
+    # non-circular ones only, and the bound stays the classified total.
+    r0, r1, r2 = ring(0, 0, 0, 9, 24), ring(0, 0, 12, 9, 24), ring(0, 0, 24, 9, 24)
+    pool = r0 + r1 + r2
+    fit = classify(zig(r0, r1) + zig(r1, r2), pool)
+    assert fit.label == "cylinder"
+
+
 def test_torus_fillet_negative_not_cone_not_sphere():
     # The SRF-03/SRF-05 edge: a torus-fillet band's tube profile is
     # quadratic in h (quad gate) and its best-fit sphere misses the

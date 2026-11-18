@@ -340,3 +340,28 @@ def test_walker_skips_garbage_header():
     good = record(curves.FAMILY_CIRCLE, be_f32(1.0, 1.0, 0.0, 2.0) + b"\x00\x00")
     recs = curves.iter_curve_records(garbage + good, 0, len(garbage + good))
     assert [r.family for r in recs] == [curves.FAMILY_CIRCLE]
+
+
+# -------------------------------------------------------- trim carriers
+
+
+def test_trim_carrier_families_negative_full_circle_form():
+    # CRV-08 ceiling edge (BR3 note §7): the carrier predicate admits only
+    # the families whose DECODED payload exposes a parameter surface
+    # (33 33 / 33 38). 33 37 decodes a full circle with no trim slot and
+    # 33 32 a segment already bounded by its two points. The exclusion of
+    # their undecoded bytes is an assumption the note publishes; the test
+    # pins the predicate's discriminating edge, not a proof of absence.
+    midring = curve_record(
+        curves.FAMILY_MIDRING, be_f32(0.0, 0.0, 0.0, 1.0, 0.0, 4.0) + b"\x00\x00"
+    )
+    conic = curve_record(
+        curves.FAMILY_CONIC,
+        be_f32(0.0, 0.0, 0.0, 1.0, 0.0, 5.0, 3.0) + b"\x00\x00",
+    )
+    circle = curve_record(curves.FAMILY_CIRCLE, be_f32(0.0, 0.0, 0.0, 4.0) + b"\x00\x00")
+    line = curve_record(curves.FAMILY_LINE, b"", length=2)
+    assert curves.carries_trim_parameters(midring) is True
+    assert curves.carries_trim_parameters(conic) is True
+    assert curves.carries_trim_parameters(circle) is False
+    assert curves.carries_trim_parameters(line) is False

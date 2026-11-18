@@ -1,7 +1,7 @@
 # Evidence: BR4 cylindrical / quadric surface recognition — SRF-02..07 (Ticket #56, Spec G #47)
 
 **Date**: 2026-11-17
-**Status**: COMPLETE (SRF-02/03/04 decoded at tessellation level; SRF-05/06 documented-open — SRF-05 carries a measured upper bound on the classified population, not a class-shaped ceiling; SRF-07 candidate signature; gate green)
+**Status**: COMPLETE (SRF-02/03/04 decoded at tessellation level; SRF-05/06 documented-open — SRF-05 carries a measured upper bound on the classified population, not a class-shaped ceiling; SRF-07 candidate signature **adjudicated documented-open 2026-11-18, §8**; gate green)
 **Target Ticket**: Ticket #56 (`BR4: Cylindrical, quadric & analytic surface recognizer`)
 **Parent Spec**: Spec G #47 (Phase 7, B-rep / L3 fitness)
 **Method**: RE-only corpus-wide recognition over all 1,442 manifest parts (L2-pass join 1,089 files). Recognizer library `src/catpart/brep/quadrics.py`; corpus triage `scripts/triage/decode_brep_quadrics.py` (stdlib, mmap, deterministic, sorted manifest order); per-claim rates in [`br4-quadrics-claims.csv`](data/br4-quadrics-claims.csv) — every prose figure below is a CSV row or a row-derived sum, named in parentheses. Builds on G3's facet model and the stage-3d composite identity decode — their grammars are cited, not re-derived. Byte offsets cite BOTH bases (`+0x08 (8d)` style).
@@ -18,6 +18,8 @@
 | `SRF-05` Toroidal Surface | **documented-open** (no class-shaped bound) | upper bound = the full classified total **67,919 strip loops** (no class is a torus population: cylinder at the equator, planar at the pole, cone/sphere over short spans); **975/1,442 corpus / 952/1,089 L2 files** (`SRF-05_upper_bound_classified_patches`, `SRF-05_upper_bound_allscopes_presence`: 0.676144 corpus / `SRF-05_upper_bound_allscopes_presence_l2`: 0.874197 L2) | frozen 320/0.275 has NO committed generator (§6) |
 | `SRF-06` Surface of Revolution | **documented-open** | no separable bound of its own: cylinder/cone/sphere ARE revolutions, so the superset problem applies (construction history is not in the tessellation) and its remainder inherits the same 67,919-loop classified total | frozen 680/0.582 has NO committed generator (§6) |
 | `SRF-07` Extruded Surface | **candidate** (negative-space signature) | **5,517 pencil-noncyl strip loops**; **388/1,442 corpus / 366/1,089 L2 files** (`SRF-07_pencil_noncyl_allscopes_presence`: 0.269071 corpus / `SRF-07_pencil_noncyl_allscopes_presence_l2`: 0.336088 L2) | frozen 890/0.795 has NO committed generator (§6) |
+
+**SRF-07 adjudication (2026-11-18, §8):** the `candidate` state in this section is superseded — SRF-07 is **documented-open** on the superset bound (`SRF-07_extrusion_ceiling`: the 67,919 classified strip loops on 975/1,442 corpus / 952/1,089 L2 files, the same bound SRF-05 publishes). The 5,517 pencil-noncyl loops are a FLOOR on non-circular-profile extrusions, never a bound on extrusions: a circular-profile extrusion IS a cylinder. §3, §4 and §5 above stay committed and unedited; §8 carries the adjudication and its arithmetic.
 
 Scope arithmetic (`scope_stores`: 1,317/1,442 = 0.913315 parts have a located store body — **281 pool-only / 1,036 composite**). Two composite numbers, kept apart:
 
@@ -143,3 +145,75 @@ export LD_LIBRARY_PATH=/usr/lib:${LD_LIBRARY_PATH:-}
 ```
 
 The default run writes ONLY the claims CSV (the per-file counter table needs `--files-out PATH`); `--include-sha16` prefix-matches the full supplied digest prefix, aborts non-zero on an empty selection, refuses any `--out-dir` that resolves into a `docs/evidence/data` directory (this worktree's, the main checkout's or any other tree's — the guard is path-shaped, not checkout-shaped), and marks every row it writes with a SUBSET RUN note (the census tie-out rows stay full-corpus by construction). Runtime is host-dependent and is not a claim: the full corpus run is minutes-scale on the dev host. Stdlib only; deterministic (sorted manifest order) — regenerating the claims CSV reproduces it byte-for-byte (no wall-clock value enters it). Corpus binaries are read READ-ONLY from the main checkout (`resolve_path` against `/home/alan/Documents/Repos/catpart-parser`), never copied into the repo tree, never committed. Version scope of every claims row: all-release pooled ("all"); per-release reruns are reproducible via the script's deterministic order.
+
+## 8. 2026-11-18 — SRF-07 adjudication (Ticket #47): documented-open, superset bound
+
+**Verdict change**: `SRF-07` Extruded Surface moves `candidate` → **documented-open**. The
+`candidate` labels in §1, §3 and §4 above (and the registry row that cited
+`SRF-07_pencil_noncyl_allscopes_presence`) record the state before this adjudication; the row below
+is **additive** — the old rows stay committed and unedited. Ticket #47's criterion is "decoded or
+negatived with published ceiling arithmetic", and a `candidate` satisfies neither.
+
+**Why the signature cannot be the ceiling.** This is the failure mode the BR4 review already killed
+once (§6.4, the withdrawn 4,289-loop torus "ceiling"), applied to this construct:
+
+- **Any extrusion is a ruled surface.** Its surface is swept along one direction `d`, so `d` is
+  tangent everywhere and every surface normal is perpendicular to `d`. The normals of a curved
+  extrusion band therefore lie in the plane through `d`, i.e. in a pencil with axis `d`
+  (`kmax = |n·a| <= K_CYL`) — the same signature as any other ruled band. The pencil does not
+  identify an extrusion; it only forces the branch decision onto the radius law.
+- **A circular-profile extrusion IS a cylinder** — the same surface, not a look-alike. It never
+  reaches the radius-failure edge that produces `pencil-noncyl`, so it is counted under SRF-02
+  (`composite_patches_cylinder_volume` 24,982 + `poolonly_patches_cylinder_volume` 8 = **24,990
+  loops**). Fixture added today, `test_circular_extrusion_lands_cylinder_not_pencil_noncyl`: a
+  circular profile swept along z classifies `cylinder`, never `pencil-noncyl`.
+- **A straight profile face reads `planar`** before the pencil branch is reached (the spread gate,
+  §2.2), and a tessellation whose pencil gate fails reads `curved-unclassified` (§4).
+
+So the `pencil-noncyl` population is a **FLOOR on non-circular-profile extrusions** — 5,506
+(`composite_patches_pencil_noncyl_volume`) + 11 (`poolonly_patches_pencil_noncyl_volume`) = **5,517
+loops** on 388/1,442 corpus / 366/1,089 L2 files (`SRF-07_pencil_noncyl_allscopes_presence`, `_l2`)
+— and **not** a bound on extrusions. Quoting 5,517 as a ceiling would repeat §6.4's class-union
+error exactly.
+
+**The committed ceiling** (`SRF-07_extrusion_ceiling`, `open (ceiling)`): the full classified
+strip-loop total, **67,919 loops** on **975/1,442 = 0.676144 corpus / 952/1,089 = 0.874197 L2
+files** — the same bound SRF-05 publishes (`SRF-05_upper_bound_classified_patches`,
+`SRF-05_upper_bound_allscopes_presence`, `_l2`), for the same structural reason: nothing can be
+subtracted. Four classes are directly extrusion-reachable — planar (a straight profile face),
+cylinder (a circular profile), pencil-noncyl (a non-circular profile) and curved-unclassified (a
+tessellation whose pencil gate fails) — and the cone, sphere and degenerate loops cannot be
+excluded from an extrusion reading either, because the classifier's precedence laws label short
+spans by whichever gate fires first (§2.2, §4: the same leak SRF-05's bound already discloses).
+Row-derived sum, nothing subtracted:
+
+32,330 planar + 793 degenerate + 24,990 cylinder + 519 sphere + 12 cone + 5,517 pencil-noncyl +
+3,758 curved-unclassified = **67,919** loops (the seven `*_patches_*_volume` pairs; BR4 §3 already
+states this sum for SRF-05, and this section reuses it rather than re-measuring).
+
+**What is unmeasured, above the bound** (unchanged from §5, and why this is not a corpus ceiling):
+78,255 skip-reference loops + 12,196 beyond-element-space loops = 90,451 of 156,914 composite loops
+(0.576437, `composite_loops_excluded_share`) never reached the recognizer, and 125 composite stores
+stay identity-undecoded (`scope_composite_decode` 911/1,036 vs `scope_composite_decode_shipped`
+1,020/1,036; `scope_composite_decode_gap` 15). An extrusion inside either residue is outside this
+bound in both directions.
+
+**What stays open after the adjudication** — documented-open, not decoded:
+
+1. **Which recognized loops are extrusions.** The split is construction history, which the
+   tessellation does not carry (§4); only the CGM side can answer it (BR5's slice, §5.3).
+2. **The extrusion direction convention** — the pencil test does not discriminate it, and it does
+   not establish which face binds a loop (recognition is per `ty` strip loop, §4).
+3. **The circular/non-circular profile split** — a circular extrusion is counted under SRF-02 by
+   geometry, so the extrusion count and the cylinder count overlap by construction.
+
+**Detector honesty, one line.** `SRF-07_extrusion_ceiling` is a row-derived population bound, not a
+detector: it reads the seven `*_patches_*_volume` rows and states the classified total. It does NOT
+discriminate extrusion from non-extrusion, cylinder from circular extrusion, or profile shape; its
+discriminating edge is pinned by the circular-extrusion fixture above (a circular extrusion is a
+cylinder, so it cannot enter the pencil-noncyl floor).
+
+**Reproduction.** `scripts/triage/decode_brep_quadrics.py` writes the row (deterministic, sorted
+manifest order; regeneration is byte-identical) into
+[`br4-quadrics-claims.csv`](data/br4-quadrics-claims.csv). `tests/test_brep_quadrics.py` gains the
+circular-extrusion fixture (the file's 20th test; §2.2's "19 tests" predates it).
