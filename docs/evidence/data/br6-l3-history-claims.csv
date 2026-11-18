@@ -1,0 +1,19 @@
+claim,statement,label,scope,observations,passes,rate,note
+BR6H-01_l3_scalar_recorded,"history row and run report carry scalars.L3 as the {rate, resolved, total, by_outcome} block",fact,history row,1,1,1.0,same block in both artifacts; runner attaches one scalars object
+BR6H-02_l3_no_split,L3 is a single scalar with no dev/held-out split (construct coverage is corpus-split independent),fact,schema,1,1,1.0,fitness-history-row-v0.json + fitness-report-v0.json descriptions; CoverageScore has no split pair
+BR6H-03_resolved_constructs,resolved constructs in the emitted L3 scalar,fact,frozen vocabulary,23,23,1.0,rate 1.0 = 23/23; pending-merge 0
+BR6H-04_by_outcome_decoded,frozen constructs whose outcome is decoded in the L3 block,fact,frozen vocabulary,23,14,0.608696,matches br6-l3-claims.csv BR6L3-03_decoded
+BR6H-05_by_outcome_documented_negative,frozen constructs whose outcome is documented-negative in the L3 block,fact,frozen vocabulary,23,3,0.130435,matches BR6L3-06_documented_negative
+BR6H-06_by_outcome_documented_open,frozen constructs whose outcome is documented-open in the L3 block,fact,frozen vocabulary,23,4,0.173913,matches BR6L3-04_documented_open
+BR6H-07_by_outcome_candidate,frozen constructs whose outcome is candidate in the L3 block,fact,frozen vocabulary,23,2,0.086957,matches BR6L3-05_candidate
+BR6H-08_by_outcome_pending_merge,frozen constructs whose outcome is pending-merge in the L3 block,fact,frozen vocabulary,23,0,0.0,matches BR6L3-07_pending_merge
+BR6H-09_pre_58_rows_still_null,committed history rows keeping L3 null after the additive widening,fact,fitness history,14,14,1.0,fitness/history.jsonl: every row validates and keeps its recorded verdict
+BR6H-10_last_accepted_row,last accepted row the L3 introduction is compared against,fact,fitness history,1,1,1.0,"20261113T231506Z-c2ab64: L1 1745/1751 dev, 73/73 held-out; L2 1033/1381 dev, 56/61 held-out; L3 null"
+BR6H-11_introduction_accepted,"end-to-end fixture run: pre-#58 baseline, first L3 row, L1/L2 flat",fact,no-regret,1,1,1.0,accepted; reason 'L3 recorded with L1/L2 intact'; no Dev rise required
+BR6H-12_l3_rise_accepted,no-regret case: L3 rate above the baseline rate with flat Dev,fact,no-regret,1,1,1.0,accepted; reason 'L3 construct coverage rose'
+BR6H-13_l3_fall_rejected,no-regret case: L3 rate below the baseline rate while L1 Dev rises,fact,no-regret,1,1,1.0,rejected; reason 'L3 construct coverage fell'
+BR6H-14_null_pair_verdicts_unchanged,no-regret cases with L3 null on both sides reproducing the pre-#58 verdict,fact,no-regret,5,5,1.0,accepted / L2-only / dev did not rise / held-out-both / held-out fell: explicit equals implicit verdict
+BR6H-15_real_scorer_headline,real scorer on the committed evidence behind the runner's wiring proof,fact,committed evidence,23,23,1.0,catpart.fitness.l3.score_l3(repo root) = 23/23; test_real_repo_l3_root_and_scalar
+BR6H-16_trend_carries_l3,published trend entries carrying the L3 block,fact,publication,1,1,1.0,fitness-history.json runs[].l3; null before the first L3 run; the badge stays L1
+BR6H-17_site_l3_surface_absent,site landing page surfaces rendering L3 as a fitness number,fact,publication,1,0,0.0,no L3 stat or chart; publishing the field is done and the UI is the remaining #49 item
+BR6H-18_history_append_deferred,real fitness run appended with the L3 scalar,fact,fitness history,1,0,0.0,not this slice: fitness/history.jsonl and reports/ are appended by the orchestration run

@@ -18,6 +18,7 @@ real SHA-256 digests.
 from __future__ import annotations
 
 import csv
+import dataclasses
 import hashlib
 import io
 import json
@@ -26,6 +27,7 @@ from pathlib import Path
 import pytest
 
 from catpart.fitness import LevelScore, SplitScore, evaluate_no_regret
+from catpart.fitness.history import CoverageScore
 from catpart.schema import load_schema
 from catpart.schema.validate import ValidationError, validate
 
@@ -172,6 +174,9 @@ def test_first_run_writes_report_and_single_baseline_row(
         "dev": {"rate": 0.0, "pass": 0, "total": 3},
         "held-out": {"rate": 0.0, "pass": 0, "total": 2},
     }
+    # The L3 construct-coverage scalar needs the repository's committed
+    # evidence tree (docs/evidence, ticket #58); this fixture repository
+    # carries none, so the slot stays null — the pre-#58 shape.
     assert row["scalars"]["L3"] is None
 
 
@@ -838,3 +843,202 @@ def test_report_schema_rejects_unknown_classification() -> None:
             },
             load_schema("fitness-report-v0"),
         )
+
+
+# --- the L3 construct-coverage scalar (ticket #58) -------------------------
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+#: The BR6 outcome breakdown the scorer reports over the frozen denominator.
+L3_BY_OUTCOME = {
+    "decoded": 14,
+    "documented-negative": 3,
+    "documented-open": 4,
+    "candidate": 2,
+    "pending-merge": 0,
+}
+
+
+def l3_block(resolved: int = 23, total: int = 23) -> dict:
+    """The L3 block as the runner records it (rate from the exact counts)."""
+    by_outcome = dict(L3_BY_OUTCOME)
+    by_outcome["pending-merge"] = total - resolved
+    return {
+        "rate": resolved / total,
+        "resolved": resolved,
+        "total": total,
+        "by_outcome": by_outcome,
+    }
+
+
+@dataclasses.dataclass
+class FakeL3Score:
+    """The slice of ``catpart.fitness.l3.L3Score`` the runner consumes."""
+
+    resolved: int = 23
+    total: int = 23
+    by_outcome: dict = dataclasses.field(
+        default_factory=lambda: dict(L3_BY_OUTCOME)
+    )
+
+
+def enable_l3(
+    tmp_path: Path, monkeypatch, *, resolved: int = 23, total: int = 23
+) -> list[Path]:
+    """Give the fixture repo an evidence tree and a fake L3 scorer.
+
+    The real scorer reads the committed evidence artifacts of the
+    repository holding ``docs/evidence``; a synthetic fixture repo carries
+    none, so this seam both proves the root derivation (the scorer sees
+    the repo root, not the cwd) and supplies the headline. Returns the
+    roots the runner passed to the scorer.
+    """
+    (tmp_path / "docs" / "evidence").mkdir(parents=True, exist_ok=True)
+    by_outcome = dict(L3_BY_OUTCOME)
+    by_outcome["pending-merge"] = total - resolved
+    score = FakeL3Score(resolved=resolved, total=total, by_outcome=by_outcome)
+    seen: list[Path] = []
+
+    def fake_score_l3(root):
+        seen.append(Path(root))
+        return score
+
+    monkeypatch.setattr("catpart.fitness.runner.score_l3", fake_score_l3)
+    return seen
+
+
+def test_row_and_report_carry_the_same_l3_block(
+    tmp_path: Path, build_catpart, capsys, monkeypatch
+) -> None:
+    write_mini_corpus(tmp_path, build_catpart)
+    enable_l3(tmp_path, monkeypatch, resolved=21)
+    code, out, err = run_fitness_cli(tmp_path, capsys)
+    assert code == 0, err
+
+    row = json.loads(out)
+    assert row["scalars"]["L3"] == l3_block(21)
+    validate(row, load_schema("fitness-history-row-v0"))
+
+    report = json.loads(
+        (tmp_path / "fitness" / row["report"]).read_text(encoding="utf-8")
+    )
+    assert report["scalars"]["L3"] == row["scalars"]["L3"]
+    validate(report, load_schema("fitness-report-v0"))
+
+
+def test_l3_is_scored_from_the_docs_evidence_root_not_the_cwd(
+    tmp_path: Path, build_catpart, capsys, monkeypatch
+) -> None:
+    write_mini_corpus(tmp_path, build_catpart)
+    seen = enable_l3(tmp_path, monkeypatch)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    code, out, err = run_fitness_cli(tmp_path, capsys)
+    assert code == 0, err
+    assert seen == [tmp_path.resolve()]
+    assert json.loads(out)["scalars"]["L3"] == l3_block()
+
+
+def test_repo_without_a_docs_evidence_tree_records_a_null_l3(
+    tmp_path: Path, build_catpart, capsys
+) -> None:
+    # A manifest-only fixture repository has no committed L3 evidence at
+    # all: there is nothing to score, so the row stays null (the pre-#58
+    # shape). A tree that DOES carry docs/evidence fails loudly instead.
+    from catpart.fitness import runner
+
+    manifest_path, _ = write_mini_corpus(tmp_path, build_catpart)
+    assert runner._l3_repo_root(manifest_path) is None
+
+    code, out, err = run_fitness_cli(tmp_path, capsys)
+    assert code == 0, err
+    assert json.loads(out)["scalars"]["L3"] is None
+
+
+def test_l3_scorer_failure_aborts_before_any_artifact_is_written(
+    tmp_path: Path, build_catpart, capsys, monkeypatch
+) -> None:
+    from catpart.fitness.l3 import L3Error
+
+    write_mini_corpus(tmp_path, build_catpart)
+    enable_l3(tmp_path, monkeypatch)
+    (tmp_path / "docs" / "evidence" / "data").mkdir(parents=True)
+
+    def broken(root):
+        raise L3Error(
+            "frozen denominator is 24 constructs, expected 23 (BR1 freeze)"
+        )
+
+    monkeypatch.setattr("catpart.fitness.runner.score_l3", broken)
+    code, out, err = run_fitness_cli(tmp_path, capsys)
+
+    assert code == 1
+    assert out == ""
+    assert "frozen denominator is 24" in err
+    # Fail loudly, write nothing: never a null L3 over a broken evidence tree.
+    assert not (tmp_path / "fitness" / "history.jsonl").exists()
+    assert not (tmp_path / "fitness" / "reports").exists()
+
+
+def test_l3_introduction_accepts_a_pre_58_baseline_end_to_end(
+    tmp_path: Path, build_catpart, capsys, monkeypatch
+) -> None:
+    # Run 1 is a pre-#58 row (no evidence tree yet: L3 null, accepted as
+    # the baseline). Run 2 records the scalar for the first time with L1/L2
+    # flat: the introduction itself is the increment.
+    write_mini_corpus(tmp_path, build_catpart)
+    code1, out1, err1 = run_fitness_cli(tmp_path, capsys)
+    assert code1 == 0, err1
+    baseline = json.loads(out1)
+    assert baseline["scalars"]["L3"] is None
+
+    enable_l3(tmp_path, monkeypatch)
+    code2, out2, err2 = run_fitness_cli(tmp_path, capsys)
+    assert code2 == 0, err2
+    row = json.loads(out2)
+
+    assert row["scalars"]["L3"] == l3_block()
+    assert row["accepted"] is True
+    assert row["baseline_run_id"] == baseline["run_id"]
+    assert row["no_regret"]["reason"] == "L3 recorded with L1/L2 intact"
+    assert row["no_regret"]["dev_rose"] is False
+    assert row["no_regret"]["held_out_fell"] is False
+
+
+def test_l3_fall_rejects_a_run_that_rises_on_dev(
+    tmp_path: Path, build_catpart, capsys, monkeypatch
+) -> None:
+    write_mini_corpus(tmp_path, build_catpart)
+    enable_l3(tmp_path, monkeypatch)
+    code1, out1, err1 = run_fitness_cli(tmp_path, capsys)
+    assert code1 == 0, err1
+    assert json.loads(out1)["accepted"] is True
+
+    # A parser change fixes the dev crash (L1 dev rises 2/3 -> 3/3) while
+    # the construct coverage falls 23/23 -> 20/23: no-regret rejects.
+    (tmp_path / "corpus" / "fixture" / "parts" / "dev-crash.CATPart").write_bytes(
+        clean_bytes(build_catpart, payload=b"\x11\x22\x33\x44" * 8)
+    )
+    enable_l3(tmp_path, monkeypatch, resolved=20)
+    code2, out2, err2 = run_fitness_cli(tmp_path, capsys)
+    assert code2 == 0, err2
+    row = json.loads(out2)
+    assert row["accepted"] is False
+    assert row["no_regret"]["dev_rose"] is True
+    assert row["no_regret"]["held_out_fell"] is False
+    assert row["no_regret"]["reason"] == "L3 construct coverage fell"
+
+
+def test_real_repo_l3_root_and_scalar() -> None:
+    # Read-only wiring proof against the committed evidence: the derived
+    # root is the repository (not the cwd) and the scalar is the BR6 23/23.
+    from catpart.fitness import runner
+
+    assert runner._l3_repo_root(REPO_ROOT / "manifests" / "corpus-manifest.csv") == (
+        REPO_ROOT.resolve()
+    )
+    assert runner._l3_scalar(REPO_ROOT) == CoverageScore(
+        resolved=23, total=23, by_outcome=dict(L3_BY_OUTCOME)
+    )

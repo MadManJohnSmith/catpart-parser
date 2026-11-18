@@ -11,13 +11,17 @@ files, and rebuilds the ``gh-pages`` branch from exactly those files:
   the last ACCEPTED run's L1 Dev clean-parse share. Rejected runs never
   move the accepted baseline (ADR-0001 no-regret rule), so they are not
   fitness and never reach gh-pages. The badge stays L1 — one headline
-  per level (ADR-0001) — even after L2 exists (ticket #33).
+  per level (ADR-0001) — even after L2 (ticket #33) and L3 (ticket #58)
+  exist.
 - ``fitness-history.json`` — the compact accepted-run trend, oldest to
   newest (run_id, timestamp, L1 Dev scalar; the L2 pass/total scalars
   over the parts-only population ride alongside since ticket #33, null
-  for runs emitted before the L2 baseline). An accepted run cannot have
-  dropped the Held-out split (no-regret would reject it), so the Dev
-  trend is the whole accepted trend.
+  for runs emitted before the L2 baseline; the L3 construct-coverage
+  scalar rides alongside since ticket #58, null for runs emitted before
+  the first L3 run and single-valued because L3 has no dev/held-out
+  split). An accepted run cannot have dropped the Held-out split
+  (no-regret would reject it), so the Dev trend is the whole accepted
+  trend.
 - ``.nojekyll`` — keep the GitHub Pages URL serving the raw files without
   Jekyll processing; the badge itself reads ``raw.githubusercontent.com``,
   which serves ``.json`` as text/plain — accepted by the shields endpoint
@@ -247,15 +251,60 @@ def _l2_scalars(row: dict) -> dict | None:
     return out
 
 
-def _accepted_runs(rows: list[dict]) -> list[tuple[dict, tuple[int, int], dict | None]]:
+def _l3_scalars(row: dict) -> dict | None:
+    """The accepted row's validated L3 construct-coverage scalar, or ``None``.
+
+    L3 has no Dev/Held-out split (ticket #58): construct coverage is
+    corpus-split independent, so the trend carries resolved/total plus the
+    recorded outcome breakdown. Rows emitted before the first L3 run carry
+    ``scalars.L3: null`` and publish as a null entry; a malformed L3
+    object is a hard error, like L1's and L2's.
+    """
+    l3 = row["scalars"].get("L3")
+    if l3 is None:
+        return None
+    if not isinstance(l3, dict):
+        raise PublishError(f"accepted run {row['run_id']}: invalid L3 scalars object")
+    resolved, total = l3.get("resolved"), l3.get("total")
+    if (
+        not isinstance(resolved, int)
+        or isinstance(resolved, bool)
+        or not isinstance(total, int)
+        or isinstance(total, bool)
+        or total < 1
+        or not 0 <= resolved <= total
+    ):
+        raise PublishError(
+            f"accepted run {row['run_id']}: invalid L3 resolved/total counts: "
+            f"{resolved!r}/{total!r}"
+        )
+    by_outcome = l3.get("by_outcome")
+    if by_outcome is not None:
+        if not isinstance(by_outcome, dict) or not all(
+            isinstance(name, str)
+            and isinstance(count, int)
+            and not isinstance(count, bool)
+            and count >= 0
+            for name, count in by_outcome.items()
+        ):
+            raise PublishError(
+                f"accepted run {row['run_id']}: invalid L3 by_outcome counts: "
+                f"{by_outcome!r}"
+            )
+    return {"resolved": resolved, "total": total, "by_outcome": by_outcome}
+
+
+def _accepted_runs(
+    rows: list[dict],
+) -> list[tuple[dict, tuple[int, int], dict | None, dict | None]]:
     """The accepted rows with their L1 Dev ``(clean, total)`` and validated
-    L2 scalars (``None`` before the L2 baseline), in file order.
+    L2/L3 scalars (``None`` before each level's baseline), in file order.
 
     File order must be append order (non-decreasing timestamps): the trend
     JSON promises oldest-to-newest, so an out-of-order history is a hard
     error, never a mislabeled publication.
     """
-    runs: list[tuple[dict, tuple[int, int], dict | None]] = []
+    runs: list[tuple[dict, tuple[int, int], dict | None, dict | None]] = []
     previous_ts: datetime | None = None
     for row in rows:
         if not row["accepted"]:
@@ -284,7 +333,7 @@ def _accepted_runs(rows: list[dict]) -> list[tuple[dict, tuple[int, int], dict |
                 f"accepted run {row['run_id']}: invalid L1 dev clean/total counts: "
                 f"{clean!r}/{total!r}"
             )
-        runs.append((row, (clean, total), _l2_scalars(row)))
+        runs.append((row, (clean, total), _l2_scalars(row), _l3_scalars(row)))
     if not runs:
         raise PublishError("history has no accepted run; there is no fitness to publish")
     return runs
@@ -302,13 +351,14 @@ def _badge_color(pct: float) -> str:
     return COLOR_BAD
 
 
-def render_latest(runs: list[tuple[dict, tuple[int, int], dict | None]]) -> bytes:
+def render_latest(runs: list[tuple[dict, tuple[int, int], dict | None, dict | None]]) -> bytes:
     """The shields.io endpoint JSON: last accepted run's L1 Dev share.
 
-    The badge stays L1 even after L2 exists — one headline per level
-    (ADR-0001); the L2 series lives in the trend JSON only.
+    The badge stays L1 even after L2 and L3 exist — one headline per level
+    (ADR-0001); the L2 series lives in the trend JSON only and so does the
+    single-valued L3 construct-coverage block.
     """
-    row, (clean, total), _l2 = runs[-1]
+    row, (clean, total), _l2, _l3 = runs[-1]
     pct = _dev_pct(clean, total)
     endpoint = {
         "schemaVersion": 1,
@@ -319,21 +369,26 @@ def render_latest(runs: list[tuple[dict, tuple[int, int], dict | None]]) -> byte
     return (json.dumps(endpoint, separators=(",", ":")) + "\n").encode("utf-8")
 
 
-def _history_document(runs: list[tuple[dict, tuple[int, int], dict | None]]) -> dict:
+def _history_document(
+    runs: list[tuple[dict, tuple[int, int], dict | None, dict | None]],
+) -> dict:
     """The trend document (human-readable rendering input), oldest to newest.
 
-    Each run carries the L1 Dev trend and, since ticket #33, its L2
-    pass/total scalars over the parts-only population (``null`` for runs
-    emitted before the L2 baseline).
+    Each run carries the L1 Dev trend, its L2 pass/total scalars over the
+    parts-only population (``null`` for runs emitted before the L2
+    baseline), and its L3 construct-coverage scalar (``null`` for runs
+    emitted before the first L3 run; single-valued — L3 has no split).
     """
     return {
         "schema_version": 1,
         "source": "fitness/history.jsonl",
         "note": (
             "One entry per accepted fitness run (the ADR-0001 no-regret "
-            "baseline), oldest to newest; dev is the L1 clean-parse share "
-            "and l2 the geometry-sanity share over parts (null before the "
-            "L2 baseline exists)."
+            "baseline), oldest to newest; dev is the L1 clean-parse share, "
+            "l2 the geometry-sanity share over parts (null before the L2 "
+            "baseline exists) and l3 the construct-coverage share over the "
+            "frozen construct denominator (null before the first L3 run; "
+            "single-valued — L3 has no dev/held-out split)."
         ),
         "runs": [
             {
@@ -350,18 +405,28 @@ def _history_document(runs: list[tuple[dict, tuple[int, int], dict | None]]) -> 
                     }
                     for split, counts in l2.items()
                 },
+                "l3": None
+                if l3 is None
+                else {
+                    "resolved": l3["resolved"],
+                    "total": l3["total"],
+                    "pct": _dev_pct(l3["resolved"], l3["total"]),
+                    "by_outcome": l3["by_outcome"],
+                },
             }
-            for row, (clean, total), l2 in runs
+            for row, (clean, total), l2, l3 in runs
         ],
     }
 
 
-def render_history(runs: list[tuple[dict, tuple[int, int], dict | None]]) -> bytes:
+def render_history(runs: list[tuple[dict, tuple[int, int], dict | None, dict | None]]) -> bytes:
     """The accepted-run trend JSON, oldest to newest (human-readable)."""
     return (json.dumps(_history_document(runs), indent=2) + "\n").encode("utf-8")
 
 
-def _files_for(runs: list[tuple[dict, tuple[int, int], dict | None]]) -> dict[str, bytes]:
+def _files_for(
+    runs: list[tuple[dict, tuple[int, int], dict | None, dict | None]],
+) -> dict[str, bytes]:
     return {
         NOJEKYLL_FILENAME: b"",
         LATEST_FILENAME: render_latest(runs),
@@ -374,7 +439,9 @@ def render_files(history_path: Path) -> dict[str, bytes]:
     return _files_for(_accepted_runs(read_history(history_path)))
 
 
-def _site_files(repo: Path, runs: list[tuple[dict, tuple[int, int], dict | None]]) -> dict[str, bytes]:
+def _site_files(
+    repo: Path, runs: list[tuple[dict, tuple[int, int], dict | None, dict | None]]
+) -> dict[str, bytes]:
     """The landing-page files under ``repo/site``, with the history injected.
 
     Every file publishes verbatim except any carrying the exact
