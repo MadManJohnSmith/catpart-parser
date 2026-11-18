@@ -23,8 +23,10 @@ Outcome enum (ticket #58):
 ``documented-open``
     Open with published ceiling arithmetic (Phase 7 accepts this as resolved).
 ``candidate``
-    Evidence landed, semantics still open; the cited claim is labelled
-    ``candidate``.
+    Evidence landed, semantics still open. The cited row's label is declared
+    with ``claim_label`` when it comes from another BR's vocabulary (SRF-07
+    cites BR4's ``fact`` presence row; the candidate verdict is the semantic
+    one), or must be ``candidate`` under the default table.
 ``pending-merge``
     The governing per-BR claims CSV is absent at this commit. This is an
     *absence marker*, not a status: it is never counted as resolved, and it
@@ -32,13 +34,27 @@ Outcome enum (ticket #58):
 
 Extension point (requirement of ticket #58 / BR6)
 -------------------------------------------------
-Every per-construct verdict is one row of :data:`RESOLUTION_REGISTRY`. Adding
-BR4/BR5 (or the BR6 shell slice) after those branches merge means editing
-that table only — never the scoring logic:
+Every per-construct verdict is one row of :data:`RESOLUTION_REGISTRY`. All 23
+frozen rows are resolved at this commit (BR2, BR3, BR4, BR5 and the BR6 shell
+slice); re-running after a new BR still means editing that table only — never
+the scoring logic:
 
-1. replace the construct's ``pending-merge`` row with its resolved outcome,
-   the committed claims CSV path in ``evidence`` and the exact ``claim_id``;
-2. re-run :func:`score_l3` and the claims-CSV hygiene checker.
+1. record the construct's outcome, the committed claims CSV path in
+   ``evidence`` and the exact ``claim_id`` (plus ``claim_scope`` when the id
+   repeats per scope);
+2. declare ``claim_label`` when the cited row's confidence token belongs to
+   another BR's vocabulary (BR4's ``fact`` / ``drift (fact)`` / ``volume
+   anchor`` / ``upper bound (row-derived sum)``, BR5's ``fact`` / ``unknown``,
+   the shell slice's ``fact`` / ``ACCOUNTING IDENTITY``) instead of a token in
+   :data:`LABELS_BY_OUTCOME`;
+3. re-run :func:`score_l3` and the claims-CSV hygiene checker.
+
+``claim_label`` is an exact-match declaration, not a relaxation: a non-empty
+value must equal the cited row's ``label`` verbatim, so a vocabulary change in
+the cited CSV fails the row again. ``claim_construct`` applies the same rule
+to a row whose ``construct`` column deliberately names a sibling construct
+(SRF-06 inherits SRF-05's upper-bound row); an undeclared foreign attribution
+is still a miscitation.
 
 A ``pending-merge`` row whose ``evidence`` file does appear while the row is
 still pending fails closed: evidence landed but nobody resolved the row, so
@@ -100,7 +116,9 @@ RESOLVED_OUTCOMES = frozenset(OUTCOME_ORDER) - {PENDING_MERGE}
 #: Claim ``label`` values each outcome may cite. Labels are the claims CSV's
 #: own confidence vocabulary (BR2: fact/candidate; BR3: established/
 #: candidate/open (ceiling)); a citation whose label contradicts the declared
-#: outcome is a miscitation, so it fails closed.
+#: outcome is a miscitation, so it fails closed. A registry row that declares
+#: ``claim_label`` replaces this table with an exact-match check (BR4, BR5 and
+#: the shell slice label their rows in their own vocabularies).
 LABELS_BY_OUTCOME: dict[str, frozenset[str]] = {
     DECODED: frozenset({"fact", "established"}),
     DOCUMENTED_NEGATIVE: frozenset({"negative", "documented-negative"}),
@@ -141,8 +159,12 @@ class Resolution:
     carry an empty ``claim_id`` and the path the owning ticket must land.
     ``claim_scope`` disambiguates the claim ids that BR3 records once per
     scope (``corpus`` / ``l2-pass``); it is required exactly when the id is
-    not unique in its CSV. ``owner`` is the BR ticket tag that owns the
-    verdict.
+    not unique in its CSV. ``claim_label`` is an optional exact-match
+    declaration for a cited row whose label comes from another BR's
+    vocabulary; when empty, :data:`LABELS_BY_OUTCOME` decides. ``claim_construct``
+    is the declared ``construct`` attribution of a deliberately inherited row
+    (SRF-06 cites SRF-05's upper bound); when empty, the row must name
+    ``construct_id``. ``owner`` is the BR ticket tag that owns the verdict.
     """
 
     construct_id: str
@@ -151,6 +173,8 @@ class Resolution:
     claim_id: str
     owner: str
     claim_scope: str = ""
+    claim_label: str = ""
+    claim_construct: str = ""
     note: str = ""
 
     def __post_init__(self) -> None:
@@ -170,6 +194,16 @@ class Resolution:
                     f"registry row {self.construct_id}: a pending-merge row "
                     "cannot carry a claim scope"
                 )
+            if self.claim_label:
+                raise L3Error(
+                    f"registry row {self.construct_id}: a pending-merge row "
+                    "cannot carry a claim label"
+                )
+            if self.claim_construct:
+                raise L3Error(
+                    f"registry row {self.construct_id}: a pending-merge row "
+                    "cannot carry a claim construct"
+                )
         elif not self.claim_id.strip():
             raise L3Error(
                 f"registry row {self.construct_id}: outcome {self.outcome!r} "
@@ -179,104 +213,145 @@ class Resolution:
 
 #: The declarative per-construct resolution table — THE extension point.
 #:
-#: BR2/BR3 rows are resolvable at this base commit. BR4 (SRF-02..SRF-07),
-#: BR5 (TOP-01, TOP-02, CRV-06, SRF-08) and the BR6 shell slice (TOP-03) are
-#: pending-merge: their claims CSVs are absent here, so no verdict is
-#: invented. After those merges land, replace each pending row with its
-#: ``outcome`` + ``claim_id`` (see the module docstring).
+#: All 23 frozen rows are resolved: BR2/BR3 at the L3-scorer base commit, BR4
+#: (SRF-02..SRF-07), BR5 (TOP-01, TOP-02, CRV-06, SRF-08) and the BR6 shell
+#: slice (TOP-03) on their merged claims CSVs. ``claim_label`` pins labels from
+#: those BRs' own vocabularies (all ``fact`` here, which is why the
+#: documented-negative/documented-open rows need it: the outcome table admits
+#: only ``negative``/``open`` tokens); ``claim_construct`` records the one
+#: deliberate cross-construct citation (SRF-06 inherits SRF-05's upper bound).
 RESOLUTION_REGISTRY: tuple[Resolution, ...] = (
-    # --- pending-merge: governing claims CSV absent at this base commit ----
+    # --- BR5: CGM/NURBS structural decode + numeric ceilings ---------------
     Resolution(
         construct_id="TOP-01",
-        outcome=PENDING_MERGE,
+        outcome=DECODED,
         evidence="docs/evidence/data/br5-cgm-nurbs-claims.csv",
-        claim_id="",
+        claim_id="BR5-04b_top01_store_root",
+        claim_scope="all",
+        claim_label="fact",
         owner="BR5",
-        note="body carrier lands with the BR5 CGM/NURBS merge",
-    ),
-    Resolution(
-        construct_id="TOP-02",
-        outcome=PENDING_MERGE,
-        evidence="docs/evidence/data/br5-cgm-nurbs-claims.csv",
-        claim_id="",
-        owner="BR5",
-        note="lump closure lands with the BR5 CGM/NURBS merge",
-    ),
-    Resolution(
-        construct_id="TOP-03",
-        outcome=PENDING_MERGE,
-        evidence="docs/evidence/data/br6-shell-claims.csv",
-        claim_id="",
-        owner="BR6-shell",
         note=(
-            "shell census lands with the BR6 shell slice; the expected artifact "
-            "name is declared here and corrected at integration if the slice "
-            "commits another"
+            "structural carrier: nested store root via the committed locator "
+            "probe order; body/lump record semantics stay open"
         ),
     ),
     Resolution(
-        construct_id="CRV-06",
-        outcome=PENDING_MERGE,
+        construct_id="TOP-02",
+        outcome=DOCUMENTED_NEGATIVE,
         evidence="docs/evidence/data/br5-cgm-nurbs-claims.csv",
-        claim_id="",
+        claim_id="BR5-06b_top02_lump_ceiling",
+        claim_scope="all",
+        claim_label="fact",
         owner="BR5",
-        note="NURBS curve verdict lands with the BR5 CGM/NURBS merge",
+        note="no lump record class isolated; numeric ceiling over the CGM region",
     ),
     Resolution(
-        construct_id="SRF-02",
-        outcome=PENDING_MERGE,
-        evidence="docs/evidence/data/br4-quadrics-claims.csv",
-        claim_id="",
-        owner="BR4",
-        note="cylinder recognition lands with the BR4 quadrics merge",
-    ),
-    Resolution(
-        construct_id="SRF-03",
-        outcome=PENDING_MERGE,
-        evidence="docs/evidence/data/br4-quadrics-claims.csv",
-        claim_id="",
-        owner="BR4",
-        note="cone recognition lands with the BR4 quadrics merge",
-    ),
-    Resolution(
-        construct_id="SRF-04",
-        outcome=PENDING_MERGE,
-        evidence="docs/evidence/data/br4-quadrics-claims.csv",
-        claim_id="",
-        owner="BR4",
-        note="sphere recognition lands with the BR4 quadrics merge",
-    ),
-    Resolution(
-        construct_id="SRF-05",
-        outcome=PENDING_MERGE,
-        evidence="docs/evidence/data/br4-quadrics-claims.csv",
-        claim_id="",
-        owner="BR4",
-        note="torus verdict lands with the BR4 quadrics merge",
-    ),
-    Resolution(
-        construct_id="SRF-06",
-        outcome=PENDING_MERGE,
-        evidence="docs/evidence/data/br4-quadrics-claims.csv",
-        claim_id="",
-        owner="BR4",
-        note="revolution verdict lands with the BR4 quadrics merge",
-    ),
-    Resolution(
-        construct_id="SRF-07",
-        outcome=PENDING_MERGE,
-        evidence="docs/evidence/data/br4-quadrics-claims.csv",
-        claim_id="",
-        owner="BR4",
-        note="extrusion verdict lands with the BR4 quadrics merge",
+        construct_id="CRV-06",
+        outcome=DOCUMENTED_NEGATIVE,
+        evidence="docs/evidence/data/br5-cgm-nurbs-claims.csv",
+        claim_id="BR5-06d_crv06_srf08_ceiling",
+        claim_scope="all",
+        claim_label="fact",
+        owner="BR5",
+        note="zero knot/weight payload signatures; numeric ceiling, not absence",
     ),
     Resolution(
         construct_id="SRF-08",
-        outcome=PENDING_MERGE,
+        outcome=DOCUMENTED_NEGATIVE,
         evidence="docs/evidence/data/br5-cgm-nurbs-claims.csv",
-        claim_id="",
+        claim_id="BR5-06d_crv06_srf08_ceiling",
+        claim_scope="all",
+        claim_label="fact",
         owner="BR5",
-        note="NURBS surface verdict lands with the BR5 CGM/NURBS merge",
+        note="zero knot/weight payload signatures; numeric ceiling, not absence",
+    ),
+    # --- BR6 shell slice: the derived shell partition -----------------------
+    Resolution(
+        construct_id="TOP-03",
+        outcome=DECODED,
+        evidence="docs/evidence/data/br6-shell-claims.csv",
+        claim_id="BR6S-04_shell_files_corpus",
+        claim_scope="full corpus",
+        claim_label="fact",
+        owner="BR6-shell",
+        note=(
+            "derived partition law over the accepted facet records; the shell "
+            "has no stored record (byte-level negative in the shell note §5)"
+        ),
+    ),
+    # --- BR4: quadric surface recognition ----------------------------------
+    Resolution(
+        construct_id="SRF-02",
+        outcome=DECODED,
+        evidence="docs/evidence/data/br4-quadrics-claims.csv",
+        claim_id="SRF-02_cylinder_allscopes_presence",
+        claim_scope="full corpus",
+        claim_label="fact",
+        owner="BR4",
+        note=(
+            "tessellation-level recognition (700+ files); the frozen 1,128 "
+            "count measured strip presence, not cylinders"
+        ),
+    ),
+    Resolution(
+        construct_id="SRF-03",
+        outcome=DECODED,
+        evidence="docs/evidence/data/br4-quadrics-claims.csv",
+        claim_id="SRF-03_cone_allscopes_presence",
+        claim_scope="full corpus",
+        claim_label="fact",
+        owner="BR4",
+        note="thin population (4 files) but decoded; frozen 542 has no generator",
+    ),
+    Resolution(
+        construct_id="SRF-04",
+        outcome=DECODED,
+        evidence="docs/evidence/data/br4-quadrics-claims.csv",
+        claim_id="SRF-04_sphere_allscopes_presence",
+        claim_scope="full corpus",
+        claim_label="fact",
+        owner="BR4",
+        note="floor: short sphere spans land under the cone law (precedence)",
+    ),
+    Resolution(
+        construct_id="SRF-05",
+        outcome=DOCUMENTED_OPEN,
+        evidence="docs/evidence/data/br4-quadrics-claims.csv",
+        claim_id="SRF-05_upper_bound_allscopes_presence",
+        claim_scope="full corpus",
+        claim_label="fact",
+        owner="BR4",
+        note=(
+            "no class-shaped bound: the full classified population "
+            "(SRF-05_upper_bound_classified_patches) is the upper bound"
+        ),
+    ),
+    Resolution(
+        construct_id="SRF-06",
+        outcome=DOCUMENTED_OPEN,
+        evidence="docs/evidence/data/br4-quadrics-claims.csv",
+        claim_id="SRF-05_upper_bound_allscopes_presence",
+        claim_scope="full corpus",
+        claim_label="fact",
+        claim_construct="SRF-05",
+        owner="BR4",
+        note=(
+            "no separable bound of its own (cylinders/cones/spheres are "
+            "revolutions); inherits SRF-05's classified upper bound"
+        ),
+    ),
+    Resolution(
+        construct_id="SRF-07",
+        outcome=CANDIDATE,
+        evidence="docs/evidence/data/br4-quadrics-claims.csv",
+        claim_id="SRF-07_pencil_noncyl_allscopes_presence",
+        claim_scope="full corpus",
+        claim_label="fact",
+        owner="BR4",
+        note=(
+            "negative-space signature only: pencil-noncyl loops are a floor, "
+            "construction history is not in the tessellation"
+        ),
     ),
     # --- BR2: planar faces, loops and the record-local plane --------------
     Resolution(
@@ -553,6 +628,15 @@ def _claim_rows(root: Path, rel: str) -> list[dict[str, str]]:
     return rows
 
 
+def _row_scope(row: dict[str, str]) -> str:
+    """The row's population scope: a ``scope`` column, or BR5's ``release``.
+
+    BR2/BR3/BR4/the shell slice name the column ``scope``; the BR5 claims CSV
+    records the same population axis as ``release`` (``all``).
+    """
+    return (row.get("scope") or row.get("release") or "").strip()
+
+
 def _resolve_citation(
     root: Path,
     resolution: Resolution,
@@ -592,7 +676,7 @@ def _resolve_citation(
                 "claim_scope to the row's scope"
             )
         matches = [
-            row for row in matches if (row.get("scope") or "") == resolution.claim_scope
+            row for row in matches if _row_scope(row) == resolution.claim_scope
         ]
         if len(matches) != 1:
             raise L3Error(
@@ -603,13 +687,22 @@ def _resolve_citation(
     row = matches[0]
 
     construct = (row.get("construct") or "").strip()
-    if "construct" in row and construct != resolution.construct_id:
-        raise L3Error(
-            f"{resolution.construct_id}: claims row {resolution.claim_id!r} is "
-            f"attributed to {construct!r} in {resolution.evidence}"
-        )
+    if "construct" in row:
+        if resolution.claim_construct:
+            if construct != resolution.claim_construct:
+                raise L3Error(
+                    f"{resolution.construct_id}: claims row "
+                    f"{resolution.claim_id!r} is attributed to {construct!r} in "
+                    f"{resolution.evidence}, not the declared claim_construct "
+                    f"{resolution.claim_construct!r}"
+                )
+        elif construct != resolution.construct_id:
+            raise L3Error(
+                f"{resolution.construct_id}: claims row {resolution.claim_id!r} is "
+                f"attributed to {construct!r} in {resolution.evidence}"
+            )
 
-    scope = (row.get("scope") or "").strip()
+    scope = _row_scope(row)
     if resolution.claim_scope and scope != resolution.claim_scope:
         raise L3Error(
             f"{resolution.construct_id}: claims row {resolution.claim_id!r} has scope "
@@ -617,16 +710,25 @@ def _resolve_citation(
         )
 
     label = (row.get("label") or "").strip()
-    allowed = LABELS_BY_OUTCOME.get(resolution.outcome, frozenset())
-    if label not in allowed:
-        raise L3Error(
-            f"{resolution.construct_id}: claims row {resolution.claim_id!r} is "
-            f"labelled {label!r}, which does not justify outcome "
-            f"{resolution.outcome!r} (allowed: {', '.join(sorted(allowed)) or 'none'})"
-        )
+    if resolution.claim_label:
+        if label != resolution.claim_label:
+            raise L3Error(
+                f"{resolution.construct_id}: claims row {resolution.claim_id!r} is "
+                f"labelled {label!r}, not the declared claim_label "
+                f"{resolution.claim_label!r}"
+            )
+    else:
+        allowed = LABELS_BY_OUTCOME.get(resolution.outcome, frozenset())
+        if label not in allowed:
+            raise L3Error(
+                f"{resolution.construct_id}: claims row {resolution.claim_id!r} is "
+                f"labelled {label!r}, which does not justify outcome "
+                f"{resolution.outcome!r} "
+                f"(allowed: {', '.join(sorted(allowed)) or 'none'})"
+            )
 
     citation: dict = {
-        "scope": row.get("scope", ""),
+        "scope": scope,
         "observations": row.get("observations", ""),
         "passes": row.get("passes", ""),
         "rate": row.get("rate", ""),

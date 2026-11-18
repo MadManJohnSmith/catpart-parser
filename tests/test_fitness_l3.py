@@ -3,13 +3,13 @@
 Two layers, no mocks:
 
 - the real-repo run scores the committed artifacts and pins the numbers the
-  evidence note quotes (12/23 resolved at this base commit, 11 pending BR4/
-  BR5/BR6-shell rows, no-regret context read from the last accepted history
-  row without appending);
+  evidence note quotes (23/23 resolved, no pending rows, no-regret context read
+  from the last accepted history row without appending);
 - failure injection over copies of those same committed CSVs proves the
   scorer can reject an uncited row, an unknown construct, a changed
-  denominator, population drift and a landed artifact behind a pending row —
-  the "no status without a citation" contract must be able to fail.
+  denominator, population drift, a declared label/construct that disagrees
+  with the cited row and a landed artifact behind a pending row — the "no
+  status without a citation" contract must be able to fail.
 
 Everything runs corpus-free: the scorer reads repository files only, and the
 fixtures are byte copies of them.
@@ -32,6 +32,7 @@ from catpart.fitness.l3 import (
     CANDIDATE,
     DECODED,
     DENOMINATOR_TOTAL,
+    DOCUMENTED_NEGATIVE,
     DOCUMENTED_OPEN,
     FULL_CORPUS_PARTS,
     L2_PASS_PARTS,
@@ -49,7 +50,17 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "triage" / "score_l3_constructs.py"
 BR2_CLAIMS = "docs/evidence/data/br2-planar-claims.csv"
 BR3_CLAIMS = "docs/evidence/data/br3-curves-claims.csv"
-ARTIFACTS = (VOCABULARY_PATH, BR2_CLAIMS, BR3_CLAIMS)
+BR4_CLAIMS = "docs/evidence/data/br4-quadrics-claims.csv"
+BR5_CLAIMS = "docs/evidence/data/br5-cgm-nurbs-claims.csv"
+SHELL_CLAIMS = "docs/evidence/data/br6-shell-claims.csv"
+ARTIFACTS = (
+    VOCABULARY_PATH,
+    BR2_CLAIMS,
+    BR3_CLAIMS,
+    BR4_CLAIMS,
+    BR5_CLAIMS,
+    SHELL_CLAIMS,
+)
 REGISTRY_BY_ID = {row.construct_id: row for row in RESOLUTION_REGISTRY}
 
 
@@ -102,30 +113,28 @@ def test_real_repo_headline_is_the_frozen_denominator_coverage() -> None:
         "2b2f54d9fbabe0f09082357e0469a22286fc2e48e4930098c782a2317c9ff611"
     ), "the vocabulary pin moved: regenerate BR6L3-24 before accepting"
     assert score.total == 23
-    assert score.resolved == 12
+    assert score.resolved == 23
     assert document["headline"] == {
-        "resolved": 12,
+        "resolved": 23,
         "total": 23,
-        "rate": 12 / 23,
-        "exact": "12/23",
+        "rate": 1.0,
+        "exact": "23/23",
     }
     assert document["by_outcome"] == {
-        "decoded": 9,
-        "documented-negative": 0,
-        "documented-open": 2,
-        "candidate": 1,
-        "pending-merge": 11,
+        "decoded": 14,
+        "documented-negative": 3,
+        "documented-open": 4,
+        "candidate": 2,
+        "pending-merge": 0,
     }
     assert score.resolved + score.by_outcome[PENDING_MERGE] == score.total
 
 
-def test_real_repo_every_resolved_row_cites_a_claim_in_a_committed_csv() -> None:
+def test_real_repo_every_row_cites_a_claim_in_a_committed_csv() -> None:
     score = score_l3(REPO_ROOT)
+    assert score.by_outcome[PENDING_MERGE] == 0
     for row in score.constructs:
-        if row.outcome == PENDING_MERGE:
-            assert row.claim_id == ""
-            assert not (REPO_ROOT / row.evidence).exists(), row.evidence
-            continue
+        assert row.outcome != PENDING_MERGE, row.construct_id
         assert row.claim_id, row.construct_id
         assert (REPO_ROOT / row.evidence).is_file(), row.evidence
         assert row.citation is not None, row.construct_id
@@ -141,11 +150,21 @@ def test_real_repo_every_resolved_row_cites_a_claim_in_a_committed_csv() -> None
 def test_real_repo_construct_verdicts_are_the_committed_ones() -> None:
     score = score_l3(REPO_ROOT)
     outcomes = {row.construct_id: row.outcome for row in score.constructs}
+    assert outcomes["TOP-01"] == DECODED
+    assert outcomes["TOP-02"] == DOCUMENTED_NEGATIVE
+    assert outcomes["TOP-03"] == DECODED
     assert outcomes["TOP-04"] == DECODED
-    assert outcomes["TOP-01"] == PENDING_MERGE
     assert outcomes["CRV-04"] == DOCUMENTED_OPEN
     assert outcomes["CRV-05"] == DOCUMENTED_OPEN
+    assert outcomes["CRV-06"] == DOCUMENTED_NEGATIVE
     assert outcomes["CRV-08"] == CANDIDATE
+    assert outcomes["SRF-02"] == DECODED
+    assert outcomes["SRF-03"] == DECODED
+    assert outcomes["SRF-04"] == DECODED
+    assert outcomes["SRF-05"] == DOCUMENTED_OPEN
+    assert outcomes["SRF-06"] == DOCUMENTED_OPEN
+    assert outcomes["SRF-07"] == CANDIDATE
+    assert outcomes["SRF-08"] == DOCUMENTED_NEGATIVE
 
 
 def test_real_repo_family_counts_cover_the_23_constructs() -> None:
@@ -167,7 +186,7 @@ def test_corpus_rate_is_reported_alongside_and_never_gates() -> None:
     assert context["construct_file_slots"] == DENOMINATOR_TOTAL * FULL_CORPUS_PARTS
     # The headline is the resolved-construct ratio, never the corpus presence
     # rate: a catalogue with a different prevalence cannot move it.
-    assert document["headline"]["rate"] == 12 / 23
+    assert document["headline"]["rate"] == 1.0
     assert document["headline"]["rate"] != context["presence_rate"]
     assert context["construct_file_slots_used"] == sum(
         row["census"]["corpus_occurrences"] for row in document["constructs"]
@@ -197,12 +216,12 @@ def test_scoring_is_deterministic() -> None:
 
 def test_summary_reports_headline_outcomes_and_corpus_rate() -> None:
     summary = render_summary(score_l3(REPO_ROOT))
-    assert "12/23 resolved" in summary
-    assert "decoded 9" in summary
-    assert "documented-open 2" in summary
-    assert "candidate 1" in summary
-    assert "documented-negative 0" in summary
-    assert "pending-merge 11" in summary
+    assert "23/23 resolved" in summary
+    assert "decoded 14" in summary
+    assert "documented-open 4" in summary
+    assert "candidate 2" in summary
+    assert "documented-negative 3" in summary
+    assert "pending-merge 0" in summary
     assert "never gating" in summary
     assert "no-regret context" in summary
     assert "TOP-04" in summary and "SRF-08" in summary
@@ -244,6 +263,64 @@ def test_citation_with_a_contradicting_label_is_rejected(tmp_path: Path) -> None
         ),
     )
     with pytest.raises(L3Error, match="does not justify outcome"):
+        score_l3(fixture_root(tmp_path), registry=registry)
+
+
+def test_declared_claim_label_mismatch_is_rejected(tmp_path: Path) -> None:
+    # BR5's TOP-02 ceiling row is labelled fact; declaring another token
+    # must fail closed and name both values.
+    registry = with_row(
+        "TOP-02",
+        dataclasses.replace(REGISTRY_BY_ID["TOP-02"], claim_label="candidate"),
+    )
+    with pytest.raises(
+        L3Error, match="labelled 'fact', not the declared claim_label 'candidate'"
+    ):
+        score_l3(fixture_root(tmp_path), registry=registry)
+
+
+def test_declared_claim_label_exact_match_is_accepted(tmp_path: Path) -> None:
+    registry = with_row(
+        "TOP-02",
+        dataclasses.replace(REGISTRY_BY_ID["TOP-02"], claim_label="fact"),
+    )
+    score = score_l3(fixture_root(tmp_path), registry=registry)
+    row = next(row for row in score.constructs if row.construct_id == "TOP-02")
+    assert row.outcome == DOCUMENTED_NEGATIVE
+    assert row.citation is not None
+    assert row.citation["label"] == "fact"
+
+
+def test_documented_negative_still_needs_the_declared_label(tmp_path: Path) -> None:
+    # With no claim_label the outcome table governs: BR5's fact-labelled
+    # ceiling row cannot justify documented-negative on its own.
+    registry = with_row(
+        "TOP-02",
+        dataclasses.replace(REGISTRY_BY_ID["TOP-02"], claim_label=""),
+    )
+    with pytest.raises(L3Error, match="does not justify outcome"):
+        score_l3(fixture_root(tmp_path), registry=registry)
+
+
+def test_inherited_bound_needs_the_declared_claim_construct(tmp_path: Path) -> None:
+    # SRF-06 inherits SRF-05's upper-bound row; without the declaration the
+    # construct-attribution guard rejects the citation.
+    registry = with_row(
+        "SRF-06",
+        dataclasses.replace(REGISTRY_BY_ID["SRF-06"], claim_construct=""),
+    )
+    with pytest.raises(L3Error, match="attributed to 'SRF-05'"):
+        score_l3(fixture_root(tmp_path), registry=registry)
+
+
+def test_declared_claim_construct_mismatch_is_rejected(tmp_path: Path) -> None:
+    registry = with_row(
+        "SRF-06",
+        dataclasses.replace(REGISTRY_BY_ID["SRF-06"], claim_construct="SRF-06"),
+    )
+    with pytest.raises(
+        L3Error, match="not the declared claim_construct 'SRF-06'"
+    ):
         score_l3(fixture_root(tmp_path), registry=registry)
 
 
@@ -452,8 +529,8 @@ def test_pending_merge_is_not_counted_as_resolved(tmp_path: Path) -> None:
         ),
     )
     score = score_l3(fixture_root(tmp_path), registry=registry)
-    assert score.resolved == 11
-    assert score.by_outcome[PENDING_MERGE] == 12
+    assert score.resolved == 22
+    assert score.by_outcome[PENDING_MERGE] == 1
     row = next(row for row in score.constructs if row.construct_id == "TOP-04")
     assert row.citation is None
     assert row.claim_id == ""
@@ -488,6 +565,18 @@ def test_pending_row_cannot_carry_a_claim_id() -> None:
         )
 
 
+def test_pending_row_cannot_carry_a_claim_label() -> None:
+    with pytest.raises(L3Error, match="cannot carry a claim label"):
+        Resolution(
+            construct_id="TOP-04",
+            outcome=PENDING_MERGE,
+            evidence="docs/evidence/data/br9-absent-claims.csv",
+            claim_id="",
+            owner="BR9",
+            claim_label="fact",
+        )
+
+
 # --- CLI contract --------------------------------------------------------
 
 
@@ -506,9 +595,9 @@ def test_cli_writes_json_document_and_summary(tmp_path: Path) -> None:
     proc = run_cli("--json-out", str(json_out), "--summary-out", str(summary_out))
     assert proc.returncode == 0, proc.stdout + proc.stderr
     document = json.loads(json_out.read_text(encoding="utf-8"))
-    assert document["headline"]["exact"] == "12/23"
+    assert document["headline"]["exact"] == "23/23"
     summary = summary_out.read_text(encoding="utf-8")
-    assert summary.startswith("L3 construct coverage (frozen denominator): 12/23")
+    assert summary.startswith("L3 construct coverage (frozen denominator): 23/23")
     assert json_out.read_text(encoding="utf-8").endswith("\n")
 
 
@@ -517,7 +606,7 @@ def test_cli_defaults_to_json_on_stdout_and_summary_on_stderr() -> None:
     assert proc.returncode == 0, proc.stderr
     document = json.loads(proc.stdout)
     assert document["schema"] == "l3-construct-coverage-v0"
-    assert "12/23 resolved" in proc.stderr
+    assert "23/23 resolved" in proc.stderr
 
 
 def test_cli_fails_closed_on_a_broken_root(tmp_path: Path) -> None:

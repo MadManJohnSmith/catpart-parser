@@ -1,14 +1,14 @@
 claim,statement,label,scope,observations,passes,rate,note
 BR6L3-01_denominator_frozen,frozen construct-vocabulary rows admitted by the L3 denominator (BR1 census freeze),fact,frozen vocabulary,23,23,1.0,docs/evidence/data/brep-construct-vocabulary.csv
-BR6L3-02_resolved_constructs,frozen constructs with a cited verdict at this commit (decoded + documented-negative + documented-open + candidate; the L3 headline numerator),fact,frozen vocabulary,23,12,0.521739,headline; pending-merge is an absence marker and is never resolved
-BR6L3-03_decoded,frozen constructs whose cited verdict is decoded,fact,frozen vocabulary,23,9,0.391304,"TOP-04, TOP-05, TOP-06, TOP-07, CRV-01, CRV-02, CRV-03, CRV-07, SRF-01"
-BR6L3-04_documented_open,frozen constructs closed open with published ceiling arithmetic,fact,frozen vocabulary,23,2,0.086957,"CRV-04, CRV-05 (BR3 conic ceiling rows)"
-BR6L3-05_candidate,frozen constructs whose cited evidence is labelled candidate,fact,frozen vocabulary,23,1,0.043478,"CRV-08 (parameter-carrier evidence, trim-bound semantics open)"
-BR6L3-06_documented_negative,frozen constructs closed with a documented negative at this commit,fact,frozen vocabulary,23,0,0.0,"none; the enum supports the outcome, no BR2/BR3 construct closed as a negative"
-BR6L3-07_pending_merge,"frozen constructs whose governing claims CSV is absent at this commit (pending-merge rows, excluded from the numerator)",fact,frozen vocabulary,23,11,0.478261,BR4 six + BR5 four + BR6 shell one
-BR6L3-08_pending_br4,pending-merge rows owned by BR4 (SRF-02 .. SRF-07),fact,frozen vocabulary,23,6,0.26087,docs/evidence/data/br4-quadrics-claims.csv absent at this commit
-BR6L3-09_pending_br5,"pending-merge rows owned by BR5 (TOP-01, TOP-02, CRV-06, SRF-08)",fact,frozen vocabulary,23,4,0.173913,docs/evidence/data/br5-cgm-nurbs-claims.csv absent at this commit
-BR6L3-10_pending_br6_shell,pending-merge rows owned by the BR6 shell slice (TOP-03),fact,frozen vocabulary,23,1,0.043478,declared expected artifact docs/evidence/data/br6-shell-claims.csv
+BR6L3-02_resolved_constructs,"frozen constructs with a cited verdict (decoded + documented-negative + documented-open + candidate; the L3 headline numerator)",fact,frozen vocabulary,23,23,1.0,headline; every frozen construct resolved on merged BR2/BR3/BR4/BR5/shell evidence
+BR6L3-03_decoded,frozen constructs whose cited verdict is decoded,fact,frozen vocabulary,23,14,0.608696,"TOP-01, TOP-03, TOP-04, TOP-05, TOP-06, TOP-07, CRV-01, CRV-02, CRV-03, CRV-07, SRF-01, SRF-02, SRF-03, SRF-04"
+BR6L3-04_documented_open,frozen constructs closed open with published ceiling arithmetic,fact,frozen vocabulary,23,4,0.173913,"CRV-04, CRV-05 (BR3 conic ceilings); SRF-05, SRF-06 (BR4 classified upper bound)"
+BR6L3-05_candidate,frozen constructs whose cited evidence is labelled candidate,fact,frozen vocabulary,23,2,0.086957,"CRV-08 (parameter-carrier evidence, trim-bound semantics open); SRF-07 (negative-space signature)"
+BR6L3-06_documented_negative,frozen constructs closed with a documented negative and a numeric ceiling,fact,frozen vocabulary,23,3,0.130435,"TOP-02 (BR5-06b); CRV-06 and SRF-08 (BR5-06d): a measured ceiling, not an absence claim"
+BR6L3-07_pending_merge,"frozen constructs whose governing claims CSV is absent (pending-merge rows, excluded from the numerator)",fact,frozen vocabulary,23,0,0.0,none: BR4/BR5/shell evidence merged and every row resolved
+BR6L3-08_pending_br4,pending-merge rows owned by BR4 at this commit (0: SRF-02 .. SRF-07 resolved),fact,frozen vocabulary,23,0,0.0,SRF-02 .. SRF-07 resolved on docs/evidence/data/br4-quadrics-claims.csv
+BR6L3-09_pending_br5,"pending-merge rows owned by BR5 at this commit (0: TOP-01, TOP-02, CRV-06, SRF-08 resolved)",fact,frozen vocabulary,23,0,0.0,resolved on docs/evidence/data/br5-cgm-nurbs-claims.csv
+BR6L3-10_pending_br6_shell,pending-merge rows owned by the BR6 shell slice at this commit (0: TOP-03 resolved),fact,frozen vocabulary,23,0,0.0,resolved on docs/evidence/data/br6-shell-claims.csv
 BR6L3-11_topology_rows,frozen vocabulary rows in the topology family,fact,frozen vocabulary,23,7,0.304348,TOP-01 .. TOP-07
 BR6L3-12_curve_rows,frozen vocabulary rows in the curve family,fact,frozen vocabulary,23,8,0.347826,CRV-01 .. CRV-08
 BR6L3-13_surface_rows,frozen vocabulary rows in the surface family,fact,frozen vocabulary,23,8,0.347826,SRF-01 .. SRF-08
@@ -16,10 +16,15 @@ BR6L3-14_corpus_parts,manifest parts in the full corpus population (anchored to 
 BR6L3-15_l2_pass_parts,L2-pass manifest parts (passes column anchored to BR2-01_face_files_l2_pass),fact,L2-pass population,1442,1089,0.755201,docs/evidence/data/br2-planar-claims.csv:BR2-01_face_files_l2_pass
 BR6L3-16_construct_file_slots_used,construct x part presence pairs summed over the frozen vocabulary's census corpus_occurrences column,fact,full corpus,33166,21659,0.6530483024784418,"corpus rate context: reported alongside the headline, never gating"
 BR6L3-17_construct_file_slots,possible construct x part presence slots (frozen constructs x corpus parts),fact,full corpus,33166,33166,1.0,denominator of BR6L3-16
-BR6L3-18_cited_claims_csvs,distinct committed claims CSVs cited by resolved constructs,fact,committed evidence,2,2,1.0,br2-planar-claims.csv; br3-curves-claims.csv
-BR6L3-19_citations_verified,resolved constructs whose cited claim id resolves to exactly one row of its cited CSV (and label matches the outcome),fact,committed evidence,12,12,1.0,the scorer fails closed on any mismatch
+BR6L3-18_cited_claims_csvs,distinct committed claims CSVs cited by resolved constructs,fact,committed evidence,5,5,1.0,br2-planar-claims.csv; br3-curves-claims.csv; br4-quadrics-claims.csv; br5-cgm-nurbs-claims.csv; br6-shell-claims.csv
+BR6L3-19_citations_verified,resolved constructs whose cited claim id resolves to exactly one row of its cited CSV (and label matches the declared outcome or claim_label),fact,committed evidence,23,23,1.0,the scorer fails closed on any mismatch
 BR6L3-20_no_regret_l1_dev,last accepted history row's L1 Dev clean-parse counts (read-only; history not appended),fact,no-regret context,1751,1745,0.996573,fitness/history.jsonl last accepted row 20261113T231506Z-c2ab64
 BR6L3-21_no_regret_l1_held_out,last accepted history row's L1 Held-out clean-parse counts,fact,no-regret context,73,73,1.0,fitness/history.jsonl last accepted row 20261113T231506Z-c2ab64
 BR6L3-22_no_regret_l2_dev,last accepted history row's L2 Dev geometry-sanity counts,fact,no-regret context,1381,1033,0.748009,fitness/history.jsonl last accepted row 20261113T231506Z-c2ab64
 BR6L3-23_no_regret_l2_held_out,last accepted history row's L2 Held-out geometry-sanity counts,fact,no-regret context,61,56,0.918033,fitness/history.jsonl last accepted row 20261113T231506Z-c2ab64
 BR6L3-24_vocabulary_sha256,sha256 of the frozen vocabulary file the headline was scored against,fact,committed evidence,1,1,1.0,2b2f54d9fbabe0f09082357e0469a22286fc2e48e4930098c782a2317c9ff611
+BR6L3-25_resolved_br4,frozen constructs resolved on the merged BR4 quadrics evidence (SRF-02 .. SRF-07),fact,frozen vocabulary,23,6,0.26087,docs/evidence/data/br4-quadrics-claims.csv
+BR6L3-26_resolved_br5,"frozen constructs resolved on the merged BR5 CGM/NURBS evidence (TOP-01, TOP-02, CRV-06, SRF-08)",fact,frozen vocabulary,23,4,0.173913,docs/evidence/data/br5-cgm-nurbs-claims.csv
+BR6L3-27_resolved_br6_shell,frozen constructs resolved on the merged BR6 shell slice evidence (TOP-03),fact,frozen vocabulary,23,1,0.043478,docs/evidence/data/br6-shell-claims.csv
+BR6L3-28_declared_claim_labels,resolved rows carrying a declared claim_label that pins the cited row's label exactly,fact,committed evidence,23,11,0.478261,"the 5 documented-negative/documented-open rows need it (BR labels are fact); the 6 decoded BR4/BR5/shell rows pin it too"
+BR6L3-29_inherited_bound_citations,resolved rows citing a sibling construct's bound under a declared claim_construct,fact,committed evidence,23,1,0.043478,SRF-06 cites SRF-05_upper_bound_allscopes_presence; an undeclared foreign attribution is rejected
