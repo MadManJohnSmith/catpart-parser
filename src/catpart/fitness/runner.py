@@ -34,19 +34,30 @@ Implements the fitness protocol of ADR-0001 for ticket #14. Per run,
    per-split component signals (closed-volume-where-expected, degenerate
    counts, open shells) go into the run report, never collapsed into
    the headline scalar;
-5. writes the full report to ``fitness/reports/<run_id>.json`` — per
+5. scores the L3 construct-coverage scalar (ticket #58) from the
+   committed evidence artifacts of the repository that holds
+   ``docs/evidence`` — derived from the manifest location, never from
+   the working directory — through :func:`catpart.fitness.l3.score_l3`.
+   L3 has no Dev/Held-out split: coverage is corpus-split independent,
+   so the row and the report carry one ``{rate, resolved, total,
+   by_outcome}`` block. A scorer failure aborts the run before anything
+   is written: the runner never records a null L3 over a broken evidence
+   tree;
+6. writes the full report to ``fitness/reports/<run_id>.json`` — per
    ADR-0001 the committed history is ``fitness/history.jsonl`` plus a
    report per run;
-6. appends exactly one row — accepted or rejected — to the committed
+7. appends exactly one row — accepted or rejected — to the committed
    append-only ``fitness/history.jsonl``, including the corpus digest:
    the SHA-256 of the manifest file bytes (the manifest binds the
    corpus: per-file digests included; re-verifying every binary on each
    run would re-hash ~3.4 GB per run for no extra protection the
    manifest does not already record);
-7. decides acceptance with the no-regret rule against the last accepted
+8. decides acceptance with the no-regret rule against the last accepted
    row (ADR-0001, extended by ticket #33: L1 Dev rises AND Held-out
    does not fall; L2 does not fall on either split; at least one
-   comparable level's Dev rises). A first run, a run whose baseline row
+   comparable level's Dev rises. Ticket #58 adds L3: recording it for
+   the first time accepts with L1/L2 intact, a higher coverage rate
+   accepts, a lower one rejects). A first run, a run whose baseline row
    carries a different corpus digest, or a run whose baseline predates
    the L2 scalar, has no valid baseline and is accepted as the new
    baseline with the comparison recorded as void.
@@ -79,17 +90,20 @@ from catpart.fitness.history import (
     REASON_REJECTED_BOTH,
     REASON_REJECTED_HELD_OUT,
     REASON_REJECTED_L1_DEV,
+    CoverageScore,
     LevelScore,
     NoRegret,
     PartScore,
     SplitScore,
     append_row,
+    coverage_from_scalars,
     evaluate_no_regret,
     level_scores_from_json,
     level_scores_to_json,
     load_last_accepted_row,
 )
 from catpart.fitness.invariants import check_invariants
+from catpart.fitness.l3 import OUTCOME_ORDER, score_l3
 from catpart.geometry import ExportError, build_export
 from catpart.geometry.export import WARN_NO_FACETS, WARN_OPEN_SHELL
 from catpart.schema import load_schema
@@ -488,6 +502,40 @@ def _aggregate(
     return splits, totals, level_scores
 
 
+def _l3_repo_root(manifest_path: Path) -> Path | None:
+    """The repository root carrying the L3 evidence, or ``None``.
+
+    The L3 headline is scored from the committed evidence artifacts, so
+    its root is the directory that holds ``docs/evidence`` — derived by
+    walking up from the manifest, never assumed to be the working
+    directory. ``None`` means this checkout carries no evidence tree at
+    all (a manifest-only fixture repository); the run then records
+    ``L3: null`` because there is nothing to score, and any failure
+    *inside* a repo that does carry the evidence aborts the run instead.
+    """
+    start = manifest_path.resolve().parent
+    for candidate in (start, *start.parents):
+        if (candidate / "docs" / "evidence").is_dir():
+            return candidate
+    return None
+
+
+def _l3_scalar(repo_root: Path) -> CoverageScore:
+    """Score the L3 construct coverage from ``repo_root``'s committed evidence.
+
+    ``score_l3`` fails closed (:class:`catpart.fitness.l3.L3Error`) on a
+    changed denominator, a dead citation or an unreadable artifact; the
+    error is deliberately not caught here — a run must never write a null
+    L3 over a broken evidence tree.
+    """
+    score = score_l3(repo_root)
+    return CoverageScore(
+        resolved=score.resolved,
+        total=score.total,
+        by_outcome={outcome: score.by_outcome[outcome] for outcome in OUTCOME_ORDER},
+    )
+
+
 def _per_file_record(
     row: dict[str, str],
     classification: str,
@@ -628,6 +676,9 @@ def run_fitness(
 
     splits, totals, level_scores = _aggregate(results)
 
+    l3_root = _l3_repo_root(manifest_path)
+    l3_score = _l3_scalar(l3_root) if l3_root is not None else None
+
     baseline = load_last_accepted_row(fitness_dir / "history.jsonl")
     if baseline is None:
         accepted = True
@@ -647,7 +698,9 @@ def run_fitness(
             # accepted history. This is NOT the corpus-change precedent:
             # there the digest itself differs and no level is comparable.
             # Flat L1 + the first L2 scalar is the expected transition and
-            # is accepted (review of #33, 2026-11-10).
+            # is accepted (review of #33, 2026-11-10). L3 is not evaluated
+            # here either: the baseline predates both later scalars, so the
+            # whole comparison is the L1 transition (ticket #58).
             l1_base, l1_cur = baseline_scores["L1"], level_scores["L1"]
             if l1_base is None or l1_cur is None:  # defensive; L1 always exists
                 raise FitnessError("cannot evaluate the no-regret rule: L1 scalar missing")
@@ -672,7 +725,14 @@ def run_fitness(
             )
         else:
             try:
-                verdict = evaluate_no_regret(baseline_scores, level_scores)
+                verdict = evaluate_no_regret(
+                    baseline_scores,
+                    level_scores,
+                    baseline_l3=coverage_from_scalars(
+                        baseline["scalars"], "baseline row scalars"
+                    ),
+                    current_l3=l3_score,
+                )
             except ValueError as exc:
                 raise FitnessError(f"cannot evaluate the no-regret rule: {exc}") from exc
             accepted = verdict.accepted
@@ -680,7 +740,7 @@ def run_fitness(
             no_regret = verdict
 
     instant = clock()
-    scalars_json = level_scores_to_json(level_scores)
+    scalars_json = level_scores_to_json(level_scores, l3_score)
     report = {
         "schema_version": 0,
         "inspect_schema_version": INSPECT_SCHEMA_VERSION,

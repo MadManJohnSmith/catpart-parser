@@ -43,11 +43,13 @@ def history_row(
     dev: tuple[int, int] = (1745, 1751),
     held_out: tuple[int, int] = (73, 73),
     l2: tuple[int, int, int, int] | None = None,
+    l3: dict | None = None,
 ) -> dict:
     """One synthetic row in the committed fitness-history-row-v0 shape.
 
     ``l2`` (dev pass/total, held-out pass/total) populates ``scalars.L2``
-    in the G5 shape; ``None`` keeps the pre-G5 null.
+    in the G5 shape; ``None`` keeps the pre-G5 null. ``l3`` is the
+    construct-coverage block (ticket #58); ``None`` keeps the pre-#58 null.
     """
     if l2 is None:
         l2_scalars = None
@@ -84,9 +86,25 @@ def history_row(
                 },
             },
             "L2": l2_scalars,
-            "L3": None,
+            "L3": l3,
         },
         "report": f"reports/{run_id}.json",
+    }
+
+
+def l3_block(resolved: int = 23, total: int = 23) -> dict:
+    """The L3 construct-coverage block as a run records it (ticket #58)."""
+    return {
+        "rate": resolved / total,
+        "resolved": resolved,
+        "total": total,
+        "by_outcome": {
+            "decoded": 14,
+            "documented-negative": 3,
+            "documented-open": 4,
+            "candidate": 2,
+            "pending-merge": total - resolved,
+        },
     }
 
 
@@ -196,6 +214,73 @@ def test_accepted_row_with_malformed_l2_object_fails_closed(tmp_path: Path) -> N
     row["scalars"]["L2"] = {"dev": {"clean": 1, "total": 2}}  # L1-shaped, not pass/total
     history = write_history(tmp_path, [row])
     with pytest.raises(publish.PublishError, match="invalid L2 dev pass/total"):
+        publish.render_files(history)
+
+
+def test_history_json_carries_the_l3_scalar_next_to_l1_and_l2(tmp_path: Path) -> None:
+    # Ticket #58: the trend gains the single-valued L3 construct-coverage
+    # block for rows that carry it; pre-#58 rows publish a null entry. The
+    # badge stays L1 (one headline per level, ADR-0001).
+    history = write_history(
+        tmp_path,
+        [
+            history_row("20261113T231506Z-c2ab64", "2026-11-13T23:15:06Z", True),
+            history_row(
+                "20261118T120000Z-abcdef",
+                "2026-11-18T12:00:00Z",
+                True,
+                dev=(1746, 1751),
+                l3=l3_block(),
+            ),
+        ],
+    )
+    document = json.loads(publish.render_files(history)[publish.HISTORY_FILENAME])
+    assert document["runs"][0]["l3"] is None
+    assert document["runs"][1]["l3"] == {
+        "resolved": 23,
+        "total": 23,
+        "pct": 100.0,
+        "by_outcome": l3_block()["by_outcome"],
+    }
+    # L3 has no split: one scalar, never a dev/held-out pair.
+    assert "dev" not in document["runs"][1]["l3"]
+    assert "held-out" not in document["runs"][1]["l3"]
+
+    endpoint = json.loads(publish.render_files(history)[publish.LATEST_FILENAME])
+    assert endpoint["label"] == "L1 clean-parse (Dev)"
+
+
+def test_accepted_row_with_bad_l3_counts_fails_closed(tmp_path: Path) -> None:
+    row = history_row(
+        "20261118T120000Z-abcdef", "2026-11-18T12:00:00Z", True,
+        l3=l3_block(resolved=24, total=23),
+    )
+    history = write_history(tmp_path, [row])
+    with pytest.raises(publish.PublishError, match="invalid L3 resolved/total"):
+        publish.render_files(history)
+
+
+def test_accepted_row_with_missing_l3_counts_fails_closed(tmp_path: Path) -> None:
+    block = l3_block()
+    del block["resolved"]
+    row = history_row(
+        "20261118T120000Z-abcdef", "2026-11-18T12:00:00Z", True, l3=block
+    )
+    history = write_history(tmp_path, [row])
+    with pytest.raises(publish.PublishError, match="invalid L3 resolved/total"):
+        publish.render_files(history)
+
+
+def test_accepted_row_with_malformed_l3_outcome_counts_fails_closed(
+    tmp_path: Path,
+) -> None:
+    block = l3_block()
+    block["by_outcome"] = {"decoded": "many"}
+    row = history_row(
+        "20261118T120000Z-abcdef", "2026-11-18T12:00:00Z", True, l3=block
+    )
+    history = write_history(tmp_path, [row])
+    with pytest.raises(publish.PublishError, match="invalid L3 by_outcome"):
         publish.render_files(history)
 
 

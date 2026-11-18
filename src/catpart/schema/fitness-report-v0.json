@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/MadManJohnSmith/catpart-parser/main/src/catpart/schema/fitness-report-v0.json",
   "title": "catpart-fitness run report, schema v0",
-  "description": "Full report of one catpart-fitness run (ADR-0001: a report per run, kept next to the committed history). It is the audit trail behind the appended history row: per-file classifications, per-split aggregates and the no-regret verdict. Classification vocabulary follows ticket #14 and the Clean parse definition in GLOSSARY.md: clean, schema-invalid (validated against the committed catpart-inspect schema - v1 as of ticket #23), crash (catpart-inspect raised, including the documented file-level refusals), missing-invariant (output valid but a minimal invariant fails), plus unavailable for manifest rows whose file is not on disk (never parsed, counts against the rate denominator). Since ticket #33 it also carries the L2 geometry-sanity scalar (scalars.L2, pass/total over kind=part rows), the per-split l2 detail blocks and per-part l2 records. Evolution is additive within a schema version: consumers must ignore properties they do not know.",
+  "description": "Full report of one catpart-fitness run (ADR-0001: a report per run, kept next to the committed history). It is the audit trail behind the appended history row: per-file classifications, per-split aggregates and the no-regret verdict. Classification vocabulary follows ticket #14 and the Clean parse definition in GLOSSARY.md: clean, schema-invalid (validated against the committed catpart-inspect schema - v1 as of ticket #23), crash (catpart-inspect raised, including the documented file-level refusals), missing-invariant (output valid but a minimal invariant fails), plus unavailable for manifest rows whose file is not on disk (never parsed, counts against the rate denominator). Since ticket #33 it also carries the L2 geometry-sanity scalar (scalars.L2, pass/total over kind=part rows), the per-split l2 detail blocks and per-part l2 records; since ticket #58 scalars.L3 carries the construct-coverage scalar (resolved/total over the frozen 23-construct denominator, no split). Evolution is additive within a schema version: consumers must ignore properties they do not know.",
   "type": "object",
   "properties": {
     "schema_version": {
@@ -179,11 +179,25 @@
           "required": ["dev", "held-out"],
           "additionalProperties": true
         },
-        "L3": { "type": "null" }
+        "L3": {
+          "type": ["object", "null"],
+          "description": "The L3 construct-coverage scalar (ADR-0001, ticket #58), identical to the history row's block: resolved / total over the frozen 23-construct denominator, with the outcome breakdown. L3 has NO dev/held-out split (construct coverage is corpus-split independent). Null in reports emitted before the scalar existed.",
+          "properties": {
+            "rate": { "type": "number", "minimum": 0, "maximum": 1 },
+            "resolved": { "type": "integer", "minimum": 0 },
+            "total": { "type": "integer", "minimum": 1 },
+            "by_outcome": {
+              "type": "object",
+              "additionalProperties": { "type": "integer", "minimum": 0 }
+            }
+          },
+          "required": ["rate", "resolved", "total"],
+          "additionalProperties": true
+        }
       },
       "required": ["L1", "L2", "L3"],
       "additionalProperties": true,
-      "description": "Per-level scalars (ADR-0001 keeps room for L1/L2/L3); L2 is populated since ticket #33, L3 remains null until that level exists."
+      "description": "Per-level scalars (ADR-0001). L1/L2 are split-shaped; L3 is a single construct-coverage scalar (ticket #58). L2 is populated since ticket #33."
     },
     "accepted": {
       "type": "boolean",

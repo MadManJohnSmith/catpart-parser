@@ -450,11 +450,10 @@ above), `--sha16`/`--include-sha16`, `--limit`, `--corpus-root`, and
 `--out` passed explicitly (regeneration rule). The run is deterministic:
 same manifest order, same rows, verified by a second run.
 
-L3 counting rule (unchanged): a construct is **resolved** iff a committed
-decoder *or* a documented negative covers it; `candidate` is not resolved.
-Denominator = the 23 frozen vocabulary rows, never their per-class counts
-(BR3 §6.3, BR4 §6.1). `scalars.L3` is reported, never gating (ROADMAP
-Phase 7); no-regret keeps comparing L1/L2 only.
+**L3 counting rule fixed here** (the number stays uncommitted until the run): a construct is **resolved** iff it is decoded, or closed with a documented negative/open plus published ceiling arithmetic; `candidate` and `pending-merge` are not resolved. Denominator = the 23 frozen rows keyed by `construct_id`, never their per-class counts — BR3 §6.3 and BR4 §6.1 record that CRV-04/05/08 and SRF-03..07's frozen counts have no committed generator. The row lands as `scalars.L3 = {"rate","resolved","total","by_outcome"}`, reported alongside L1/L2 **under no-regret**: a fall or a dropped scalar rejects the run, while the corpus rate stays reported and never gates (ROADMAP Phase 7). A flat L3 is not an increment.
+
+The graph/STEP slice's own rows are the `BR6G-*` claims listed above; they
+are not part of the L3 construct denominator.
 
 ## 7. Detector honesty — what this graph does not decode
 
