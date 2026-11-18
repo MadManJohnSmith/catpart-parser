@@ -62,8 +62,8 @@ L3_BLOCK = {
     "by_outcome": {
         "decoded": 14,
         "documented-negative": 3,
-        "documented-open": 4,
-        "candidate": 2,
+        "documented-open": 6,
+        "candidate": 0,
         "pending-merge": 0,
     },
 }
