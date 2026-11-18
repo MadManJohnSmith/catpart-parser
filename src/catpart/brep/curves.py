@@ -17,7 +17,7 @@ corpus-wide on the L2-pass population by
       ``[f0..f9]`` with the G2 ``[P][Q][P]+|Q|`` reading (``f6:f9``
       repeats ``f0:f3`` bit-exact, ``f9 == ||f3:f6||``) verified on the
       G2 small-store worked example and on a corpus subpopulation
-      (P-rep 51,002/508,086 = 10.04%, ``|Q|`` 54,775/508,086 = 10.78%,
+      (P-rep 51,002/508,138 = 10.04%, ``|Q|`` 54,775/508,138 = 10.78%,
       skip-42 walk).  The per-field semantics of the remaining blocks
       stay open — the two laws hold and fail on records of the SAME
       store (per-store P-rep rates spread 0..1, median 0.6 over the 926
@@ -57,6 +57,10 @@ Detector honesty (one line per class, echoed in the evidence note):
   streams can still carry pseudo-records (excluded only by the
   plausibility cap); it also does not discriminate which topology
   (edge, tessellation plate, mid-ring) consumes a record.
+- The vertex-pool walker (``TOP-07``, delegated to
+  ``catpart.geometry.pool``) validates the structural walk only
+  (wrapper shape, count field, record walk): it does NOT discriminate
+  vertex identity, ordering or duplicates.
 - ``decode_line`` (``33 32``) decodes the 40-B block LAYOUT only: it
   does NOT enforce the G2 ``[P][Q][P]+|Q|`` reading (laws measured as
   flags — they hold on a subpopulation and fail within single stores)
@@ -86,7 +90,6 @@ from catpart.geometry import pool
 from catpart.geometry.errors import ExportError
 
 WRAPPER = pool.FULL_WRAP
-POOL_SUBKIND = pool.POOL_SUBKIND
 EDGE_SUBKIND = pool.EDGE_SUBKIND
 UNWRAPPED_TAG = b"\x01\x01"
 
@@ -103,7 +106,6 @@ LINE_BLOCK = struct.Struct("<10f")
 HEADER_BYTES = 7
 MAX_RECORD_LEN = 256
 MAX_VALUE = 1e7  # pool-scale plausibility cap for BE-float families
-MAX_REFS = 4096  # per-record reference cap (composite-space walker)
 MAX_GROUP_RECORDS = 1_000_000
 MAX_LIST_RECORDS = 5000
 DIR_TOL = 2e-3  # unit-norm tolerance for the 33 38 direction pair
@@ -198,10 +200,11 @@ def iter_curve_records(data, lo: int, hi: int) -> list[CurveRecord]:
     compressed streams carry ``33 3X`` byte pairs whose "headers"
     decode as garbage and must not absorb the walk (C1).  The canonical
     ``33 32`` form (``len == 2``) carries a 40-B f32le block after the
-    family bytes (byte-verified: 508,086/508,086 corpus blocks decode
-    finite), so the walker resumes past the block instead of rescanning
-    inside it.  Unusable candidates are skipped; the walk is a census
-    walker, not a structural validator.
+    family bytes (byte-verified: 508,086/508,138 corpus blocks decode
+    finite; the 52 rejects raise the non-finite/out-of-scale branch),
+    so the walker resumes past the block instead of rescanning inside
+    it.  Unusable candidates are skipped; the walk is a census walker,
+    not a structural validator.
     """
     out: list[CurveRecord] = []
     p = lo
@@ -255,7 +258,7 @@ def line_laws(block: bytes) -> tuple[bool, bool]:
     Returns ``(p_rep_ok, length_ok)``: the block's second P triple
     (floats ``f6..f8``, record-relative ``+0x21 (33d)``..``+0x29
     (41d)``) repeats the first triple (``f0..f2``,
-    ``+0x15 (21d)``..``+0x1D (29d)``) bit-exact, and the float ``f9``
+    ``+0x09 (9d)``..``+0x11 (17d)``) bit-exact, and the float ``f9``
     (record-relative ``+0x2D (45d)``) equals ``|Q| = ||Q||`` over the Q
     triple ``f3..f5`` (``+0x15 (21d)``..``+0x1D (29d)``; relative
     tolerance ``LEN_TOL`` for the f32 rounding of the stored length).
@@ -414,7 +417,7 @@ def _walk_records(data, pos: int, count: int, end: int, width: int):
     """Walk ``count`` records ``02 <n> <n refs>``; exact end-alignment.
 
     Returns ``(records, ok)``: ``ok`` requires every record to open
-    with ``0x02``, carry ``n <= MAX_REFS`` and land exactly on ``end``.
+    with ``0x02`` and land exactly on ``end``.
     """
     records = []
     size = len(data)
@@ -423,7 +426,7 @@ def _walk_records(data, pos: int, count: int, end: int, width: int):
             return (), False
         n = data[pos + 1]
         pos += 2
-        if n > MAX_REFS or pos + width * n > size:
+        if pos + width * n > size:
             return (), False
         refs = []
         for _j in range(n):

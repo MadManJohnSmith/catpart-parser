@@ -41,6 +41,15 @@ def record(family: int, payload: bytes, tag_a: int = 0x01, tag_b: int = 0x22,
     )
 
 
+def curve_record(family: int, payload: bytes, length: int | None = None):
+    """A decoded-side ``CurveRecord`` for direct decoder fixtures."""
+    ln = len(payload) if length is None else length
+    return curves.CurveRecord(
+        offset=0, family=family, tag_a=0x01, ident=15,
+        length=ln, payload=payload, end=2 + ln,
+    )
+
+
 def line_block(p, q, length: float | None = None) -> bytes:
     """A 40-B [P][Q][P]+|Q| f32le block."""
     if length is None:
@@ -108,8 +117,25 @@ def test_circle_negative_zero_radius():
 
 
 def test_circle_negative_nan_center():
+    # decode_circle's own structural branch: the payload is long enough
+    # but the center is non-finite.
+    rec = curve_record(
+        curves.FAMILY_CIRCLE, be_f32(float("nan"), 0.0, 0.0, 2.0) + b"\x00\x80"
+    )
+    with pytest.raises(ExportError):
+        curves.decode_circle(rec)
+
+
+def test_circle_negative_short_payload():
+    rec = curve_record(curves.FAMILY_CIRCLE, be_f32(1.0, 2.0, 3.0), length=12)
+    with pytest.raises(ExportError):
+        curves.decode_circle(rec)
+
+
+def test_walker_skips_non_finite_circle():
+    # The walker's plausibility cap, separate from decode_circle: a
+    # non-finite payload never becomes a record.
     rec = record(curves.FAMILY_CIRCLE, be_f32(float("nan"), 0.0, 0.0, 2.0))
-    # The walker's plausibility cap must skip the pseudo-record entirely.
     assert curves.iter_curve_records(rec, 0, len(rec)) == []
 
 
@@ -152,6 +178,17 @@ def test_conic_zero_direction_sentinel_accepts():
     assert conic.direction == (0.0, 0.0)
 
 
+def test_conic_negative_short_payload():
+    # 7 fields are present but the payload is below the 30-B layout.
+    rec = curve_record(
+        curves.FAMILY_CONIC,
+        be_f32(3.0, 4.0, 5.0, 0.6, 0.8, 3.0, 1.0),
+        length=28,
+    )
+    with pytest.raises(ExportError):
+        curves.decode_conic(rec)
+
+
 # -------------------------------------------------------------- midring
 
 
@@ -171,6 +208,17 @@ def test_midring_negative_non_unit_direction():
     (rec_w,) = curves.iter_curve_records(rec, 0, len(rec))
     with pytest.raises(ExportError):
         curves.decode_midring(rec_w)
+
+
+def test_midring_negative_short_payload():
+    # 6 fields are present but the payload is below the 26-B layout.
+    rec = curve_record(
+        curves.FAMILY_MIDRING,
+        be_f32(1.0, 2.0, 3.0, math.cos(1.2), math.sin(1.2), -2.36),
+        length=24,
+    )
+    with pytest.raises(ExportError):
+        curves.decode_midring(rec)
 
 
 # ----------------------------------------------------------- edge groups

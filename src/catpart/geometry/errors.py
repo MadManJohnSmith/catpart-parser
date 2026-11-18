@@ -24,8 +24,8 @@ convention of kebab-case classes plus evidence-citing detail):
   or its catalog tail matches neither the N6 trailer laws nor the two
   stage-3a relaxed-tail recovery families (dword8-overshoot, padded).
 - ``malformed-pool-group``: a ``01 06`` pool group's walked vertex-record
-  count does not equal its count field (G2 claim P2g violation; 2,090/
-  2,090 corpus groups walk exactly, so a mismatch is broken structure).
+  count does not equal its count field (G2 claim P2g violation; 2,326/
+  2,326 corpus groups walk exactly, so a mismatch is broken structure).
 - ``malformed-pool-vertex``: non-finite (NaN/inf) coordinates in the
   pool (G2 claim P3 violation; 100% finite corpus-wide).
 - ``unreadable-file`` / ``io-error``: input path cannot be read, output
