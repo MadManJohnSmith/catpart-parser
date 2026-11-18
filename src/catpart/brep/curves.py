@@ -78,6 +78,14 @@ Detector honesty (one line per class, echoed in the evidence note):
 - ``decode_edge_group`` does not discriminate the element-space
   binding of its references (composite numbering, F8-corrected: refs
   index the full merged space, not only the pool).
+- :func:`carries_trim_parameters` (CRV-08, 2026-11-18) reads the
+  record FAMILY only: it says which families expose a decoded
+  trim-parameter surface, never whether a given record is trimmed.
+  ``33 37`` decodes a full circle with no trim slot and ``33 32`` is
+  already bounded by its two endpoints, so neither is admitted; within
+  the admitted families the 2-B trailers are undecoded and no field
+  separates a trimmed from an untrimmed instance.  The committed CRV-08
+  ceiling is the wider any-walked-curve-record superset (BR3 note §7).
 """
 
 from __future__ import annotations
@@ -98,6 +106,18 @@ FAMILY_LINE = 0x32
 FAMILY_MIDRING = 0x33
 FAMILY_CIRCLE = 0x37
 FAMILY_CONIC = 0x38
+
+#: Families whose DECODED payload exposes a parameter surface beyond the
+#: two endpoints — the narrower CRV-08 carrier reading:
+#: ``33 33`` (center + in-plane direction pair + radius + 2-B trailer)
+#: and ``33 38`` (center + direction pair + axes a/b + 2-B trailer).
+#: ``33 37`` decodes a full circle with no trim slot and ``33 32`` a
+#: segment already bounded by its two points; excluding their undecoded
+#: bytes is the assumption the BR3 note publishes, which is why the
+#: committed CRV-08 ceiling is the wider any-walked-curve-record
+#: superset (BR3 note §7, 2026-11-18) — a carrier bound, never a
+#: trimmed-curve count.
+TRIM_CARRIER_FAMILIES = frozenset({FAMILY_MIDRING, FAMILY_CONIC})
 
 BE_F32 = struct.Struct(">f")
 LE_F32 = struct.Struct("<f")
@@ -403,6 +423,23 @@ def decode_conic(record: CurveRecord) -> ConicArc:
     return ConicArc(
         center=(v[0], v[1], v[2]), direction=(cos_t, sin_t), semi_a=v[5], semi_b=v[6]
     )
+
+
+def carries_trim_parameters(record: CurveRecord) -> bool:
+    """Whether a record's family exposes a decoded trim-parameter surface.
+
+    ``True`` for ``33 33`` and ``33 38`` — the families whose decoded
+    payload has a parameter surface next to two endpoints
+    (:data:`TRIM_CARRIER_FAMILIES`).  This is a carrier reading, not a
+    trimmed-curve detector: a ``33 33`` full circle and a ``33 38``
+    full conic pass it, and no decoded field separates them from a
+    trimmed instance (the 2-B trailers are undecoded).  ``33 37`` (a
+    decoded full circle, no trim slot) and ``33 32`` (a segment bounded
+    by its own two points) are excluded — that exclusion is the
+    assumption the BR3 note publishes, and the committed CRV-08 ceiling
+    is the wider any-walked-curve-record superset (BR3 note §7).
+    """
+    return record.family in TRIM_CARRIER_FAMILIES
 
 
 def _read_count(data, pos: int) -> tuple[int, int]:

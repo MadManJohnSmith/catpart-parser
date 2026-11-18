@@ -21,12 +21,16 @@ Outcome enum (ticket #58):
 ``documented-negative``
     Closed with a documented negative plus ceiling arithmetic.
 ``documented-open``
-    Open with published ceiling arithmetic (Phase 7 accepts this as resolved).
+    Open with published ceiling arithmetic (Phase 7 accepts this as
+    resolved: the construct is bounded even though its semantics stay
+    open).
 ``candidate``
-    Evidence landed, semantics still open. The cited row's label is declared
-    with ``claim_label`` when it comes from another BR's vocabulary (SRF-07
-    cites BR4's ``fact`` presence row; the candidate verdict is the semantic
-    one), or must be ``candidate`` under the default table.
+    Evidence landed, semantics still open, **not resolved**. The cited
+    row's label is declared with ``claim_label`` when it comes from
+    another BR's vocabulary (BR4's ``fact`` presence rows, for example,
+    while the semantic verdict is the candidate one), or must be
+    ``candidate`` under the default table. A candidate row is reported in
+    ``by_outcome`` and excluded from the headline.
 ``pending-merge``
     The governing per-BR claims CSV is absent at this commit. This is an
     *absence marker*, not a status: it is never counted as resolved, and it
@@ -111,7 +115,14 @@ OUTCOME_ORDER: tuple[str, ...] = (
     CANDIDATE,
     PENDING_MERGE,
 )
-RESOLVED_OUTCOMES = frozenset(OUTCOME_ORDER) - {PENDING_MERGE}
+#: Outcomes that do NOT count toward the headline. ``candidate`` is evidence
+#: without closed semantics and Phase 7 does not accept it as resolved
+#: (``docs/agents/br6-graph-design.md:158``); ``pending-merge`` is an absence
+#: marker. Both stay visible in ``by_outcome`` so the headline cannot hide
+#: them. (2026-11-18, ticket #47: the earlier set included ``candidate`` and
+#: overstated the headline by the candidate row count.)
+UNRESOLVED_OUTCOMES = frozenset({CANDIDATE, PENDING_MERGE})
+RESOLVED_OUTCOMES = frozenset(OUTCOME_ORDER) - UNRESOLVED_OUTCOMES
 
 #: Claim ``label`` values each outcome may cite. Labels are the claims CSV's
 #: own confidence vocabulary (BR2: fact/candidate; BR3: established/
@@ -342,15 +353,16 @@ RESOLUTION_REGISTRY: tuple[Resolution, ...] = (
     ),
     Resolution(
         construct_id="SRF-07",
-        outcome=CANDIDATE,
+        outcome=DOCUMENTED_OPEN,
         evidence="docs/evidence/data/br4-quadrics-claims.csv",
-        claim_id="SRF-07_pencil_noncyl_allscopes_presence",
-        claim_scope="full corpus",
-        claim_label="fact",
+        claim_id="SRF-07_extrusion_ceiling",
+        claim_scope="located stores",
         owner="BR4",
         note=(
-            "negative-space signature only: pencil-noncyl loops are a floor, "
-            "construction history is not in the tessellation"
+            "superset bound, not the pencil-noncyl signature: a circular-profile "
+            "extrusion IS a cylinder, so the bound is the classified total "
+            "(67,919 loops; 975/952 files) inherited from SRF-05 (BR4 §8, "
+            "2026-11-18)"
         ),
     ),
     # --- BR2: planar faces, loops and the record-local plane --------------
@@ -456,12 +468,17 @@ RESOLUTION_REGISTRY: tuple[Resolution, ...] = (
     ),
     Resolution(
         construct_id="CRV-08",
-        outcome=CANDIDATE,
+        outcome=DOCUMENTED_OPEN,
         evidence="docs/evidence/data/br3-curves-claims.csv",
-        claim_id="C08_midring_dir_law",
+        claim_id="C08_trim_curve_ceiling",
         claim_scope="corpus",
         owner="BR3",
-        note="parameter-carrier evidence only; trim-bound semantics stay open",
+        note=(
+            "ceiling = the files carrying any walked 33 3X curve record "
+            "(1,277/1,442; 1,086/1,089 L2; 1,573,239/938,132 records): no "
+            "family can be subtracted (2-B trailers and 33 36 undecoded) and no "
+            "field separates a trimmed instance (BR3 §7, 2026-11-18)"
+        ),
     ),
 )
 
@@ -912,9 +929,11 @@ def score_l3(
         constructs=tuple(constructs),
         no_regret=_no_regret_context(root),
     )
-    if score.resolved + score.by_outcome[PENDING_MERGE] != score.total:
+    if score.resolved + sum(
+        score.by_outcome[outcome] for outcome in UNRESOLVED_OUTCOMES
+    ) != score.total:
         raise L3Error(
-            "internal inconsistency: resolved + pending-merge != frozen denominator"
+            "internal inconsistency: resolved + unresolved != frozen denominator"
         )
     return score
 

@@ -7,7 +7,7 @@ specifically the 1,089 L2-pass population), the decode laws of
 Vertex, CRV-01 Line/Segment, CRV-02 Circle/Arc, CRV-03 Ellipse,
 CRV-07 Polyline and CRV-08 Trimmed Curve, and pins the ceiling
 arithmetic for the documented-open CRV-04 Parabola / CRV-05 Hyperbola
-discriminators.
+discriminators and for CRV-08's trim-carrier ceiling (2026-11-18).
 
 Outputs docs/evidence/data/br3-curves-claims.csv (one row per claim,
 per scope) and a summary on stdout.  Deterministic: sorted manifest
@@ -374,6 +374,7 @@ def audit_part(mm):
             "mid_obs", "mid_ok", "mid_pair_obs", "mid_midrange",
             "mid_midrange_unit", "mid_zero_sentinel", "mid_axis_pair",
             "c36", "c36_block_ok",
+            "curve_records", "trim_carrier_records",
             "edge_misaligned",
         )
     }
@@ -440,6 +441,8 @@ def audit_part(mm):
 
     # Curve records and the per-family laws.
     for rec in curves.iter_curve_records(mm, lo, hi):
+        counts["curve_records"] += 1
+        counts["trim_carrier_records"] += curves.carries_trim_parameters(rec)
         if rec.family == curves.FAMILY_LINE:
             counts["c32"] += 1  # walked canonical 33 32 records
             start = rec.offset + 2
@@ -628,6 +631,102 @@ def write_claims(out_path, file_rows):
                 "rate": round(ok / len(frows), 4) if frows else "",
                 "label": label,
                 "note": "",
+            })
+    # CRV-08 ceiling (2026-11-18, BR3 note §7): a trimmed curve is bounded
+    # by the curve records it must be one of, never by a signature.  The
+    # committed CEILING is the SUPERSET (any walked 33 3X record): every
+    # family's parameter region is either undecoded (the 2-B trailers, the
+    # 33 36 family) or partly open (33 32 field semantics), so no family can
+    # be subtracted.  The narrower carrier reading is published alongside it
+    # and labelled as a reading.
+    ceiling_note = (
+        "superset bound, not a signature: every trimmed curve must be one of "
+        "the walked 33 3X records, and no decoded field separates a trimmed "
+        "from an untrimmed instance.  Arithmetic: C08_trim_carrier_files (the "
+        "33 33 / 33 38 families) + C08_trim_noncarrier_curve_files = this row; "
+        "C08_trim_no_curve_files sits outside it in both directions.  NOT a "
+        "corpus ceiling: the walker accepts compressed-stream pseudo-records "
+        "(the 33 36 population is a byte-pair census, row C36_block_read) and "
+        "the frozen 1,280 has no generator.  Unmeasured: WHICH records are "
+        "trimmed, and every file in C08_trim_no_curve_files"
+    )
+    for scope, frows in scopes:
+        carriers = sum(1 for r in frows if r["trim_carrier_records"] > 0)
+        any_curve = sum(1 for r in frows if r["curve_records"] > 0)
+        noncarrier = any_curve - carriers
+        no_curve = sum(1 for r in frows if r["curve_records"] == 0)
+        records = sum(r["curve_records"] for r in frows)
+        for claim, statement, obs, ok, label, note in (
+            (
+                "C08_trim_curve_ceiling",
+                "ceiling: files carrying any walked 33 3X curve record - every "
+                "trimmed curve must be one of them, and no decoded field "
+                "separates a trimmed from an untrimmed instance",
+                len(frows),
+                any_curve,
+                "open (ceiling)",
+                ceiling_note,
+            ),
+            (
+                "C08_trim_curve_ceiling_records",
+                "walked curve records: every 33 3X record the census walker "
+                "accepted (the record-level CRV-08 ceiling)",
+                records,
+                records,
+                "fact",
+                "volume anchor: 33 32 + 33 33 + 33 36 + 33 37 + 33 38 walked "
+                "records (rows C01_line_walked, C08_midring_walked, "
+                "C36_block_read, C02_circle_decode_ok, C03_conic_decode_ok); "
+                "walked, not decoded.  The 33 36 share is the walker's byte-pair "
+                "census population, not a decoded curve family",
+            ),
+            (
+                "C08_trim_carrier_files",
+                "narrower reading: files carrying a curve record whose DECODED "
+                "payload exposes a parameter surface (33 33 direction/radius or "
+                "33 38 axes/direction)",
+                len(frows),
+                carriers,
+                "fact",
+                "a reading, NOT the ceiling: it excludes 33 37 (2-B trailer), "
+                "33 32 (field semantics partly open) and 33 36 (undecoded) on "
+                "the assumption that their undecoded bytes carry no trim "
+                "parameters.  = C08_trim_presence (same predicate; that row's "
+                "candidate label predates the adjudication)",
+            ),
+            (
+                "C08_trim_noncarrier_curve_files",
+                "files carrying only curve families excluded from the narrower "
+                "reading (33 32 lines / 33 37 circles / 33 36 undecoded)",
+                len(frows),
+                noncarrier,
+                "fact",
+                "inside the ceiling, outside the narrow reading; the exclusion "
+                "rests on the carrier assumption, and a reading that counted a "
+                "trimmed line or a 33 37 trim as CRV-08 would move these files "
+                "into the carrier population",
+            ),
+            (
+                "C08_trim_no_curve_files",
+                "files with no walked curve record at all (outside the ceiling "
+                "in both directions: no 33 3X record survived the walker)",
+                len(frows),
+                no_curve,
+                "fact",
+                "unmeasured, not absent: the walker is a census walker, so a "
+                "file here carries no CRV-08 statement in either direction",
+            ),
+        ):
+            out.append({
+                "claim": claim,
+                "construct": "CRV-08",
+                "statement": statement,
+                "scope": scope,
+                "observations": obs,
+                "passes": ok,
+                "rate": round(ok / obs, 4) if obs else "",
+                "label": label,
+                "note": note,
             })
     # Value row: the median per-store P-rep rate (the rate column
     # carries the value), companion to C01_store_prep_population.

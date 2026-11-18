@@ -676,6 +676,41 @@ def main():
             "row-derived union over the seven classified classes",
         )
 
+    # SRF-07 extrusion ceiling (2026-11-18, BR4 note §8): the SUPERSET
+    # form, not the pencil-noncyl signature.  An extrusion of any profile
+    # is a ruled surface — its normals are perpendicular to the extrusion
+    # axis — so a circular-profile extrusion IS a cylinder (SRF-02, same
+    # surface) and a non-circular one reads pencil-noncyl; a straight
+    # profile face reads planar, and a tessellation whose pencil gate
+    # fails reads curved-unclassified.  Nothing can be subtracted, so the
+    # bound is the classified total SRF-05 already publishes; the 5,517
+    # pencil-noncyl loops are a FLOOR on non-circular extrusions, never a
+    # bound on extrusions.
+    add_claim(
+        "SRF-07_extrusion_ceiling",
+        "SRF-07",
+        "extrusion ceiling: the full classified strip-loop total — every "
+        "extrusion is a ruled surface (normals perpendicular to the extrusion "
+        "axis), so a circular-profile extrusion IS a cylinder (SRF-02) and a "
+        "non-circular one is pencil-noncyl or planar, and no class can be "
+        "subtracted",
+        "located stores",
+        classified_total,
+        classified_total,
+        "open (ceiling)",
+        "= SRF-05_upper_bound_classified_patches: the same row-derived sum of "
+        "every *_patches_*_volume row over both scopes (planar, degenerate, "
+        "cylinder, sphere, cone, pencil_noncyl, curved_unclassified). The "
+        "pencil-noncyl signature (SRF-07_pencil_noncyl_*_volume: 5,506 + 11) is "
+        "a FLOOR on non-circular-profile extrusions, NOT a bound: the 24,990 "
+        "cylinder loops are extrusions of a circular profile. At file "
+        "granularity the same superset is SRF-05_upper_bound_allscopes_presence "
+        "(975/1,442) and _l2 (952/1,089). Bounds the CLASSIFIED population "
+        "only: composite_loops_excluded_share (90,451 loops) and the undecoded "
+        "stores of scope_composite_decode are above it, so it is not a corpus "
+        "ceiling",
+    )
+
     # Carrier layout families (BR4 note section 2.1): 0x42 carries no
     # normal (facets.NORMAL_MARKERS_ALL), 0x4a does; both offsets are
     # measured corpus-wide, never assumed.
