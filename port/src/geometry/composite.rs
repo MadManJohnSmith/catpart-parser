@@ -149,6 +149,13 @@ pub const PLANE_TOL: f64 = 2e-3;
 /// set) — twin: ``GATED``.
 pub const GATED: [u8; 4] = [0x42, 0x49, 0x4A, 0x4C];
 
+/// Short-record markers the composite path exports — twin:
+/// ``EXPORTED_SHORT_MARKERS``. 0x49 is the strip family the clean path
+/// already exports (``facets::SOUP_MARKERS``); it is admitted on the
+/// 0x42 terms (its pinned reader + the per-loop dup-pin weld's
+/// coplanarity battery and incremental edge-use guard).
+pub const EXPORTED_SHORT_MARKERS: [u8; 4] = [0x42, 0x49, 0x4A, 0x4C];
+
 /// Markers observed in the extended-header form (the family's scope;
 /// 2026-11-18, docs/evidence/2026-11-18-extended-header-family.md).
 pub const EXTENDED_HEADER_MARKERS: [u8; 2] = [0x47, 0x4F];
@@ -817,10 +824,63 @@ fn cross_zero(a: (f64, f64, f64), b: (f64, f64, f64), c: (f64, f64, f64)) -> boo
     cx == 0.0 && cy == 0.0 && cz == 0.0
 }
 
+/// The 0x49 triangle-list record under its PINNED law (2026-11-18) —
+/// the twin's ``parse_049_record``.
+///
+/// ``01 49 ty ff`` + ``u32le n`` + the 12-B f32le normal, then **no
+/// count table**: the ``n`` references are u16be element indices, three
+/// consecutive refs per triangle (``n == 3 * ty``), one 3-ref strip
+/// loop per triangle. The record ends at or before the next header.
+/// Corpus measurement (docs/evidence/2026-11-18-composite-0x49.md,
+/// 0X49-01..07): 270,743/270,762 candidates satisfy ``n == 3*ty``,
+/// 269,905 tile exactly, 270,270 keep every ref inside the element
+/// space and **270,270/270,270 of those loops are coplanar** against
+/// the stored normal at ``PLANE_TOL``. The generic (width, k) vote
+/// reaches only 2,233 of them and never reproduces this shape, so the
+/// family gets its own reader: the count table is absent, not variant.
+fn parse_049_record(
+    data: &[u8],
+    o: usize,
+    nxt: usize,
+    n: u32,
+    normal: Option<(f64, f64, f64)>,
+    element_count: u32,
+) -> Option<CompositeRecord> {
+    let ty = data[o + 2] as u32;
+    if n != 3 * ty {
+        return None;
+    }
+    let end = o + 20 + 2 * n as usize;
+    if end > nxt {
+        return None;
+    }
+    let refs: Vec<u32> = (0..n as usize)
+        .map(|j| {
+            let at = o + 20 + 2 * j;
+            u32::from(u16::from_be_bytes([data[at], data[at + 1]]))
+        })
+        .collect();
+    if refs.iter().any(|&r| r >= element_count) {
+        return None;
+    }
+    Some(CompositeRecord {
+        offset: o,
+        marker: 0x49,
+        normal,
+        counts: vec![3u32; ty as usize],
+        refs,
+        width: 2,
+    })
+}
+
 /// Every strip record with the width disambiguated (stage-3b rule,
 /// extended 2026-11-11 stage 4b: u24be candidate + the loop plane
 /// tiebreak; integrated 2026-11-12 stage 5, #34) — the twin's
 /// ``parse_strip_records``.
+///
+/// The 0x49 triangle-list family has its own pinned reader
+/// (:func:`parse_049_record`): it carries no count table, so the
+/// generic (width, k) vote is not applied to it.
 ///
 /// Candidate parses: width u8/u16be (plus u24be ONLY when
 /// ``element_count > 65,535`` — a 2-byte ref cannot index such an
@@ -888,6 +948,19 @@ fn parse_strip_records(
                 f32_widen(data, o + hlen + 8),
                 f32_widen(data, o + hlen + 12),
             ));
+        }
+        if mk == 0x49 {
+            // The triangle-list family's own law (no count table; u16be
+            // refs; n == 3*ty), twin of parse_049_record. The law is
+            // the 4-byte header form; a 5-byte-form candidate (zero
+            // accepted corpus records, BR2-17) stays unresolved rather
+            // than falling back to the misparse.
+            if hlen == 4
+                && let Some(rec) = parse_049_record(data, o, nxt, n, normal, element_count)
+            {
+                out.push(rec);
+            }
+            continue;
         }
         type Rank = (u8, u8, u8, u32, u8, u32);
         let mut best: Option<(Rank, Vec<u32>, Vec<u32>, u8)> = None;
@@ -1200,7 +1273,7 @@ fn triangulate(
     };
     let mut st = EmitState::default();
     for rec in records {
-        if !matches!(rec.marker, 0x42 | 0x4A | 0x4C) {
+        if !EXPORTED_SHORT_MARKERS.contains(&rec.marker) {
             continue;
         }
         let mut o = 0usize;
@@ -1562,7 +1635,7 @@ fn decode_per_rep(
         element_decl += d.elem as usize;
         curve_entries += d.elements.len() - d.pts.len();
         for rec in &records {
-            if !matches!(rec.marker, 0x42 | 0x4A | 0x4C) {
+            if !EXPORTED_SHORT_MARKERS.contains(&rec.marker) {
                 *skipped_markers.entry(rec.marker).or_insert(0) += 1;
             }
         }
@@ -2070,7 +2143,7 @@ pub fn decode_composite_store(
     }
     let mut skipped_markers: BTreeMap<u8, u32> = BTreeMap::new();
     for rec in &records {
-        if !matches!(rec.marker, 0x42 | 0x4A | 0x4C) {
+        if !EXPORTED_SHORT_MARKERS.contains(&rec.marker) {
             *skipped_markers.entry(rec.marker).or_insert(0) += 1;
         }
     }
@@ -2419,7 +2492,7 @@ fn decode_raw_array_path(
     let ext_declined = tri_res.extended_declined;
     let mut skipped_markers: BTreeMap<u8, u32> = BTreeMap::new();
     for rec in &records {
-        if !matches!(rec.marker, 0x42 | 0x4A | 0x4C) {
+        if !EXPORTED_SHORT_MARKERS.contains(&rec.marker) {
             *skipped_markers.entry(rec.marker).or_insert(0) += 1;
         }
     }
@@ -3088,7 +3161,7 @@ fn decode_mixedwrite(
         element_decl += d.elem as usize;
         curve_entries += d.elements.len() - d.pts.len();
         for rec in &records {
-            if !matches!(rec.marker, 0x42 | 0x4A | 0x4C) {
+            if !EXPORTED_SHORT_MARKERS.contains(&rec.marker) {
                 *skipped_markers.entry(rec.marker).or_insert(0) += 1;
             }
         }
@@ -3588,6 +3661,73 @@ mod tests {
         assert_eq!(tri.triangles.len(), 4);
         assert_eq!(tri.extended_triangles, 4);
         assert_eq!(tri.extended_declined, 1);
+    }
+
+    /// The 0x49 triangle-list family (2026-11-18), twin of the Python
+    /// pins: no count table, u16be refs, ``n == 3*ty``, one 3-ref loop
+    /// per triangle. The first reference's high byte is data, never a
+    /// count (the generic law's misparse).
+    #[test]
+    fn parse_049_record_pins_the_no_count_law() {
+        let mut body = vec![0x01u8, 0x49, 1, 0xFF];
+        body.extend_from_slice(&3u32.to_le_bytes());
+        for v in [0.0f32, 0.0, 1.0] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        for r in [0x0201u16, 0x058B, 0x0231] {
+            body.extend_from_slice(&r.to_be_bytes());
+        }
+        let (records, n_hdrs) = parse_strip_records(&body, 0, body.len(), 2000, None);
+        assert_eq!(n_hdrs, 1);
+        assert_eq!(records.len(), 1);
+        let rec = &records[0];
+        assert_eq!(rec.marker, 0x49);
+        assert_eq!(rec.counts, vec![3u32]);
+        assert_eq!(rec.refs, vec![0x0201, 0x058B, 0x0231]);
+        assert_eq!(rec.width, 2);
+        // ty == 3 splits into three 3-ref loops.
+        let mut multi = vec![0x01u8, 0x49, 3, 0xFF];
+        multi.extend_from_slice(&9u32.to_le_bytes());
+        for v in [0.0f32, 0.0, 1.0] {
+            multi.extend_from_slice(&v.to_le_bytes());
+        }
+        for r in 0..9u16 {
+            multi.extend_from_slice(&r.to_be_bytes());
+        }
+        let (records, _n) = parse_strip_records(&multi, 0, multi.len(), 64, None);
+        assert_eq!(records[0].counts, vec![3u32, 3, 3]);
+    }
+
+    /// The 0x49 law's fail-closed arms: a reference count that is not
+    /// 3*ty, refs outside the element space, and a ref block that would
+    /// swallow the next header are all rejected (no guessing).
+    #[test]
+    fn parse_049_record_rejects_off_law_candidates() {
+        let build = |ty: u8, n: u32, refs: &[u16]| {
+            let mut b = vec![0x01u8, 0x49, ty, 0xFF];
+            b.extend_from_slice(&n.to_le_bytes());
+            for v in [0.0f32, 0.0, 1.0] {
+                b.extend_from_slice(&v.to_le_bytes());
+            }
+            for r in refs {
+                b.extend_from_slice(&r.to_be_bytes());
+            }
+            b
+        };
+        // n != 3*ty
+        let body = build(2, 5, &[0, 1, 2, 3, 4]);
+        let (records, _n) = parse_strip_records(&body, 0, body.len(), 64, None);
+        assert!(records.is_empty());
+        // out-of-space refs
+        let body = build(1, 3, &[0, 1, 99]);
+        let (records, _n) = parse_strip_records(&body, 0, body.len(), 64, None);
+        assert!(records.is_empty());
+        // the ref block would swallow a following header
+        let mut body = build(2, 6, &[0, 1, 2, 3, 4, 5]);
+        body.truncate(28);
+        body.extend_from_slice(&[0x01, 0x42, 0x01, 0xFF]);
+        let (records, _n) = parse_strip_records(&body, 0, body.len(), 64, None);
+        assert!(records.is_empty());
     }
 
     /// The shared incremental guard: accepts units that keep every

@@ -1549,3 +1549,151 @@ def test_triangulate_extended_record_soup_strips_polygons() -> None:
     assert len(triangles) == 4
     assert stats["extended_triangles"] == 4
     assert stats["extended_declined"] == 1
+
+
+# --- the 0x49 triangle-list family (2026-11-18) ---------------------------
+#
+# The composite path admitted 0x42/0x4a/0x4c while the clean path already
+# exported 0x49 as a strip (facets.SOUP_MARKERS). The corpus shows the
+# family's record is NOT the generic count-table form: ``01 49 ty ff`` +
+# ``u32le n`` + the 12-B normal + n u16be refs, no count table, n == 3*ty
+# (docs/evidence/2026-11-18-composite-0x49.md). These tests pin the reader
+# and the structural acceptance the admission rides on.
+
+
+def _record_049(
+    ty: int, normal, refs: tuple[int, ...], n_override: int | None = None
+) -> bytes:
+    """One 0x49 record: ``01 49 ty ff`` + u32le n + normal + u16be refs
+    (no count table — the family's pinned law)."""
+    n = len(refs) if n_override is None else n_override
+    return (
+        bytes([0x01, 0x49, ty, 0xFF])
+        + struct.pack("<I", n)
+        + struct.pack("<fff", *normal)
+        + b"".join(struct.pack(">H", r) for r in refs)
+    )
+
+
+def test_parse_049_record_pins_the_no_count_law() -> None:
+    """The 0x49 record carries NO count table: n == 3*ty u16be refs, one
+    3-ref strip loop per triangle. The first reference's high byte (here
+    0x02) is data, not a count — the generic count law would split the
+    loop 2+1 and lose the triangle (the corpus misparse)."""
+    refs = (0x0201, 0x058B, 0x0231)
+    body = _record_049(1, (0.0, 0.0, 1.0), refs)
+    records, n_hdrs = parse_strip_records(body, 0, len(body), 2000)
+    assert n_hdrs == 1
+    (record,) = records
+    _o, marker, normal, counts, got_refs, width = record
+    assert marker == 0x49
+    assert normal == (0.0, 0.0, 1.0)
+    assert counts == (3,)
+    assert got_refs == refs
+    assert width == 2
+
+
+def test_parse_049_record_multi_triangle_split() -> None:
+    """ty > 1: the refs split into ty loops of three (the family's
+    triangle list), not one long strip."""
+    refs = (0, 1, 2, 3, 4, 5, 6, 7, 8)
+    body = _record_049(3, (0.0, 0.0, 1.0), refs)
+    records, _n = parse_strip_records(body, 0, len(body), 64)
+    (record,) = records
+    assert record[3] == (3, 3, 3)
+    assert record[4] == refs
+
+
+def test_parse_049_record_rejects_n_not_three_ty() -> None:
+    """A ``01 49`` byte pattern whose reference count is not 3*ty is not
+    the family: it stays unresolved (no guessing)."""
+    body = _record_049(2, (0.0, 0.0, 1.0), (0, 1, 2, 3, 4), n_override=5)
+    records, _n = parse_strip_records(body, 0, len(body), 64)
+    assert records == []
+
+
+def test_parse_049_record_rejects_out_of_space_refs() -> None:
+    """References beyond the decoded element space are rejected at the
+    record law (the refs gate does not guess a mapping)."""
+    body = _record_049(1, (0.0, 0.0, 1.0), (0, 1, 99))
+    records, _n = parse_strip_records(body, 0, len(body), 64)
+    assert records == []
+
+
+def test_parse_049_record_rejects_a_record_past_the_next_header() -> None:
+    """The record must end at or before the next facet header (the
+    committed tiling law): a record whose ref block would swallow a
+    following header is not accepted."""
+    body = _record_049(2, (0.0, 0.0, 1.0), (0, 1, 2, 3, 4, 5))
+    # Slot a 0x42 header inside the 0x49 ref block.
+    truncated = body[:28] + bytes([0x01, 0x42, 0x01, 0xFF])
+    records, _n = parse_strip_records(truncated, 0, len(truncated), 64)
+    assert records == []
+
+
+def test_triangulate_admits_049_written_loops() -> None:
+    """A fully-written 0x49 triangle-list loop emits under the strip law
+    (the admission): the marker is no longer skipped."""
+    elements = [
+        (0, (0.0, 0.0, 0.0)),
+        (0, (1.0, 0.0, 0.0)),
+        (0, (0.0, 1.0, 0.0)),
+    ]
+    record = (0, 0x49, (0.0, 0.0, 1.0), (3,), (0, 1, 2), 2)
+    triangles, degenerate, stats = composite._triangulate(elements, [record])
+    assert triangles == [(0, 1, 2)]
+    assert degenerate == 0
+    assert stats["loops_exported"] == 1
+    assert stats["loops_curve_entry"] == 0
+
+
+def test_triangulate_049_skip_loop_rides_the_structural_gate() -> None:
+    """A skip-bearing 0x49 loop goes through the SAME structural
+    acceptance as every other loop: the dup-pin weld's coplanarity
+    battery. A coplanar loop welds (the pin is the preceding written
+    vertex); a non-coplanar one is refused and stays dropped — no
+    marker-specific bypass."""
+    elements = [
+        (0, (0.0, 0.0, 0.0)),
+        (1, None),  # skip slot -> welds to element 0
+        (0, (1.0, 0.0, 0.0)),
+        (0, (0.0, 1.0, 0.0)),
+    ]
+    coplanar = (0, 0x49, (0.0, 0.0, 1.0), (3,), (1, 2, 3), 2)
+    triangles, degenerate, stats = composite._triangulate(elements, [coplanar])
+    assert triangles == []  # the weld's triangles merge at the store level
+    assert degenerate == 0
+    assert stats["loops_curve_entry"] == 1  # decremented when the weld merges
+    assert stats["dup_pin"]["loops"] == 1
+    # (skip->0, 2, 3) in written rank: the pinned triangle.
+    assert stats["dup_pin"]["triangles"] == [(0, 1, 2)]
+
+    # The same loop against a normal the pinned points are NOT on: the
+    # battery refuses it, so the loop stays dropped and counted.
+    tilted = (0, 0x49, (1.0, 0.0, 0.0), (3,), (1, 2, 3), 2)
+    triangles, _degenerate, stats = composite._triangulate(elements, [tilted])
+    assert triangles == []
+    assert stats["loops_curve_entry"] == 1
+    assert stats["dup_pin"]["loops"] == 0
+    assert stats["dup_pin"]["refused"] == 1
+
+
+def test_composite_0x49_fixture_exports_the_box(tmp_path, capsys):
+    """End-to-end: the box whose -z face is re-listed as two 0x49
+    triangle records exports the same closed 12-triangle manifold as
+    the 0x4a form — the admission is marker-for-marker on one mesh."""
+    code, captured, ply_path = run_export(tmp_path, capsys, "geometry-composite-law-0x49")
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    assert summary["vertex_count"] == 12
+    assert summary["triangle_count"] == 12
+    assert summary["degenerate_triangle_count"] == 0
+    assert summary["mesh"]["manifold"] is True
+    assert summary["mesh"]["closed"] is True
+    assert summary["mesh"]["boundary_edge_count"] == 0
+    info = summary["composite"]
+    assert info["loops_exported"] == 7  # 4 strips + 2 fans + 2 0x49 triangles
+    assert info["loops_curve_entry"] == 0
+    assert info["skipped_markers"] == {}  # 0x49 is exported, not skipped
+    vertices, faces = parse_ply(ply_path)
+    assert len(vertices) == 12 and len(faces) == 12

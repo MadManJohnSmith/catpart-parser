@@ -235,6 +235,10 @@ VALID_VARIANTS = (
     "geometry-composite-law-slanted",
     "geometry-composite-law-curve-entries",
     "geometry-composite-law-u16be",
+    # The 0x49 triangle-list family (2026-11-18): its record carries no
+    # count table (u16be refs, three per triangle, n == 3*ty); the
+    # composite path exports it on the 0x42 terms.
+    "geometry-composite-law-0x49",
     # Stage-5 law variants (#34, 2026-11-12): the stage-4b width laws
     # (u24be for element counts above 65,535; the plane tiebreak over
     # interleaved families) and the per-rep decomposition (a rep that
@@ -387,6 +391,7 @@ COMPOSITE_VARIANTS = (
     "geometry-composite-law-slanted",
     "geometry-composite-law-curve-entries",
     "geometry-composite-law-u16be",
+    "geometry-composite-law-0x49",
     "geometry-composite-law-u24be",
     # Stage-12 recovery positive (#34, 2026-11-13): the composite-law
     # store inside a CATBRepModeContainer block — a recovered store
@@ -653,6 +658,22 @@ def _facet_record(marker: int, normal, refs: tuple[int, ...], width: int = 1) ->
         rec
         + bytes([len(refs)])
         + b"".join(struct.pack(">I", r)[1:] for r in refs)
+    )
+
+
+def _facet_record_049(normal, refs: tuple[int, ...]) -> bytes:
+    """One 0x49 triangle-list record (the 2026-11-18 pinned law).
+
+    ``01 49 ty ff`` + ``u32le n`` + the 12-B normal + **no count
+    table**: ``n`` u16be refs, three per triangle (``n == 3 * ty``).
+    """
+    ty = len(refs) // 3
+    assert len(refs) == 3 * ty
+    return (
+        bytes([0x01, 0x49, ty, 0xFF])
+        + struct.pack("<I", len(refs))
+        + struct.pack("<fff", *normal)
+        + b"".join(struct.pack(">H", r) for r in refs)
     )
 
 
@@ -1535,6 +1556,17 @@ def _composite_store(variant: str) -> bytes:
                 # exact, so the store is not the walk-mismatch family).
                 slot, (x, y, _z) = elements[5]
                 elements[5] = (slot, (x, y, float("nan")))
+            elif variant == "geometry-composite-law-0x49":
+                # The 0x49 triangle-list family (2026-11-18): the box's
+                # -z strip face (one 4-ref 0x4a loop = two triangles) is
+                # re-listed as two 0x49 records (3 refs each, no count
+                # table, u16be refs).  The closed box must survive
+                # marker-for-marker, so the admission is measured
+                # end-to-end on the same 12-triangle mesh.
+                faces = COMPOSITE_FACES[1:]
+                extra_record = _facet_record_049(
+                    (0.0, 0.0, -1.0), (6, 0, 9)
+                ) + _facet_record_049((0.0, 0.0, -1.0), (3, 9, 0))
     if variant == "geometry-composite-law-unabsorbed":
         # The pool carries a vertex the node list does not re-list:
         # the unabsorbed variant (pool absorption not established).

@@ -424,10 +424,57 @@ def decode_node_points(payload: bytes, element_count: int):
     return points, len(elements) - len(points), info
 
 
+def parse_049_record(data, o: int, nxt: int, n: int, normal, element_count):
+    """The 0x49 triangle-list record under its PINNED law (2026-11-18).
+
+    ``01 49 ty ff`` + ``u32le n`` + the 12-B f32le normal, then **no
+    count table**: the ``n`` references are u16be element indices, three
+    consecutive refs per triangle (``n == 3 * ty`` — the
+    ``BR2-18b`` predicate), one 3-ref strip loop per triangle.  The
+    record ends at or before the next header.
+
+    Corpus measurement behind the law (docs/evidence/
+    2026-11-18-composite-0x49.md, claims 0X49-01..07; the census runs on
+    the exact parse seam over every composite store the exporter
+    reaches): of 270,762 short-form 0x49 candidate headers, 270,743
+    satisfy ``n == 3 * ty``, 269,905 tile EXACTLY to the next header
+    (the family's record is 26 B at ``ty=1``), 270,270 keep every
+    reference inside the decoded element space, and **270,270 / 270,270
+    of those loops are coplanar against the stored normal at
+    ``PLANE_TOL``** (the dup-pinned battery used by the weld).  The
+    generic count law reaches only 2,233 of them and never reproduces
+    this shape (its count bytes eat the first reference byte), which is
+    why the family has its own reader instead of a new (width, k) vote:
+    the count table is absent, not variant.
+
+    Returns ``(offset, marker, normal, counts, refs, 2)`` — the counts
+    are ``ty`` loops of three references (the family's triangle split) —
+    or ``None`` when the record does not fit the law (a false-positive
+    ``01 49`` byte pattern, or a store outside the element space).
+    """
+    ty = data[o + 2]
+    if n != 3 * ty:
+        return None
+    end = o + 20 + 2 * n
+    if end > nxt:
+        return None
+    refs = tuple(
+        int.from_bytes(data[o + 20 + 2 * j : o + 22 + 2 * j], "big")
+        for j in range(n)
+    )
+    if element_count is not None and any(r >= element_count for r in refs):
+        return None
+    return (o, 0x49, normal, (3,) * ty, refs, 2)
+
+
 def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=None):
     """Every strip record with the width disambiguated (stage-3b rule,
     extended 2026-11-11 stage 4b: u24be candidate + the loop plane
     tiebreak; integrated 2026-11-12 stage 5, #34).
+
+    The 0x49 triangle-list family has its own pinned reader
+    (:func:`parse_049_record`, 2026-11-18): it carries no count table,
+    so the generic (width, k) vote is not applied to it.
 
     Candidate parses: width u8/u16be (plus u24be ONLY when
     ``element_count > 65,535`` — a 2-byte ref cannot index such an
@@ -473,6 +520,18 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
             if base > hi:
                 continue
             normal = struct.unpack("<fff", data[o + hlen + 4 : o + hlen + 16])
+        if mk == 0x49:
+            # The triangle-list family's own law (no count table; u16be
+            # refs; n == 3*ty). The generic (width, k) vote below would
+            # eat the first reference byte as a count. The law is the
+            # 4-byte header form (``01 49 ty ff``); a 5-byte-form
+            # candidate (zero accepted corpus records, BR2-17) stays
+            # unresolved rather than falling back to the misparse.
+            if hlen == 4:
+                rec = parse_049_record(data, o, nxt, n, normal, element_count)
+                if rec is not None:
+                    out.append(rec)
+            continue
         best = None
         for width in widths:
             for k in range(0, MAX_LOOP_COUNTS + 1):
@@ -548,6 +607,20 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
         out.append((o, mk, normal, counts, refs, width))
     return out, len(hdrs)
 
+
+#: Short-record markers the composite path exports. 0x49 is the strip
+#: family the clean path already exports (``facets.SOUP_MARKERS`` —
+#: ``STRIP_MARKERS`` includes it; 2026-11-18 ticket: the composite
+#: admission lagged the clean path by this one marker). It is admitted
+#: on exactly the 0x42 terms: the record must pass the committed
+#: count/tiling law (:func:`parse_strip_records` — the escaped-count
+#: reader, the width/plane rank, exact tiling), its references must
+#: resolve in the element space (:data:`GATED` already included 0x49),
+#: written loops emit under the strip window, and skip-bearing loops go
+#: through the SAME structural acceptance as every other loop — the
+#: per-loop dup-pin weld's coplanarity battery and incremental edge-use
+#: (manifold) guard. No new reading is introduced.
+EXPORTED_SHORT_MARKERS = (0x42, 0x49, 0x4A, 0x4C)
 
 # --- the extended-header facet family (0x47/0x4f, 2026-11-18) --------------
 #
@@ -685,10 +758,11 @@ def _loop_plane_status(loop, normal, elements):
 def _loop_triangles(mk, idxs, points):
     """One exported loop's triangles under the strip/polygon semantics
     (G3): 0x4c polygon fans triangulate from the first reference,
-    0x42/0x4a strips use the sliding window with the odd-triangle
-    winding flip; degenerate triangles (repeated coordinates, or the
-    exactly-zero cross product on strips, G3 F7) are skipped and
-    counted.
+    0x42/0x49/0x4a strips use the sliding window with the odd-triangle
+    winding flip (0x49 enters as a triangle list — its reader emits
+    three-ref loops, :func:`parse_049_record`); degenerate triangles
+    (repeated coordinates, or the exactly-zero cross product on strips,
+    G3 F7) are skipped and counted.
 
     Returns ``(triangles, degenerate)``; ``idxs`` are written-point
     ranks (indices into ``points``, the exported vertex list)."""
@@ -875,9 +949,13 @@ def _triangulate(elements, records, extended=()):
     coordinates.  The decision is per loop — it never depends on the
     store's primary mesh being empty, and the incremental edge-use guard
     is the topology check the coplanarity battery cannot make.  Strip
-    triangles (0x42/0x4a) skip the degenerate ones (repeated
+    triangles (0x42/0x49/0x4a) skip the degenerate ones (repeated
     coordinates or exactly-zero cross product, G3 F7); polygon fans
-    (0x4c) skip repeated coordinates.
+    (0x4c) skip repeated coordinates.  The 0x49 triangle-list family is
+    admitted on these exact terms (2026-11-18): its own pinned reader
+    (no count table, u16be refs, n == 3*ty) feeds the same per-loop
+    emission, so a skip-bearing 0x49 loop faces the same weld battery
+    and manifold guard as every other marker.
 
     ``extended`` carries the extended-header records
     (:class:`ExtendedFacetRecord`, 2026-11-18): their ``ty`` independent
@@ -933,7 +1011,7 @@ def _triangulate(elements, records, extended=()):
         triangles.extend(tris)
 
     for _off, mk, normal, counts, refs, _w in records:
-        if mk not in (0x42, 0x4A, 0x4C):
+        if mk not in EXPORTED_SHORT_MARKERS:
             continue
         o = 0
         for c in counts:
@@ -1256,7 +1334,7 @@ def decode_composite_store(data, span, groups, kinds, allow_unrouted_elements=Fa
 
     skipped_markers: dict[int, int] = {}
     for _o, mk, _n, _c, _refs, _w in records:
-        if mk not in (0x42, 0x4A, 0x4C):
+        if mk not in EXPORTED_SHORT_MARKERS:
             skipped_markers[mk] = skipped_markers.get(mk, 0) + 1
 
     # The extended records' counters ride their own summary keys (the
@@ -1491,7 +1569,7 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool):
         element_decl += d["elem"]
         curve_entries += len(d["elements"]) - len(d["pts"])
         for _o, mk, _n, _c, _refs, _w in records:
-            if mk not in (0x42, 0x4A, 0x4C):
+            if mk not in EXPORTED_SHORT_MARKERS:
                 skipped_markers[mk] = skipped_markers.get(mk, 0) + 1
     if not points:
         raise ExportError(
@@ -1766,7 +1844,7 @@ def _decode_raw_array(data, lo, hi, groups, payload, elem_decl):
     ext_declined = loop_stats.pop("extended_declined", 0)
     skipped_markers: dict[int, int] = {}
     for _o, mk, _n, _c, _refs, _w in records:
-        if mk not in (0x42, 0x4A, 0x4C):
+        if mk not in EXPORTED_SHORT_MARKERS:
             skipped_markers[mk] = skipped_markers.get(mk, 0) + 1
     info = {
         "stage": "identity-raw-array",
@@ -2207,7 +2285,7 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups):
         element_decl += d["elem"]
         curve_entries += len(d["elements"]) - len(d["pts"])
         for _o, mk, _n, _c, _refs, _w in records:
-            if mk not in (0x42, 0x4A, 0x4C):
+            if mk not in EXPORTED_SHORT_MARKERS:
                 skipped_markers[mk] = skipped_markers.get(mk, 0) + 1
     if not points:
         raise ExportError(

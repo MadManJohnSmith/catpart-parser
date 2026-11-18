@@ -1,0 +1,39 @@
+claim,statement,label,scope,release,observations,passes,rate,value
+0X49-01_short_form_candidates,short-form (ff at +3) 0x49 candidate headers at the composite parse seam,fact,"composite stores, full manifest",all,270762,270762,1.000000,
+0X49-02_n_equals_3ty,candidates satisfying n == 3*ty (the BR2-18b family predicate),fact,"composite stores, full manifest",all,270762,270743,0.999930,
+0X49-03_exact_tile,candidates whose no-count ref block tiles exactly to the next facet header,fact,"composite stores, full manifest",all,270762,269905,0.996837,
+0X49-04_in_element_space,candidates whose u16be refs resolve inside the decoded element space,fact,"composite stores, full manifest",all,270762,270270,0.998183,
+0X49-05_coplanar,in-space loops coplanar against the stored normal at PLANE_TOL (dup-pinned battery),fact,"composite stores, in-space candidates",all,270270,270270,1.000000,
+0X49-06_max_normal_deviation,max coplanarity deviation over the in-space candidates (value row),fact,"composite stores, in-space candidates",all,,,,0.001088593
+0X49-07_generic_law_parses,candidates the generic count-table law parses at all,fact,"composite stores, full manifest",all,270762,2233,0.008247,
+0X49-07b_generic_law_reproduces,"generic-law parses that reproduce the no-count shape (n,) at width 2",fact,"generic-law parses",all,2233,0,0.000000,
+0X49-08_carriers,parts carrying >= 1 in-space 0x49 record,fact,"corpus parts",all,1442,103,0.071429,
+0X49-09_multi_triangle_records,accepted records with ty > 1 (up to ty = 86),fact,"accepted 0x49 records",all,270270,2257,0.008351,
+0X49-10_anchor_record_end,"end offset of the gopro3 anchor record at 565376 (26-byte record; value row)",fact,"byte anchor",all,,,,565402
+0X49-11_anchor_geometry,coplanarity deviation of the anchor record's three refs (value row),fact,"byte anchor",all,,,,3.298220e-08
+0X49-12_gopro3_triangles,gopro3 triangle count before / after the admission,fact,recovered carrier,all,2,2,1.000000,0->796
+0X49-13_gopro3_closed,gopro3 assembled mesh closed after the admission,fact,recovered carrier,all,1,1,1.000000,
+0X49-14_gopro3_welded_loops,gopro3 skip-bearing loops accepted by the per-loop weld,fact,recovered carrier,all,796,730,0.917085,
+0X49-15_tornillo_triangles,Tornillo 996r triangle count before / after the admission,fact,recovered carrier,all,2,2,1.000000,0->1175
+0X49-16_tornillo_boundary_edges,Tornillo 996r boundary edges after the admission (open shell),fact,recovered carrier,all,,,,3
+0X49-17_headia_triangles,head_ia triangle count before / after (no 0x49 record; extended-header family),fact,named non-carrier,all,2,2,1.000000,65->65
+0X49-18_headia_049_records,head_ia in-space 0x49 records (it carries none),fact,named non-carrier,all,,,,
+0X49AB-01_parts_exported,parts exported twice through the shipped seam,fact,"1442 kind=part rows, no size cap",all,1442,1442,1.000000,
+0X49AB-02_l2_pass_before,parts passing the L2 gate under main 4b51443,fact,"1442 parts",all,1442,1119,0.775991,
+0X49AB-03_l2_pass_after,parts passing the L2 gate under the branch,fact,"1442 parts",all,1442,1121,0.777393,
+0X49AB-04_pass_to_fail,parts that pass under main and fail under the branch,fact,"1442 parts",all,1442,0,0.000000,
+0X49AB-05_fail_to_pass,parts that fail under main and pass under the branch,fact,"1442 parts",all,1442,2,0.001387,
+0X49AB-06_manifold_regressions,non-empty manifold meshes that become not manifold,fact,"1442 parts",all,1442,0,0.000000,
+0X49AB-07_closed_losses,non-empty closed meshes that become open,fact,"1442 parts",all,1442,0,0.000000,
+0X49AB-08_degenerate_regressions,parts whose degenerate-triangle count increases,fact,"1442 parts",all,1442,0,0.000000,
+0X49AB-09_exports_changed,parts whose triangle count or L2 status changed,fact,"1442 parts",all,1442,103,0.071429,
+0X49AB-10_triangles_gained,triangles added corpus-wide (- before + after),fact,"103 changed parts",all,103,103,1.000000,273043
+0X49AB-11_empty_mesh_before,parts failing empty-mesh under main,fact,"1442 parts",all,1442,29,0.020111,
+0X49AB-11b_empty_mesh_after,parts failing empty-mesh under the branch,fact,"1442 parts",all,1442,27,0.018724,
+0X49AB-12_stable_pass_changed,changed exports that stay L2-pass (94 pass->pass + 2 fail->pass),fact,"103 changed parts",all,103,96,0.932039,
+0X49AB-13_stable_fail_changed,changed exports that stay fail and already not-manifold,fact,"103 changed parts",all,103,7,0.067961,
+0X49P-01_changed_parts_differential,changed parts run through both shipped seams,fact,"103 changed parts",all,103,103,1.000000,
+0X49P-02_ply_byte_identical,changed parts with byte-identical PLY (Python vs fidelity-cli export),fact,"103 changed parts",all,103,103,1.000000,
+0X49P-03_summary_identical,changed parts with dict-identical export summaries,fact,"103 changed parts",all,103,103,1.000000,
+0X49P-04_fidelity_sample,official Fidelity harness L2 stratified sample outcomes match,fact,"60-part stratified sample",all,60,60,1.000000,
+0X49P-05_cargo_tests,cargo test --locked pass count (153 unit + 6 integration),fact,port crate,all,159,159,1.000000,
