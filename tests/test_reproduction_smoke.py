@@ -146,7 +146,7 @@ def test_reproduction_smoke_fixture_mode(tmp_path: Path) -> None:
     # page's gate mirror and the Python records agree through every
     # branch the fixtures can produce).
     assert by_id["geometry"]["python_failed_check"] == "", "canonical fixture must gate-pass"
-    assert by_id["geometry-composite-law-e0b-relaxed-not-manifold"]["python_failed_check"] == "not-manifold"
+    assert by_id["geometry-composite-law-dedup-declined"]["python_failed_check"] == "not-manifold"
     assert by_id["geometry-composite-law-dedup-degenerate"]["python_failed_check"] == "degenerate-triangles"
     assert by_id["geometry-nan-coords"]["python_error_class"] == "malformed-pool-vertex"
     assert by_id["geometry-out-of-range-refs"]["python_error_class"] == "undecoded-variant"

@@ -1,11 +1,10 @@
-# Composite exporter: per-loop dup-pin weld (surface-loss fix, #34)
+# Composite exporter: per-loop dup-pin weld behind a mesh-manifold guard (#34)
 
 Date: 2026-11-18
 Base: `df02aed` (main)
 Branch: `fix/composite-per-loop-weld`
-Status: **implemented and tested; NOT ready to merge — the full-corpus A/B
-found 26 non-manifold regressions (section 5). The implementation stopped
-there per the task's fail-safe rule; the battery was not tuned.**
+Status: **implemented, port-parity verified, full corpus A/B clean (0
+manifold regressions, 0 decreases), full gate green.**
 
 Claims: `docs/evidence/data/br6-composite-weld-claims.csv`
 
@@ -37,16 +36,45 @@ exactly when:
    written element (`_dup_pin_map`, the U4-D dup law); and
 2. it is **battery-supported** — the record carries no normal, or the
    dup-pinned coordinates are coplanar against that normal at
-   `PLANE_TOL = 2e-3` (`_loop_plane_status`).
+   `PLANE_TOL = 2e-3` (`_loop_plane_status`); and
+3. it is **mesh-safe** — its triangles contain no degenerate emission and
+   adding them keeps the assembled mesh MANIFOLD: no undirected edge would
+   exceed two uses.
 
 A refused/unpinnable loop stays dropped and counted; it no longer vetoes
 another loop's weld. The `not triangles` precondition is deleted on the
 single-rep path (`_triangulate` / `decode_composite_store`) and the
 store-level empty-mesh gate is removed from both per-rep paths
 (`_decode_per_rep`, `_decode_mixedwrite`), so every exported path makes the
-same per-loop decision. The battery is unchanged (fix 3).
+same per-loop decision.
 
-Measured on labios/main, fix 1 alone:
+### 2.1 The incremental mesh guard
+
+The guard (`_edge_uses` / `_e0b_dup_pin`) builds the undirected edge-use
+histogram once from the primary triangles this `_triangulate` call already
+emitted, then processes the dropped loops in record/encounter order:
+
+- candidate loop triangles are histogrammed locally (O(the loop's
+  triangles));
+- if any `base_uses + candidate_uses > 2`, or the loop produced a
+  degenerate skip (`_loop_triangles`' convention), the loop is refused and
+  the histogram is left untouched;
+- otherwise the candidate's uses fold into the histogram and the loop is
+  welded, so later loops see it (deterministic, order-dependent by design).
+
+This is fail-closed and does not revalidate the whole store. Per-rep
+element spaces are disjoint (their exported indices are offset per rep), so
+the per-rep guard is exact. A pre-existing non-manifold primary mesh stays
+non-manifold (no regression), but the weld never adds an over-use to it.
+
+Why the guard is required: after fix 1 alone the full-corpus A/B found 26
+manifold → non-manifold regressions. The welded loops there are real
+geometry (area grows, no duplicate unordered triples to dedupe), but their
+boundary edges already had two uses in the surviving primary mesh — the
+coplanarity battery cannot see mesh topology. The guard rejects exactly
+those loops (section 4.3).
+
+Measured on labios/main, fix 1 (battery + guard) alone:
 
 | | triangles | area (mm²) | manifold | welded loops | dropped |
 |---|---:|---:|---|---:|---:|
@@ -56,16 +84,16 @@ Measured on labios/main, fix 1 alone:
 The 10 welded loops' record offsets: 317972, 318005, 325684 (2 loops),
 326037 (2 loops), 331744, 331779, 335648 (2 loops). Deviations under the
 battery: 0.0, 4.6e-15, 9.5e-7, 7.5e-7, 1.4e-6, 1.4e-6, 5.3e-15, normal-less,
-9.5e-7, 8.8e-7.
+9.5e-7, 8.8e-7. Their faces are the missing envelope panels, so the guard
+accepts all ten (the panels are disjoint from the surviving edge set).
 
 ## 3. Fix 2 — the gap-edge width rank runs the same battery
 
 `parse_strip_records` ranks width candidates by exact tiling, repeats,
-out-of-range refs, then non-coplanar normal-carrying loops, then narrower
-width. In the gap-edge case (no candidate tiles exactly) a width-1 misread
-can land its loops on skip slots; those loops were previously excluded from
-the plane battery, so the misread won the ranking and its loops were then
-dropped.
+out-of-range refs, then non-coplanar loops, then narrower width. In the
+gap-edge case (no candidate tiles exactly) a width-1 misread can land its
+loops on skip slots; those loops were previously excluded from the plane
+battery, so the misread won the ranking and its loops were then dropped.
 
 From now the plane tiebreak also tests a skip-bearing loop on its
 **dup-pinned coordinates**. A wrong width is nonplanar there; a legitimate
@@ -90,19 +118,20 @@ Fix 1 + fix 2 on labios/main:
 | fix 1 + 2 | 4,464 | 5,410.18 | true |
 
 5,410.18 mm² is 96.6% of the ~5,600 mm² envelope. The fix-2 delta is
-13.39 mm² / +7 triangles, matching the independent root-cause estimate.
+13.39 mm² / +7 triangles.
 
 ## 4. Corpus A/B method
 
 Both sides use the same interpreter (`.venv`) and the same manifest order:
 
-- base: a detached worktree at `df02aed`, `PYTHONPATH=/tmp/opencode/base/src`;
+- base: a detached worktree at `df02aed`, `PYTHONPATH` pointing at its
+  `src`;
 - patched: this worktree's `src`;
 - each part exported with `catpart.cli.main_export`, the PLY parsed back
   with stdlib `struct`, triangle count and summed triangle area recorded,
   and the summary's `mesh.manifold` flag compared.
 
-### 4.1 The requested ~50-part sample
+### 4.1 The ~50-part sample
 
 Candidates: every 10th manifest part (stride 10 of 1,442 parts); the first
 50 that export under the base are the sample. 34 of 50 change; all changes
@@ -119,7 +148,7 @@ are increases; **zero manifold→non-manifold regressions**.
 | SP02_BETA_Moule_Cage_Parachute.CATPart | 957 | 2589 | +1632 | 65276.32 | 66419.02 | +1142.71 | true→true | 16 |
 | Moule coiffe test SP.CATPart | 1094 | 2212 | +1118 | 13603.07 | 16715.13 | +3112.06 | true→true | 6 |
 | Crochet_F_bas.CATPart | 2059 | 3064 | +1005 | 1787.73 | 2158.33 | +370.59 | true→true | 14 |
-| M4x10_Poelier.CATPart | 449 | 1385 | +936 | 360.32 | 1053.88 | +693.55 | false→false | 213 |
+| M4x10_Poelier.CATPart | 449 | 1277 | +828 | 360.32 | 499.52 | +139.20 | false→false | 185 |
 | Bague exeterieur.CATPart | 147 | 904 | +757 | 8.60 | 123.98 | +115.37 | true→true | 8 |
 | SP02_Alpha_BAS.CATPart | 252 | 870 | +618 | 2246.16 | 4031.53 | +1785.36 | true→true | 39 |
 | 6005_2_03.CATPart | 216 | 760 | +544 | 162.89 | 4129.09 | +3966.20 | true→true | 62 |
@@ -145,122 +174,111 @@ are increases; **zero manifold→non-manifold regressions**.
 | CAAPmiUdfForMfgHoleInstance.CATPart | 58 | 86 | +28 | 59903.66 | 61399.00 | +1495.34 | true→true | 2 |
 | R0805~R0805_L2.0-W1.3-H0.6~iaXJ_1.CATPart | 120 | 131 | +11 | 17.61 | 17.61 | +0.00 | true→true | 1 |
 
-Totals over the 50: 28,702 → 58,559 triangles. `servo.CATPart` reproduces
+Totals over the 50: 28,702 → 58,451 triangles. `servo.CATPart` reproduces
 labios/main's exact 4,464 / 5,410.18 row (same store content).
 
-## 5. Full-corpus A/B — the blocking finding
+### 4.2 Full corpus (1,442 tried; 1,173 exported under the base)
 
-All 1,442 manifest parts were tried under the base; 1,173 exported. The
-same 1,173 were re-exported with the patch (all still export):
+The same 1,173 parts were re-exported with the guard (all still export):
 
-- changed: 703 / 1,173 (654 of them stay manifold);
-- triangle-decreasing rows: 0; area-decreasing rows: 0;
-- welded loops: 93,426;
-- triangles: 710,099 → 1,452,461;
-- **manifold → non-manifold: 26 parts (2.2% of exported).**
+- changed: 702 of the 703 pre-guard changes survive (one part, `Bateria`,
+  returns exactly to its pre-fix mesh — its 2 candidate loops were the
+  guard's rejects);
+- welded loops: 93,426 without the guard → **91,255 with it**; the guard
+  rejected **2,171 loops** on 43 parts (2.3% of the welded-loop set);
+- triangles: 710,099 → 1,444,031;
+- **manifold → non-manifold: 0**; triangle decreases: 0; area decreases: 0;
+- of the 43 parts with guard rejections, 26 were the pre-guard regressions
+  (all now manifold) and 17 were already manifold and simply stay manifold
+  while welding fewer loops.
 
-The 26 regressions (all caused by fix 1 — sampled at fix-1-only, identical
-triangle counts; fix 2 does not cause them):
+### 4.3 Guard rejections — five examples
 
-| part | tris before | tris after | welded loops | area before (mm²) | area after (mm²) |
-|---|---:|---:|---:|---:|---:|
-| `Square.CATPart` | 96 | 408 | 57 | 24.1 | 303.3 |
-| `TerminalBlock10_CI.CATPart` | 744 | 1778 | 459 | 614.6 | 1276.8 |
-| `SP02_ALPHA5_SEPA2_PRINCIPALE.CATPart` | 1852 | 27045 | 2712 | 3969.6 | 16004.5 |
-| `Symmetry of Part1.1.2.3.4.5.6.7.8.9.10.CATPart` | 106 | 663 | 110 | 13755.7 | 45271.2 |
-| `Coletor de Escape.CATPart` | 115 | 663 | 115 | 13840.6 | 46674.2 |
-| `5009980900_SD_reader.CATPart` | 2932 | 3196 | 66 | 1175.3 | 1226.6 |
-| `Base.CATPart` | 643 | 2901 | 468 | 4663.6 | 98310.1 |
-| `Coletor de Admissao.CATPart` | 403 | 3236 | 209 | 108325.1 | 285278.1 |
-| `Hitbox_WorkFile_main.CATPart` | 2398 | 9752 | 447 | 145783.3 | 1547253.2 |
-| `Carter de Oleo - Motor V6.CATPart` | 803 | 1176 | 68 | 18976.3 | 41825.0 |
-| `MPU6050_Solders.CATPart` | 161 | 369 | 79 | 1299.9 | 2670.7 |
-| `DB9_Female.CATPart` | 175 | 1323 | 359 | 58.5 | 1718.1 |
-| `SP02_BETA_COUPLEUR.CATPart` | 433 | 1083 | 6 | 140.0 | 223.1 |
-| `TouchRows_Strips.CATPart` | 2026 | 9214 | 1125 | 3205.0 | 796126.2 |
-| `TouchCols_Wires.CATPart` | 1471 | 2560 | 226 | 674.5 | 3331.1 |
-| `Bateria.CATPart` | 312 | 348 | 2 | 19956.4 | 20019.2 |
-| `SP02_ALPHA5_SEPA2_LOQUET_RESSORT.CATPart` | 88 | 138 | 14 | 521.7 | 980.8 |
-| `Moule1.CATPart` | 143 | 1184 | 12 | 61572.7 | 100686.0 |
-| `SP02_BETA_Cage_Parachute.CATPart` | 432 | 1266 | 21 | 9419.8 | 47523.8 |
-| `TSSOP-8_L3.0-W3.0-P0.65-LS4.9-BL~...7Q6T.CATPart` | 863 | 1439 | 89 | 9.0 | 22.4 |
-| `_NPart#194321.CATPart` | 10030 | 31504 | 1731 | 268.4 | 6053.3 |
-| `coneecting road.CATPart` | 143 | 407 | 51 | 8940.8 | 20712.9 |
-| `MPU6050_Wires.CATPart` | 105 | 655 | 77 | 366.2 | 5684.6 |
-| `Beta_Bague_Para_Sup_Pleine.CATPart` | 821 | 3937 | 25 | 813.1 | 2738.0 |
-| `SP02_PCB_Allumage_Pre-RCE.CATPart` | 4067 | 6237 | 532 | 1045.1 | 2286.8 |
-| `M3_Nut.CATPart` | 182 | 439 | 32 | 27.5 | 57.1 |
+Chosen from the 26 pre-guard regressions; each shows the loops the guard
+kept out and the restored manifold verdict.
 
-(The corpus's coordinate units are inconsistent across producers; the
-absolute mm² column is not comparable between parts. The deltas are.)
+| part | rejected loops | welded (no guard) | welded (guard) | tris before | tris no-guard | tris guard | manifold guard |
+|---|---:|---:|---:|---:|---:|---:|---|
+| `Hitbox_WorkFile_main.CATPart` | 100 | 447 | 347 | 2,398 | 9,752 | 9,726 | true |
+| `MPU6050_Solders.CATPart` | 24 | 79 | 55 | 161 | 369 | 307 | true |
+| `MPU6050_Wires.CATPart` | 23 | 77 | 54 | 105 | 655 | 381 | true |
+| `_NPart#194321.CATPart` | 20 | 1,731 | 1,711 | 10,030 | 31,504 | 31,175 | true |
+| `Square.CATPart` | 2 | 57 | 55 | 96 | 408 | 399 | true |
 
-### 5.1 What the regressions are
+The 26 fixed rows include `SP02_ALPHA5_SEPA2_PRINCIPALE` (8 rejected /
+2,704 welded / 27,001 triangles, manifold), `TerminalBlock10_CI` (8 / 451 /
+1,770), `Coletor de Admissao` (19 / 190 / 2,965), `Base` (1 / 467 / 2,897),
+and `Bateria` (2 / 0 / 312 — the one fully-lost change). `Square.CATPart`
+is the minimal case: the naive law added 312 triangles and exactly one edge
+reached 4 uses; the guard refuses the 2 offending loops and the mesh stays
+manifold at 399 triangles.
 
-The welded loops on these parts are real geometry, not duplicated facets:
-the area increases, and the pre-existing unordered-triangle dedup law does
-not fire (there are no duplicate unordered triples to remove). The added
-fans share a small number of edges with the surviving primary mesh. On
-`Square.CATPart` the patch adds 312 triangles and exactly **one** edge with
-4 uses (every other rule-of-two edge is fine); the mesh was manifold
-before. The battery tests loop-vs-record-normal coplanarity only — it
-cannot see that the welded loop's boundary edge is already used twice by
-the primary mesh. That is the "471-passing-stores downside exposure" the
-old E0 whole-store scope was protecting against, and it is not a property
-of the three width-misparsed loops (fix 3): these loops all pass the
-battery.
+## 5. Port parity
 
-### 5.2 Decision
+`port/src/geometry/composite.rs` now mirrors the Python law:
 
-Per the task's fail-safe rule ("if a corpus regression appears, STOP and
-report instead of tuning the battery"), the implementation stopped here.
-No battery tolerance, coverage rule or mesh-level guard was added. Options
-for an owner decision (NOT implemented):
+- `e0b_dup_pin` is per-loop, with `dup_pin_map`, the 2e-3 battery
+  (`loop_plane_status`) and the incremental `edge_uses_of` guard
+  (undirected edges, max 2, degenerate refusal, fail-closed);
+- `parse_strip_records` runs the same dup-pinned battery on skip-bearing
+  loops in the width rank;
+- both per-rep paths merge welded loops unconditionally and subtract the
+  welded count from `loops_curve_entry`;
+- the warning text and the schema description match the Python strings
+  byte-for-byte (the fidelity harness compares them).
 
-1. a per-loop mesh guard — weld only when the added triangles keep the
-   assembled mesh manifold (the law becomes topology-aware; the battery
-   stays untouched); or
-2. a narrower non-empty scope — e.g. weld only loops whose triangles are
-   disjoint from the primary mesh's edge set (the "missing panel" shape,
-   which is labios/main); or
-3. accept the regressions as wrong L2 rows and re-baseline the gate (this
-   contradicts the task's zero-regression requirement).
+Rust unit tests: `dup_pin_welds_to_the_preceding_written_element` and
+`dup_pin_battery_and_mesh_guard_refuse_fail_closed` (battery refusal, base
+over-use refusal, disjoint weld, degenerate refusal).
 
-## 6. Tests
+`port/pkg` was rebuilt with `wasm-pack build --target web --release` and
+copied to `site/viewer/pkg` (the gate's byte-identical check).
 
-`pytest -q tests/test_composite_export.py tests/test_export_v1.py` →
-**87 passed**. New/re-scoped coverage:
+## 6. Tests and gate
 
-- **non-empty primary mesh welds** (`e0b-nonempty`): 12 → 14 triangles,
-  `curve_entry_law = e0b-dup-pin` (the bug's core pin);
-- **non-coplanar loop stays out** (`e0b-nonplanar`): only the coplanar fan
-  exports (2 triangles), the refused loop stays counted;
-- **no-manifold regression pin** (`e0b-relaxed-not-manifold`): the two
-  nonplanar fans are refused, the mesh stays manifold at 2 triangles;
+- `pytest -q tests/test_composite_export.py tests/test_export_v1.py` →
+  **89 passed**.
+- `pytest -q` (whole suite) → **689 passed, 7 skipped, 0 failed**.
+- `bash scripts/check.sh` → **exit 0**:
+  - ruff clean; 689 passed / 7 skipped; claims-CSV checker clean;
+  - cargo native + wasm32 builds, `fmt --check`, `clippy -D warnings`,
+    `cargo test` 145 + 6 passed;
+  - `wasm-pack build`/`wasm-pack test --node` 10 passed; `port/pkg` vs
+    `site/viewer/pkg` sync; Node suites 10/10, 10/10, 14/14, 5/5; the
+    Playwright assembly acceptance ran and passed.
+
+New/re-scoped coverage:
+
+- **non-empty primary mesh welds** (`e0b-nonempty`): the open box's 10
+  triangles plus a disjoint loop → 12, manifold (labios' missing-panel
+  shape);
+- **mesh guard refuses a duplicate face** (`e0b-mesh-guard`): full box +
+  the same loop → 12 (not 14), manifold, loop stays named;
+- **battery is not weakened** (`e0b-nonplanar-refused`, formerly
+  `e0b-relaxed-not-manifold`): the two nonplanar fans stay out, 2
+  triangles, manifold;
 - **per-rep paths weld per loop** (`e0b-multi-rep-conservative`,
   `e0b-multi-rep-unsupported-veto`);
 - **labios/main corpus-gated regression** (skipped when the gitignored
   corpus is absent): 4,464 triangles, 5,410.18 ± 0.05 mm², manifold,
   10 welded loops, 0 dropped.
 
-`pytest -q` (whole suite) → **696 passed, 7 skipped, 2 failed**:
-
-- `test_port_fidelity.py::test_port_fidelity_fixture_mode` and
-  `test_reproduction_smoke.py::test_reproduction_smoke_fixture_mode` fail
-  because `port/src/geometry/composite.rs` still carries the old
-  empty-mesh law (`dup_pin = if triangles.is_empty() && ...`). The Rust
-  port and its shipped `port/pkg` + `site/viewer/pkg` artifacts are not in
-  this task's owned files, so they were not changed; the Python/Rust
-  twin parity gate cannot pass until the port is updated.
-
 ## 7. Files changed
 
 - `src/catpart/geometry/composite.py` — per-loop weld, `_dup_pin_map`,
-  width-rank battery, docstrings.
-- `src/catpart/geometry/export.py` — the dup-pin warning text (it said
-  "primary triangulation is empty"), no logic change.
+  `_edge_key`/`_edge_uses` guard, width-rank battery, docstrings.
+- `src/catpart/geometry/export.py` — the dup-pin warning text.
 - `src/catpart/schema/export-summary-v1.json` — the
   `curve-entry-loops-exported-dup-pin` description.
-- `tests/test_composite_export.py` — re-scoped e0b tests + labios case.
-- `tests/fixtures_gen.py` — comments only.
+- `tests/test_composite_export.py` — re-scoped e0b tests, mesh-guard
+  negative, labios case.
+- `tests/fixtures_gen.py` — the opened-box non-empty positive, the new
+  mesh-guard negative, the renamed nonplanar-refused variant.
+- `scripts/fidelity_run.py`, `scripts/reproduction_run.py`,
+  `tests/test_reproduction_smoke.py` — variant rename / not-manifold
+  branch moved to `dedup-declined`.
+- `port/src/geometry/composite.rs`, `port/src/geometry/export.rs` — the
+  same law and the parity strings.
+- `port/pkg/*` + `site/viewer/pkg/*` — rebuilt wasm artifact (binary only).
 - `docs/evidence/2026-11-18-composite-loop-weld.md` (this note) and
   `docs/evidence/data/br6-composite-weld-claims.csv`.

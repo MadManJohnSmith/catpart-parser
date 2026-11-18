@@ -496,14 +496,15 @@ def _export_composite_store(
                 "detail": f"{info['loops_curve_entry_exported']} facet "
                 "loops referencing skip slots (curve entries) exported "
                 "under the dup-pin law (#34; stage-10 2026-11-12, made "
-                "per loop 2026-11-18): each loop was fully pinnable and "
+                "per loop 2026-11-18): each loop was fully pinnable, "
                 "battery-supported (its record carries no normal, or "
-                "the dup-pinned coordinates are coplanar at 2e-3), so "
-                "its skip slots are welded to the written vertex of "
-                "the immediately preceding written element (no new "
-                "vertices — the U4-D dup law); loops the battery "
-                "refuses stay unexported and counted under "
-                "curve-entry-loops-unexported",
+                "the dup-pinned coordinates are coplanar at 2e-3) and "
+                "mesh-safe (its triangles keep the assembled mesh "
+                "manifold), so its skip slots are welded to the written "
+                "vertex of the immediately preceding written element "
+                "(no new vertices — the U4-D dup law); loops the "
+                "battery or mesh guard refuses stay unexported and "
+                "counted under curve-entry-loops-unexported",
             }
         )
     if info.get("unordered_dedup_dropped"):

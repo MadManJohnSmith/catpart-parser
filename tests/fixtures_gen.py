@@ -271,10 +271,11 @@ VALID_VARIANTS = (
     "geometry-composite-law-e0b-nonplanar",
     "geometry-composite-law-e0b-normal-less",
     "geometry-composite-law-e0b-nonempty",
+    "geometry-composite-law-e0b-mesh-guard",
     "geometry-composite-law-e0b-multi-rep-conservative",
     "geometry-composite-law-e0b-multi-rep-unsupported-veto",
     "geometry-composite-law-e0b-unpinnable",
-    "geometry-composite-law-e0b-relaxed-not-manifold",
+    "geometry-composite-law-e0b-nonplanar-refused",
     "geometry-composite-law-e0b-multi-rep-relaxed",
     # Stage-15 unordered-triangle dedup variants (#34, 2026-11-13, the
     # stage-14 review F1 family): the positive fires on a not-manifold
@@ -411,10 +412,11 @@ COMPOSITE_VARIANTS = (
     "geometry-composite-law-e0b-nonplanar",
     "geometry-composite-law-e0b-normal-less",
     "geometry-composite-law-e0b-nonempty",
+    "geometry-composite-law-e0b-mesh-guard",
     "geometry-composite-law-e0b-multi-rep-conservative",
     "geometry-composite-law-e0b-multi-rep-unsupported-veto",
     "geometry-composite-law-e0b-unpinnable",
-    "geometry-composite-law-e0b-relaxed-not-manifold",
+    "geometry-composite-law-e0b-nonplanar-refused",
     "geometry-composite-law-e0b-multi-rep-relaxed",
     "geometry-composite-law-dedup-unordered",
     "geometry-composite-law-dedup-manifold-no-fire",
@@ -805,7 +807,7 @@ def _geometry_box_edges_lex() -> tuple[tuple[int, int], ...]:
 #                                        to test; the 25/26 corpus
 #                                        pinned meshes are the
 #                                        normal-less family).
-# - geometry-composite-law-e0b-relaxed-not-manifold  three skip-bearing
+# - geometry-composite-law-e0b-nonplanar-refused  three skip-bearing
 #                                        fans, one coplanar and two
 #                                        NONPLANAR under the pin: only
 #                                        the coplanar fan welds, the mesh
@@ -813,14 +815,22 @@ def _geometry_box_edges_lex() -> tuple[tuple[int, int], ...]:
 #                                        (the no-manifold-regression pin:
 #                                        the naive gate removal emits all
 #                                        three and over-uses edge (1,6)).
-# - geometry-composite-law-e0b-nonempty  the box exports AND carries a
-#                                        battery-supported dropped loop:
-#                                        the per-loop weld fires on the
-#                                        non-empty primary mesh
-#                                        (12 -> 14 triangles; the fixture
-#                                        fan re-covers a box face, so its
-#                                        mesh is not-manifold by fixture
-#                                        construction).
+# - geometry-composite-law-e0b-nonempty  the OPEN box (its y=10 face
+#                                        removed) plus a battery- and
+#                                        mesh-safe dropped loop: the
+#                                        per-loop weld fires on the
+#                                        non-empty primary mesh (10 -> 12
+#                                        triangles, manifold) — the
+#                                        missing-panel shape of
+#                                        labios/main in miniature.
+# - geometry-composite-law-e0b-mesh-guard  the FULL closed box plus the
+#                                        same battery-supported loop:
+#                                        the fan re-covers the box's y=10
+#                                        face, so adding it would push an
+#                                        edge past two uses — the
+#                                        per-loop mesh guard refuses it
+#                                        and the box's 12 triangles stay
+#                                        (the 26-regression shape).
 # - geometry-composite-law-e0b-multi-rep-conservative  rep 1 carries a
 #                                        battery-supported dropped loop,
 #                                        rep 0 exports its box: rep 1's
@@ -1381,7 +1391,7 @@ def _composite_store(variant: str) -> bytes:
                 extra_record = _facet_record(
                     0x4C, (0.0, 1.0, 0.0), skip_loop_a
                 ) + _facet_record(0x42, None, skip_loop_b)
-            elif variant == "geometry-composite-law-e0b-relaxed-not-manifold":
+            elif variant == "geometry-composite-law-e0b-nonplanar-refused":
                 # the no-manifold-regression pin (fix 3, 2026-11-18):
                 # three skip-bearing 0x4C fans, one coplanar and two
                 # NONPLANAR under the pin.  The per-loop battery welds
@@ -1403,16 +1413,12 @@ def _composite_store(variant: str) -> bytes:
                 extra_record = _facet_record(
                     0x4C, (0.0, 0.0, -1.0), (0, 6, 9, 3)
                 )
-            else:  # geometry-composite-law-e0b-nonempty
-                # the box exports its 12 triangles AND carries a
-                # battery-supported dropped loop: the per-loop weld
-                # fires on the NON-empty primary mesh (12 -> 14
-                # triangles).  This is labios/main's shape in
-                # miniature; the fixture's fan re-covers a box face, so
-                # its assembled mesh is not-manifold by construction.
-                # The box's faces are written over WRITTEN indices —
-                # remapped through the skip layout (the curve-entries
-                # variant's _elem walk).
+            elif variant == "geometry-composite-law-e0b-mesh-guard":
+                # the mesh guard's negative: the FULL closed box plus a
+                # pinnable coplanar loop whose fan re-covers the box's
+                # y=10 face — adding it would push the face's edges past
+                # two uses, so the guard refuses it (the box's 12
+                # triangles stay, mesh manifold; the loop stays named).
                 def _elem(r: int) -> int:
                     e = r
                     for s in skip_slots:
@@ -1425,6 +1431,32 @@ def _composite_store(variant: str) -> bytes:
                 faces = tuple(
                     (mk, normal, tuple(_elem(r) for r in refs))
                     for mk, normal, refs in COMPOSITE_FACES
+                )
+                extra_record = _facet_record(0x4C, (0.0, 1.0, 0.0), skip_loop_a)
+            else:  # geometry-composite-law-e0b-nonempty
+                # the guard's non-empty positive: the OPEN box (its y=10
+                # face removed) plus the loop that fan-fills part of that
+                # opening.  The primary mesh is non-empty (10 triangles)
+                # and the loop's edges are disjoint from the remaining
+                # edge set, so the per-loop guard accepts it (10 + 2 =
+                # 12 triangles, manifold).  This is labios/main's shape
+                # in miniature: missing panels on a non-empty mesh.  The
+                # box's faces are written over WRITTEN indices — remapped
+                # through the skip layout (the curve-entries variant's
+                # _elem walk).
+                def _elem(r: int) -> int:
+                    e = r
+                    for s in skip_slots:
+                        if s <= e:
+                            e += 1
+                        else:
+                            break
+                    return e
+
+                faces = tuple(
+                    (mk, normal, tuple(_elem(r) for r in refs))
+                    for mk, normal, refs in COMPOSITE_FACES
+                    if normal != (0.0, -1.0, 0.0)
                 )
                 extra_record = _facet_record(0x4C, (0.0, 1.0, 0.0), skip_loop_a)
         elif variant.startswith("geometry-composite-law-dedup"):

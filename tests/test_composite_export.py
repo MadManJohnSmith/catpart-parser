@@ -46,8 +46,9 @@ COMPOSITE_VARIANTS = (
     "geometry-composite-law-e0b-nonplanar",
     "geometry-composite-law-e0b-normal-less",
     "geometry-composite-law-e0b-nonempty",
+    "geometry-composite-law-e0b-mesh-guard",
     "geometry-composite-law-e0b-multi-rep-conservative",
-    "geometry-composite-law-e0b-relaxed-not-manifold",
+    "geometry-composite-law-e0b-nonplanar-refused",
     "geometry-composite-law-e0b-multi-rep-relaxed",
     "geometry-composite-law-dedup-unordered",
     "geometry-composite-law-dedup-manifold-no-fire",
@@ -1053,7 +1054,7 @@ def test_composite_e0b_nonplanar_fans_refused_mesh_manifold(tmp_path, capsys):
     mesh NOT-MANIFOLD — red on both the triangle count and the
     manifold verdict."""
     code, captured, ply_path = run_export(
-        tmp_path, capsys, "geometry-composite-law-e0b-relaxed-not-manifold"
+        tmp_path, capsys, "geometry-composite-law-e0b-nonplanar-refused"
     )
     assert code == 0, captured.err
     summary = json.loads(captured.out)
@@ -1072,27 +1073,49 @@ def test_composite_e0b_nonplanar_fans_refused_mesh_manifold(tmp_path, capsys):
 
 
 def test_composite_e0b_nonempty_primary_mesh_welds(tmp_path, capsys):
-    """The surface-loss fix's core pin (fix 1, 2026-11-18): the box
-    exports its 12 triangles AND carries a battery-supported dropped
-    loop — the store's primary mesh is NOT empty, and the weld still
-    fires for that loop (12 -> 14 triangles).  The old empty-mesh
-    precondition kept the box at 12 and left the loop unexported — red
-    (this is exactly labios/main's shape: 4,261 primary triangles
-    hiding 10 droppable loops).  The synthetic fan re-covers a box
-    face, so this fixture's assembled mesh is not-manifold; the corpus
-    case's is (pinned by the labios test below)."""
+    """The surface-loss fix's core pin (fix 1 + the mesh guard,
+    2026-11-18): the OPEN box exports its 10 primary triangles AND
+    carries a battery-supported dropped loop whose edges are disjoint
+    from the surviving edge set — the store's primary mesh is NOT empty
+    and the weld still fires for that loop (10 -> 12 triangles,
+    manifold).  The old empty-mesh precondition kept the open box at 10
+    and left the loop unexported — red.  This is labios/main's shape:
+    missing panels on a non-empty primary mesh."""
     code, captured, ply_path = run_export(
         tmp_path, capsys, "geometry-composite-law-e0b-nonempty"
     )
     assert code == 0, captured.err
     summary = json.loads(captured.out)
     info = summary["composite"]
-    assert summary["triangle_count"] == 14  # 12 box + the 2 welded
+    assert summary["triangle_count"] == 12  # 10 open-box + the 2 welded
+    assert summary["mesh"]["manifold"] is True
     assert info["loops_curve_entry"] == 0
     assert info["loops_curve_entry_exported"] == 1
     assert info["curve_entry_law"] == "e0b-dup-pin"
     assert "curve-entry-loops-unexported" not in _warning_classes(summary)
     assert "curve-entry-loops-exported-dup-pin" in _warning_classes(summary)
+
+
+def test_composite_e0b_mesh_guard_refuses_duplicate_face(tmp_path, capsys):
+    """The per-loop mesh guard's fail-closed direction (2026-11-18):
+    the FULL closed box plus the same battery-supported, pinnable
+    coplanar loop.  The fan re-covers the box's y=10 face, so welding
+    it would push an edge past two uses — the guard refuses the loop
+    (the box's 12 triangles stay, mesh manifold, the loop stays named).
+    The naive per-loop law without the guard adds the fan (14 triangles,
+    one edge at 4 uses, not-manifold) — red on both counts."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-e0b-mesh-guard"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    info = summary["composite"]
+    assert summary["triangle_count"] == 12  # the box, NOT 14
+    assert summary["mesh"]["manifold"] is True
+    assert summary["mesh"]["closed"] is True
+    assert info["loops_curve_entry"] == 1  # the refused loop stays named
+    assert "curve_entry_law" not in info
+    assert "curve-entry-loops-unexported" in _warning_classes(summary)
 
 
 def test_composite_e0b_multi_rep_welds_with_nonempty_store(tmp_path, capsys):

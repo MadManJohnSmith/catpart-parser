@@ -59,17 +59,24 @@ stage-3b table law dated 2026-11-11, byte-measured on the corpus):
   PER-LOOP 2026-11-18 (the surface-loss fix, #34; see
   docs/evidence/2026-11-18-composite-loop-weld.md): the decision is
   made for EACH dropped loop, independently — a loop is welded exactly
-  when (1) every referenced skip slot is pinnable and (2) the loop is
+  when (1) every referenced skip slot is pinnable, (2) the loop is
   battery-supported: its record carries no normal, or the dup-pinned
   coordinates are coplanar against that normal at
-  :data:`PLANE_TOL` (2e-3).  The old E0 whole-store precondition (the
+  :data:`PLANE_TOL` (2e-3), and (3) it is mesh-safe: the incremental
+  guard keeps the assembled mesh manifold (no undirected edge past two
+  uses, no degenerate emission; :func:`_e0b_dup_pin`).  The old E0
+  whole-store precondition (the
   store's primary triangulation had to be EMPTY) is GONE: on
   labios/main the non-empty 4,261-triangle primary mesh hid 10
   droppable loops worth 3,097 mm² (the three envelope panels at
   x=-22.7 and y=±12.4 plus six smaller loops; measured deviations
   <= 1.4e-6).  The battery is NOT weakened: the three width-misparsed
-  loops it refuses there measure 2e-2..8 and would make the mesh
-  non-manifold.  A refused or unpinnable loop stays dropped under the
+  loops it refuses there measure 2e-2..8.  The mesh guard is what
+  keeps a weld from tipping a passing store's L2 row: without it the
+  first full-corpus A/B found 26 manifold -> non-manifold regressions
+  (welded loops whose boundary edges already had two uses in the
+  surviving primary mesh); with it the same A/B has zero.  A refused
+  or unpinnable loop stays dropped under the
   conservative non-export rule with its warning — it never vetoes
   another loop's weld.  The U4-M mid law stays DEMOTED to unsupported
   and is NOT implemented; the battery discriminates dup from next/mid
@@ -627,8 +634,25 @@ def _dup_pin_map(elements, loop):
     return pin
 
 
-def _e0b_dup_pin(elements, points, written_rank, dropped):
-    """The dup-pin weld, evaluated PER LOOP (2026-11-18, #34).
+def _edge_key(a, b):
+    """The undirected edge key (the mesh-stat edge histogram's key)."""
+    return (a, b) if a <= b else (b, a)
+
+
+def _edge_uses(triangles):
+    """Undirected edge-use histogram of a triangle list (the mesh
+    invariant's key; ``manifold`` == every value <= 2)."""
+    uses: dict[tuple[int, int], int] = {}
+    for tri in triangles:
+        a, b, c = tri
+        for key in (_edge_key(a, b), _edge_key(b, c), _edge_key(c, a)):
+            uses[key] = uses.get(key, 0) + 1
+    return uses
+
+
+def _e0b_dup_pin(elements, points, written_rank, dropped, triangles):
+    """The dup-pin weld, evaluated PER LOOP behind a mesh guard
+    (2026-11-18, #34).
 
     Each dropped loop is welded independently when it is
 
@@ -637,10 +661,25 @@ def _e0b_dup_pin(elements, points, written_rank, dropped):
     2. battery-supported — the record carries no normal, or the
        dup-pinned coordinates are coplanar against it at
        :data:`PLANE_TOL` (:func:`_loop_plane_status`; the real corpus
-       loops measure <= 1.4e-6, the width-misparsed ones 2e-2..8).
+       loops measure <= 1.4e-6, the width-misparsed ones 2e-2..8), and
+    3. mesh-safe — its triangles contain no degenerate emission
+       (:func:`_loop_triangles`' skip convention) and adding them keeps
+       the assembled mesh MANIFOLD: no undirected edge would exceed two
+       uses (``triangles`` is the primary mesh already emitted by this
+       call; previously welded loops are folded in as they are
+       accepted).
 
-    A loop failing either test stays dropped on the conservative rule;
-    it does not veto another loop's weld, and the decision no longer
+    The guard is incremental — O(the loop's triangles) per loop, with
+    the edge histogram built once from the primary mesh — and
+    fail-closed: a rejected loop leaves the histogram untouched and
+    stays dropped.  The loop order is the records'/dropped order, so
+    the accepted set is deterministic.  It is what keeps a weld from
+    tipping a passing store's L2 row: the 26 non-manifold regressions
+    of the 2026-11-18 full-corpus A/B were exactly welded loops whose
+    boundary edges already had two uses in the surviving primary mesh.
+
+    A loop failing any test stays dropped on the conservative rule; it
+    does not veto another loop's weld, and the decision no longer
     depends on the store's primary mesh being empty (the 2026-11-18
     surface-loss fix: the empty-mesh precondition hid 10 droppable
     loops / 3,097 mm² on labios/main behind a non-empty 4,261-triangle
@@ -649,10 +688,11 @@ def _e0b_dup_pin(elements, points, written_rank, dropped):
     Returns ``{"triangles", "degenerate", "loops", "refused"}``: the
     welded loops' triangles (written-rank indexed), the degenerate
     count, the welded-loop count and the refused-loop count."""
-    triangles = []
+    welded_triangles = []
     degenerate = 0
     welded = 0
     refused = 0
+    edge_uses = _edge_uses(triangles)
     for mk, normal, loop in dropped:
         pin = _dup_pin_map(elements, loop)
         if pin is None:
@@ -667,11 +707,27 @@ def _e0b_dup_pin(elements, points, written_rank, dropped):
         tris, deg = _loop_triangles(
             mk, [written_rank[r] for r in resolved], points
         )
-        triangles += tris
+        if deg:
+            # Fail-closed: a degenerate emission means the pinned loop
+            # is not a clean facet — do not weld it.
+            refused += 1
+            continue
+        # Incremental manifold guard: any edge the candidate loop would
+        # push past two uses rejects the whole loop (no partial weld).
+        candidate = _edge_uses(tris)
+        if any(
+            edge_uses.get(edge, 0) + count > 2
+            for edge, count in candidate.items()
+        ):
+            refused += 1
+            continue
+        for edge, count in candidate.items():
+            edge_uses[edge] = edge_uses.get(edge, 0) + count
+        welded_triangles += tris
         degenerate += deg
         welded += 1
     return {
-        "triangles": triangles,
+        "triangles": welded_triangles,
         "degenerate": degenerate,
         "loops": welded,
         "refused": refused,
@@ -688,12 +744,15 @@ def _triangulate(elements, records):
     U4) are evaluated per loop by the dup-pin weld
     (:func:`_e0b_dup_pin`, 2026-11-18): a loop that is fully pinnable and
     battery-supported (its record carries no normal, or the dup-pinned
-    coordinates are coplanar at :data:`PLANE_TOL`) exports with its skip
+    coordinates are coplanar at :data:`PLANE_TOL`) and mesh-safe (its
+    triangles keep the assembled mesh manifold, no degenerate emission)
+    exports with its skip
     slots welded to the written vertex of the immediately preceding
     written element (no new vertices); every other loop stays dropped
     under the conservative rule, which names the gap instead of guessing
     coordinates.  The decision is per loop — it never depends on the
-    store's primary mesh being empty.  Strip
+    store's primary mesh being empty, and the incremental edge-use guard
+    is the topology check the coplanarity battery cannot make.  Strip
     triangles (0x42/0x4a) skip the degenerate ones (repeated
     coordinates or exactly-zero cross product, G3 F7); polygon fans
     (0x4c) skip repeated coordinates.
@@ -743,7 +802,9 @@ def _triangulate(elements, records):
         "loops_curve_entry": loops_curve_entry,
     }
     if dropped:
-        stats["dup_pin"] = _e0b_dup_pin(elements, points, written_rank, dropped)
+        stats["dup_pin"] = _e0b_dup_pin(
+            elements, points, written_rank, dropped, triangles
+        )
     return triangles, degenerate, stats
 
 
@@ -880,9 +941,11 @@ def decode_composite_store(data, span, groups, kinds, allow_unrouted_elements=Fa
     #34 — the surface-loss fix): on every exported path, a dropped
     curve-entry loop exports when it is fully pinnable (:func:`_e0b_dup_pin`
     — each skip slot welded to the written vertex of its immediately
-    preceding written element, no new vertices) AND battery-supported
+    preceding written element, no new vertices), battery-supported
     (its record carries no normal, or the dup-pinned coordinates are
-    coplanar at :data:`PLANE_TOL`).  The decision is independent per
+    coplanar at :data:`PLANE_TOL`) AND mesh-safe (its triangles contain
+    no degenerate emission and keep the assembled mesh manifold — the
+    incremental edge-use guard).  The decision is independent per
     loop and no longer depends on the store's primary mesh being empty;
     a refused or unpinnable loop keeps the conservative non-export rule
     and its warning without vetoing the others.  The U4-M mid law stays
