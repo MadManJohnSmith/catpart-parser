@@ -108,7 +108,7 @@ curve overlay, in-browser sanity gate, exploded assembly view.
 | L2 | Geometry basics: meshes and curves exportable to STEP or renderable | closed at 74.80% (bar re-adjusted per the pre-authorized rule) |
 | Phase 5 (Viewer: Parts) | Client-side .CATPart parsing in WebAssembly, 3D WebGL render | done (Phase 5) |
 | Phase 6 (Assemblies) | Client-side .CATProduct parsing, multi-part instancing, 3D placement | done (Phase 6) |
-| L3 | Full parametric B-rep (precise CAD solids) | planned, hardest (Phase 7) |
+| L3 | B-rep constructs: topology graph + STEP (facet subset; exact solids 0/1,442) | closed 2026-11-18 — 23/23 constructs, L3 23/23 |
 
 ## Progress
 
@@ -123,7 +123,7 @@ Spec-by-spec summary — authoritative per-ticket state lives in the
 | D — L2 geometry ([#28](https://github.com/MadManJohnSmith/catpart-parser/issues/28)) | store navigation, vertex pool, primitive semantics, export CLI, L2 fitness, grind to bar | 6/6 done (Phase 4, 2026-11-13, closed at 74.80%) |
 | E — WASM viewer ([#39](https://github.com/MadManJohnSmith/catpart-parser/issues/39)) | Rust toolchain, L1/L2 port + fidelity harness, composite decode, WASM boundary + viewer shell, in-browser reproduction, publication | 7/7 done (Phase 5, 2026-11-14) |
 | F — assemblies ([#45](https://github.com/MadManJohnSmith/catpart-parser/issues/45)) | product census, pairing law, transforms & instance binding, WASM product core, multi-file ingestion, 3D placement, UI + classification tree, headless Playwright acceptance | 12/12 done (Phase 6, 2026-11-16) |
-| G — B-rep ([#47](https://github.com/MadManJohnSmith/catpart-parser/issues/47)) | full parametric B-rep (Phase 7) | in progress |
+| G — B-rep ([#47](https://github.com/MadManJohnSmith/catpart-parser/issues/47)) | B-rep construct vocabulary, per-construct decode, topology graph + STEP, L3 close | 6/6 done (Phase 7, 2026-11-18) |
 
 ## Architecture
 
