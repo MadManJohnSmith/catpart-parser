@@ -214,12 +214,14 @@ pairs).
 **The acceptance is not run** for one reason: the law gives seven matrices
 and seven instance names but no *pairing*. The instance-name objects
 resolved in coso are `Part4.1`, `Part5.1.2`, `Part7.1`, `Part7.2`,
-`Part5.1.1`, `Part5.1.1.1` (six; `Part5.1` is serialized in the bare-pair
-form and needs the P2 pairing rule to name). Pairing the seven matrices to
-those names by stream order is precisely the ordinal binding the ticket says
-is unproven, and a geometric "no interpenetration" check cannot distinguish
-a permutation that happens to fit (the matrices are mostly collinear along
-the cable axis). Running it would manufacture evidence, not read it.
+`Part5.1.1`, `Part5.1.1.1` (six; `Part5.1` is written in the pool's
+bare-pair form and needs the P2 pairing rule to name). Pairing the seven
+matrices to those names by stream order is precisely the ordinal binding
+the ticket says is unproven: a no-interpenetration check only rejects a
+permutation when the parts actually overlap, and without the
+part→instance mapping the four on-disk CATPart meshes cannot even be
+assigned to the three declared part numbers (`Part4`, `Part5`, `Part7`).
+Running it would manufacture evidence, not read it.
 
 ---
 
