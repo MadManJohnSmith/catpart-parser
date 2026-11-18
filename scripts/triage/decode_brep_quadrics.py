@@ -15,17 +15,28 @@ undifferentiated ``GEOM_SURF_QUADRIC`` from CGM presence).
 
 Outputs docs/evidence/data/br4-quadrics-claims.csv (one row per claim,
 per scope — the committed artifact; every prose figure of the evidence
-note is a row or row-derived sum).  The per-file counter table is
-NOT written by default (only the ticket's owned files land in the
-tree); pass --files-out PATH to write it.  Deterministic: sorted
-manifest order; no wall-clock value enters the CSV.  Read-only over
-the corpus (binaries resolved against the main checkout when absent
-here); run with the worktree venv:
+note is a row or row-derived sum).  The counted unit is one ``ty``
+strip loop of an accepted record (a strip segment), not a record: a
+record whose ``ty`` count is > 1 contributes that many units.
+
+The per-file counter table is NOT written by default (only the
+ticket's owned files land in the tree); pass --files-out PATH to write
+it there.  Deterministic: sorted manifest order; no wall-clock value
+enters the CSV.  Read-only over the corpus (binaries resolved against
+the main checkout when absent here); run with the worktree venv:
 
   .venv/bin/python -I scripts/triage/decode_brep_quadrics.py
   .venv/bin/python -I scripts/triage/decode_brep_quadrics.py --selftest
+
+``--include-sha16`` is a SUBSET/anchor mode: comma-separated hex sha256
+prefixes (any length; the documented anchor form is 16 hex chars)
+prefix-match the manifest digests, and the run aborts non-zero when the
+selection is empty (never writing a zeroed claims file).  A subset run
+writes a subset claims file, so it refuses to write into the committed
+data dir — pass ``--out-dir`` pointing outside the tree:
+
   .venv/bin/python -I scripts/triage/decode_brep_quadrics.py \
-    --include-sha16 369fc90b25b4977d
+    --include-sha16 369fc90b25b4977d --out-dir /tmp/br4-anchor
 """
 
 from __future__ import annotations
@@ -135,16 +146,39 @@ def new_counters():
         "loops_oob": 0,
         "loops_skipref": 0,
         "records": 0,
+        "records_42": 0,
+        "records_4a": 0,
+        "records_5byte": 0,
     }
 
 
+def note_record(marker, header_len, counters):
+    """Count one accepted strip record and its carrier layout family.
+
+    ``0x42`` carries NO normal (``facets.NORMAL_MARKERS_ALL`` is
+    0x49/0x4a/0x4b/0x4c/0x4e), so its ``ty`` counts start at
+    ``+0x08 (8d)``; ``0x4a`` carries the 12-B normal, counts at
+    ``+0x14 (20d)``.  ``header_len`` 5 is the form whose byte at
+    ``+0x03 (3d)`` is not ``0xff`` (every following offset shifts +1).
+    """
+    counters["records"] += 1
+    counters["records_42" if marker == 0x42 else "records_4a"] += 1
+    if header_len == 5:
+        counters["records_5byte"] += 1
+
+
 def classify_poolonly(data, lo, hi, flat, lex, counters):
-    """Classify the strip records of a pool-only store (G3 scope)."""
+    """Classify the strip loops of a pool-only store (G3 scope).
+
+    The counted unit is one ``ty`` strip loop of an accepted record (a
+    strip segment); a record with several ``ty`` loops contributes
+    several units.
+    """
     scan = facets.scan_facets(data, lo, hi, clean_store=True)
     for rec in scan.records:
         if rec.marker not in STRIP_MARKERS:
             continue
-        counters["records"] += 1
+        note_record(rec.marker, rec.header_len, counters)
         for refs in facets.record_loops(rec):
             if not refs:
                 continue
@@ -157,8 +191,19 @@ def classify_poolonly(data, lo, hi, flat, lex, counters):
 
 
 def classify_composite(data, lo, hi, counters):
-    """Classify the strip records of a composite store under the
-    shipped identity decode; returns an error-class string or ''."""
+    """Classify the strip loops of a composite store under the identity
+    table-walk reading; returns an error-class string or ''.
+
+    This is the IDENTITY path only — ``find_list_node`` +
+    ``decode_region`` + ``parse_strip_records``.  The shipped stage-3d
+    export's fallback laws (raw-array, per-rep, mixed-write) and its
+    refs-beyond-element-space gate (``composite.py``'s
+    ``decode_composite_store``) are NOT run here, so a store this
+    function rejects may still export; the claims carry the
+    cross-tabulation against ``stage15-identity-export-files.csv``.
+    The counted unit is one ``ty`` strip loop of an accepted record (a
+    strip segment), not a record.
+    """
     hdrs = [m.start() for m in composite.STRIP_RE.finditer(data, lo, hi)]
     node_hi = hdrs[0] if hdrs else hi
     ln = composite.find_list_node(data, lo, node_hi)
@@ -173,7 +218,7 @@ def classify_composite(data, lo, hi, counters):
     for off, mk, _normal, counts, refs, _width in records:
         if mk not in STRIP_MARKERS:
             continue
-        counters["records"] += 1
+        note_record(mk, 5 if data[off + 3] != 0xFF else 4, counters)
         pos = 0
         for c in counts:
             loop = refs[pos : pos + c]
@@ -343,8 +388,9 @@ def main():
     args = ap.parse_args()
 
     if args.selftest:
+        n_checks = quadrics.selftest_count()
         failures = quadrics.selftest()
-        print(f"selftest: {len(failures)} failures")
+        print(f"selftest: {n_checks - len(failures)}/{n_checks} cases pass")
         for f in failures:
             print("  FAIL", f)
         sys.exit(1 if failures else 0)
@@ -353,10 +399,12 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     l2_by_sha = {}
+    shipped_by_sha = {}
     if L2_STAGE15.exists():
         with L2_STAGE15.open() as f:
             for r in csv.DictReader(f):
                 l2_by_sha[r["sha256"]] = r.get("l2_status", "")
+                shipped_by_sha[r["sha256"]] = r
 
     claims: list[dict] = []
     census_tieout_claims(l2_by_sha, claims)
@@ -364,9 +412,29 @@ def main():
     with MANIFEST.open() as f:
         parts = [r for r in csv.DictReader(f) if r["kind"] == "part"]
     parts.sort(key=lambda r: r["sha256"])
+    n_manifest = len(parts)
     if args.include_sha16:
-        want = set(args.include_sha16.split(","))
-        parts = [r for r in parts if r["sha256"][:8] in want]
+        prefixes = [p.strip().lower() for p in args.include_sha16.split(",") if p.strip()]
+        if not prefixes:
+            ap.error("--include-sha16 needs at least one hex sha256 prefix")
+        for prefix in prefixes:
+            if len(prefix) > 64 or any(c not in "0123456789abcdef" for c in prefix):
+                ap.error(f"--include-sha16: {prefix!r} is not a hex sha256 prefix")
+        parts = [
+            r for r in parts if any(r["sha256"].lower().startswith(p) for p in prefixes)
+        ]
+        if not parts:
+            print(
+                f"include-sha16: no manifest part matches {args.include_sha16!r}; "
+                "nothing written",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        if out_dir.resolve() == OUT_DIR.resolve():
+            ap.error(
+                "--include-sha16 is a subset mode: pass --out-dir outside the tree "
+                "so the committed claims CSV is not overwritten by a subset"
+            )
 
     files_rows = []
     agg = {
@@ -375,6 +443,10 @@ def main():
         "composite": 0,
         "composite_decoded": 0,
         "composite_undecoded": 0,
+        "composite_decoded_shipped_fail": 0,
+        "composite_fallback_only": 0,
+        "composite_undecoded_both": 0,
+        "fallback_stages": {},
         "pool_scan_failed": 0,
         "decode_errors": {},
     }
@@ -409,17 +481,48 @@ def main():
                 scope_counts["poolonly"][lab] += audit["poolonly"][f"patches_{lab}"]
         else:
             agg["composite"] += 1
+            shipped = shipped_by_sha.get(rel["sha256"])
+            shipped_ok = bool(shipped) and shipped.get("export_ok") == "1"
             if audit["store_decoded"] == "composite-decoded":
                 agg["composite_decoded"] += 1
+                if shipped and not shipped_ok:
+                    agg["composite_decoded_shipped_fail"] += 1
                 for lab in LABELS:
                     scope_counts["composite"][lab] += audit["composite"][f"patches_{lab}"]
             else:
                 agg["composite_undecoded"] += 1
                 err = audit["decode_error"] or "unknown"
                 agg["decode_errors"][err] = agg["decode_errors"].get(err, 0) + 1
+                if shipped_ok:
+                    agg["composite_fallback_only"] += 1
+                    stage = shipped.get("stage") or "unknown"
+                    agg["fallback_stages"][stage] = agg["fallback_stages"].get(stage, 0) + 1
+                elif shipped:
+                    agg["composite_undecoded_both"] += 1
 
-    # File-level presence claims per scope (corpus + L2).
-    def presence_claims(scope_prefix, scope_name, n_note):
+    def add_claim(claim, construct, statement, scope, obs, passes, label, note):
+        claims.append(
+            {
+                "claim": claim,
+                "construct": construct,
+                "statement": statement,
+                "scope": scope,
+                "observations": obs,
+                "passes": passes,
+                "rate": round(passes / obs, 6) if obs else 0.0,
+                "label": label,
+                "note": note,
+            }
+        )
+
+    unit_note = (
+        "unit = one ty strip loop of an accepted 0x42/0x4a record (a strip "
+        "segment, G3 phase reset); a record with ty > 1 contributes that many units"
+    )
+
+    # File-level presence claims per scope (corpus + L2; the L2 row carries
+    # the _l2 suffix so claim ids stay unique).
+    def presence_claims(scope_prefix, scope_name, note):
         for lab, sid in (
             ("cylinder", "SRF-02"),
             ("cone", "SRF-03"),
@@ -427,41 +530,36 @@ def main():
             ("pencil_noncyl", "SRF-07"),
             ("curved_unclassified", "SRF-05/06/07/08"),
         ):
-            for pop_name, pred in (
-                ("full corpus", lambda r: True),
-                ("l2-pass", lambda r: r["l2_status"] == "pass"),
+            for pop_name, suffix, pred in (
+                ("full corpus", "", lambda r: True),
+                ("l2-pass", "_l2", lambda r: r["l2_status"] == "pass"),
             ):
                 pop = [r for r in files_rows if pred(r)]
                 hits = sum(1 for r in pop if r.get(f"{scope_prefix}_patches_{lab}", 0) > 0)
-                claims.append(
-                    {
-                        "claim": f"{sid.replace('/', '_')}_{lab}_{scope_prefix}_presence",
-                        "construct": sid,
-                        "statement": (
-                            f"files with >= 1 {lab} strip patch "
-                            f"({scope_name} scope)"
-                        ),
-                        "scope": pop_name,
-                        "observations": len(pop),
-                        "passes": hits,
-                        "rate": round(hits / len(pop), 6) if pop else 0.0,
-                        "label": "candidate" if scope_prefix == "composite" else "established",
-                        "note": n_note,
-                    }
+                add_claim(
+                    f"{sid.replace('/', '_')}_{lab}_{scope_prefix}_presence{suffix}",
+                    sid,
+                    f"files with >= 1 {lab} strip loop ({scope_name} scope)",
+                    pop_name,
+                    len(pop),
+                    hits,
+                    "candidate" if scope_prefix == "composite" else "established",
+                    note,
                 )
 
     presence_claims(
         "poolonly",
         "pool-only stores (G3/F2 lex-rank semantics, established)",
-        "per-record strip patches; recognized counts are floors (per-record arc coverage)",
+        f"per-loop strip readings; recognized counts are floors.  {unit_note}",
     )
     presence_claims(
         "composite",
-        "composite stores decoded by the shipped identity decode (stage-3d, candidate scope)",
-        "candidate: the composite element-index reading is anchor-established, corpus candidate (stage-3b)",
+        "composite stores decoded by the identity table-walk reading (stage-3d, candidate scope)",
+        "candidate: the composite element-index reading is anchor-established, corpus "
+        f"candidate (stage-3b).  {unit_note}",
     )
 
-    # Both-scopes presence: distinct files with >= 1 patch of the label on
+    # Both-scopes presence: distinct files with >= 1 loop of the label on
     # EITHER scope (the prose's row-derived sums cite these rows).
     for lab, sid in (
         ("cylinder", "SRF-02"),
@@ -470,9 +568,9 @@ def main():
         ("pencil_noncyl", "SRF-07"),
         ("curved_unclassified", "SRF-05/06/07/08"),
     ):
-        for pop_name, pred in (
-            ("full corpus", lambda r: True),
-            ("l2-pass", lambda r: r["l2_status"] == "pass"),
+        for pop_name, suffix, pred in (
+            ("full corpus", "", lambda r: True),
+            ("l2-pass", "_l2", lambda r: r["l2_status"] == "pass"),
         ):
             pop = [r for r in files_rows if pred(r)]
             hits = sum(
@@ -481,99 +579,268 @@ def main():
                 if r.get(f"poolonly_patches_{lab}", 0) > 0
                 or r.get(f"composite_patches_{lab}", 0) > 0
             )
-            claims.append(
-                {
-                    "claim": f"{sid.replace('/', '_')}_{lab}_allscopes_presence",
-                    "construct": sid,
-                    "statement": (
-                        f"distinct files with >= 1 {lab} strip patch on either scope "
-                        "(pool-only or composite-decoded)"
-                    ),
-                    "scope": pop_name,
-                    "observations": len(pop),
-                    "passes": hits,
-                    "rate": round(hits / len(pop), 6) if pop else 0.0,
-                    "label": "fact",
-                    "note": "both-scopes sum row (distinct files)",
-                }
+            add_claim(
+                f"{sid.replace('/', '_')}_{lab}_allscopes_presence{suffix}",
+                sid,
+                f"distinct files with >= 1 {lab} strip loop on either scope "
+                "(pool-only or composite identity-decoded)",
+                pop_name,
+                len(pop),
+                hits,
+                "fact",
+                "both-scopes sum row (distinct files)",
             )
 
     # Volume anchors per scope.
-    for scope_name, prefix in (("pool-only stores", "poolonly"), ("composite-decoded stores", "composite")):
+    for scope_name, prefix in (
+        ("pool-only stores", "poolonly"),
+        ("composite identity-decoded stores", "composite"),
+    ):
         for lab in LABELS:
             n = scope_counts[prefix][lab]
-            claims.append(
-                {
-                    "claim": f"{prefix}_patches_{lab}_volume",
-                    "construct": "SRF-02..08",
-                    "statement": f"{lab} strip patches classified ({scope_name})",
-                    "scope": "located stores",
-                    "observations": n,
-                    "passes": n,
-                    "rate": 1.0 if n else 0.0,
-                    "label": "volume anchor",
-                    "note": "patch = one accepted 0x42/0x4A strip record (G3)",
-                }
+            add_claim(
+                f"{prefix}_patches_{lab}_volume",
+                "SRF-02..08",
+                f"{lab} strip loops classified ({scope_name})",
+                "located stores",
+                n,
+                n,
+                "volume anchor",
+                unit_note,
             )
 
-    # Scope arithmetic.
-    for claim, construct, stmt, obs, label, note in (
-        (
-            "scope_stores",
-            "scope",
-            "manifest parts with a located store body (census-probing law)",
-            agg["located"],
-            "fact",
-            f"pool-only {agg['poolonly']} / composite {agg['composite']} / pool-scan-failed {agg['pool_scan_failed']}",
-        ),
-        (
-            "scope_composite_decode",
-            "scope",
-            "composite stores decoded by the shipped identity decode (token node + decode_region)",
-            agg["composite"],
-            "fact",
-            f"decoded {agg['composite_decoded']}, undecoded {agg['composite_undecoded']}, "
-            f"errors {agg['decode_errors']}",
-        ),
+    # SRF-05 ceiling (a torus band is NOT confined to
+    # curved-unclassified: over a short span it satisfies the cone or
+    # the sphere law — fixtures torus_short_span_cone/_sphere), so the
+    # torus ceiling is the row sum of those three classes.
+    ceiling_labels = ("cone", "sphere", "curved_unclassified")
+    ceiling_patches = sum(
+        scope_counts[prefix][lab]
+        for prefix in ("poolonly", "composite")
+        for lab in ceiling_labels
+    )
+    add_claim(
+        "SRF-05_ceiling_patches",
+        "SRF-05",
+        "torus ceiling: every torus must present as a cone, sphere or "
+        "curved-unclassified strip loop",
+        "located stores",
+        ceiling_patches,
+        ceiling_patches,
+        "ceiling (row-derived sum)",
+        "= the cone + sphere + curved_unclassified volume rows summed over both "
+        "scopes; a short-span torus band satisfies the cone or sphere law, so both "
+        "classes are cap-raisers (fixtures torus_short_span_cone / "
+        "torus_short_span_sphere)",
+    )
+    for pop_name, suffix, pred in (
+        ("full corpus", "", lambda r: True),
+        ("l2-pass", "_l2", lambda r: r["l2_status"] == "pass"),
     ):
-        claims.append(
-            {
-                "claim": claim,
-                "construct": construct,
-                "statement": stmt,
-                "scope": "full corpus",
-                "observations": obs,
-                "passes": obs,
-                "rate": 1.0,
-                "label": label,
-                "note": note,
-            }
+        pop = [r for r in files_rows if pred(r)]
+        hits = sum(
+            1
+            for r in pop
+            if any(
+                r.get(f"{scope}_patches_{lab}", 0) > 0
+                for scope in ("poolonly", "composite")
+                for lab in ceiling_labels
+            )
+        )
+        add_claim(
+            f"SRF-05_ceiling_allscopes_presence{suffix}",
+            "SRF-05",
+            "distinct files with >= 1 cone, sphere or curved-unclassified strip loop "
+            "(the torus ceiling population)",
+            pop_name,
+            len(pop),
+            hits,
+            "fact",
+            "row-derived union of the three all-scopes presence rows",
         )
 
-    # Selftest claim (the synthetic negative fixtures run).
-    failures = quadrics.selftest()
-    claims.append(
-        {
-            "claim": "BR4_selftest",
-            "construct": "detector honesty",
-            "statement": "synthetic fixtures + negatives (cylinder/cone/sphere/torus/ellipse/plane) pass",
-            "scope": "selftest",
-            "observations": 9,
-            "passes": 9 - len(failures),
-            "rate": round((9 - len(failures)) / 9, 6),
-            "label": "established",
-            "note": "; ".join(failures) if failures else "0 failures",
-        }
+    # Carrier layout families (BR4 note section 2.1): 0x42 carries no
+    # normal (facets.NORMAL_MARKERS_ALL), 0x4a does; both offsets are
+    # measured corpus-wide, never assumed.
+    families = (
+        (
+            "records_42",
+            "0x42",
+            "0x42 carries NO normal (facets.NORMAL_MARKERS_ALL = "
+            "0x49/0x4a/0x4b/0x4c/0x4e): ty counts at +0x08 (8d)",
+        ),
+        (
+            "records_4a",
+            "0x4a",
+            "0x4a is normal-bearing: 12-B f32le normal at +0x08..+0x13 (8d..19d), "
+            "ty counts at +0x14 (20d)",
+        ),
+    )
+    for prefix, scope_name in (
+        ("poolonly", "pool-only stores"),
+        ("composite", "composite identity-decoded stores"),
+    ):
+        for key, marker, note in families:
+            n = sum(int(r[f"{prefix}_{key}"]) for r in files_rows if r.get(f"{prefix}_{key}") is not None)
+            add_claim(
+                f"{prefix}_strip_{key}_volume",
+                "carrier layout",
+                f"accepted strip records with marker {marker} ({scope_name})",
+                "located stores",
+                n,
+                n,
+                "volume anchor",
+                note,
+            )
+    n5 = sum(
+        int(r[f"{prefix}_records_5byte"])
+        for prefix in ("poolonly", "composite")
+        for r in files_rows
+        if r.get(f"{prefix}_records_5byte") is not None
+    )
+    add_claim(
+        "strip_records_5byte_volume",
+        "carrier layout",
+        "accepted strip records in the 5-byte header form (the byte at "
+        "+0x03 (3d) is not 0xff)",
+        "located stores",
+        n5,
+        n5,
+        "volume anchor",
+        "the 5-byte form shifts n to +0x05 (5d) and the ty counts to "
+        "+0x09 (9d) on 0x42 (+0x15 (21d) on the normal-bearing markers)",
     )
 
-    files_path = out_dir / "br4-quadrics-files.csv"
-    counter_fields = [
-        f"{scope}_{key}" for scope in ("poolonly", "composite") for key in new_counters()
-    ]
-    with files_path.open("w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=FILE_FIELDS + counter_fields)
-        w.writeheader()
-        w.writerows(files_rows)
+    # Composite loop accounting: the excluded loops are the cap-raisers of
+    # every composite ceiling (they are loops the recognizer never saw).
+    comp_files = [r for r in files_rows if r.get("store_decoded") == "composite-decoded"]
+    skip_total = sum(int(r["composite_loops_skipref"]) for r in comp_files)
+    oob_total = sum(int(r["composite_loops_oob"]) for r in comp_files)
+    skip_files = sum(1 for r in comp_files if int(r["composite_loops_skipref"]))
+    oob_files = sum(1 for r in comp_files if int(r["composite_loops_oob"]))
+    classified = sum(scope_counts["composite"].values())
+    excluded = skip_total + oob_total
+    add_claim(
+        "composite_loops_skipref_volume",
+        "cap-raiser",
+        "composite strip loops excluded for skip references (element slots with "
+        "no coordinates)",
+        "composite identity-decoded stores",
+        skip_total,
+        skip_total,
+        "volume anchor",
+        f"files {skip_files}/{len(comp_files)}; never guessed — a cap-raiser of every "
+        "composite ceiling jointly with the oob row",
+    )
+    add_claim(
+        "composite_loops_oob_volume",
+        "cap-raiser",
+        "composite strip loops excluded for references beyond the element space "
+        "(the shipped refs-beyond gate's population)",
+        "composite identity-decoded stores",
+        oob_total,
+        oob_total,
+        "volume anchor",
+        f"files {oob_files}/{len(comp_files)}; a cap-raiser of every composite ceiling "
+        "jointly with the skipref row",
+    )
+    add_claim(
+        "composite_loops_excluded_share",
+        "cap-raiser",
+        "share of composite strip loops excluded from the classified volume "
+        "(skipref + refs beyond the element space)",
+        "composite identity-decoded stores",
+        classified + excluded,
+        excluded,
+        "fact",
+        f"classified {classified} + skipref {skip_total} + oob {oob_total} = "
+        f"{classified + excluded} loops seen; zero-count ty loops are counted nowhere",
+    )
+
+    # Scope arithmetic.
+    add_claim(
+        "scope_stores",
+        "scope",
+        "manifest parts with a located store body (census-probing law)",
+        "full corpus",
+        n_manifest,
+        agg["located"],
+        "fact",
+        f"of {n_manifest} manifest parts; pool-only {agg['poolonly']} / "
+        f"composite {agg['composite']} / pool-scan-failed {agg['pool_scan_failed']}",
+    )
+    add_claim(
+        "scope_composite_decode",
+        "scope",
+        "composite stores decoded by the identity table-walk reading "
+        "(find_list_node + decode_region)",
+        "full corpus",
+        agg["composite"],
+        agg["composite_decoded"],
+        "fact",
+        f"undecoded {agg['composite_undecoded']}, errors {agg['decode_errors']}; the "
+        "classified composite volumes cover THESE stores only (not the shipped "
+        "fallback-only stores)",
+    )
+    if shipped_by_sha:
+        shipped_decoded = (
+            agg["composite_decoded"]
+            - agg["composite_decoded_shipped_fail"]
+            + agg["composite_fallback_only"]
+        )
+        stages = ", ".join(f"{k} {v}" for k, v in sorted(agg["fallback_stages"].items()))
+        add_claim(
+            "scope_composite_decode_shipped",
+            "scope",
+            "composite stores the shipped stage-3d export decodes "
+            "(stage15-identity-export-files.csv export_ok=1)",
+            "full corpus",
+            agg["composite"],
+            shipped_decoded,
+            "fact",
+            f"identity table-walk {agg['composite_decoded']} (of which "
+            f"{agg['composite_decoded_shipped_fail']} is a shipped undecoded-variant) + "
+            f"shipped-fallback-only {agg['composite_fallback_only']} ({stages})",
+        )
+        add_claim(
+            "scope_composite_decode_gap",
+            "scope",
+            "identity-undecoded composite stores the shipped fallbacks still do not export",
+            "full corpus",
+            agg["composite_undecoded"],
+            agg["composite_undecoded_both"],
+            "fact",
+            f"{agg['composite_fallback_only']} of the {agg['composite_undecoded']} "
+            "identity-undecoded stores ARE exported by the shipped fallbacks; "
+            f"{agg['composite_undecoded_both']} stay undecoded by both",
+        )
+
+    # Selftest claim (the synthetic fixtures run; the count is derived).
+    n_checks = quadrics.selftest_count()
+    failures = quadrics.selftest()
+    add_claim(
+        "BR4_selftest",
+        "detector honesty",
+        "synthetic fixtures + negatives (cylinder/cone/sphere/torus/ellipse/plane "
+        "and the cone-sphere span edge) pass",
+        "selftest",
+        n_checks,
+        n_checks - len(failures),
+        "established",
+        "; ".join(failures) if failures else "0 failures",
+    )
+
+    files_path = Path(args.files_out) if args.files_out else None
+    if files_path:
+        counter_fields = [
+            f"{scope}_{key}" for scope in ("poolonly", "composite") for key in new_counters()
+        ]
+        files_path.parent.mkdir(parents=True, exist_ok=True)
+        with files_path.open("w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=FILE_FIELDS + counter_fields)
+            w.writeheader()
+            w.writerows(files_rows)
+        print(f"Wrote {files_path} ({len(files_rows)} rows)")
 
     claims_path = out_dir / "br4-quadrics-claims.csv"
     with claims_path.open("w", newline="") as f:
@@ -581,13 +848,11 @@ def main():
         w.writeheader()
         w.writerows(claims)
 
-    print(f"Wrote {files_path} ({len(files_rows)} rows)")
     print(f"Wrote {claims_path} ({len(claims)} rows)")
     print("AGG:", agg)
     print("patch counts pool-only:", scope_counts["poolonly"])
-    print("patch counts composite-decoded:", scope_counts["composite"])
-    selftest_note = "0 failures" if not failures else f"{len(failures)} FAILURES"
-    print("selftest:", selftest_note)
+    print("patch counts composite-identity:", scope_counts["composite"])
+    print("selftest:", f"{n_checks - len(failures)}/{n_checks} cases pass")
 
 
 if __name__ == "__main__":

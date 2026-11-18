@@ -1,31 +1,37 @@
 """Tessellation-level quadric surface recognition (BR4, ticket #56, Spec G #47).
 
-Recognizes cylindrical, conical and spherical strip patches in the
+Recognizes cylindrical, conical and spherical strip loops in the
 facet-record tessellation of the nested ``CATStdCont`` store body, on
 the two scopes where the references resolve to coordinates:
 
 - **pool-only stores** (G3/F2 semantics): the facet references are
   lexicographic ranks of the vertex pool (``catpart.geometry.facets``).
-- **composite-decoded stores** (stage-3d identity law, shipped
+- **composite identity-decoded stores** (stage-3d identity law, shipped
   ``catpart.geometry.composite``): the references are element indices
   of the decoded list-node region (``decode_region`` +
-  ``parse_strip_records``); this scope is candidate on stores the
-  composite decode covers and is reported separately.
+  ``parse_strip_records``); this scope is candidate on stores that
+  identity reading covers and is reported separately.
 
-The recognition is per accepted strip record (one record = one face
-patch per G3; its ``ty`` loops are strip segments of that patch,
-G3 phase-reset) over the patch's strip triangles.  The laws, in test
-order (all residuals relative to the patch bbox diagonal ``scale``):
+The recognition unit is one ``ty`` strip loop of an accepted strip
+record — NOT a record: one accepted record is one face patch per G3,
+and its ``ty`` loops are that patch's strip segments (G3 phase reset),
+so a record with ``ty`` > 1 contributes that many recognized units.
+The laws, in test order (all residuals relative to the patch bbox
+diagonal ``scale``):
 
 1. **planar** — the patch's triangle normals are parallel (max chord
    ``||n - mean||`` below :data:`SPREAD_MIN`): no curved reading.
-2. **cylinder (SRF-02)** — the normals share a null direction ``a``
-   (pencil: ``|n.a| <= K_CYL`` for every triangle normal, ``a`` =
-   smallest eigenvector of ``sum n n^T``) AND a least-squares cylinder
-   with axis ``a`` fits with max residual ``<= TOL_PATCH``.  The
-   radius law separates a cylinder from a planar-extruded patch (the
-   pencil alone does not: plane strips are removed by the spread test,
-   but any ruled surface along ``a`` passes it).
+2. **pencil branch: cylinder (SRF-02) or pencil-noncyl (SRF-07)** —
+   the normals share a null direction ``a`` (``|n.a| <= K_CYL`` for
+   every triangle normal, ``a`` = smallest eigenvector of
+   ``sum n n^T``), and this branch RETURNS: a least-squares cylinder
+   with axis ``a`` fitting with max residual ``<= TOL_PATCH`` is a
+   cylinder, anything else under the pencil is ``pencil-noncyl`` (the
+   negative-space signature of a non-cylindrical extrusion).  The cone
+   and sphere laws are never reached from a pencil patch.  The radius
+   law separates a cylinder from a planar-extruded patch (the pencil
+   alone does not: plane strips are removed by the spread test, but any
+   ruled surface along ``a`` passes it).
 3. **cone (SRF-03)** — the normals make a CONSTANT angle with a common
    axis ``a`` (``|mean(n).a|`` in ``(K_CYL, K_PLANE)``; ``a`` =
    smallest eigenvector of the normal deviations' scatter) AND the
@@ -33,17 +39,18 @@ order (all residuals relative to the patch bbox diagonal ``scale``):
    max residual ``<= TOL_PATCH`` and the fitted quadratic term
    explains ``<= TOL_PATCH`` over the height span (the quadratic gate
    — a torus-fillet band's tube profile is quadratic in ``h`` and is
-   rejected by it).  The cone claims a patch BEFORE the sphere: a
-   cone band is locally sphere-like under the Kasa fit, and the cone
-   law is the more constrained one (constant angle + affine radius +
-   quadratic gate).
+   rejected by it).  The cone law is tested BEFORE the sphere law:
+   over a short axial/meridional span the two laws are mutually
+   satisfiable — a true sphere band over a short meridional span
+   (R 12.0 at lats 1.30/1.25/1.20 rad → cone: residual 8.7e-3 <= tol
+   6.5e-2, quadratic term 6.3e-2 <= tol) satisfies the cone gates, and
+   a short cone band satisfies the Kasa sphere fit (both
+   fixture-pinned) — so precedence assigns such bands to SRF-03, and
+   the sphere count is a floor.
 4. **sphere (SRF-04)** — a Kasa algebraic sphere fit (points only; the
    tessellation vertices lie ON the surface, so the fit is exact-form)
    with max residual ``<= TOL_SPHERE`` and ``R <= R_SCALE_MAX x scale``.
-5. **pencil-noncyl** — the pencil holds but the radius law fails:
-   the negative-space signature of a non-cylindrical extrusion
-   (SRF-07 candidate; an extruded ellipse/slot tessellates exactly so).
-6. **curved-unclassified** — curved patch, no law: the shared ceiling
+5. **curved-unclassified** — curved patch, no law: the shared ceiling
    population of SRF-05 torus, SRF-06 non-quadric revolution,
    SRF-07 extrusion (when the pencil fails, e.g. revolved profiles)
    and SRF-08 NURBS tessellation patches.
@@ -58,17 +65,21 @@ Detector honesty (one line per class, echoed in the evidence note):
 - The pencil test does NOT discriminate the extrusion direction
   convention and does not establish which face binds the patch.
 - The cone law does NOT discriminate the apex side (slope sign is
-  reported, not interpreted) and a torus-fillet band over a short
-  height span can sit under the quadratic gate's threshold (named
-  residual-margin limitation).
+  reported, not interpreted), a torus-fillet band over a short height
+  span (its quadratic term can sit under the gate — the named
+  residual-margin limitation), or a sphere band over a short
+  meridional span, which lands in SRF-03 by precedence (so cone counts
+  absorb sphere-shaped short spans; fixture-pinned).
 - The sphere law does NOT discriminate a spherical cap's side and
   cannot separate a small torus region from a sphere at local-patch
   scale (any smooth patch is locally spherical; the tight
   :data:`TOL_SPHERE` and the ``R <= 10 x scale`` sanity are the only
-  guards).
-- Per-record granularity: a writer splitting one cylinder across
-  several records with per-record arcs under :data:`SPREAD_MIN` lands
-  them planar — the recognized counts are FLOORS, never ceilings.
+  guards).  A short torus band satisfies it (fixture-pinned), so
+  sphere counts are floors too.
+- Per-loop granularity: a writer splitting one cylinder across
+  several ``ty`` loops with per-loop arcs under :data:`SPREAD_MIN`
+  lands them planar — the recognized counts are FLOORS, never
+  ceilings.
 
 Provenance: laws calibrated on synthetic tessellations and measured
 corpus-wide by ``scripts/triage/decode_brep_quadrics.py``; rates and
@@ -300,10 +311,12 @@ def strip_triangles(refs):
 
 
 def classify_strip_patch(refs, points):
-    """Recognize one strip patch from its resolved references.
+    """Recognize one ``ty`` strip loop from its resolved references.
 
     ``refs`` are positions into ``points`` (the caller resolves them
-    through the scope's index law).  Returns a :class:`PatchFit`.
+    through the scope's index law); one call = one strip loop, so a
+    record with several ``ty`` loops is classified loop by loop.
+    Returns a :class:`PatchFit`.
     """
     tris = []
     for tri in strip_triangles(refs):
@@ -344,9 +357,10 @@ def classify_strip_patch(refs, points):
             fitc[1] if fitc else None, fitc[2] if fitc else 0.0, tol,
             None, None, None,
         )
-    # Cone (most-constrained law first): constant normal angle + affine
-    # radial law + quadratic gate.  A cone band is locally sphere-like
-    # in the Kasa fit, so the cone claims a patch BEFORE the sphere.
+    # Cone BEFORE the sphere: over a short span the two laws are mutually
+    # satisfiable (a sphere band satisfies these gates; a short cone band
+    # satisfies the Kasa fit), so precedence — not constraint — decides
+    # and short sphere-shaped spans are labeled cone.
     mean_n = mean
     scatter = [
         [
@@ -387,23 +401,29 @@ def classify_strip_patch(refs, points):
     )
 
 
-def selftest():
-    """Synthetic fixtures + negatives; returns a list of failure strings.
+def _selftest_cases():
+    """The synthetic fixture set as ``(name, callable)`` pairs.
+
+    Each callable returns ``None`` (case passed) or a failure string.
+    The list is the single source of the case count: :func:`selftest`
+    runs it, :func:`selftest_count` sizes the ``BR4_selftest`` claims
+    row, and ``tests/test_brep_quadrics.py`` pins the same edges.
 
     Positives: cylinder / cone / sphere tessellations decode under
-    their laws with the exact construction parameters.  Negatives:
-    the discriminating edges (cone rejects the cylinder pencil;
+    their laws with the exact construction parameters.  Negatives: the
+    discriminating edges (cone rejects the cylinder pencil;
     torus-fillet band rejected by the quadratic gate and the sphere
     tolerance; extruded ellipse stays pencil-noncyl; plane stays
-    planar; cone rejects when the radial law is broken).
+    planar; cone rejects when the radial law is broken).  Span edges:
+    a sphere band with a ~0.1 rad meridional span lands in ``cone`` and
+    short torus bands land in ``cone`` / ``sphere`` (the SRF-05
+    ceilings' cap-raisers); a short cone band satisfies the Kasa sphere
+    fit (why cone precedence exists).
     """
     import struct
 
-    failures = []
-
     def check(name, got, want):
-        if got != want:
-            failures.append(f"{name}: label {got!r} != {want!r}")
+        return None if got == want else f"{name}: label {got!r} != {want!r}"
 
     def ring(cx, cy, cz, r, n, r2=None):
         pts = []
@@ -422,96 +442,195 @@ def selftest():
             out.append(b_ring[i])
         return out
 
-    # cylinder r=8
-    r0, r1, r2 = ring(0, 0, 0, 8, 24), ring(0, 0, 10, 8, 24), ring(0, 0, 20, 8, 24)
-    pool = r0 + r1 + r2
-    refs = [pool.index(p) for p in zig(r0, r1) + zig(r1, r2)]
-    f = classify_strip_patch(refs, pool)
-    check("cylinder", f.label, "cylinder")
-    if f.label == "cylinder" and abs(f.radius - 8.0) > 1e-3:
-        failures.append(f"cylinder radius {f.radius} != 8.0")
+    def classify_bands(bands):
+        pool = sum(bands, [])
+        refs = [
+            pool.index(p)
+            for p in zig(bands[0], bands[1]) + zig(bands[1], bands[2])
+        ]
+        return pool, refs, classify_strip_patch(refs, pool)
 
-    # cone 10 -> 5 over h 0..20 (slope -0.25)
-    a0, a1, a2 = ring(0, 0, 0, 10, 24), ring(0, 0, 10, 7.5, 24), ring(0, 0, 20, 5, 24)
-    pool = a0 + a1 + a2
-    refs = [pool.index(p) for p in zig(a0, a1) + zig(a1, a2)]
-    f = classify_strip_patch(refs, pool)
-    check("cone", f.label, "cone")
-    if f.label == "cone" and abs(f.slope + 0.25) > 1e-3:
-        failures.append(f"cone slope {f.slope} != -0.25")
+    def sphere_bands(lats, r=12.0, n=24):
+        return [ring(0, 0, r * math.cos(t), r * math.sin(t), n) for t in lats]
 
-    # sphere cap R=12
-    lats = [(12 * math.cos(t), 12 * math.sin(t)) for t in (0.2, 0.6, 1.0)]
-    bands = [ring(0, 0, z, rl, 24) for rl, z in lats]
-    pool = sum(bands, [])
-    refs = [pool.index(p) for p in zig(bands[0], bands[1]) + zig(bands[1], bands[2])]
-    f = classify_strip_patch(refs, pool)
-    check("sphere cap", f.label, "sphere")
-    if f.label == "sphere" and abs(f.radius - 12.0) > 1e-3:
-        failures.append(f"sphere radius {f.radius} != 12.0")
-
-    # torus-fillet band: quadratic tube profile -> NOT cone, NOT sphere
-    phis = [math.pi - t for t in (0.9, 0.6, 0.3)]
-    thetas = [2 * math.pi * i / 16 for i in range(16)]
-    bands = []
-    for phi in phis:
-        band = []
-        for th in thetas:
+    def torus_bands(phis, n=16):
+        thetas = [2 * math.pi * i / n for i in range(n)]
+        bands = []
+        for phi in phis:
             rho = 30 + 4 * math.cos(phi)
-            band.append((rho * math.cos(th), rho * math.sin(th), 4 * math.sin(phi)))
-        bands.append(band)
-    pool = sum(bands, [])
-    refs = [pool.index(p) for p in zig(bands[0], bands[1]) + zig(bands[1], bands[2])]
-    f = classify_strip_patch(refs, pool)
-    check("torus fillet (not cone/sphere)", f.label, "curved-unclassified")
+            bands.append(
+                [
+                    (rho * math.cos(th), rho * math.sin(th), 4 * math.sin(phi))
+                    for th in thetas
+                ]
+            )
+        return bands
 
-    # extruded ellipse: pencil holds, radius law rejects
-    e0, e1, e2 = ring(0, 0, 0, 10, 24, r2=5), ring(0, 0, 10, 10, 24, r2=5), ring(0, 0, 20, 10, 24, r2=5)
-    pool = e0 + e1 + e2
-    refs = [pool.index(p) for p in zig(e0, e1) + zig(e1, e2)]
-    f = classify_strip_patch(refs, pool)
-    check("extruded ellipse", f.label, "pencil-noncyl")
+    def case_cylinder():
+        r0, r1, r2 = ring(0, 0, 0, 8, 24), ring(0, 0, 10, 8, 24), ring(0, 0, 20, 8, 24)
+        pool = r0 + r1 + r2
+        refs = [pool.index(p) for p in zig(r0, r1) + zig(r1, r2)]
+        f = classify_strip_patch(refs, pool)
+        if f.label != "cylinder":
+            return f"label {f.label!r} != 'cylinder'"
+        if abs(f.radius - 8.0) > 1e-3:
+            return f"radius {f.radius} != 8.0"
+        return None
 
-    # plane strip: normals parallel -> planar
-    pl0 = [(0, 0, 0), (4, 0, 0), (8, 0, 0), (12, 0, 0), (16, 0, 0)]
-    pl1 = [(0, 3, 0), (4, 3, 0), (8, 3, 0), (12, 3, 0), (16, 3, 0)]
-    pool = pl0 + pl1
-    refs = [pool.index(p) for p in zig(pl0, pl1)]
-    f = classify_strip_patch(refs, pool)
-    check("plane strip", f.label, "planar")
+    def case_cylinder_f32():
+        def f32(v):
+            return struct.unpack("<f", struct.pack("<f", v))[0]
 
-    # cone negative: radial law broken (radius jitter) -> no cone reading
-    cj0, cj1, cj2 = ring(0, 0, 0, 10, 24), ring(0, 0, 10, 7.0, 24), ring(0, 0, 20, 5, 24)
-    pool = cj0 + cj1 + cj2
-    refs = [pool.index(p) for p in zig(cj0, cj1) + zig(cj1, cj2)]
-    f = classify_strip_patch(refs, pool)
-    if f.label == "cone":
-        failures.append(f"cone negative: jittered radii accepted as cone (slope {f.slope})")
+        r0, r1, r2 = ring(0, 0, 0, 8, 24), ring(0, 0, 10, 8, 24), ring(0, 0, 20, 8, 24)
+        pool = [(f32(x), f32(y), f32(z)) for x, y, z in r0 + r1 + r2]
+        refs = [
+            pool.index((f32(p[0]), f32(p[1]), f32(p[2])))
+            for p in zig(r0, r1) + zig(r1, r2)
+        ]
+        return check("cylinder f32", classify_strip_patch(refs, pool).label, "cylinder")
 
-    # sphere negative: ellipsoid shell -> no sphere reading (Kasa residual)
-    # (r=12 x, r=6 y): distance law fails
-    def ell_ring(z, rx, ry, n):
-        pts = []
-        for i in range(n):
-            t = 2 * math.pi * i / n
-            pts.append((rx * math.cos(t), ry * math.sin(t), z))
-        return pts
+    def case_cone():
+        a0, a1, a2 = ring(0, 0, 0, 10, 24), ring(0, 0, 10, 7.5, 24), ring(0, 0, 20, 5, 24)
+        pool = a0 + a1 + a2
+        refs = [pool.index(p) for p in zig(a0, a1) + zig(a1, a2)]
+        f = classify_strip_patch(refs, pool)
+        if f.label != "cone":
+            return f"label {f.label!r} != 'cone'"
+        if abs(f.slope + 0.25) > 1e-3:
+            return f"slope {f.slope} != -0.25"
+        return None
 
-    s0 = ell_ring(0, 12, 12, 24)
-    s1 = ell_ring(4, 11, 5.5, 24)
-    pool = s0 + s1
-    refs = [pool.index(p) for p in zig(s0, s1)]
-    f = classify_strip_patch(refs, pool)
-    if f.label == "sphere":
-        failures.append(f"sphere negative: ellipsoid accepted (R {f.radius})")
+    def case_sphere_cap():
+        bands = sphere_bands((0.2, 0.6, 1.0))
+        pool, refs, f = classify_bands(bands)
+        if f.label != "sphere":
+            return f"label {f.label!r} != 'sphere'"
+        if abs(f.radius - 12.0) > 1e-3:
+            return f"radius {f.radius} != 12.0"
+        return None
 
-    # f32 round-trip: the corpus coordinates are f32; laws must hold there
-    def f32(v):
-        return struct.unpack("<f", struct.pack("<f", v))[0]
+    def case_sphere_short_span_cone():
+        # B8 edge: a TRUE sphere band (R 12.0, lats 1.30/1.25/1.20 rad)
+        # satisfies the cone gates and is labeled cone by precedence.
+        bands = sphere_bands((1.3, 1.25, 1.2))
+        _pool, _refs, f = classify_bands(bands)
+        if f.label != "cone":
+            return f"label {f.label!r} != 'cone' (precedence edge unpinned)"
+        if f.quad is None or f.quad > f.tol:
+            return f"quad {f.quad} > tol {f.tol}"
+        return None
 
-    pool = [(f32(x), f32(y), f32(z)) for x, y, z in (r0 + r1 + r2)]
-    refs = [pool.index((f32(p[0]), f32(p[1]), f32(p[2]))) for p in zig(r0, r1) + zig(r1, r2)]
-    f = classify_strip_patch(refs, pool)
-    check("cylinder f32", f.label, "cylinder")
+    def case_cone_short_span_spherelike():
+        # Why the cone law is tested first: a short cone band also
+        # satisfies the Kasa sphere fit (the laws are mutually
+        # satisfiable over short spans).
+        bands = [ring(0, 0, 0, 10, 24), ring(0, 0, 0.5, 9.75, 24), ring(0, 0, 1, 9.5, 24)]
+        pool, refs, _f = classify_bands(bands)
+        pts = [pool[i] for tri in strip_triangles(refs) for i in tri]
+        fs = fit_sphere(pts)
+        if fs is None:
+            return "Kasa sphere fit declined"
+        _c, _r, res, scale = fs
+        if res > TOL_SPHERE * scale:
+            return f"sphere residual {res} > tol {TOL_SPHERE * scale}"
+        return None
 
+    def case_torus_fillet():
+        bands = torus_bands([math.pi - t for t in (0.9, 0.6, 0.3)])
+        _pool, _refs, f = classify_bands(bands)
+        return check("torus fillet (not cone/sphere)", f.label, "curved-unclassified")
+
+    def case_torus_short_span_cone():
+        # SRF-05 cap-raiser: a short torus band lands in cone.
+        bands = torus_bands([math.pi - 0.2 * i / 2 for i in (0, 1, 2)])
+        _pool, _refs, f = classify_bands(bands)
+        return check("torus short span (cone)", f.label, "cone")
+
+    def case_torus_short_span_sphere():
+        # SRF-05 cap-raiser: a slightly longer short band lands in sphere.
+        bands = torus_bands([math.pi - 0.3 * i / 2 for i in (0, 1, 2)])
+        _pool, _refs, f = classify_bands(bands)
+        return check("torus short span (sphere)", f.label, "sphere")
+
+    def case_extruded_ellipse():
+        e0 = ring(0, 0, 0, 10, 24, r2=5)
+        e1 = ring(0, 0, 10, 10, 24, r2=5)
+        e2 = ring(0, 0, 20, 10, 24, r2=5)
+        pool = e0 + e1 + e2
+        refs = [pool.index(p) for p in zig(e0, e1) + zig(e1, e2)]
+        return check(
+            "extruded ellipse", classify_strip_patch(refs, pool).label, "pencil-noncyl"
+        )
+
+    def case_plane_strip():
+        pl0 = [(0, 0, 0), (4, 0, 0), (8, 0, 0), (12, 0, 0), (16, 0, 0)]
+        pl1 = [(0, 3, 0), (4, 3, 0), (8, 3, 0), (12, 3, 0), (16, 3, 0)]
+        pool = pl0 + pl1
+        refs = [pool.index(p) for p in zig(pl0, pl1)]
+        return check("plane strip", classify_strip_patch(refs, pool).label, "planar")
+
+    def case_cone_jitter():
+        cj0, cj1, cj2 = ring(0, 0, 0, 10, 24), ring(0, 0, 10, 7.0, 24), ring(0, 0, 20, 5, 24)
+        pool = cj0 + cj1 + cj2
+        refs = [pool.index(p) for p in zig(cj0, cj1) + zig(cj1, cj2)]
+        f = classify_strip_patch(refs, pool)
+        if f.label == "cone":
+            return f"jittered radii accepted as cone (slope {f.slope})"
+        return None
+
+    def case_sphere_negative_ellipsoid():
+        def ell_ring(z, rx, ry, n):
+            pts = []
+            for i in range(n):
+                t = 2 * math.pi * i / n
+                pts.append((rx * math.cos(t), ry * math.sin(t), z))
+            return pts
+
+        s0 = ell_ring(0, 12, 12, 24)
+        s1 = ell_ring(4, 11, 5.5, 24)
+        pool = s0 + s1
+        refs = [pool.index(p) for p in zig(s0, s1)]
+        f = classify_strip_patch(refs, pool)
+        if f.label == "sphere":
+            return f"ellipsoid accepted (R {f.radius})"
+        return None
+
+    def case_degenerate():
+        pts = [(i * 1.0, 0.0, 0.0) for i in range(6)]
+        return check(
+            "collinear strip",
+            classify_strip_patch(list(range(6)), pts).label,
+            "degenerate",
+        )
+
+    return [
+        ("cylinder", case_cylinder),
+        ("cylinder_f32", case_cylinder_f32),
+        ("cone", case_cone),
+        ("sphere_cap", case_sphere_cap),
+        ("sphere_short_span_cone", case_sphere_short_span_cone),
+        ("cone_short_span_spherelike", case_cone_short_span_spherelike),
+        ("torus_fillet", case_torus_fillet),
+        ("torus_short_span_cone", case_torus_short_span_cone),
+        ("torus_short_span_sphere", case_torus_short_span_sphere),
+        ("extruded_ellipse", case_extruded_ellipse),
+        ("plane_strip", case_plane_strip),
+        ("cone_jitter_negative", case_cone_jitter),
+        ("sphere_ellipsoid_negative", case_sphere_negative_ellipsoid),
+        ("degenerate", case_degenerate),
+    ]
+
+
+def selftest():
+    """Run the synthetic fixture set; returns a list of failure strings."""
+    failures = []
+    for name, case in _selftest_cases():
+        message = case()
+        if message:
+            failures.append(f"{name}: {message}")
     return failures
+
+
+def selftest_count():
+    """Number of fixture cases :func:`selftest` runs (the claims row's size)."""
+    return len(_selftest_cases())

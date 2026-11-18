@@ -160,6 +160,54 @@ def test_sphere_negative_ellipsoid():
     assert fit.label != "sphere"
 
 
+def test_sphere_short_span_lands_cone():
+    # SRF-03/SRF-04 edge (cone precedence): a TRUE sphere band over a
+    # short meridional span satisfies the cone gates, so the recognizer
+    # labels it cone — the sphere count is a floor.
+    bands = [ring(0, 0, 12 * math.cos(t), 12 * math.sin(t), 24) for t in (1.3, 1.25, 1.2)]
+    pool = sum(bands, [])
+    fit = classify(zig(bands[0], bands[1]) + zig(bands[1], bands[2]), pool)
+    assert fit.label == "cone"
+    assert fit.residual <= fit.tol
+    assert fit.quad <= fit.tol
+
+
+def test_cone_short_span_satisfies_sphere_law():
+    # Why the cone law is tested first: over a short axial span a cone
+    # band is also a valid Kasa sphere patch (the laws are mutually
+    # satisfiable; precedence, not constraint, decides the label).
+    bands = [ring(0, 0, z, r, 24) for z, r in ((0, 10), (0.5, 9.75), (1, 9.5))]
+    pool = sum(bands, [])
+    refs = [pool.index(p) for p in zig(bands[0], bands[1]) + zig(bands[1], bands[2])]
+    pts = [pool[i] for tri in quadrics.strip_triangles(refs) for i in tri]
+    _c, _r, res, scale = quadrics.fit_sphere(pts)
+    assert res <= quadrics.TOL_SPHERE * scale
+
+
+def test_torus_short_span_cap_raisers():
+    # SRF-05 ceiling: a short torus band is NOT confined to
+    # curved-unclassified — it lands in cone (0.2 rad span) or sphere
+    # (0.3 rad span), so every torus ceiling must include those classes.
+    def torus_bands(phis, n=16):
+        thetas = [2 * math.pi * i / n for i in range(n)]
+        bands = []
+        for phi in phis:
+            rho = 30 + 4 * math.cos(phi)
+            bands.append(
+                [
+                    (rho * math.cos(th), rho * math.sin(th), 4 * math.sin(phi))
+                    for th in thetas
+                ]
+            )
+        return bands
+
+    for span, want in ((0.2, "cone"), (0.3, "sphere")):
+        bands = torus_bands([math.pi - span * i / 2 for i in (0, 1, 2)])
+        pool = sum(bands, [])
+        fit = classify(zig(bands[0], bands[1]) + zig(bands[1], bands[2]), pool)
+        assert fit.label == want
+
+
 def test_degenerate_collinear_patch():
     # A collinear strip carries no usable normals -> degenerate, not a
     # surface reading.
