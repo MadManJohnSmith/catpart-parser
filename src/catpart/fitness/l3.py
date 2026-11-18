@@ -602,9 +602,23 @@ def _resolve_citation(
             )
     row = matches[0]
 
+    construct = (row.get("construct") or "").strip()
+    if "construct" in row and construct != resolution.construct_id:
+        raise L3Error(
+            f"{resolution.construct_id}: claims row {resolution.claim_id!r} is "
+            f"attributed to {construct!r} in {resolution.evidence}"
+        )
+
+    scope = (row.get("scope") or "").strip()
+    if resolution.claim_scope and scope != resolution.claim_scope:
+        raise L3Error(
+            f"{resolution.construct_id}: claims row {resolution.claim_id!r} has scope "
+            f"{scope!r}, not the declared {resolution.claim_scope!r}"
+        )
+
     label = (row.get("label") or "").strip()
     allowed = LABELS_BY_OUTCOME.get(resolution.outcome, frozenset())
-    if label and label not in allowed:
+    if label not in allowed:
         raise L3Error(
             f"{resolution.construct_id}: claims row {resolution.claim_id!r} is "
             f"labelled {label!r}, which does not justify outcome "

@@ -98,6 +98,9 @@ def test_real_repo_headline_is_the_frozen_denominator_coverage() -> None:
     document = score.to_json()
     assert document["denominator"]["frozen_rows"] == DENOMINATOR_TOTAL == 23
     assert document["denominator"]["source"] == VOCABULARY_PATH
+    assert document["denominator"]["sha256"] == (
+        "2b2f54d9fbabe0f09082357e0469a22286fc2e48e4930098c782a2317c9ff611"
+    ), "the vocabulary pin moved: regenerate BR6L3-24 before accepting"
     assert score.total == 23
     assert score.resolved == 12
     assert document["headline"] == {
@@ -260,6 +263,42 @@ def test_wrong_claim_scope_is_rejected(tmp_path: Path) -> None:
     )
     with pytest.raises(L3Error, match="matches 0 rows"):
         score_l3(fixture_root(tmp_path), registry=registry)
+
+
+def test_unique_claim_id_with_wrong_declared_scope_is_rejected(tmp_path: Path) -> None:
+    # TOP-04's claim id is unique, so the scope filter must still run: a
+    # declared scope that the selected row does not carry is a miscitation.
+    registry = with_row(
+        "TOP-04",
+        dataclasses.replace(
+            REGISTRY_BY_ID["TOP-04"], claim_scope="L2-pass population"
+        ),
+    )
+    with pytest.raises(L3Error, match="not the declared"):
+        score_l3(fixture_root(tmp_path), registry=registry)
+
+
+def test_citation_to_another_constructs_row_is_rejected(tmp_path: Path) -> None:
+    # The BR3 CSV declares each row's construct; citing CRV-03's row as
+    # TOP-04's evidence must fail even though the id, scope and label agree.
+    registry = with_row(
+        "TOP-04",
+        dataclasses.replace(
+            REGISTRY_BY_ID["TOP-04"],
+            evidence=BR3_CLAIMS,
+            claim_id="C03_conic_decode_ok",
+            claim_scope="corpus",
+        ),
+    )
+    with pytest.raises(L3Error, match="attributed to 'CRV-03'"):
+        score_l3(fixture_root(tmp_path), registry=registry)
+
+
+def test_blank_label_is_rejected(tmp_path: Path) -> None:
+    root = fixture_root(tmp_path)
+    edit_claim(root, BR2_CLAIMS, "BR2-03_face_files_corpus", label="")
+    with pytest.raises(L3Error, match="does not justify outcome"):
+        score_l3(root)
 
 
 def test_missing_evidence_csv_is_rejected(tmp_path: Path) -> None:

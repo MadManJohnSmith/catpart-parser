@@ -13,7 +13,7 @@ BR6L3-11_topology_rows,frozen vocabulary rows in the topology family,fact,frozen
 BR6L3-12_curve_rows,frozen vocabulary rows in the curve family,fact,frozen vocabulary,23,8,0.347826,CRV-01 .. CRV-08
 BR6L3-13_surface_rows,frozen vocabulary rows in the surface family,fact,frozen vocabulary,23,8,0.347826,SRF-01 .. SRF-08
 BR6L3-14_corpus_parts,manifest parts in the full corpus population (anchored to BR2-03 observations),fact,full corpus,1442,1442,1.0,docs/evidence/data/br2-planar-claims.csv:BR2-03_face_files_corpus
-BR6L3-15_l2_pass_parts,L2-pass manifest parts (anchored to BR2-01 observations),fact,L2-pass population,1442,1089,0.755201,docs/evidence/data/br2-planar-claims.csv:BR2-01_face_files_l2_pass
+BR6L3-15_l2_pass_parts,L2-pass manifest parts (passes column anchored to BR2-01_face_files_l2_pass),fact,L2-pass population,1442,1089,0.755201,docs/evidence/data/br2-planar-claims.csv:BR2-01_face_files_l2_pass
 BR6L3-16_construct_file_slots_used,construct x part presence pairs summed over the frozen vocabulary's census corpus_occurrences column,fact,full corpus,33166,21659,0.6530483024784418,"corpus rate context: reported alongside the headline, never gating"
 BR6L3-17_construct_file_slots,possible construct x part presence slots (frozen constructs x corpus parts),fact,full corpus,33166,33166,1.0,denominator of BR6L3-16
 BR6L3-18_cited_claims_csvs,distinct committed claims CSVs cited by resolved constructs,fact,committed evidence,2,2,1.0,br2-planar-claims.csv; br3-curves-claims.csv
