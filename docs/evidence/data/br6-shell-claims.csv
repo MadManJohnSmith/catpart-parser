@@ -1,32 +1,39 @@
-claim,statement,label,scope,release,observations,passes,rate
-BR6S-01_facet_files_l2_pass,L2-pass files with >=1 accepted facet record of any marker (the census TOP-03/TOP-04 detector; tie-out expect 1087/1089),fact,L2-pass population,all,1089,1087,0.998163
-BR6S-02_facet_files_corpus,corpus parts with >=1 accepted facet record of any marker (the census TOP-03 label carrier; vocabulary row 1133/1442),fact,full corpus,all,1442,1133,0.785714
-BR6S-02b_face_candidate_files_corpus,corpus parts with >=1 face-candidate record on a pinned soup marker (the population that can enter the shell partition),fact,full corpus,all,1442,1132,0.785021
-BR6S-02c_face_candidate_files_l2_pass,L2-pass files with >=1 face-candidate record on a pinned soup marker,fact,L2-pass population,all,1089,1087,0.998163
-BR6S-03_shell_files_l2_pass,L2-pass files resolving to >=1 closed manifold shell (TOP-03 at the closure law; NOT the census detector),fact,L2-pass population,all,1089,66,0.0606061
-BR6S-04_shell_files_corpus,corpus parts resolving to >=1 closed manifold shell,fact,full corpus,all,1442,66,0.0457698
-BR6S-05_shell_rate_on_label_population,"shell-closure rate conditioned on the census label population (parts with >=1 closed shell / parts with any accepted facet record) - the census rate is detector-conditioned, this row is the construct rate",fact,parts with any accepted facet record,all,1133,66,0.0582524
-BR6S-05b_shell_rate_on_candidate_population,shell-closure rate conditioned on the face-candidate population (parts with >=1 closed shell / parts with a pinned-marker face record),fact,parts with face-candidate records,all,1132,66,0.0583039
-BR6S-06_located_stores,located nested stores (BR2-19/20 anchor 1317),fact,"located stores, census scan",all,1442,1317,0.913315
-BR6S-07_poolonly_stores,located stores classified pool-only (the shell-decodable scope),fact,located stores,all,1317,281,0.213364
-BR6S-08_composite_stores,located stores classified composite (references leave the pool - G3 F8; no shell claimed),fact,located stores,all,1317,1036,0.786636
-BR6S-09_poolonly_partition_stores,pool-only stores with >=1 face placed in a component (the partition population: face-candidate records minus unplaced/degenerate ones),fact,pool-only stores carrying face-candidate records,all,153,123,0.803922
-BR6S-10_poolonly_all_closed,pool-only partition stores where every placed face lies in a closed manifold shell and no face record is unplaced or degenerate (fully resolved stores),fact,pool-only stores with face records,all,153,66,0.431373
-BR6S-11_poolonly_multi_closed,pool-only stores with >=2 closed shells (multi-shell bodies: outer shell plus cavity/void shells),fact,pool-only stores with face records,all,153,3,0.0196078
-BR6S-11b_poolonly_mixed_closure,pool-only stores mixing a closed shell with an open/non-manifold/unplaced remainder (expected 0 if closure is store-coherent),fact,pool-only stores with face records,all,153,0,0
-BR6S-12_poolonly_no_placeable,pool-only stores with face records but no component placed (every face record out-of-pool or degenerate),fact,pool-only stores with face records,all,153,30,0.196078
-BR6S-13_closed_shells,closed manifold shell components decoded (volume anchor; every undirected edge used exactly twice),fact,"face components, pool-only stores",all,145,76,0.524138
-BR6S-14_open_components,open face components (at least one boundary edge used once; G3 F6's open-shell class),fact,"face components, pool-only stores",all,145,69,0.475862
-BR6S-15_nonmanifold_components,non-manifold face components (an undirected edge used more than twice),fact,"face components, pool-only stores",all,145,0,0
-BR6S-16_closed_shells_oriented,closed shells with a consistent winding (no directed edge traversed twice),fact,closed shell components,all,76,76,1
-BR6S-17_closed_shells_positive_volume,closed shells whose signed volume is positive under the exported winding (outward convention),fact,closed shell components,all,76,76,1
-BR6S-18_closed_shells_negative_volume,closed shells whose signed volume is negative under the exported winding (inward winding: the convention does not hold for these),fact,closed shell components,all,76,0,0
-BR6S-19_faces_placed,face-candidate records placed into a component (partition coverage on the decodable scope),fact,"face-candidate records, pool-only stores",all,2042,1511,0.739961
-BR6S-20_faces_unplaced,"face-candidate records whose references leave the pool on pool-only stores (counted, not guessed; the within-scope ceiling)",fact,"face-candidate records, pool-only stores",all,2042,531,0.260039
-BR6S-21_faces_degenerate,face-candidate records whose primitive reading yields no non-degenerate triangle (no component possible),fact,"face-candidate records, pool-only stores",all,2042,0,0
-BR6S-22_unread_marker_records,"accepted records on markers without an established primitive reading (0x41/0x44/0x49/0x4b/0x4e), excluded from the partition on both scopes",fact,"accepted records, located stores",all,118807,708,0.00595924
-BR6S-23_composite_face_records,"face-candidate records on composite stores (the ceiling if the composite index space decodes: G3 F8, parked on BR5)",fact,"face-candidate records, composite stores",all,116057,116057,1
-BR6S-23b_accepted_record_accounting,"accepted facet records accounted for by the three classes (pool-only face candidates + composite face candidates + unread-marker records): 2042 + 116057 + 708 = 118807, leaving 0 residual records that could carry shell identity",fact,"accepted records, located stores",all,118807,118807,1
-BR6S-24_poolonly_edge_groups,pool-only stores carrying an 01 02 edge/topology group (the composite index-space marker; expected 0 - pool-only stores carry no topology table),fact,pool-only stores,all,281,0,0
-BR6S-25_max_edge_degree,"max undirected edge usage over all decoded components on pool-only stores (value row - rate column carries the value, 2 = manifold everywhere)",fact,"face components, pool-only stores",all,1,1,2
-BR6S-26_pool_scan_failures,"parts whose pool walk raised (malformed pool group/vertex; excluded from the class split, never guessed)",fact,full corpus,all,1442,0,0
+claim,statement,label,scope,release,observations,passes,rate,value
+BR6S-01_facet_files_l2_pass,L2-pass files with >=1 accepted facet record of any marker (the census TOP-03/TOP-04 detector; tie-out expect 1087/1089),fact,L2-pass population,all,1089,1087,0.998163,
+BR6S-02_facet_files_corpus,corpus parts with >=1 accepted facet record of any marker (the census TOP-03 label carrier; vocabulary row 1133/1442),fact,full corpus,all,1442,1133,0.785714,
+BR6S-02b_face_candidate_files_corpus,corpus parts with >=1 face-candidate record on a pinned soup marker (the population that can enter the shell partition),fact,full corpus,all,1442,1132,0.785021,
+BR6S-02c_face_candidate_files_l2_pass,L2-pass files with >=1 face-candidate record on a pinned soup marker,fact,L2-pass population,all,1089,1087,0.998163,
+BR6S-03_shell_files_l2_pass,L2-pass files resolving to >=1 closed manifold shell (TOP-03 at the closure law; NOT the census detector),fact,L2-pass population,all,1089,66,0.0606061,
+BR6S-04_shell_files_corpus,corpus parts resolving to >=1 closed manifold shell,fact,full corpus,all,1442,66,0.0457698,
+BR6S-05_shell_rate_on_label_population,"shell-closure rate conditioned on the census label population (parts with >=1 closed shell / parts with any accepted facet record) - the census rate is detector-conditioned, this row is the construct rate",fact,parts with any accepted facet record,all,1133,66,0.0582524,
+BR6S-05b_shell_rate_on_candidate_population,shell-closure rate conditioned on the face-candidate population (parts with >=1 closed shell / parts with a pinned-marker face record),fact,parts with face-candidate records,all,1132,66,0.0583039,
+BR6S-06_located_stores,located nested stores (BR2-19/20 anchor 1317),fact,"located stores, census scan",all,1442,1317,0.913315,
+BR6S-07_poolonly_stores,located stores classified pool-only (the shell-decodable scope),fact,located stores,all,1317,281,0.213364,
+BR6S-08_composite_stores,located stores classified composite (references leave the pool - G3 F8; no shell claimed),fact,located stores,all,1317,1036,0.786636,
+BR6S-09_poolonly_partition_stores,pool-only stores with >=1 face placed in a component (the partition population: face-candidate records minus unplaced/degenerate ones),fact,pool-only stores carrying face-candidate records,all,153,123,0.803922,
+BR6S-10_poolonly_all_closed,pool-only partition stores where every placed face lies in a closed manifold shell and no face record is unplaced or degenerate (fully resolved stores),fact,pool-only stores with face records,all,153,66,0.431373,
+BR6S-10b_poolonly_partition_stores_all_closed,"pool-only partition stores (>=1 face placed in a component) that close completely - the closure rate on the partition population, not on every face-bearing store",fact,pool-only partition stores,all,123,66,0.536585,
+BR6S-11_poolonly_multi_closed,pool-only stores with >=2 closed shells (multi-shell bodies: outer shell plus cavity/void shells),fact,pool-only stores with face records,all,153,3,0.0196078,
+BR6S-11b_poolonly_mixed_closure,pool-only stores mixing a closed shell with an open/non-manifold/unplaced remainder (expected 0 if closure is store-coherent),fact,pool-only stores with face records,all,153,0,0,
+BR6S-12_poolonly_no_placeable,pool-only stores with face records but no component placed (every face record out-of-pool or degenerate),fact,pool-only stores with face records,all,153,30,0.196078,
+BR6S-13_closed_shells,closed manifold shell components decoded (volume anchor; every undirected edge used exactly twice),fact,"face components, pool-only stores",all,145,76,0.524138,
+BR6S-14_open_components,open face components (at least one boundary edge used once; G3 F6's open-shell class),fact,"face components, pool-only stores",all,145,69,0.475862,
+BR6S-15_nonmanifold_components,non-manifold face components (an undirected edge used more than twice),fact,"face components, pool-only stores",all,145,0,0,
+BR6S-16_closed_shells_oriented,closed shells with a consistent winding (no directed edge traversed twice),fact,closed shell components,all,76,76,1,
+BR6S-17_closed_shells_positive_volume,closed shells whose signed volume is positive under the exported winding (outward convention),fact,closed shell components,all,76,76,1,
+BR6S-18_closed_shells_negative_volume,closed shells whose signed volume is negative under the exported winding (inward winding: the convention does not hold for these),fact,closed shell components,all,76,0,0,
+BR6S-19_faces_placed,face-candidate records placed into a component (partition coverage on the decodable scope),fact,"face-candidate records, pool-only stores",all,2042,1511,0.739961,
+BR6S-20_faces_unplaced,"face-candidate records whose references leave the pool on pool-only stores (counted, not guessed; the within-scope ceiling)",fact,"face-candidate records, pool-only stores",all,2042,531,0.260039,
+BR6S-21_faces_degenerate,face-candidate records whose primitive reading yields no non-degenerate triangle (no component possible),fact,"face-candidate records, pool-only stores",all,2042,0,0,
+BR6S-22_unread_marker_records,"accepted records on marker 0x44 (G3 F9's open primitive reading), excluded from the partition; every one sits on a composite store (BR6S-22b)",fact,"accepted records, located stores",all,118807,708,0.00595924,
+BR6S-22b_unread44_composite_only,"the 0x44 records that sit on composite stores - the entire unread population, none on the 281 pool-only stores",fact,accepted records on marker 0x44,all,708,708,1,
+BR6S-22c_unread44_count_grammar,0x44 records whose n equals the sum of their count bytes (the shared facet record grammar: the record frame is the facet frame),fact,accepted records on marker 0x44,all,708,708,1,
+BR6S-22d_unread44_out_of_pool,"0x44 records whose references run past the pool end (the composite index space - not placeable, so the marker cannot join the partition regardless of its primitive reading)",fact,accepted records on marker 0x44,all,708,318,0.449153,
+BR6S-23_composite_face_records,"face-candidate records on composite stores (the ceiling if the composite index space decodes: G3 F8, still open after BR5)",fact,"face-candidate records, composite stores",all,116057,116057,1,
+BR6S-23b_accepted_record_accounting_identity,"ACCOUNTING IDENTITY, not an independent check (records = soup + unread by construction): 2042 + 116057 + 708 = 118807, leaving 0 residual records that could carry shell identity; the independent anchor is BR2's accepted-record volume, 118807 (BR2-07/BR2-08)",fact,"accepted records, located stores",all,118807,118807,1,
+BR6S-24_poolonly_edge_groups,"pool-only stores carrying an 01 02 pool-group edge table (the composite index-space marker; 0 by construction, since the pool-only/composite split is the same F8 predicate - the detector's positive control is BR6S-24c)",fact,pool-only stores,all,281,0,0,
+BR6S-24b_poolonly_f8_opener,"pool-only stores carrying any G3 F8 composite-space marker (01 02 edge group or ff trailer opener) - 0 by construction, recorded so the pool-only scope's definition is explicit",fact,pool-only stores,all,281,0,0,
+BR6S-24c_composite_edge_groups,"composite stores carrying an 01 02 pool-group edge table (the detector positive control: the 01 02 detector does fire, on the composite scope)",fact,composite stores,all,1036,996,0.96139,
+BR6S-24d_composite_f8_openers,composite stores carrying an ff trailer opener (G3 F8's second composite-space marker; the second half of the detector positive control),fact,composite stores,all,1036,399,0.385135,
+BR6S-25_max_edge_degree,max undirected edge usage over all decoded components on pool-only stores (the value column carries the measurement: 2 = manifold everywhere; the rate is the share of components at or below degree 2),fact,"face components, pool-only stores",all,145,145,1,2
+BR6S-26_pool_scan_failures,"parts whose pool walk raised (malformed pool group/vertex; excluded from the class split, never guessed)",fact,full corpus,all,1442,0,0,

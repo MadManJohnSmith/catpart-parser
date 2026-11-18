@@ -69,6 +69,7 @@ CLAIMS_FIELDS = [
     "observations",
     "passes",
     "rate",
+    "value",
 ]
 
 
@@ -105,15 +106,32 @@ def locate_store(mm):
     return None
 
 
+def _unread_stats(records, pool_len: int) -> tuple[int, int, int]:
+    """(unread records, count-grammar holds, references pass the pool).
+
+    The unread class is every accepted record on a marker outside the
+    pinned soup family (measured corpus-wide as marker 0x44 only). Its
+    count-grammar figure is ``n == sum(counts)`` — the facet frame the
+    parser already enforced — and its pool figure is the number whose
+    references run past the pool end (the composite index space)."""
+    unread = [r for r in records if r.marker not in facets.SOUP_MARKERS]
+    grammar = sum(1 for r in unread if r.n == sum(r.counts))
+    past_pool = sum(1 for r in unread if r.refs and max(r.refs) >= pool_len)
+    return len(unread), grammar, past_pool
+
+
 def audit_part(mm) -> dict:
     """One part's TOP-03 audit — the per-file counters feeding the claims."""
     out = {
         "has_store": False,
         "store_class": "",
         "edge_group": False,  # an 01 02 topology-table group is present
+        "f8_opener": False,  # an ff.. trailer opener is present (G3 F8)
         "records": 0,  # accepted 01 [41-4f] records (any marker)
         "soup_faces": 0,  # accepted records on the pinned soup markers
         "unread_markers": 0,  # accepted records outside the soup markers
+        "unread_grammar": 0,  # unread records with n == sum(count bytes)
+        "unread_out_of_pool": 0,  # unread records whose refs pass the pool
         "shells": 0,
         "closed": 0,
         "open": 0,
@@ -151,11 +169,16 @@ def audit_part(mm) -> dict:
     composite = pool.has_composite_space(kinds)
     out["store_class"] = "composite" if composite else "pool-only"
     out["edge_group"] = any(k == pool.EDGE_SUBKIND for k in kinds)
+    out["f8_opener"] = any(k[:1] == b"\xff" for k in kinds)
     if composite:
         # Geometry is not placeable across the composite index space
         # (G3 F8): no shell is claimed, the record count is the ceiling.
         out["soup_faces"] = sum(1 for r in scan.records if r.marker in facets.SOUP_MARKERS)
-        out["unread_markers"] = out["records"] - out["soup_faces"]
+        (
+            out["unread_markers"],
+            out["unread_grammar"],
+            out["unread_out_of_pool"],
+        ) = _unread_stats(scan.records, len(flat))
         return out
 
     # Pool-only stores: the store-width context applies to the geometry
@@ -165,7 +188,11 @@ def audit_part(mm) -> dict:
     out["records"] = len(gscan.records)
     shells = decode_shells(flat, gscan)
     out["soup_faces"] = shells.faces
-    out["unread_markers"] = len(gscan.records) - shells.faces
+    (
+        out["unread_markers"],
+        out["unread_grammar"],
+        out["unread_out_of_pool"],
+    ) = _unread_stats(gscan.records, len(flat))
     out["placed_faces"] = shells.placed_faces
     out["unplaced_faces"] = shells.unplaced_faces
     out["degenerate_faces"] = shells.degenerate_faces
@@ -238,6 +265,8 @@ def run_corpus(args) -> list[dict]:
                     "records",
                     "soup_faces",
                     "unread_markers",
+                    "unread_grammar",
+                    "unread_out_of_pool",
                     "shells",
                     "closed",
                     "open",
@@ -256,6 +285,7 @@ def run_corpus(args) -> list[dict]:
                 bucket["no_placeable"] += audit["no_placeable"]
                 bucket["no_faces"] += audit["soup_faces"] == 0
                 bucket["edge_group"] += audit["edge_group"]
+                bucket["f8_opener"] += audit["f8_opener"]
                 bucket["max_edge_degree"] = max(bucket["max_edge_degree"], audit["max_edge_degree"])
             elif audit["store_class"] == "pool-scan-failed":
                 corpus["pool_scan_failed"] += 1
@@ -286,7 +316,7 @@ def run_corpus(args) -> list[dict]:
 
     rows = []
 
-    def add(claim, statement, label, scope, release, obs, passes, rate=None):
+    def add(claim, statement, label, scope, release, obs, passes, rate=None, value=""):
         if rate is None:
             rate = (passes / obs) if obs else 0.0
         rows.append(
@@ -299,6 +329,7 @@ def run_corpus(args) -> list[dict]:
                 "observations": obs,
                 "passes": passes,
                 "rate": f"{rate:.6g}",
+                "value": value,
             }
         )
 
@@ -426,6 +457,15 @@ def run_corpus(args) -> list[dict]:
         poolonly["all_closed"],
     )
     add(
+        "BR6S-10b_poolonly_partition_stores_all_closed",
+        "pool-only partition stores (>=1 face placed in a component) that close completely - the closure rate on the partition population, not on every face-bearing store",
+        "fact",
+        "pool-only partition stores",
+        "all",
+        poolonly["stores"] - poolonly["no_placeable"] - poolonly["no_faces"],
+        poolonly["all_closed"],
+    )
+    add(
         "BR6S-11_poolonly_multi_closed",
         "pool-only stores with >=2 closed shells (multi-shell bodies: outer shell plus cavity/void shells)",
         "fact",
@@ -542,7 +582,7 @@ def run_corpus(args) -> list[dict]:
     )
     add(
         "BR6S-22_unread_marker_records",
-        "accepted records on markers without an established primitive reading (0x41/0x44/0x49/0x4b/0x4e), excluded from the partition on both scopes",
+        "accepted records on marker 0x44 (G3 F9's open primitive reading), excluded from the partition; every one sits on a composite store (BR6S-22b)",
         "fact",
         "accepted records, located stores",
         "all",
@@ -550,8 +590,35 @@ def run_corpus(args) -> list[dict]:
         poolonly["unread_markers"] + composite["unread_markers"],
     )
     add(
+        "BR6S-22b_unread44_composite_only",
+        "the 0x44 records that sit on composite stores - the entire unread population, none on the 281 pool-only stores",
+        "fact",
+        "accepted records on marker 0x44",
+        "all",
+        poolonly["unread_markers"] + composite["unread_markers"],
+        composite["unread_markers"],
+    )
+    add(
+        "BR6S-22c_unread44_count_grammar",
+        "0x44 records whose n equals the sum of their count bytes (the shared facet record grammar: the record frame is the facet frame)",
+        "fact",
+        "accepted records on marker 0x44",
+        "all",
+        poolonly["unread_markers"] + composite["unread_markers"],
+        poolonly["unread_grammar"] + composite["unread_grammar"],
+    )
+    add(
+        "BR6S-22d_unread44_out_of_pool",
+        "0x44 records whose references run past the pool end (the composite index space - not placeable, so the marker cannot join the partition regardless of its primitive reading)",
+        "fact",
+        "accepted records on marker 0x44",
+        "all",
+        poolonly["unread_markers"] + composite["unread_markers"],
+        poolonly["unread_out_of_pool"] + composite["unread_out_of_pool"],
+    )
+    add(
         "BR6S-23_composite_face_records",
-        "face-candidate records on composite stores (the ceiling if the composite index space decodes: G3 F8, parked on BR5)",
+        "face-candidate records on composite stores (the ceiling if the composite index space decodes: G3 F8, still open after BR5)",
         "fact",
         "face-candidate records, composite stores",
         "all",
@@ -559,8 +626,8 @@ def run_corpus(args) -> list[dict]:
         composite["soup_faces"],
     )
     add(
-        "BR6S-23b_accepted_record_accounting",
-        "accepted facet records accounted for by the three classes (pool-only face candidates + composite face candidates + unread-marker records): 2042 + 116057 + 708 = 118807, leaving 0 residual records that could carry shell identity",
+        "BR6S-23b_accepted_record_accounting_identity",
+        "ACCOUNTING IDENTITY, not an independent check (records = soup + unread by construction): 2042 + 116057 + 708 = 118807, leaving 0 residual records that could carry shell identity; the independent anchor is BR2's accepted-record volume, 118807 (BR2-07/BR2-08)",
         "fact",
         "accepted records, located stores",
         "all",
@@ -572,7 +639,7 @@ def run_corpus(args) -> list[dict]:
     )
     add(
         "BR6S-24_poolonly_edge_groups",
-        "pool-only stores carrying an 01 02 edge/topology group (the composite index-space marker; expected 0 - pool-only stores carry no topology table)",
+        "pool-only stores carrying an 01 02 pool-group edge table (the composite index-space marker; 0 by construction, since the pool-only/composite split is the same F8 predicate - the detector's positive control is BR6S-24c)",
         "fact",
         "pool-only stores",
         "all",
@@ -580,14 +647,41 @@ def run_corpus(args) -> list[dict]:
         poolonly["edge_group"],
     )
     add(
+        "BR6S-24b_poolonly_f8_opener",
+        "pool-only stores carrying any G3 F8 composite-space marker (01 02 edge group or ff trailer opener) - 0 by construction, recorded so the pool-only scope's definition is explicit",
+        "fact",
+        "pool-only stores",
+        "all",
+        poolonly["stores"],
+        poolonly["edge_group"] + poolonly["f8_opener"],
+    )
+    add(
+        "BR6S-24c_composite_edge_groups",
+        "composite stores carrying an 01 02 pool-group edge table (the detector positive control: the 01 02 detector does fire, on the composite scope)",
+        "fact",
+        "composite stores",
+        "all",
+        composite["stores"],
+        composite["edge_group"],
+    )
+    add(
+        "BR6S-24d_composite_f8_openers",
+        "composite stores carrying an ff trailer opener (G3 F8's second composite-space marker; the second half of the detector positive control)",
+        "fact",
+        "composite stores",
+        "all",
+        composite["stores"],
+        composite["f8_opener"],
+    )
+    add(
         "BR6S-25_max_edge_degree",
-        "max undirected edge usage over all decoded components on pool-only stores (value row - rate column carries the value, 2 = manifold everywhere)",
+        "max undirected edge usage over all decoded components on pool-only stores (the value column carries the measurement: 2 = manifold everywhere; the rate is the share of components at or below degree 2)",
         "fact",
         "face components, pool-only stores",
         "all",
-        1,
-        1,
-        rate=poolonly["max_edge_degree"],
+        total_shells,
+        total_shells - (poolonly["non_manifold"] + composite["non_manifold"]),
+        value=poolonly["max_edge_degree"],
     )
     add(
         "BR6S-26_pool_scan_failures",
@@ -641,7 +735,8 @@ def _rec(offset, refs, marker=0x4C, normal=(0.0, 0.0, 1.0)):
 
 def _selftest() -> int:
     """The synthetic fixtures for every discriminating edge of the shell
-    partition (the first five are the detector-honesty negatives)."""
+    partition: two positives pin the law (closed tetrahedron, volume) and
+    the nine negatives pin one discrimination each."""
     failures = []
 
     def check(name, cond):
@@ -711,14 +806,18 @@ def _selftest() -> int:
         len(shells_oct.shells) == 1 and shells_oct.shells[0].is_shell,
     )
 
-    # Negative 3 — adjacency is edge-sharing, not proximity: two
-    # tetrahedra touching at one vertex are TWO shells.
-    two_pool = tetra_pool + [(1.0, 1.0, 1.0), (2.0, 1.0, 1.0), (1.0, 2.0, 1.0), (1.0, 1.0, 2.0)]
-    two_refs = tetra_refs + [tuple(x + 4 for x in f) for f in tetra_refs]
-    shells_two = shells_of(two_pool, two_refs)
+    # Negative 3 — adjacency is edge-sharing, not vertex contact: two
+    # tetrahedra that share exactly ONE VERTEX (the origin) are TWO
+    # shells. A vertex-proximity union-find would merge them; the
+    # edge-keyed partition must not.
+    two_pool = tetra_pool + [(1.0, 1.0, 1.0), (1.0, 1.0, 0.0), (1.0, 0.0, 1.0)]
+    two_faces = tetra_refs + [(0, 4, 5), (0, 5, 6), (0, 6, 4), (4, 6, 5)]
+    shells_two = shells_of(two_pool, two_faces)
     check(
-        "vertex-touching tetrahedra are two shells (edge adjacency, not proximity)",
-        len(shells_two.closed_shells) == 2 and len(shells_two.shells) == 2,
+        "vertex-sharing tetrahedra are two shells (edge adjacency, not vertex proximity)",
+        len(shells_two.shells) == 2
+        and len(shells_two.closed_shells) == 2
+        and all(s.boundary_edges == 0 for s in shells_two.shells),
     )
 
     # Negative 4 — a reversed tetrahedron reports NEGATIVE signed volume:

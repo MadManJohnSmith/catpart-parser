@@ -35,6 +35,7 @@ CLAIMS_FIELDS = [
     "observations",
     "passes",
     "rate",
+    "value",
 ]
 
 # A unit tetrahedron, outward-wound faces (right-hand rule). References
@@ -132,15 +133,6 @@ def test_two_disjoint_shells_are_two_components() -> None:
     assert shells.all_faces_closed
 
 
-def test_multi_shell_store_is_a_multi_shell_body() -> None:
-    # A shell set is the topology a Body carries: two closed components
-    # are two shells (outer shell + cavity shell candidates).
-    pool = TETRA + [(1.0, 1.0, 1.0), (2.0, 1.0, 1.0), (1.0, 2.0, 1.0), (1.0, 1.0, 2.0)]
-    faces = TETRA_FACES + [tuple(x + 4 for x in f) for f in TETRA_FACES]
-    shells = shells_of(pool, faces)
-    assert len(shells.closed_shells) >= 2
-
-
 # --------------------------------------------------------------------
 # Detector-honesty negatives (one per discrimination the law does NOT
 # make). Each fixture pins the edge.
@@ -165,13 +157,18 @@ def test_negative_closed_octahedron_has_no_brep_identity() -> None:
     assert shells.shells[0].is_shell
 
 
-def test_negative_vertex_touching_bodies_are_two_shells() -> None:
-    # Adjacency is shared-EDGE, not proximity: two tetrahedra touching
-    # at one vertex only are two independent shells.
-    pool = TETRA + [(1.0, 1.0, 1.0), (2.0, 1.0, 1.0), (1.0, 2.0, 1.0), (1.0, 1.0, 2.0)]
-    faces = TETRA_FACES + [tuple(x + 4 for x in f) for f in TETRA_FACES]
+def test_negative_vertex_sharing_tetrahedra_are_two_shells() -> None:
+    # Adjacency is shared-EDGE, not vertex contact: two tetrahedra that
+    # share exactly one vertex (the origin) are two independent shells.
+    # A vertex-proximity union-find would merge them; the edge-keyed
+    # partition must not.
+    pool = TETRA + [(1.0, 1.0, 1.0), (1.0, 1.0, 0.0), (1.0, 0.0, 1.0)]
+    faces = TETRA_FACES + [(0, 4, 5), (0, 5, 6), (0, 6, 4), (4, 6, 5)]
     shells = shells_of(pool, faces)
     assert len(shells.shells) == 2
+    assert len(shells.closed_shells) == 2
+    assert all(s.boundary_edges == 0 for s in shells.shells)
+    assert all(s.is_shell for s in shells.shells)
     assert shells.shells[0].face_offsets[0] != shells.shells[1].face_offsets[0]
 
 
@@ -207,6 +204,11 @@ def test_negative_sheet_with_paired_edge_is_open() -> None:
     pool = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, -1.0, 0.0)]
     shells = shells_of(pool, [(0, 1, 2), (1, 0, 3)])
     shell = shells.shells[0]
+    # The census detector's side of the pair is pinned by the record
+    # count: faces ARE present (the detector fires), yet the law labels
+    # the single component open.
+    assert shells.faces == 2
+    assert len(shells.shells) == 1
     assert shell.status == SHELL_OPEN
     assert shell.boundary_edges == 4
     assert not shell.is_shell
@@ -336,11 +338,16 @@ def test_br6_shell_claims_csv_exists_and_parses() -> None:
         assert row[0].startswith("BR6S-"), f"claim id field 0: {row[0]}"
         assert row[0] not in seen, f"duplicate claim id: {row[0]}"
         seen.add(row[0])
-        rate = float(row[7])
-        if "rate column carries the value" not in row[1]:
-            assert 0.0 <= rate <= 1.0, f"rate out of range: {row}"
+        rate = float(row[7])  # every row carries a real rate
+        assert 0.0 <= rate <= 1.0, f"rate out of range: {row}"
+        if row[8]:
+            float(row[8])  # a measured value, never smuggled into rate
         assert row[2] in {"fact", "inference", "candidate", "unknown"}, row
         int(row[5]), int(row[6])  # observations/passes stay integers
+    # The one measured-value row: its value is 2 (max edge degree), and
+    # no other row carries a value.
+    value_rows = {row[0]: row[8] for row in rows[1:] if row[8]}
+    assert value_rows == {"BR6S-25_max_edge_degree": "2"}, value_rows
 
 
 def test_br6_shell_evidence_note_exists_and_cites_artifacts() -> None:
