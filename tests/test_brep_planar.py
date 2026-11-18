@@ -213,6 +213,24 @@ def _decode_signature(face):
     )
 
 
+def test_negative_perpendicular_winding_is_sign_negative() -> None:
+    # The sign-only edge B3's correction (a) depends on: the decoder tests
+    # `n . w > 0`, so a PERPENDICULAR winding (n . w == 0) reads as
+    # sign-negative even though it is neither parallel nor reversed. The
+    # b9b887db shape: a ring lying in a plane perpendicular to the stored
+    # normal (here in x-z with n = +z), so Newell is exactly perpendicular.
+    ring = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 0.0, 1.0), (0.0, 0.0, 1.0)]
+    normal = (0.0, 0.0, 1.0)
+    w = newell_normal(ring)
+    assert w[0] * normal[0] + w[1] * normal[1] + w[2] * normal[2] == 0.0
+    rec = make_rec(0x4C, 1, (4,), (0, 1, 2, 3), normal)
+    face = decode_planar_face(ring, IDENTITY_LEX, rec)
+    assert face.status == FACE_OK
+    assert face.oriented is False  # the sign test: n . w == 0 is not > 0
+    # ... and the plane test independently rejects the same record
+    assert face.plane is not None and not face.plane.coplanar
+
+
 def test_no_loops_status_pinned() -> None:
     # FACE_NO_LOOPS is unreachable on the corpus (BR2-25: 0/118,807
     # accepted records have ty == 0), so this fixture is its only witness:
@@ -286,6 +304,12 @@ def test_br2_audit_rows_are_committed() -> None:
         "BR2-22b_signneg_faces_named",
         "BR2-25_zero_loop_records",
         "BR2-26_normal_less_strip_loops",
+        "BR2-26b_normal_less_0x41_loops",
+        "BR2-26c_0x42_loops_poolonly",
+        "BR2-26d_0x42_loops_inpool_records",
+        "BR2-27_0x41_records",
+        "BR2-27b_0x41_loop_split",
+        "BR2-28_composite_signneg_mass",
     ):
         assert claim in ids, f"missing audit row {claim}"
 
@@ -318,7 +342,18 @@ def test_br2_evidence_note_exists_and_cites_artifacts() -> None:
     # detector honesty lines per construct
     assert "does NOT discriminate" in content
     # the audit's corrected figures are cited from committed rows, not prose
-    for row in ("BR2-07b", "BR2-07c", "BR2-07d", "BR2-12d", "BR2-12e", "BR2-18b", "BR2-21b", "BR2-22b"):
+    for row in (
+        "BR2-07b",
+        "BR2-07c",
+        "BR2-07d",
+        "BR2-12d",
+        "BR2-12e",
+        "BR2-18b",
+        "BR2-21b",
+        "BR2-22b",
+        "BR2-27b",
+        "BR2-28",
+    ):
         assert row in content, f"note does not cite {row}"
     # the superseded pass/fail bound (p95 read as the pass boundary) is gone
     assert "3e-5 of tol" not in content
