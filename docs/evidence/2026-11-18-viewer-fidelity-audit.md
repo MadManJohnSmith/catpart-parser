@@ -168,7 +168,7 @@ committed); the flag and the PNG/canvas logic are pinned by the test module.
 
 - **Proxy, not fidelity.** No ground-truth surface exists in the corpus; these
   numbers cannot say "this part is 41% recovered" in any absolute sense.
-- **Sample, not corpus rates.** 20 of 1,436 L2 parts. Nothing here changes the
+- **Sample, not corpus rates.** 20 of 1,442 L2 parts. Nothing here changes the
   fitness record; L2 stays 1,033/1,381 Dev and 56/61 held-out at `df02aed`.
 - **Conservative summary.** The table above zeroes non-exported rows; the CSV
   leaves their metric cells empty so "no metrics" and "zero" stay
