@@ -106,18 +106,32 @@ def locate_store(mm):
     return None
 
 
-def _unread_stats(records, pool_len: int) -> tuple[int, int, int]:
-    """(unread records, count-grammar holds, references pass the pool).
+def _unread_stats(records, pool_len: int) -> dict:
+    """Per-store counters for the unread record class.
 
     The unread class is every accepted record on a marker outside the
-    pinned soup family (measured corpus-wide as marker 0x44 only). Its
-    count-grammar figure is ``n == sum(counts)`` — the facet frame the
-    parser already enforced — and its pool figure is the number whose
-    references run past the pool end (the composite index space)."""
+    pinned soup family (measured corpus-wide as marker 0x44 only). The
+    loop-law figure is the measured one: the record's count bytes follow
+    the TOP-05 loop law (``len(counts) == ty`` for u8 counts, or
+    ``2*ty`` for the u16be form) — nothing in the parser enforces that,
+    unlike ``n == sum(counts)``, which acceptance guarantees and is
+    therefore not measured. The pool figure counts references that run
+    past the pool end (the composite index space); ``n`` spans and empty
+    reference lists are recorded for the non-vacuity statement."""
+
     unread = [r for r in records if r.marker not in facets.SOUP_MARKERS]
-    grammar = sum(1 for r in unread if r.n == sum(r.counts))
-    past_pool = sum(1 for r in unread if r.refs and max(r.refs) >= pool_len)
-    return len(unread), grammar, past_pool
+    return {
+        "unread_markers": len(unread),
+        "unread_out_of_pool": sum(
+            1 for r in unread if r.refs and max(r.refs) >= pool_len
+        ),
+        "unread_loop_law": sum(
+            1 for r in unread if len(r.counts) in (r.type, 2 * r.type)
+        ),
+        "unread_n_min": min((r.n for r in unread), default=0),
+        "unread_n_max": max((r.n for r in unread), default=0),
+        "unread_empty_refs": sum(1 for r in unread if not r.refs),
+    }
 
 
 def audit_part(mm) -> dict:
@@ -130,8 +144,11 @@ def audit_part(mm) -> dict:
         "records": 0,  # accepted 01 [41-4f] records (any marker)
         "soup_faces": 0,  # accepted records on the pinned soup markers
         "unread_markers": 0,  # accepted records outside the soup markers
-        "unread_grammar": 0,  # unread records with n == sum(count bytes)
         "unread_out_of_pool": 0,  # unread records whose refs pass the pool
+        "unread_loop_law": 0,  # unread records whose count bytes obey TOP-05
+        "unread_n_min": 0,  # unread record n span (0 = none in this store)
+        "unread_n_max": 0,
+        "unread_empty_refs": 0,  # unread records with an empty reference list
         "shells": 0,
         "closed": 0,
         "open": 0,
@@ -174,11 +191,7 @@ def audit_part(mm) -> dict:
         # Geometry is not placeable across the composite index space
         # (G3 F8): no shell is claimed, the record count is the ceiling.
         out["soup_faces"] = sum(1 for r in scan.records if r.marker in facets.SOUP_MARKERS)
-        (
-            out["unread_markers"],
-            out["unread_grammar"],
-            out["unread_out_of_pool"],
-        ) = _unread_stats(scan.records, len(flat))
+        out.update(_unread_stats(scan.records, len(flat)))
         return out
 
     # Pool-only stores: the store-width context applies to the geometry
@@ -188,11 +201,7 @@ def audit_part(mm) -> dict:
     out["records"] = len(gscan.records)
     shells = decode_shells(flat, gscan)
     out["soup_faces"] = shells.faces
-    (
-        out["unread_markers"],
-        out["unread_grammar"],
-        out["unread_out_of_pool"],
-    ) = _unread_stats(gscan.records, len(flat))
+    out.update(_unread_stats(gscan.records, len(flat)))
     out["placed_faces"] = shells.placed_faces
     out["unplaced_faces"] = shells.unplaced_faces
     out["degenerate_faces"] = shells.degenerate_faces
@@ -265,8 +274,9 @@ def run_corpus(args) -> list[dict]:
                     "records",
                     "soup_faces",
                     "unread_markers",
-                    "unread_grammar",
                     "unread_out_of_pool",
+                    "unread_loop_law",
+                    "unread_empty_refs",
                     "shells",
                     "closed",
                     "open",
@@ -286,6 +296,16 @@ def run_corpus(args) -> list[dict]:
                 bucket["no_faces"] += audit["soup_faces"] == 0
                 bucket["edge_group"] += audit["edge_group"]
                 bucket["f8_opener"] += audit["f8_opener"]
+                if audit["unread_n_min"]:
+                    current = bucket["unread_n_min"]
+                    bucket["unread_n_min"] = (
+                        audit["unread_n_min"]
+                        if not current
+                        else min(current, audit["unread_n_min"])
+                    )
+                bucket["unread_n_max"] = max(
+                    bucket["unread_n_max"], audit["unread_n_max"]
+                )
                 bucket["max_edge_degree"] = max(bucket["max_edge_degree"], audit["max_edge_degree"])
             elif audit["store_class"] == "pool-scan-failed":
                 corpus["pool_scan_failed"] += 1
@@ -599,13 +619,13 @@ def run_corpus(args) -> list[dict]:
         composite["unread_markers"],
     )
     add(
-        "BR6S-22c_unread44_count_grammar",
-        "0x44 records whose n equals the sum of their count bytes (the shared facet record grammar: the record frame is the facet frame)",
+        "BR6S-22c_unread44_count_loop_law",
+        f"0x44 records whose count bytes follow the TOP-05 loop law (len(counts) == ty with u8 counts, or len(counts) == 2*ty with u16be counts); n spans {poolonly['unread_n_min'] or composite['unread_n_min']}..{max(poolonly['unread_n_max'], composite['unread_n_max'])} and {poolonly['unread_empty_refs'] + composite['unread_empty_refs']} records carry an empty reference list - the record frame is the facet frame. The parser-level n == sum(counts) is an acceptance invariant, not a measurement, so this row does not rest on it",
         "fact",
         "accepted records on marker 0x44",
         "all",
         poolonly["unread_markers"] + composite["unread_markers"],
-        poolonly["unread_grammar"] + composite["unread_grammar"],
+        poolonly["unread_loop_law"] + composite["unread_loop_law"],
     )
     add(
         "BR6S-22d_unread44_out_of_pool",
