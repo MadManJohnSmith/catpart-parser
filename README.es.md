@@ -46,7 +46,7 @@ tooling para quien recibe archivos CATIA sin tener un puesto de CATIA.
 | **L2 — exportación de mallas** (`catpart-export` → PLY binario) | 74.80% Dev (1,033/1,381), 56/61 held-out; cerrada en el techo medido con negativos documentados, barra re-ajustada por la regla pre-autorizada — Fase 4 cerrada 2026-11-13 | [cierre](docs/evidence/2026-11-13-phase4-close.md) |
 | **Visor de piezas** (WASM, en el navegador) | Fidelidad Rust/Python 3,266/3,266 (0 mismatches, corrida completa de ambos slices del corpus); reproducción del escalar en el navegador WITHIN exact con el margen declarado 0 — Fase 5 cerrada 2026-11-14 | [corrida de fidelidad](docs/evidence/2026-11-14-v6-fidelity-full-corpus.md), [aceptación](docs/evidence/2026-11-14-v6-phase5-close.md) |
 | **Visor de ensamblajes** (`.CATProduct`, multi-archivo) | Ingesta por arrastre de carpeta/`.zip`, transformaciones decodificadas `[tx, ty, tz, qw, qx, qy, qz]` (f64le, cuaternión w-first), render instanciado en GPU, vista explosionada, árbol de clasificación de 4 estados; Barra de Ensamblaje P4 cumplida dígito por dígito, aceptación headless 8/8 — Fase 6 cerrada 2026-11-16 | [spec](docs/specs/phase6-assembly-viewer-spec.md), [barra](docs/evidence/2026-11-14-p4-assembly-bar.md), [revisión](docs/evidence/2026-11-16-p3-v6-acceptance-review.md) |
-| **L3 — B-rep paramétrico completo** | en curso (Fase 7, [Spec G #47](https://github.com/MadManJohnSmith/catpart-parser/issues/47)) | — |
+| **L3 — constructos B-rep** | 23/23 constructos congelados resueltos (14 decodificados, 9 cerrados con techos publicados), L3 23/23 aceptado — Fase 7 cerrada 2026-11-18 | [cierre](docs/evidence/2026-11-18-phase7-close.md) |
 
 Una malla L2 decodificada — una entrada de la
 [galería de exportaciones](https://madmanjohnsmith.github.io/catpart-parser/gallery.html)
@@ -110,7 +110,7 @@ explosionada.
 | L2 | Geometría básica: mallas y curvas exportables a STEP o renderizables | cerrada al 74.80% (barra re-ajustada por la regla pre-autorizada) |
 | Fase 5 (Visor: Piezas) | Parseo de .CATPart en WebAssembly en cliente, render 3D WebGL | hecho (Fase 5) |
 | Fase 6 (Ensamblajes) | Parseo de .CATProduct en cliente, instanciación multi-pieza, colocación 3D | hecho (Fase 6) |
-| L3 | B-rep paramétrico completo (sólidos CAD precisos) | planeado, el más difícil (Fase 7) |
+| L3 | B-rep paramétrico completo (sólidos CAD precisos) | cerrada el 2026-11-18 — 23/23 constructos resueltos (14 decodificados, 9 cerrados con techos publicados); L3 23/23 aceptado |
 
 ## Progreso
 
@@ -125,7 +125,7 @@ Resumen spec por spec — el estado autoritativo por ticket vive en el
 | D — geometría L2 ([#28](https://github.com/MadManJohnSmith/catpart-parser/issues/28)) | navegación de stores, vertex pool, semántica de primitivas, CLI de exportación, fitness L2, grind hasta la barra | 6/6 hecho (Fase 4, 2026-11-13, cerrada al 74.80%) |
 | E — visor WASM ([#39](https://github.com/MadManJohnSmith/catpart-parser/issues/39)) | toolchain Rust, port L1/L2 + arnés de fidelidad, decode composite, límite WASM + shell del visor, reproducción en el navegador, publicación | 7/7 hecho (Fase 5, 2026-11-14) |
 | F — ensamblajes ([#45](https://github.com/MadManJohnSmith/catpart-parser/issues/45)) | censo de products, ley de emparejamiento, transformaciones y binding de instancias, núcleo de producto en WASM, ingesta multi-archivo, colocación 3D, UI + árbol de clasificación, aceptación headless con Playwright | 12/12 hecho (Fase 6, 2026-11-16) |
-| G — B-rep ([#47](https://github.com/MadManJohnSmith/catpart-parser/issues/47)) | B-rep paramétrico completo (Fase 7) | en curso |
+| G — B-rep ([#47](https://github.com/MadManJohnSmith/catpart-parser/issues/47)) | B-rep paramétrico completo (Fase 7) | 6/6 hecho (Fase 7, 2026-11-18) |
 
 ## Arquitectura
 
