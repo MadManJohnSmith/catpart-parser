@@ -27,6 +27,7 @@ import argparse
 import csv
 import math
 import mmap
+import statistics
 import sys
 from pathlib import Path
 
@@ -68,25 +69,31 @@ LAW_CLAIMS = {
         "CRV-01",
         "33 32 canonical (len==2) records whose 40-B f32le block at +0x09 (9d) decodes finite (layout evidence)",
         "established",
-        "block position byte-verified; skip-42 walk",
+        "block position byte-verified; skip-42 walk; denominator = walked canonical records (52 short-block rejects named)",
     ),
     "C01_line_prep_law": (
         "CRV-01",
-        "33 32 blocks whose floats at +0x17 (23d) repeat the first triple bit-exact (G2 law, subpopulation)",
+        "33 32 blocks whose floats at +0x21 (33d)..+0x29 (41d) repeat the first triple (+0x15 (21d)..+0x1D (29d)) bit-exact (G2 law, subpopulation)",
         "candidate",
         "laws hold and fail within single stores; field semantics open",
     ),
     "C01_line_len_law": (
         "CRV-01",
-        "33 32 blocks whose float at +0x23 (35d) equals |Q| = ||Q|| (rel tol 1e-6) (G2 law, subpopulation)",
+        "33 32 blocks whose float at +0x2D (45d) equals |Q| = ||Q|| over the Q triple at +0x15 (21d)..+0x1D (29d) (rel tol 1e-6) (G2 law, subpopulation)",
         "candidate",
         "laws hold and fail within single stores; field semantics open",
+    ),
+    "C01_line_prep_shift2": (
+        "CRV-01",
+        "33 32 P-rep law under the +2-byte-payload alignment (block read at +0x0B (11d)) - the alignment comparator",
+        "candidate",
+        "committed comparator for the alignment differential (canonical alignment wins corpus-wide)",
     ),
     "C02_circle_pool_law": (
         "CRV-02",
         "33 37 circles with some vertex-pool point on the circle (tol 5e-3)",
         "candidate",
-        "geometric cross-check over stores with a decoded pool",
+        "geometric cross-check; denominator = ALL 33 37 records - pool-less-store records cannot pass (binding gap, not a law failure)",
     ),
     "C02_circle_decode_ok": (
         "CRV-02",
@@ -104,7 +111,7 @@ LAW_CLAIMS = {
         "CRV-03",
         "33 38 records decoding under the 30-B layout and the direction law",
         "established",
-        "6/15,722 corpus records rejected by the direction law (named)",
+        "corpus rejections split by committed counters: 2 direction-law + 2 b-positivity + 7 short-payload (11 = 15,768 - 15,757)",
     ),
     "C03_conic_b_pos": (
         "CRV-03",
@@ -116,7 +123,31 @@ LAW_CLAIMS = {
         "CRV-08",
         "33 33 records decoding under the direction law (mid-range unit / zero sentinel / unit pair)",
         "candidate",
-        "BR3 re-read of the stage-4a p1/p2 params as an in-plane direction pair",
+        "BR3 re-read of the stage-4a p1/p2 params as an in-plane direction pair; denominator = walked canonical records (rejects named)",
+    ),
+    "C08_midring_midrange_unit": (
+        "CRV-08",
+        "33 33 mid-range direction pairs with unit norm (tol 2e-3)",
+        "established",
+        "corpus-wide mid-range subset of the BR3 re-read (10,051 unit of 10,696 mid-range; the 645 non-unit pairs sit in decode_midring's 710 rejects; 5,406/5,408 is the CONIC count)",
+    ),
+    "C36_block_read": (
+        "walker",
+        "33 36 records whose post-family bytes read as 10 finite f32le (measured for the exclusion claim; NOT a block-form establishment)",
+        "fact",
+        "33 36 stays out of slice: canonical len==2, no tiling/header-follow evidence for a 40-B block",
+    ),
+    "C01_line_walked": (
+        "CRV-01",
+        "33 32 canonical records walked by the skip-42 walker (volume anchor)",
+        "fact",
+        "walked, not decoded; the 52 short-block rejects are the C01_line_block_finite gap",
+    ),
+    "C08_midring_walked": (
+        "CRV-08",
+        "33 33 canonical records walked by the skip-42 walker (volume anchor)",
+        "fact",
+        "walked, not decoded; the rejects are the C08_midring_dir_law gap",
     ),
 }
 
@@ -209,15 +240,27 @@ PRESENCE_CLAIMS = {
     ),
     "C04_parabola_ceiling": (
         "CRV-04",
-        "ceiling: files carrying any 33 38 record (no parabola discriminator decoded)",
-        lambda c: c["c38"] > 0,
+        "ceiling: files carrying any 33 38 byte-pair carrier (no parabola discriminator decoded; frozen arithmetic 214+143=357)",
+        lambda c: c["c38_raw"] > 0,
         "open (ceiling)",
     ),
     "C05_hyperbola_ceiling": (
         "CRV-05",
-        "ceiling: files carrying any 33 38 record (no hyperbola discriminator decoded)",
-        lambda c: c["c38"] > 0,
+        "ceiling: files carrying any 33 38 byte-pair carrier (no hyperbola discriminator decoded; frozen arithmetic 214+143=357)",
+        lambda c: c["c38_raw"] > 0,
         "open (ceiling)",
+    ),
+    "T06_edge_residue_files": (
+        "TOP-06",
+        "file with wrapped 01 02 edge groups that fail to end-align under either width (the E1 residue, named)",
+        lambda c: c["edge_misaligned"] > 0,
+        "named residue",
+    ),
+    "C01_store_prep_population": (
+        "CRV-01",
+        "file carries >= 4 walked 33 32 records with a full 40-B block (the per-store P-rep spread population)",
+        lambda c: c["line_walked_full"] >= 4,
+        "candidate",
     ),
 }
 
@@ -286,10 +329,15 @@ def audit_part(mm):
             "c32_raw", "c37_raw", "c38_raw", "unwrapped_raw",
             "edge_wrapped_raw", "elem_decl",
             "line_obs", "line_prep_ok", "line_len_ok", "line_both",
+            "line_prep_shift2", "line_walked_full",
             "circ_obs", "circ_ok", "circ_on_pool",
             "conic_obs", "conic_ok", "conic_dir_obs", "conic_dir_ok",
             "conic_b_ok", "conic_circform",
-            "mid_obs", "mid_ok",
+            "conic_rej_short", "conic_rej_dir", "conic_rej_b",
+            "conic_rej_implausible",
+            "mid_obs", "mid_ok", "mid_midrange", "mid_midrange_unit",
+            "c36", "c36_block_fail", "c36_block_ok",
+            "edge_misaligned",
         )
     }
     if span is None:
@@ -316,8 +364,10 @@ def audit_part(mm):
         for g in egroups:
             counts["edge_records"] += len(g.records)
             counts["polyline_strips"] += sum(1 for n, _refs in g.records if n > 2)
+        if len(egroups) < counts["edge_groups"]:
+            counts["edge_misaligned"] = 1
     except ExportError:
-        pass
+        counts["edge_misaligned"] = 1
     try:
         counts["polyline_lists"] = len(curves.scan_polyline_lists(mm, lo, hi))
     except ExportError:
@@ -355,12 +405,24 @@ def audit_part(mm):
     # Curve records and the per-family laws.
     for rec in curves.iter_curve_records(mm, lo, hi):
         if rec.family == curves.FAMILY_LINE:
-            counts["c32"] += 1
+            counts["c32"] += 1  # walked canonical 33 32 records
+            start = rec.offset + 2
+            block = mm[start : start + curves.LINE_BLOCK.size]
+            if len(block) == curves.LINE_BLOCK.size:
+                # The law flags, measured on the full-block walked
+                # population (the short-block and non-finite rejects
+                # never reach the laws — the honest denominators live
+                # in the rows).
+                counts["line_walked_full"] += 1
+                prep, _lenok = curves.line_laws(block)
+                counts["line_prep_ok"] += prep
+                counts["line_len_ok"] += _lenok
+                b2 = mm[start + 2 : start + 2 + curves.LINE_BLOCK.size]
+                if len(b2) == curves.LINE_BLOCK.size:
+                    counts["line_prep_shift2"] += curves.line_laws(b2)[0]
             try:
                 seg = curves.decode_line(rec, mm)
                 counts["line_obs"] += 1
-                counts["line_prep_ok"] += seg.p_rep_ok
-                counts["line_len_ok"] += seg.length_ok
                 counts["line_both"] += seg.p_rep_ok and seg.length_ok
             except ExportError:
                 pass
@@ -375,7 +437,19 @@ def audit_part(mm):
             except ExportError:
                 pass
         elif rec.family == curves.FAMILY_MIDRING:
-            counts["c33"] += 1
+            counts["c33"] += 1  # walked canonical 33 33 records
+            if len(rec.payload) >= 24:
+                c = curves.BE_F32.unpack_from(rec.payload, 12)[0]
+                s = curves.BE_F32.unpack_from(rec.payload, 16)[0]
+                mid = (
+                    curves.DIR_TOL < abs(c) < 1 - curves.DIR_TOL
+                    and curves.DIR_TOL < abs(s) < 1 - curves.DIR_TOL
+                )
+                if mid:
+                    counts["mid_midrange"] += 1
+                    counts["mid_midrange_unit"] += (
+                        abs(math.hypot(c, s) - 1.0) <= curves.DIR_TOL
+                    )
             try:
                 curves.decode_midring(rec)
                 counts["mid_obs"] += 1
@@ -383,8 +457,27 @@ def audit_part(mm):
             except ExportError:
                 pass
         elif rec.family == curves.FAMILY_CONIC:
-            counts["c38"] += 1
+            counts["c38"] += 1  # walked canonical 33 38 records
             counts["conic_obs"] += 1
+            # Rejection-reason split (short payload / non-unit mid-range
+            # direction / b-positivity), so the row note's figures trace
+            # to committed counters.
+            if len(rec.payload) < 28:
+                counts["conic_rej_short"] += 1
+            else:
+                v = [curves.BE_F32.unpack_from(rec.payload, 4 * i)[0] for i in range(7)]
+                if not all(math.isfinite(x) and abs(x) < 1e7 for x in v):
+                    counts["conic_rej_implausible"] += 1
+                else:
+                    norm = math.hypot(v[3], v[4])
+                    mid = (
+                        curves.DIR_TOL < abs(v[3]) < 1 - curves.DIR_TOL
+                        and curves.DIR_TOL < abs(v[4]) < 1 - curves.DIR_TOL
+                    )
+                    if mid and abs(norm - 1.0) > curves.DIR_TOL:
+                        counts["conic_rej_dir"] += 1
+                    elif v[6] <= 0:
+                        counts["conic_rej_b"] += 1
             try:
                 conic = curves.decode_conic(rec)
                 counts["conic_ok"] += 1
@@ -401,6 +494,21 @@ def audit_part(mm):
                 counts["conic_circform"] += abs(conic.semi_a) == conic.semi_b
             except ExportError:
                 pass
+        elif rec.family == 0x36:
+            # 33 36: out of slice (canonical len==2, no block-form
+            # evidence). The finite read is MEASURED for the exclusion
+            # claim only — it neither establishes nor refutes a block.
+            counts["c36"] += 1  # walked 33 36 records
+            start = rec.offset + 2
+            block = mm[start : start + curves.LINE_BLOCK.size]
+            if len(block) < curves.LINE_BLOCK.size:
+                counts["c36_block_fail"] += 1
+            else:
+                vals = curves.LINE_BLOCK.unpack(block)
+                if all(math.isfinite(x) for x in vals):
+                    counts["c36_block_ok"] += 1
+                else:
+                    counts["c36_block_fail"] += 1
     return counts
 
 
@@ -488,6 +596,26 @@ def write_claims(out_path, file_rows):
                 "label": label,
                 "note": "",
             })
+    # Value row: the median per-store P-rep rate (the rate column
+    # carries the value), companion to C01_store_prep_population.
+    for scope, frows in scopes:
+        rates = [
+            r["line_prep_ok"] / r["line_walked_full"]
+            for r in frows
+            if r["line_walked_full"] >= 4
+        ]
+        if rates:
+            out.append({
+                "claim": "C01_store_prep_median",
+                "construct": "CRV-01",
+                "statement": "median per-store P-rep rate over files with >= 4 walked 33 32 records with a full 40-B block (companion row C01_store_prep_population)",
+                "scope": scope,
+                "observations": 1,
+                "passes": 1,
+                "rate": round(statistics.median(rates), 4),
+                "label": "candidate",
+                "note": "value row: the rate column carries the median",
+            })
     with out_path.open("w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=CLAIM_FIELDS)
         w.writeheader()
@@ -498,15 +626,20 @@ def write_claims(out_path, file_rows):
 def _law_counter(key):
     """(observations, passes) counter names per law claim."""
     return {
-        "C01_line_block_finite": ("line_obs", "line_obs"),
-        "C01_line_prep_law": ("line_obs", "line_prep_ok"),
-        "C01_line_len_law": ("line_obs", "line_len_ok"),
+        "C01_line_block_finite": ("c32", "line_obs"),
+        "C01_line_prep_law": ("line_walked_full", "line_prep_ok"),
+        "C01_line_len_law": ("line_walked_full", "line_len_ok"),
+        "C01_line_prep_shift2": ("line_walked_full", "line_prep_shift2"),
+        "C01_line_walked": ("c32", "c32"),
         "C02_circle_pool_law": ("circ_obs", "circ_on_pool"),
         "C02_circle_decode_ok": ("circ_obs", "circ_ok"),
         "C03_conic_dir_law": ("conic_dir_obs", "conic_dir_ok"),
         "C03_conic_b_pos": ("conic_ok", "conic_b_ok"),
         "C03_conic_decode_ok": ("conic_obs", "conic_ok"),
-        "C08_midring_dir_law": ("mid_obs", "mid_ok"),
+        "C08_midring_dir_law": ("c33", "mid_obs"),
+        "C08_midring_midrange_unit": ("mid_midrange", "mid_midrange_unit"),
+        "C08_midring_walked": ("c33", "c33"),
+        "C36_block_read": ("c36", "c36_block_ok"),
         "T07_pool_count_law": ("pool_groups", "pool_groups_ok"),
     }[key]
 

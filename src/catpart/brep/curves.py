@@ -20,9 +20,10 @@ corpus-wide on the L2-pass population by
       (P-rep 51,002/508,086 = 10.04%, ``|Q|`` 54,775/508,086 = 10.78%,
       skip-42 walk).  The per-field semantics of the remaining blocks
       stay open — the two laws hold and fail on records of the SAME
-      store (per-store P-rep rates spread 0..1, median 0.59 over 813
-      stores with >= 4 records), so the walker measures the laws as
-      flags instead of rejecting.
+      store (per-store P-rep rates spread 0..1, median 0.6 over the 926
+      stores with >= 4 decoded records — committed rows
+      ``C01_store_prep_population``/``C01_store_prep_median``), so the
+      walker measures the laws as flags instead of rejecting.
     - ``33 37`` circle: 4 big-endian f32 ``(cx, cy, cz, r)`` + 2-B
       trailer (18 B payload).
     - ``33 33`` mid-ring circle: 6 big-endian f32 ``(cx, cy, cz, cos
@@ -30,8 +31,9 @@ corpus-wide on the L2-pass population by
       records, ``r`` observed negative; BR3 re-reads the stage-4a
       ``p1``/``p2`` params as an in-plane unit direction pair — the
       same pair shape as ``33 38`` (dominant values ``(0, 0)``,
-      ``(+-1, 0)``, ``(0, +-1)``; corpus mid-range pairs 5,406/5,406
-      unit).
+      ``(+-1, 0)``, ``(0, +-1)``; corpus mid-range pairs 10,051/10,696
+      unit — row ``C08_midring_midrange_unit``; the 645 non-unit
+      mid-range pairs sit in ``decode_midring``'s 710 rejects).
     - ``33 38`` conic: 7 big-endian f32 ``(cx, cy, cz, cos t, sin t,
       a, b)`` + 2-B trailer (30 B).  BR3's direction law: the pair is
       unit-norm whenever mid-range and ``(0, 0)`` is the observed
@@ -221,6 +223,9 @@ def iter_curve_records(data, lo: int, hi: int) -> list[CurveRecord]:
                         CurveRecord(
                             offset=p,
                             family=fam,
+                            # data[p - 6] is the record's +0x01 byte —
+                            # C1's tag_b (the +0x00 tag_a byte is never
+                            # read); the field name is legacy.
                             tag_a=data[p - 6],
                             ident=int.from_bytes(
                                 data[p - 5 : p - 3], "little"
@@ -231,10 +236,13 @@ def iter_curve_records(data, lo: int, hi: int) -> list[CurveRecord]:
                         )
                     )
                     # 33 32 canonical (len == 2): resume past the
-                    # following 40-B block (33 36's post-family bytes
-                    # are NOT a finite-float block: 293,793/296,490
-                    # corpus records fail the 10-finite-float read, so
-                    # it tiles on 2 + len like the BE families).
+                    # following 40-B block.  33 36 stays OUT of slice:
+                    # canonical len==2 and no tiling/header-follow
+                    # evidence for a 40-B block — its post-family bytes
+                    # usually READ as finite f32le (848,141/875,398
+                    # corpus records, row C36_block_read) but a finite
+                    # read alone does not establish the block form, so
+                    # it tiles on 2 + len like the BE families.
                     p += LINE_BLOCK.size + 2 if fam == FAMILY_LINE and ln == 2 else 2 + ln
                     continue
         p += 1
@@ -244,11 +252,15 @@ def iter_curve_records(data, lo: int, hi: int) -> list[CurveRecord]:
 def line_laws(block: bytes) -> tuple[bool, bool]:
     """The two G2 ``33 32`` laws over a 40-B f32le block.
 
-    Returns ``(p_rep_ok, length_ok)``: the block's floats at +0x17
-    (23d) repeat the first triple bit-exact, and the float at +0x23
-    (35d) equals ``|Q| = ||Q||`` (relative tolerance ``LEN_TOL`` for
-    the f32 rounding of the stored length).  Measured flags, not
-    decoder preconditions (see the module docstring).
+    Returns ``(p_rep_ok, length_ok)``: the block's second P triple
+    (floats ``f6..f8``, record-relative ``+0x21 (33d)``..``+0x29
+    (41d)``) repeats the first triple (``f0..f2``,
+    ``+0x15 (21d)``..``+0x1D (29d)``) bit-exact, and the float ``f9``
+    (record-relative ``+0x2D (45d)``) equals ``|Q| = ||Q||`` over the Q
+    triple ``f3..f5`` (``+0x15 (21d)``..``+0x1D (29d)``; relative
+    tolerance ``LEN_TOL`` for the f32 rounding of the stored length).
+    Measured flags, not decoder preconditions (see the module
+    docstring).
     """
     if len(block) < LINE_BLOCK.size:
         return False, False
@@ -438,9 +450,11 @@ def scan_edge_groups(
     The group's record region ends exactly at the next wrapper (any
     ``10 24 04 ff ff 00 00 00`` occurrence) or at ``hi``.  Groups whose
     records do not end-align under either width raise
-    ``malformed-edge-group`` when ``strict`` (E1's named residue: 87
-    stores corpus-wide do not land exactly); with ``strict=False`` the
-    misaligned group is skipped and only aligned groups are returned.
+    ``malformed-edge-group`` when ``strict`` (E1's named residue: 136
+    corpus files carry at least one group that does not land exactly —
+    all end-alignment failures, 0 count-field rejects; row
+    ``T06_edge_residue_files``); with ``strict=False`` the misaligned
+    group is skipped and only aligned groups are returned.
     """
     wraps = list(pool.find_all(data, WRAPPER, lo, hi))
     bounds = sorted(set(wraps + [hi]))
@@ -508,6 +522,7 @@ def scan_vertex_pool(data, lo: int, hi: int):
 
     Re-raises ``malformed-pool-group`` / ``malformed-pool-vertex`` from
     ``catpart.geometry.pool`` — the count-field law is a structural
-    validator there (2,090/2,090 corpus groups walk exactly).
+    validator there (2,326/2,326 corpus groups walk exactly; row
+    ``T07_pool_count_law``).
     """
     return pool.scan_pool_groups(data, lo, hi)
