@@ -18,8 +18,13 @@ population (the census population, 1,442 parts) with the L2-pass join
 
 Outputs docs/evidence/data/br2-planar-claims.csv (per-claim rates —
 every figure the evidence note's prose cites) and a stdout tie-out
-table. Corpus binaries are read READ-ONLY from the MAIN checkout
-(--corpus-root, never copied into the repo tree, never committed).
+table. Filtered runs (``--sha16`` / ``--limit``) write a DISTINCT
+file name (``br2-planar-claims-sha16-<prefix>.csv`` /
+``br2-planar-claims-limit-<n>.csv``) so a filtered probe can never
+replace the all-corpus artifact (the Phase-5-retro clobber failure
+mode, dispatch-recipes.md:122-132). Corpus binaries are read READ-ONLY
+from the MAIN checkout (--corpus-root, never copied into the repo
+tree, never committed).
 
 Detector honesty: the synthetic negative fixtures for every
 discriminating edge run via ``--selftest`` (no corpus needed) and live
@@ -27,6 +32,9 @@ pinned in tests/test_brep_planar.py.
 
 Reproduction (deterministic, manifest order, stdlib only):
     LD_LIBRARY_PATH=/usr/lib python -I scripts/triage/decode_brep_planar.py
+    LD_LIBRARY_PATH=/usr/lib python -I scripts/triage/decode_brep_planar.py --selftest
+    LD_LIBRARY_PATH=/usr/lib python -I scripts/triage/decode_brep_planar.py \
+        --sha16 bd79fa8e --out-dir /tmp/br2-sha16
 """
 
 from __future__ import annotations
@@ -41,12 +49,14 @@ from pathlib import Path
 
 from catpart.brep.planar import (
     FACE_COUNT_VARIANT,
+    FACE_NO_LOOPS,
     FACE_OK,
     FACE_OUT_OF_POOL,
     UNIT_NORM_TOL,
     count_structure,
     decode_planar_face,
     normal_unit_deviation,
+    record_true_loops,
 )
 from catpart.geometry import facets, pool, store
 
@@ -55,6 +65,34 @@ MANIFEST = REPO_ROOT / "manifests" / "corpus-manifest.csv"
 L2_STAGE15 = REPO_ROOT / "docs" / "evidence" / "data" / "stage15-identity-export-files.csv"
 OUT_DIR = REPO_ROOT / "docs" / "evidence" / "data"
 DEFAULT_CORPUS_ROOT = "/home/alan/Documents/Repos/catpart-parser"
+
+#: G3's named counterexample stores (docs/evidence/2026-11-09-facet-semantics.md
+#: §3 "Counterexamples named", 2026-11-10 correction #35): six off-plane
+#: stores plus the one anti-parallel store. The attribution rows classify
+#: by this CITATION — the counts are measured here; "G3 already named this
+#: store" is read off G3's note, not re-derived.
+G3_NAMED_OFF_PLANE = frozenset(
+    {
+        "aa84a202df09ed45",
+        "bd79fa8e39e8fab2",
+        "1ffad5964894f1ff",
+        "a6d450edd4a8ff17",
+        "0ae8c3e7dd3e74ad",
+        "b9b887db0d516d88",
+    }
+)
+G3_NAMED_ANTIPARALLEL = frozenset({"6888b9868df81c00"})
+G3_NAMED_STORES = G3_NAMED_OFF_PLANE | G3_NAMED_ANTIPARALLEL
+
+
+def g3_named_class(sha16: str) -> str:
+    """The G3 citation for a store (or the explicit 'not named' bit)."""
+    if sha16 in G3_NAMED_OFF_PLANE:
+        return "G3-named off-plane store, 2026-11-09-facet-semantics.md §3"
+    if sha16 in G3_NAMED_ANTIPARALLEL:
+        return "G3-named anti-parallel store, 2026-11-09-facet-semantics.md §3"
+    return "store NOT named by G3"
+
 
 CLAIMS_FIELDS = [
     "claim",
@@ -115,15 +153,32 @@ def audit_part(mm) -> dict:
         "unit_norm_max_dev": 0.0,
         "count_u8": 0,
         "count_u16": 0,
+        "count_u16_u8ref": 0,  # u16be counts over u8 references
         "count_variant": 0,
+        "nb_variants": 0,  # count-law variants among NORMAL-BEARING records
+        "u16_count_present": False,
+        "u16_u8ref_present": False,
+        "resolved_triangle_list": 0,  # 0x49 records under the count law
+        "mk_49_normal": 0,  # 0x49 records carrying a normal
+        "mk_49_n_equals_3ty": 0,  # 0x49 records satisfying n == 3*ty
+        "ty_zero": 0,  # accepted records with ty == 0 (no loops)
+        "normal_less_strip_loops": Counter(),  # true loops of 0x41/0x42 records, by marker
+        "nl42_inpool_loops": 0,
+        "mk_0x41_records": 0,
+        "mk_0x41_variants": 0,  # 0x41 records whose count structure is NOT established
+        "mk_0x41_fallback_loops": 0,  # 0x41 loops from the byte-parse fallback
         "ty_multi_loop": 0,  # ty >= 2 records (multi-loop faces)
         "ring_loops": 0,
         "strip_loops": 0,
         "face_status": Counter(),
         "geometry_decodable": 0,
         "coplanar": 0,
+        "cop_fail": 0,  # in-pool faces failing the coplanarity test
+        "sign_negative": 0,  # in-pool faces with a sign-negative winding
         "oriented": 0,
         "oriented_candidates": 0,
+        "pass_rel_spreads": [],  # coplanar faces' max_dev/tol
+        "fail_rel_spreads": [],  # non-coplanar faces' max_dev/tol
         "rel_spreads": [],
         "planar_marker_record": 0,  # accepted 0x4a/0x4c records
         "facet_record": 0,  # accepted 01 [41-4f] records (any marker)
@@ -166,6 +221,13 @@ def audit_part(mm) -> dict:
         out["records_by_marker"][r.marker] += 1
         if r.header_len == 5:
             out["five_byte_form"] += 1
+        if r.type == 0:
+            out["ty_zero"] += 1
+        if r.marker == 0x49:
+            if r.normal is not None:
+                out["mk_49_normal"] += 1
+            if r.n == 3 * r.type:
+                out["mk_49_n_equals_3ty"] += 1
         cs = count_structure(r)
         if r.type:
             if cs is None:
@@ -174,7 +236,30 @@ def audit_part(mm) -> dict:
                 out["count_u8"] += 1
             else:
                 out["count_u16"] += 1
+                out["u16_count_present"] = True
+                if r.width == 1:
+                    out["count_u16_u8ref"] += 1
+                    out["u16_u8ref_present"] = True
+            if r.marker == 0x49 and cs is not None:
+                out["resolved_triangle_list"] += 1
+        if r.normal is not None and cs is None and r.type:
+            out["nb_variants"] += 1
         if r.normal is None:
+            # Normal-less strip families sit outside the face-decode
+            # population; their loop count is measured per marker for the
+            # BR2-16 scope statement. 0x41 is split by whether the count
+            # law applies: without it the byte-parse fallback supplies the
+            # loops (record_true_loops falls back to record_loops).
+            if r.marker in (0x41, 0x42):
+                loops = record_true_loops(r)
+                out["normal_less_strip_loops"][r.marker] += len(loops)
+                if r.marker == 0x42 and all(x < len(flat) for lp in loops for x in lp):
+                    out["nl42_inpool_loops"] += len(loops)
+                if r.marker == 0x41:
+                    out["mk_0x41_records"] += 1
+                    if cs is None:
+                        out["mk_0x41_variants"] += 1
+                        out["mk_0x41_fallback_loops"] += len(loops)
             continue
         out["normal_records"] += 1
         if r.type >= 2:
@@ -197,10 +282,16 @@ def audit_part(mm) -> dict:
         out["rel_spreads"].append(rel)
         if face.plane.coplanar:
             out["coplanar"] += 1
+            out["pass_rel_spreads"].append(rel)
+        else:
+            out["cop_fail"] += 1
+            out["fail_rel_spreads"].append(rel)
         if face.oriented is not None:
             out["oriented_candidates"] += 1
             if face.oriented:
                 out["oriented"] += 1
+            else:
+                out["sign_negative"] += 1
     return out
 
 
@@ -234,6 +325,8 @@ def run_corpus(args) -> list[dict]:
     poolonly = Counter()
     composite = Counter()
     poolonly_rel_spreads: list[float] = []
+    poolonly_pass_spreads: list[float] = []
+    poolonly_fail_spreads: list[float] = []
     composite_rel_spreads: list[float] = []
     unit_norm_max_dev = 0.0
     worst_poolonly_rel = 0.0
@@ -242,6 +335,10 @@ def run_corpus(args) -> list[dict]:
     files_facet = files_planar = 0
     files_facet_l2 = files_planar_l2 = 0
     l2_total = 0
+    stores_u16 = 0
+    stores_u16_u8ref = 0
+    cop_fail_by_store: Counter = Counter()
+    signneg_by_store: Counter = Counter()
 
     for r in manifest_parts:
         fpath = corpus_root / r["local_path"]
@@ -267,12 +364,24 @@ def run_corpus(args) -> list[dict]:
                     "unit_normals",
                     "count_u8",
                     "count_u16",
+                    "count_u16_u8ref",
                     "count_variant",
+                    "nb_variants",
+                    "resolved_triangle_list",
+                    "mk_49_normal",
+                    "mk_49_n_equals_3ty",
+                    "ty_zero",
+                    "nl42_inpool_loops",
+                    "mk_0x41_records",
+                    "mk_0x41_variants",
+                    "mk_0x41_fallback_loops",
                     "ty_multi_loop",
                     "ring_loops",
                     "strip_loops",
                     "geometry_decodable",
                     "coplanar",
+                    "cop_fail",
+                    "sign_negative",
                     "oriented",
                     "oriented_candidates",
                     "planar_marker_record",
@@ -284,17 +393,37 @@ def run_corpus(args) -> list[dict]:
                     bucket[f"status_{st}"] += n
                 for mk, n in audit["records_by_marker"].items():
                     bucket[f"mk_{mk:#x}"] += n
+                for mk, n in audit["normal_less_strip_loops"].items():
+                    bucket[f"normal_less_loops_{mk:#x}"] += n
                 if audit["unit_norm_max_dev"] > unit_norm_max_dev:
                     unit_norm_max_dev = audit["unit_norm_max_dev"]
                 target_spreads = (
                     poolonly_rel_spreads if audit["store_class"] == "pool-only" else composite_rel_spreads
                 )
                 target_spreads.extend(audit["rel_spreads"])
-                if audit["store_class"] == "pool-only" and audit["rel_spreads"]:
-                    worst = max(audit["rel_spreads"])
-                    if worst > worst_poolonly_rel:
-                        worst_poolonly_rel = worst
-                        worst_poolonly_sha = r["sha256"][:16]
+                sha16 = r["sha256"][:16]
+                if audit["store_class"] == "pool-only":
+                    poolonly_pass_spreads.extend(audit["pass_rel_spreads"])
+                    poolonly_fail_spreads.extend(audit["fail_rel_spreads"])
+                    if audit["rel_spreads"]:
+                        worst = max(audit["rel_spreads"])
+                        if worst > worst_poolonly_rel:
+                            worst_poolonly_rel = worst
+                            worst_poolonly_sha = sha16
+                    bucket["nl42_poolonly_loops"] += audit["normal_less_strip_loops"][0x42]
+                    # The failure-attribution claims are pool-only (the
+                    # geometry-validated scope, same as BR2-10/11): on
+                    # composite stores the pool mapping is wrong by
+                    # construction, so their sign-negative mass is not a
+                    # counterexample population.
+                    if audit["cop_fail"]:
+                        cop_fail_by_store[sha16] += audit["cop_fail"]
+                    if audit["sign_negative"]:
+                        signneg_by_store[sha16] += audit["sign_negative"]
+                if audit["u16_count_present"]:
+                    stores_u16 += 1
+                if audit["u16_u8ref_present"]:
+                    stores_u16_u8ref += 1
         if audit["facet_record"]:
             files_facet += 1
             if is_l2:
@@ -396,12 +525,48 @@ def run_corpus(args) -> list[dict]:
     )
     add(
         "BR2-07_count_structure_established",
-        "accepted records with ty>0 whose loop delimitation resolves (u8 or u16be count width)",
+        f"accepted records with ty>0 whose loop delimitation resolves (u8 or u16be count width); includes {corpus['resolved_triangle_list']:,} 0x49 triangle-list records whose loop/primitive semantics remain candidate (BR2-07b; carve-out in BR2-07c)",
         "fact",
         "all accepted records with ty>0",
         "all",
         corpus["count_u8"] + corpus["count_u16"] + corpus["count_variant"],
         corpus["count_u8"] + corpus["count_u16"],
+    )
+    add(
+        "BR2-07b_triangle_list_share_resolved",
+        "resolved count-law records that are 0x49 triangle-list records (n == 3*ty; loop/primitive semantics still candidate - BR2-18)",
+        "fact",
+        "all resolved records (u8 or u16be count width)",
+        "all",
+        corpus["count_u8"] + corpus["count_u16"],
+        corpus["resolved_triangle_list"],
+    )
+    add(
+        "BR2-07c_law_excluding_triangle_list",
+        "the count-width law with ALL 0x49 triangle-list records carved out of the denominator (the candidate family removed)",
+        "fact",
+        "accepted records with ty>0, 0x49 excluded",
+        "all",
+        corpus["count_u8"] + corpus["count_u16"] + corpus["count_variant"] - corpus["mk_0x49"],
+        corpus["count_u8"] + corpus["count_u16"] - corpus["resolved_triangle_list"],
+    )
+    add(
+        "BR2-07e_normal_bearing_variants",
+        "record-level count-law variants that are NORMAL-BEARING (the face decoder's reachable variant population; the rest of the 221 are normal-less records it never sees)",
+        "fact",
+        "normal-bearing records, geometry scan",
+        "all",
+        normal_recs,
+        corpus["nb_variants"],
+    )
+    add(
+        "BR2-07d_face_count_variant",
+        "normal-bearing records whose FACE decode reports count-variant (loop structure not established at the face level; the record-level count-law variant population is 221 - BR2-07)",
+        "fact",
+        "normal-bearing records, geometry scan",
+        "all",
+        normal_recs,
+        corpus[f"status_{FACE_COUNT_VARIANT}"],
     )
     add(
         "BR2-08_count_width_u16",
@@ -411,6 +576,24 @@ def run_corpus(args) -> list[dict]:
         "all",
         corpus["count_u8"] + corpus["count_u16"] + corpus["count_variant"],
         corpus["count_u16"],
+    )
+    add(
+        "BR2-08b_u16_count_over_u8_ref",
+        "u16be-count records whose references are u8 (count width is a per-record property, not inherited from the ref width)",
+        "fact",
+        "u16be-count records",
+        "all",
+        corpus["count_u16"],
+        corpus["count_u16_u8ref"],
+    )
+    add(
+        "BR2-08c_u16_count_stores",
+        "located stores carrying >=1 u16be-count record, and the subset whose u16be counts sit over u8 references (the 36-store figure's denominator)",
+        "fact",
+        "located stores, geometry scan",
+        "all",
+        stores_u16,
+        stores_u16_u8ref,
     )
     add(
         "BR2-09_multi_loop_faces",
@@ -435,9 +618,9 @@ def run_corpus(args) -> list[dict]:
     )
     add(
         "BR2-11_plane_oriented_poolonly",
-        "pool-only store faces: winding/Newell sign-positive vs the stored normal (CCW law, G3 F5)",
+        f"pool-only store faces: winding/Newell sign-positive vs the stored normal (CCW law, G3 F5); denominator = faces with a measured orientation candidate (signs computed: {poolonly['oriented_candidates']:,} of {dec:,} decodable in-pool faces)",
         "fact",
-        "pool-only stores, geometry scan",
+        "pool-only stores, geometry scan (oriented-candidate denominator)",
         "all",
         poolonly["oriented_candidates"],
         poolonly["oriented"],
@@ -473,6 +656,32 @@ def run_corpus(args) -> list[dict]:
             1,
             rate=percentile(poolonly_rel_spreads, 0.95),
         )
+    if poolonly_pass_spreads:
+        # The pass/fail gap is bounded by these two rows. The p95
+        # (BR2-12c) is a distribution statistic, NOT the pass boundary:
+        # quoting it as "the passing mass" overstates the separation by
+        # three orders of magnitude.
+        add(
+            "BR2-12d_spread_pass_max_rel",
+            "max relative plane spread over the PASSING (coplanar) pool-only faces (max_dev/tol; rate column carries the value)",
+            "fact",
+            "pool-only store faces, coplanar subset",
+            "all",
+            1,
+            1,
+            rate=max(poolonly_pass_spreads),
+        )
+    if poolonly_fail_spreads:
+        add(
+            "BR2-12e_spread_fail_min_rel",
+            "min relative plane spread over the FAILING (non-coplanar) pool-only faces (max_dev/tol; rate column carries the value)",
+            "fact",
+            "pool-only store faces, non-coplanar subset",
+            "all",
+            1,
+            1,
+            rate=min(poolonly_fail_spreads),
+        )
     print(
         f"worst pool-only plane counterexample: {worst_poolonly_sha} "
         f"(max_dev/tol = {worst_poolonly_rel:.6g})"
@@ -486,6 +695,15 @@ def run_corpus(args) -> list[dict]:
         "all",
         composite["geometry_decodable"],
         composite["coplanar"],
+    )
+    add(
+        "BR2-28_composite_signneg_mass",
+        "composite-store in-pool faces with a measured orientation candidate, and the sign-negative share (the composite pool mapping is wrong by construction - G3 F8 - so this mass is NOT a counterexample population; the attribution BR2-21..24 is pool-only, the one geometry-validated scope)",
+        "fact",
+        "composite stores, in-pool faces",
+        "all",
+        composite["oriented_candidates"],
+        composite["sign_negative"],
     )
     add(
         "BR2-14_outofpool_records",
@@ -509,12 +727,70 @@ def run_corpus(args) -> list[dict]:
     )
     add(
         "BR2-16_strip_loops",
-        "strip-kind loops of normal-bearing records (0x49/0x4a) decoded as strip segments (not boundary cycles; normal-less 0x41/0x42 records are outside the geometry-scan population)",
+        "strip-kind loops of normal-bearing records (0x49/0x4a) decoded as strip segments (not boundary cycles; normal-less 0x41/0x42 loops are outside this population and counted separately in BR2-26/26b)",
         "fact",
-        "loops of accepted records, geometry scan",
+        "strip-kind loops of normal-bearing records (0x49/0x4a), geometry scan",
         "all",
         poolonly["strip_loops"] + composite["strip_loops"],
         poolonly["strip_loops"] + composite["strip_loops"],
+    )
+    add(
+        "BR2-26_normal_less_strip_loops",
+        "0x42 strip loops on NORMAL-LESS records under the true-loop split, ALL located stores (outside the normal-bearing face-decode population). G3 §3's 'corpus-wide 10,684' has no committed artifact behind it (G3's own loop table carries 857 0x42 loop rows over 108 clean stores) and no scope measured here reproduces it - see note §3",
+        "fact",
+        "normal-less 0x42 records, all located stores",
+        "all",
+        corpus["normal_less_loops_0x42"],
+        corpus["normal_less_loops_0x42"],
+    )
+    add(
+        "BR2-26c_0x42_loops_poolonly",
+        "0x42 strip loops on NORMAL-LESS records, POOL-ONLY stores only (the second scope tested against G3's prose figure; neither this nor BR2-26d is 10,684)",
+        "fact",
+        "normal-less 0x42 records, pool-only stores",
+        "all",
+        corpus["nl42_poolonly_loops"],
+        corpus["nl42_poolonly_loops"],
+    )
+    add(
+        "BR2-26d_0x42_loops_inpool_records",
+        "0x42 strip loops carried by records whose references all sit IN the pool (the third scope tested against G3's prose figure)",
+        "fact",
+        "normal-less 0x42 records, in-pool references",
+        "all",
+        corpus["nl42_inpool_loops"],
+        corpus["nl42_inpool_loops"],
+    )
+    add(
+        "BR2-26b_normal_less_0x41_loops",
+        f"0x41 loops on NORMAL-LESS records under the true-loop split: "
+        f"{corpus['mk_0x41_records'] - corpus['mk_0x41_variants']:,} records under the count law "
+        f"({corpus['normal_less_loops_0x41'] - corpus['mk_0x41_fallback_loops']:,} loops) plus "
+        f"{corpus['mk_0x41_variants']:,} count-variant records through the byte-parse fallback "
+        f"({corpus['mk_0x41_fallback_loops']:,} loops; BR2-27/27b)",
+        "fact",
+        "normal-less 0x41 records, geometry scan",
+        "all",
+        corpus["normal_less_loops_0x41"],
+        corpus["normal_less_loops_0x41"],
+    )
+    add(
+        "BR2-27_0x41_records",
+        "normal-less 0x41 records, and the subset whose count structure is NOT established (the byte-parse fallback population of BR2-26b)",
+        "fact",
+        "normal-less 0x41 records, geometry scan",
+        "all",
+        corpus["mk_0x41_records"],
+        corpus["mk_0x41_variants"],
+    )
+    add(
+        "BR2-27b_0x41_loop_split",
+        "0x41 loops, and the share supplied by the byte-parse fallback for the count-variant records (the remainder comes from the count law)",
+        "fact",
+        "normal-less 0x41 records, geometry scan",
+        "all",
+        corpus["normal_less_loops_0x41"],
+        corpus["mk_0x41_fallback_loops"],
     )
     add(
         "BR2-17_five_byte_form",
@@ -525,16 +801,38 @@ def run_corpus(args) -> list[dict]:
         corpus["records_geometry"],
         corpus["five_byte_form"],
     )
+    add(
+        "BR2-25_zero_loop_records",
+        "accepted records with ty == 0 (the no-loops face status' corpus population; the face decoder pins the status on a synthetic fixture - FACE_NO_LOOPS is unreachable on the corpus)",
+        "fact",
+        "accepted records, geometry scan",
+        "all",
+        corpus["records_geometry"],
+        corpus["ty_zero"],
+    )
 
-    # 0x49 extension candidate
+    # 0x49 extension candidate. Observations and passes must come from
+    # DIFFERENT counters or the rate asserts nothing: the predicates are
+    # measured in BR2-18 (normal carried) and BR2-18b (n == 3*ty). The
+    # CANDIDATE label belongs to the primitive/loop semantics, which no
+    # rate here establishes.
     add(
         "BR2-18_triangle_list_normal_records",
-        "0x49 records (n == 3*type triangle lists) carrying a normal - planarity extension candidate",
+        "0x49 records carrying a normal (volume anchor: both sides count the same records; the candidate content is the primitive/loop semantics, not this rate - n == 3*ty measured in BR2-18b)",
         "candidate",
         "0x49 records, geometry scan",
         "all",
         corpus["mk_0x49"],
+        corpus["mk_49_normal"],
+    )
+    add(
+        "BR2-18b_0x49_n_equals_3ty",
+        "0x49 records satisfying the G3 F9/F10 byte law n == 3*ty (the triangle-list shape; measured, not assumed from the family's construction)",
+        "fact",
+        "0x49 records, geometry scan",
+        "all",
         corpus["mk_0x49"],
+        corpus["mk_49_n_equals_3ty"],
     )
 
     # Store-class scope rows (the 281/1,036 split the note cites)
@@ -557,13 +855,115 @@ def run_corpus(args) -> list[dict]:
         composite["stores"],
     )
 
+    # Failure attribution: the counts are measured here, the named/unnamed
+    # split is a CITATION to G3's note (G3_NAMED_STORES). One store alone
+    # does not reproduce the set - attribution needs the unfiltered run.
+    cop_fail_total = sum(cop_fail_by_store.values())
+    cop_fail_named = sum(n for s, n in cop_fail_by_store.items() if s in G3_NAMED_STORES)
+    signneg_total = sum(signneg_by_store.values())
+    signneg_named = sum(n for s, n in signneg_by_store.items() if s in G3_NAMED_STORES)
+    add(
+        "BR2-21_cop_fail_stores_named",
+        "stores carrying >=1 coplanarity-failing pool-only face, and the share of them G3 already names (facet-semantics note §3)",
+        "fact",
+        "pool-only stores, geometry scan",
+        "all",
+        len(cop_fail_by_store),
+        sum(1 for s in cop_fail_by_store if s in G3_NAMED_STORES),
+    )
+    add(
+        "BR2-21b_cop_fail_faces_named",
+        "coplanarity-failing pool-only faces, and the share sitting on G3-named stores (per-store counts in the BR2-23 block)",
+        "fact",
+        "pool-only stores, geometry scan",
+        "all",
+        cop_fail_total,
+        cop_fail_named,
+    )
+    add(
+        "BR2-22_signneg_stores_named",
+        "stores carrying >=1 sign-negative pool-only face (the stored output, NOT a claim of anti-parallelism), and the share of them G3 already names",
+        "fact",
+        "pool-only stores, geometry scan",
+        "all",
+        len(signneg_by_store),
+        sum(1 for s in signneg_by_store if s in G3_NAMED_STORES),
+    )
+    add(
+        "BR2-22b_signneg_faces_named",
+        "sign-negative pool-only faces, and the share sitting on G3-named stores (per-store counts in the BR2-24 block)",
+        "fact",
+        "pool-only stores, geometry scan",
+        "all",
+        signneg_total,
+        signneg_named,
+    )
+    for sha16, n in sorted(cop_fail_by_store.items()):
+        add(
+            f"BR2-23_cop_fail_store_{sha16}",
+            f"coplanarity-failing pool-only faces on store {sha16} ({g3_named_class(sha16)}; volume anchor)",
+            "fact",
+            "pool-only stores, geometry scan",
+            "all",
+            n,
+            n,
+        )
+    for sha16, n in sorted(signneg_by_store.items()):
+        add(
+            f"BR2-24_signneg_store_{sha16}",
+            f"sign-negative pool-only faces on store {sha16} ({g3_named_class(sha16)}; volume anchor)",
+            "fact",
+            "pool-only stores, geometry scan",
+            "all",
+            n,
+            n,
+        )
+    print(f"coplanarity failures: {cop_fail_total} faces on {len(cop_fail_by_store)} stores")
+    for sha16, n in sorted(cop_fail_by_store.items()):
+        print(f"  cop-fail {sha16} {n}  [{g3_named_class(sha16)}]")
+    print(f"sign-negative faces: {signneg_total} on {len(signneg_by_store)} stores")
+    for sha16, n in sorted(signneg_by_store.items()):
+        print(f"  sign-negative {sha16} {n}  [{g3_named_class(sha16)}]")
+
+    print(
+        f"0x41: records {corpus['mk_0x41_records']} variants {corpus['mk_0x41_variants']} "
+        f"loops established {corpus['mk_0x41_established_loops']} fallback {corpus['mk_0x41_fallback_loops']}"
+    )
+    print(
+        f"composite oriented candidates {composite['oriented_candidates']} sign-negative {composite['sign_negative']}"
+    )
+    print(
+        f"0x42 loops: all stores {corpus['normal_less_loops_0x42']} | pool-only {corpus['nl42_poolonly_loops']} "
+        f"| in-pool records {corpus['nl42_inpool_loops']}"
+    )
+    poolonly_signneg = poolonly["oriented_candidates"] - poolonly["oriented"]
+    print(
+        f"sign-negative: composite {composite['sign_negative']}/{composite['oriented_candidates']} "
+        f"vs pool-only {poolonly_signneg}/{poolonly['oriented_candidates']}"
+    )
     print(f"\nclaims rows: {len(rows)}")
     return rows
 
 
-def write_claims(rows: list[dict], out_dir: Path) -> Path:
+def claims_filename(args) -> str:
+    """The claims file name for this run.
+
+    The all-corpus run owns ``br2-planar-claims.csv``. A filtered run
+    (``--sha16`` / ``--limit``) gets a DISTINCT name so the documented
+    reproduction command cannot replace the committed all-corpus artifact
+    with a filtered subset (the Phase-5-retro clobber failure mode,
+    dispatch-recipes.md:122-132).
+    """
+    if args.sha16:
+        return f"br2-planar-claims-sha16-{'-'.join(sorted(args.sha16))}.csv"
+    if args.limit:
+        return f"br2-planar-claims-limit-{args.limit}.csv"
+    return "br2-planar-claims.csv"
+
+
+def write_claims(rows: list[dict], out_dir: Path, filename: str) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / "br2-planar-claims.csv"
+    path = out_dir / filename
     with path.open("w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=CLAIMS_FIELDS, lineterminator="\n")
         w.writeheader()
@@ -678,6 +1078,55 @@ def _selftest() -> int:
         and PlaneEquation(normal=(0, 0, 1), offset=0.0, max_dev=0.0, tol=1e-4).coplanar,
     )
 
+    # 11. u16 counts over u16 references (the missing combination: the
+    #     count width must not be read off the ref width in EITHER
+    #     direction).
+    r = rec(0x4A, 1, (0, 4), (0, 1, 2, 3), (0.0, 0.0, 1.0), width=2)
+    cs = count_structure(r)
+    check(
+        "u16 counts over u16 refs resolve to one loop",
+        cs is not None and cs.count_width == 2 and cs.lengths == (4,) and record_true_loops(r) == [(0, 1, 2, 3)],
+    )
+
+    # 12. TOP-04 marker blindness (the §6 declared non-discrimination, now
+    #     with a fixture): a normal-less 0x42 record in-pool is FACE_OK with
+    #     no normal and no plane - the status does NOT discriminate a face.
+    r = rec(0x42, 1, (3,), (0, 1, 2), None)
+    face = decode_planar_face(pool, lex, r)
+    check(
+        "marker-blind 0x42 record decodes as an ok face without geometry",
+        face.status == FACE_OK and face.normal is None and face.plane is None and face.oriented is None,
+    )
+
+    # 13. Marker blindness across markers: 0x42 and 0x44 differ only in the
+    #     marker byte, so every decoded field except the marker must agree.
+    f42 = decode_planar_face(pool, lex, rec(0x42, 1, (3,), (0, 1, 2), None))
+    f44 = decode_planar_face(pool, lex, rec(0x44, 1, (3,), (0, 1, 2), None))
+    check(
+        "0x42 and 0x44 records decode identically (marker-blind)",
+        (f42.status, f42.plane, f42.oriented, f42.loops, f42.count_width)
+        == (f44.status, f44.plane, f44.oriented, f44.loops, f44.count_width),
+    )
+
+    # 14. Sign-only edge: a PERPENDICULAR winding (n . w == 0) is
+    #     sign-negative, not parallel - the b9b887db read the B3
+    #     correction rests on. A ring lying in a plane perpendicular to
+    #     the stored normal has Newell exactly perpendicular to it.
+    pool_perp = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 0.0, 1.0), (0.0, 0.0, 1.0)]
+    r = rec(0x4C, 1, (4,), (0, 1, 2, 3), (0.0, 0.0, 1.0))
+    face = decode_planar_face(pool_perp, lex, r)
+    check(
+        "perpendicular winding reads sign-negative (n.w == 0)",
+        face.status == FACE_OK and face.oriented is False and not face.plane.coplanar,
+    )
+
+    # 15. No-loops status pin: a ty=0 record (n=0, k=0 is grammar-legal)
+    #     reports no-loops, never an "ok face". Unreachable on the corpus
+    #     (BR2-25), so the fixture is the only witness.
+    r = rec(0x4A, 0, (), (), (0.0, 0.0, 1.0))
+    face = decode_planar_face(pool, lex, r)
+    check("ty=0 record reports no-loops", face.status == FACE_NO_LOOPS and face.plane is None)
+
     print(f"selftest: {len(failures)} failures")
     return 1 if failures else 0
 
@@ -693,7 +1142,7 @@ def main():
     if args.selftest:
         sys.exit(_selftest())
     rows = run_corpus(args)
-    write_claims(rows, Path(args.out_dir))
+    write_claims(rows, Path(args.out_dir), claims_filename(args))
 
 
 if __name__ == "__main__":
