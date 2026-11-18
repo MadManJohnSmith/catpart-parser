@@ -1,0 +1,32 @@
+sha16,bucket,scope,n_inst,n_positioned,n_129b,n_pos_explicit,n_pos_identity,n_pos_root,legacy_gate,legacy_placed,position_law,after_placed,after_undecodable,note
+0d60a2bcfc0d90b1,R19,mesh,5,5,0,5,2,1,undecodable,0,r15_fallback_undecodable,0,5,"count-consistent position layer, not enabled (order attribution unproven)"
+126c9fda3c4218c3,R20,mesh+dual,31,31,178,38,4,1,undecodable,0,undecodable,0,31,
+1a259ff84af74cf1,R19,mesh,7,7,0,4,4,1,undecodable,0,r15_fallback_undecodable,0,7,
+1b8c4500de1982a4,R19,mesh,5,5,0,5,1,1,undecodable,0,r15_fallback_undecodable,0,5,"count-consistent position layer, not enabled (order attribution unproven)"
+2107dc0a37e4ab44,R20,mesh+dual,9,9,26,9,1,1,undecodable,0,undecodable,0,9,"count-consistent position layer, not enabled (order attribution unproven)"
+2b6c0970df9fa5c7,R21,mesh,10,10,0,10,1,1,undecodable,0,r15_fallback_undecodable,0,10,"count-consistent position layer, not enabled (order attribution unproven)"
+2cc002da01f40f11,R20,mesh+dual,7,7,18,6,1,19,undecodable,0,undecodable,0,7,"count-consistent position layer, not enabled (order attribution unproven)"
+322c8e13ce1ce381,R19,mesh,10,10,0,10,1,1,undecodable,0,r15_fallback_undecodable,0,10,"count-consistent position layer, not enabled (order attribution unproven)"
+423778ea942078e3,R19,mesh,9,9,0,8,1,1,undecodable,0,r15_fallback_root_plus_sequential,9,0,existing R15 fallback keeps its 9 placements; the position layer also closes (8 explicit + 1 identity)
+590430c6978b13e4,R19,mesh,14,14,0,14,10,2,undecodable,0,r15_fallback_undecodable,0,14,"count-consistent position layer, not enabled (order attribution unproven)"
+5bb2bd97e204f7f9,R19,mesh,13,13,0,11,6,2,undecodable,0,r15_fallback_undecodable,0,13,
+688fa042838a318a,R20,mesh+dual,3,3,5,3,1,7,undecodable,0,undecodable,0,3,"count-consistent position layer, not enabled (order attribution unproven)"
+6c3d29f005aba755,R19,mesh,19,19,0,4,10,2,undecodable,0,r15_fallback_undecodable,0,19,
+81b1fe655b83f7ee,R20,dual,7,7,8,6,1,1,root_plus_sequential,7,position_stream_8d81_document_order,7,0,
+90cac80cff9d6e7a,R20,mesh+dual,37,37,39,35,1,1,undecodable,0,undecodable,0,37,
+91fe0d674f7c30db,R20,dual,3,3,2,3,1,0,sequential_1to1_root_ref,2,position_stream_8d81_root_ref,2,1,
+9662f6b70e7af5af,R21,mesh,15,15,0,26,1,1,undecodable,0,r15_fallback_undecodable,0,15,
+974ef60f7bd9e1da,R19,mesh,4,4,0,4,1,1,undecodable,0,r15_fallback_undecodable,0,4,"count-consistent position layer, not enabled (order attribution unproven)"
+9a9d8a85ae5e59b6,R20,mesh+dual,19,19,98,12,7,1,undecodable,0,undecodable,0,19,"count-consistent position layer, not enabled (order attribution unproven)"
+a1c2956cfa093b90,R20,mesh+dual,4,4,20,3,1,1,undecodable,0,undecodable,0,4,"count-consistent position layer, not enabled (order attribution unproven)"
+a5d51be537dc3d85,R21,mesh,28,28,0,28,6,1,undecodable,0,r15_fallback_undecodable,0,28,"count-consistent position layer, not enabled (order attribution unproven)"
+afe3eab220f16ed6,R19,mesh,10,10,0,7,2,2,undecodable,0,r15_fallback_undecodable,0,10,
+b82b3caeb2a76e31,R19,mesh,18,18,0,16,1,1,undecodable,0,r15_fallback_undecodable,0,18,
+b96ef5f9f315088b,R19,mesh,5,5,0,5,1,1,undecodable,0,r15_fallback_undecodable,0,5,"count-consistent position layer, not enabled (order attribution unproven)"
+bad5257b7509e6d5,R19,mesh,5,5,0,5,1,1,undecodable,0,r15_fallback_undecodable,0,5,"count-consistent position layer, not enabled (order attribution unproven)"
+c79c3cdb05736cc4,R21,mesh,11,11,0,12,1,17,undecodable,0,r15_fallback_undecodable,0,11,
+d323f72998c1a888,R19,mesh,26,26,0,20,1,1,undecodable,0,r15_fallback_undecodable,0,26,
+d8520ba8c9a220d3,R19,mesh,7,7,0,5,5,2,undecodable,0,r15_fallback_undecodable,0,7,
+de3c2bd555ac3191,R21,mesh,96,96,0,82,24,1,undecodable,0,r15_fallback_undecodable,0,96,
+eaa770e0a1656cc9,R19,mesh,11,11,0,3,9,2,undecodable,0,r15_fallback_undecodable,0,11,
+ff4a50eb5792a4ea,R20,mesh+dual,2,2,17,16,1,29,undecodable,0,undecodable,0,2,

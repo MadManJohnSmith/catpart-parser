@@ -14,7 +14,7 @@ pub mod transforms;
 
 pub use binding::{
     BindingMode, IDENTITY_TRANSFORM, PlacementBinding, PlacementStatus, bind_instances,
-    compute_bindings,
+    bind_position_layer, compute_bindings, mark_position_layer_undecodable,
 };
 pub use framing::{
     PoolCandidate, PoolForm, detect_pool_form, extract_r15_instance_names, find_structure_pool,
@@ -29,8 +29,9 @@ pub use pool::{
     is_uscore_shape, walk_chain,
 };
 pub use transforms::{
-    TransformRecord, decode_129b_record, decode_r15_matrix_stream, is_81b_connector_record,
-    is_129b_magic, parse_run_length_floats, scan_modern_transform_records, scan_r15_matrix_streams,
+    PositionKind, PositionRecord, TransformRecord, decode_129b_record, decode_r15_matrix_stream,
+    is_81b_connector_record, is_129b_magic, parse_run_length_floats, position_kind_before,
+    scan_modern_transform_records, scan_position_matrix_streams, scan_r15_matrix_streams,
     scan_raw_56b_records,
 };
 
@@ -129,7 +130,9 @@ pub fn parse_product(data: &[u8]) -> Result<ProductStructureDocument, ProductErr
 
             // Scan for transform records:
             // 1. Modern 129b records (with 81b connector record filtering)
-            let mut transform_records = scan_modern_transform_records(data);
+            let modern_records = scan_modern_transform_records(data);
+            let has_modern = !modern_records.is_empty();
+            let mut transform_records = modern_records;
             // 2. R15 inline matrix streams fallback
             if transform_records.is_empty() {
                 transform_records = scan_r15_matrix_streams(data);
@@ -139,11 +142,51 @@ pub fn parse_product(data: &[u8]) -> Result<ProductStructureDocument, ProductErr
                 transform_records = scan_raw_56b_records(data);
             }
 
-            // Bind instances to transforms
+            // Bind instances to transforms. When the modern 129b layer is present, the
+            // 129b records are constraint/connector frames, NOT placement: if the legacy
+            // gate would have placed this file, prefer the `_Position` 8d81 layer and fail
+            // closed to undecodable on a count mismatch. Files the legacy gate rejects are
+            // not promoted by a bare matrix count (attribution order is not proven there).
+            let legacy_mode = compute_bindings(&instances, &transform_records, pool_has_position).1;
+            let legacy_would_place = matches!(
+                legacy_mode,
+                BindingMode::Sequential1to1
+                    | BindingMode::RootPlusSequential
+                    | BindingMode::IdentityDefault
+            );
+            let positions = if has_modern && pool_has_position && legacy_would_place {
+                scan_position_matrix_streams(data)
+            } else {
+                Vec::new()
+            };
             let binding_mode =
-                bind_instances(&mut instances, &transform_records, pool_has_position);
+                if !positions.is_empty() && instances.iter().any(|inst| inst.has_position_attr) {
+                    match bind_position_layer(&mut instances, &positions) {
+                        Some(mode) => mode,
+                        None => {
+                            let n_explicit = positions
+                                .iter()
+                                .filter(|p| p.kind == PositionKind::Explicit)
+                                .count();
+                            let n_identity = positions.len() - n_explicit;
+                            mark_position_layer_undecodable(&mut instances, n_explicit, n_identity);
+                            BindingMode::Undecodable
+                        }
+                    }
+                } else {
+                    bind_instances(&mut instances, &transform_records, pool_has_position)
+                };
 
             let mut warnings = Vec::new();
+            if binding_mode == BindingMode::PositionStream8d81 {
+                warnings.push(ProductWarning {
+                    class: "position-stream-8d81".to_string(),
+                    detail: format!(
+                        "placement bound from the _Position 8d81 layer ({} records; 129-byte layer not used)",
+                        positions.len()
+                    ),
+                });
+            }
             if binding_mode == BindingMode::Undecodable {
                 warnings.push(ProductWarning {
                     class: "undecodable-placement".to_string(),

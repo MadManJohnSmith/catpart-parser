@@ -59,6 +59,14 @@ RECORD_129B_MAGIC_R20 = b"\xb5\x13\x27\x79"
 RECORD_129B_MAGIC_R20_ALT = b"\xb5\x03\x27\x79"
 SEPARATOR_BYTE = 0x80
 
+# `_Position` value-layer headers (P3 position-layer segmentation). The 8d81
+# matrix that follows is an explicit instance position, an abbreviated identity
+# position, or the product-root position (excluded).
+POSITION_EXPLICIT_HEADER = b"\xe8\xf4\x07\x37"
+POSITION_IDENTITY_HEADER = b"\xe9\xf4\x07\x04\x37"
+POSITION_ROOT_HEADER = b"\xe8\xe0\x07\x37"
+IDENTITY_TRANSFORM = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
+
 POOL_TOKENS: tuple[str, ...] = (
     "ASMPRODUCT",
     "PRDREP",
@@ -865,6 +873,254 @@ def parse_129b_transform_records(data: bytes) -> list[dict[str, Any]]:
     return records
 
 
+def _parse_run_length_floats(stream: bytes, count: int) -> list[float] | None:
+    """Decode `count` run-length IEEE-754 values (e8/e7/e9/e6 tags)."""
+    vals: list[float] = []
+    p = 0
+    while p < len(stream) and len(vals) < count:
+        tag = stream[p]
+        if tag == 0xE8:
+            vals.append(0.0)
+            p += 1
+        elif tag == 0xE7:
+            vals.append(1.0)
+            p += 1
+        elif tag == 0xE9:
+            vals.append(-1.0)
+            p += 1
+        elif tag == 0xE6 and p + 9 <= len(stream):
+            v = struct.unpack_from("<d", stream, p + 1)[0]
+            if not math.isfinite(v):
+                return None
+            vals.append(v)
+            p += 9
+        else:
+            return None
+    return vals if len(vals) == count else None
+
+
+def _det3(r: list[list[float]]) -> float:
+    return (
+        r[0][0] * (r[1][1] * r[2][2] - r[1][2] * r[2][1])
+        - r[0][1] * (r[1][0] * r[2][2] - r[1][2] * r[2][0])
+        + r[0][2] * (r[1][0] * r[2][1] - r[1][1] * r[2][0])
+    )
+
+
+def _is_proper_rotation(r: list[list[float]], tol: float = 1e-4) -> bool:
+    def norm(u: list[float]) -> float:
+        return math.sqrt(sum(x * x for x in u))
+
+    def dot(u: list[float], v: list[float]) -> float:
+        return sum(a * b for a, b in zip(u, v))
+
+    if abs(_det3(r) - 1.0) > tol:
+        return False
+    if any(abs(norm(row) - 1.0) > tol for row in r):
+        return False
+    return all(abs(dot(r[i], r[j])) <= tol for i in range(3) for j in range(i + 1, 3))
+
+
+def _mat3_to_quat(r: list[list[float]]) -> list[float]:
+    m00, m01, m02 = r[0]
+    m10, m11, m12 = r[1]
+    m20, m21, m22 = r[2]
+    tr = m00 + m11 + m22
+    if tr > 0.0:
+        s = math.sqrt(tr + 1.0) * 2.0
+        qw, qx, qy, qz = 0.25 * s, (m21 - m12) / s, (m02 - m20) / s, (m10 - m01) / s
+    elif m00 > m11 and m00 > m22:
+        s = math.sqrt(max(1.0 + m00 - m11 - m22, 0.0)) * 2.0
+        qw, qx, qy, qz = (m21 - m12) / s, 0.25 * s, (m01 + m10) / s, (m02 + m20) / s
+    elif m11 > m22:
+        s = math.sqrt(max(1.0 + m11 - m00 - m22, 0.0)) * 2.0
+        qw, qx, qy, qz = (m02 - m20) / s, (m01 + m10) / s, 0.25 * s, (m12 + m21) / s
+    else:
+        s = math.sqrt(max(1.0 + m22 - m00 - m11, 0.0)) * 2.0
+        qw, qx, qy, qz = (m10 - m01) / s, (m02 + m20) / s, (m12 + m21) / s, 0.25 * s
+    q_norm = math.sqrt(qw * qw + qx * qx + qy * qy + qz * qz)
+    if q_norm > 1e-12:
+        qw, qx, qy, qz = qw / q_norm, qx / q_norm, qy / q_norm, qz / q_norm
+    if qw < 0.0:
+        qw, qx, qy, qz = -qw, -qx, -qy, -qz
+    return [qw, qx, qy, qz]
+
+
+def parse_position_matrix_records(data: bytes) -> list[dict[str, Any]]:
+    """Scan the `_Position` value layer (8d81 matrices) in document order.
+
+    The attribute header immediately before the marker classifies the record:
+    explicit (`e8 f4 07 37`), identity (`e9 f4 07 04 37`), or product-root
+    (`e8 e0 07 37`, excluded).
+    """
+    records: list[dict[str, Any]] = []
+    idx = 0
+    while True:
+        pos = data.find(b"\x8d\x81", idx)
+        if pos < 0:
+            break
+        pre = data[max(0, pos - 8) : pos]
+        if pre.endswith(POSITION_IDENTITY_HEADER):
+            kind = "identity"
+        elif pre.endswith(POSITION_EXPLICIT_HEADER):
+            kind = "explicit"
+        else:
+            idx = pos + 2
+            continue
+        vals = _parse_run_length_floats(data[pos + 2 :], 12)
+        if vals is not None:
+            r = [vals[0:3], vals[3:6], vals[6:9]]
+            if _is_proper_rotation(r):
+                records.append({
+                    "kind": kind,
+                    "translation": vals[9:12],
+                    "quaternion": _mat3_to_quat(r),
+                    "offset": pos,
+                })
+        idx = pos + 2
+    return records
+
+
+def _bind_legacy_129b(
+    instances: list[dict[str, Any]],
+    records: list[dict[str, Any]],
+    pool_has_position: bool,
+) -> str:
+    """Mirror Rust `compute_bindings`/`bind_instances` for the 129-byte layer.
+
+    Kept as the strict path: a count mismatch marks the positioned instances
+    undecodable (never identity).
+    """
+    if not pool_has_position:
+        for inst in instances:
+            inst["placement_status"] = "identity"
+            inst["transform"] = list(IDENTITY_TRANSFORM)
+            inst["object_tag"] = None
+            inst["classification_detail"] = (
+                "no _Position attribute declared in structure pool (identity at origin)"
+            )
+        return "unplaced"
+
+    n_placed = sum(1 for inst in instances if inst["has_position_attr"])
+    n_rec = len(records)
+    if n_rec == 0:
+        mode = "identity_default"
+    elif n_rec == n_placed:
+        mode = "sequential_1to1"
+    elif n_rec == n_placed + 1:
+        mode = "root_plus_sequential"
+    elif n_rec == 2 and n_placed == 3 and instances and (
+        instances[-1]["instance_name"].startswith("main")
+        or instances[-1]["part_number"].startswith("main")
+    ):
+        mode = "sequential_1to1"
+    else:
+        mode = "undecodable"
+
+    placed_idx = 0
+    for inst in instances:
+        if not inst["has_position_attr"]:
+            inst["placement_status"] = "identity"
+            inst["transform"] = list(IDENTITY_TRANSFORM)
+            inst["object_tag"] = None
+            inst["classification_detail"] = (
+                "instance lacks _Position attribute (identity at origin)"
+            )
+            continue
+
+        if mode == "identity_default":
+            inst["placement_status"] = "placed"
+            inst["transform"] = list(IDENTITY_TRANSFORM)
+            inst["object_tag"] = None
+            inst["classification_detail"] = (
+                "CATIA default identity placement (no override records declared)"
+            )
+        elif mode == "sequential_1to1" and placed_idx < n_rec:
+            rec = records[placed_idx]
+            t, q = rec["translation"], rec["quaternion"]
+            inst["placement_status"] = "placed"
+            inst["transform"] = [t[0], t[1], t[2], q[0], q[1], q[2], q[3]]
+            inst["object_tag"] = rec["object_id"]
+            inst["classification_detail"] = None
+        elif mode == "root_plus_sequential" and placed_idx + 1 < n_rec:
+            rec = records[placed_idx + 1]
+            t, q = rec["translation"], rec["quaternion"]
+            inst["placement_status"] = "placed"
+            inst["transform"] = [t[0], t[1], t[2], q[0], q[1], q[2], q[3]]
+            inst["object_tag"] = rec["object_id"]
+            inst["classification_detail"] = None
+        else:
+            inst["placement_status"] = "undecodable"
+            inst["transform"] = None
+            inst["object_tag"] = None
+            inst["classification_detail"] = (
+                f"undecodable placement: {n_rec} transform records for "
+                f"{n_placed} placed instances (constraint mesh override)"
+            )
+        placed_idx += 1
+    return mode
+
+
+def _bind_position_layer(
+    instances: list[dict[str, Any]], records: list[dict[str, Any]]
+) -> str | None:
+    """Bind instances to the `_Position` layer under a counted law.
+
+    Mirrors Rust `port::product::binding::bind_position_layer`.
+    """
+    n_positioned = sum(1 for inst in instances if inst["has_position_attr"])
+    if not records or n_positioned == 0:
+        return None
+
+    last = instances[-1]
+    last_is_root_ref = last["has_position_attr"] and (
+        last["instance_name"].startswith("main") or last["part_number"].startswith("main")
+    )
+    explicit = [r for r in records if r["kind"] == "explicit"]
+
+    if last_is_root_ref:
+        n_bind = n_positioned - 1
+        if n_bind == 0 or len(explicit) < n_bind:
+            return None
+        chosen = explicit[:n_bind]
+    elif len(explicit) == n_positioned:
+        chosen = explicit
+    elif len(records) == n_positioned:
+        chosen = records
+    else:
+        return None
+
+    cursor = 0
+    last_index = len(instances) - 1
+    for index, inst in enumerate(instances):
+        if not inst["has_position_attr"]:
+            inst["placement_status"] = "identity"
+            inst["transform"] = list(IDENTITY_TRANSFORM)
+            inst["object_tag"] = None
+            inst["classification_detail"] = "instance lacks _Position attribute (identity at origin)"
+            continue
+        if last_is_root_ref and index == last_index:
+            inst["placement_status"] = "undecodable"
+            inst["transform"] = None
+            inst["object_tag"] = None
+            inst["classification_detail"] = "root assembly reference has no instance position record"
+            continue
+        if cursor < len(chosen):
+            rec = chosen[cursor]
+            t, q = rec["translation"], rec["quaternion"]
+            inst["transform"] = [t[0], t[1], t[2], q[0], q[1], q[2], q[3]]
+            inst["object_tag"] = None
+            inst["placement_status"] = "placed"
+            inst["classification_detail"] = None
+            cursor += 1
+        else:
+            inst["placement_status"] = "undecodable"
+            inst["transform"] = None
+            inst["object_tag"] = None
+            inst["classification_detail"] = "position layer exhausted before this instance"
+    return "position_stream_8d81"
+
+
 def read_product_structure(data: bytes) -> dict[str, Any]:
     """Parse a .CATProduct binary buffer into a structured document.
 
@@ -946,42 +1202,96 @@ def read_product_structure(data: bytes) -> dict[str, Any]:
                         consumed.add(i - 1)
                         consumed.add(i + 1)
 
-        # Pass 2: bare pairs
+        # Pass 2: bare pairs (dot- and colon-shaped instance names)
         for i in range(n):
             if i in consumed:
                 continue
             curr = texts[i]
-            if DOT_SHAPE.match(curr) and not is_constraint_name(curr):
-                if i > 0 and texts[i - 1] == "ASMPRODUCT":
-                    continue
-                pn = curr.rsplit(".", 1)[0]
-                if i > 0 and not is_token(texts[i - 1]) and not is_class_token(texts[i - 1]):
-                    pn = texts[i - 1]
-                has_pos = pool_has_position
-                instances.append({
-                    "instance_name": curr,
-                    "part_number": pn,
-                    "pairing_rule": "bare_pair",
-                    "has_position_attr": has_pos,
-                    "placement_status": "placed" if has_pos else "identity",
-                    "transform": None,
-                })
-
-        # Bind decoded transform records (sequential 1:1 binding)
-        raw_recs = parse_129b_transform_records(data)
-        for idx, inst in enumerate(instances):
-            if inst["has_position_attr"]:
-                if idx < len(raw_recs):
-                    rec = raw_recs[idx]
-                    t = rec["translation"]
-                    q = rec["quaternion"]
-                    inst["transform"] = [t[0], t[1], t[2], q[0], q[1], q[2], q[3]]
-                    inst["object_tag"] = rec["object_id"]
-                    inst["placement_status"] = "placed"
-                else:
-                    inst["placement_status"] = "placed"
+            is_dot = DOT_SHAPE.match(curr)
+            is_colon = COLON_SHAPE.match(curr)
+            if (not is_dot and not is_colon) or is_constraint_name(curr):
+                continue
+            if i > 0 and texts[i - 1] == "ASMPRODUCT":
+                continue
+            stem = curr.rsplit(".", 1)[0] if is_dot else curr.rsplit(":", 1)[0]
+            if (
+                i > 0
+                and not is_token(texts[i - 1])
+                and not is_class_token(texts[i - 1])
+                and texts[i - 1] == stem
+            ):
+                pn = texts[i - 1]
             else:
-                inst["placement_status"] = "identity"
+                pn = stem
+            has_pos = (i + 1 < n and texts[i + 1] == "_Position") or pool_has_position
+            instances.append({
+                "instance_name": curr,
+                "part_number": pn,
+                "pairing_rule": "bare_pair",
+                "has_position_attr": has_pos,
+                "placement_status": "placed" if has_pos else "identity",
+                "transform": None,
+            })
+            consumed.add(i)
+            if is_colon and i + 1 < n and USCORE_SHAPE.match(texts[i + 1]):
+                consumed.add(i + 1)
+
+        # Bind decoded transforms. The 129-byte layer is a constraint/connector
+        # frame on dual-layer files; prefer the `_Position` 8d81 layer when the
+        # legacy gate would place. Count mismatches fail closed to undecodable.
+        raw_recs = parse_129b_transform_records(data)
+        mode = None
+        if raw_recs:
+            n_pos = sum(1 for inst in instances if inst["has_position_attr"])
+            last_is_root_ref = bool(instances) and instances[-1]["has_position_attr"] and (
+                instances[-1]["instance_name"].startswith("main")
+                or instances[-1]["part_number"].startswith("main")
+            )
+            legacy_places = (
+                len(raw_recs) == n_pos
+                or len(raw_recs) == n_pos + 1
+                or (len(raw_recs) == 2 and n_pos == 3 and last_is_root_ref)
+            )
+            position_recs = (
+                parse_position_matrix_records(data) if legacy_places else []
+            )
+            mode = None
+            if position_recs:
+                mode = _bind_position_layer(instances, position_recs)
+            if mode is not None:
+                pass
+            elif position_recs:
+                n_explicit = sum(1 for r in position_recs if r["kind"] == "explicit")
+                n_identity = len(position_recs) - n_explicit
+                for inst in instances:
+                    if not inst["has_position_attr"]:
+                        continue
+                    inst["placement_status"] = "undecodable"
+                    inst["transform"] = None
+                    inst["object_tag"] = None
+                    inst["classification_detail"] = (
+                        f"position layer count mismatch: {n_explicit} explicit + "
+                        f"{n_identity} identity records for {n_pos} positioned instances"
+                    )
+            else:
+                _bind_legacy_129b(instances, raw_recs, pool_has_position)
+        elif pool_has_position:
+            for inst in instances:
+                if not inst["has_position_attr"]:
+                    inst["placement_status"] = "identity"
+                    inst["transform"] = list(IDENTITY_TRANSFORM)
+                    inst["classification_detail"] = (
+                        "instance lacks _Position attribute (identity at origin)"
+                    )
+
+        if mode == "position_stream_8d81":
+            warnings.append({
+                "class": "position-stream-8d81",
+                "detail": (
+                    "placement bound from the _Position 8d81 layer "
+                    f"({len(position_recs)} records; 129-byte layer not used)"
+                ),
+            })
 
     elif pool_form == "r15-ref":
         warnings.append({

@@ -15,6 +15,11 @@
 //!    `[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]` as explicit CATIA default.
 //! 4. **`undecodable`**: Files with constraint mesh overrides or unresolvable records ($N_{\text{rec}} \ne N_{\text{inst}}$)
 //!    are marked [`PlacementStatus::Undecodable`] with `transform: None`.
+//! 5. **`position_stream_8d81`**: Placement is read from the `_Position` value layer
+//!    (`8d 81` matrices with the explicit/identity attribute header), not from the
+//!    `CATCtorProxyCont` 129-byte constraint records. Bound only when the counted
+//!    position records match the positioned instances; otherwise the strict path
+//!    marks them undecodable.
 //!
 //! # The Anti-Masking Invariant (Clause 3 of the Declared P4 Assembly Bar)
 //!
@@ -29,7 +34,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::pairing::ProductInstanceRecord;
-use super::transforms::TransformRecord;
+use super::transforms::{PositionKind, PositionRecord, TransformRecord};
 
 /// Canonical default identity transform `[tx, ty, tz, qw, qx, qy, qz]`.
 pub const IDENTITY_TRANSFORM: [f64; 7] = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0];
@@ -109,6 +114,9 @@ pub enum BindingMode {
     RootPlusSequential,
     /// File declares `_Position` but has no override records; placed at origin identity.
     IdentityDefault,
+    /// Placement read from the `_Position` value layer (`8d 81` matrices), not the 129-byte
+    /// `CATCtorProxyCont` constraint records.
+    PositionStream8d81,
     /// Complex constraint mesh with record-to-instance count mismatch.
     ConnectorProxyMesh,
     /// Undecodable placement due to record mismatch or unresolvable carrier.
@@ -123,6 +131,7 @@ impl BindingMode {
             Self::Sequential1to1 => "sequential_1to1",
             Self::RootPlusSequential => "root_plus_sequential",
             Self::IdentityDefault => "identity_default",
+            Self::PositionStream8d81 => "position_stream_8d81",
             Self::ConnectorProxyMesh => "connector_proxy_mesh",
             Self::Undecodable => "undecodable",
             Self::Unplaced => "unplaced",
@@ -280,7 +289,10 @@ pub fn compute_bindings(
                     ));
                 }
             }
-            BindingMode::Undecodable | BindingMode::ConnectorProxyMesh | BindingMode::Unplaced => {
+            BindingMode::Undecodable
+            | BindingMode::ConnectorProxyMesh
+            | BindingMode::PositionStream8d81
+            | BindingMode::Unplaced => {
                 bindings.push(PlacementBinding::undecodable(format!(
                     "undecodable placement: {} transform records for {} placed instances (constraint mesh override)",
                     n_rec, n_placed
@@ -331,6 +343,113 @@ pub fn bind_instances(
     }
 
     mode
+}
+
+/// Bind instances to the `_Position` value layer (`8d 81` matrices).
+///
+/// The binding is accepted only under a counted law:
+/// - `explicit == positioned` -> bind the explicit records in document order;
+/// - `explicit + identity == positioned` -> bind all position records in document order
+///   (identity records fill the instances that carry an abbreviated identity position);
+/// - a trailing root-assembly reference (`main*`) is excluded and the first
+///   `positioned - 1` explicit records bind the child instances (servo law).
+///
+/// Any other count is rejected (`None`): the caller must mark the positioned
+/// instances [`PlacementStatus::Undecodable`], never identity.
+pub fn bind_position_layer(
+    instances: &mut [ProductInstanceRecord],
+    positions: &[PositionRecord],
+) -> Option<BindingMode> {
+    if positions.is_empty() {
+        return None;
+    }
+
+    let n_positioned = instances.iter().filter(|i| i.has_position_attr).count();
+    if n_positioned == 0 {
+        return None;
+    }
+
+    let last_is_root_ref = instances.last().is_some_and(|inst| {
+        inst.has_position_attr
+            && (inst.instance_name.starts_with("main") || inst.part_number.starts_with("main"))
+    });
+
+    let explicit: Vec<&PositionRecord> = positions
+        .iter()
+        .filter(|p| p.kind == PositionKind::Explicit)
+        .collect();
+
+    let chosen: Vec<&PositionRecord> = if last_is_root_ref {
+        let n_bind = n_positioned.saturating_sub(1);
+        if n_bind == 0 || explicit.len() < n_bind {
+            return None;
+        }
+        explicit[..n_bind].to_vec()
+    } else if explicit.len() == n_positioned {
+        explicit
+    } else if positions.len() == n_positioned {
+        positions.iter().collect()
+    } else {
+        return None;
+    };
+
+    let mut cursor = 0usize;
+    let last_index = instances.len().saturating_sub(1);
+    for (index, inst) in instances.iter_mut().enumerate() {
+        if !inst.has_position_attr {
+            inst.placement_status = PlacementStatus::Identity;
+            inst.transform = Some(IDENTITY_TRANSFORM);
+            inst.object_tag = None;
+            inst.classification_detail =
+                Some("instance lacks _Position attribute (identity at origin)".to_string());
+            continue;
+        }
+
+        if last_is_root_ref && index == last_index {
+            inst.placement_status = PlacementStatus::Undecodable;
+            inst.transform = None;
+            inst.object_tag = None;
+            inst.classification_detail =
+                Some("root assembly reference has no instance position record".to_string());
+            continue;
+        }
+
+        if let Some(record) = chosen.get(cursor) {
+            inst.placement_status = PlacementStatus::Placed;
+            inst.transform = Some(record.to_transform_7());
+            inst.object_tag = None;
+            inst.classification_detail = None;
+            cursor += 1;
+        } else {
+            inst.placement_status = PlacementStatus::Undecodable;
+            inst.transform = None;
+            inst.object_tag = None;
+            inst.classification_detail =
+                Some("position layer exhausted before this instance".to_string());
+        }
+    }
+
+    Some(BindingMode::PositionStream8d81)
+}
+
+/// Mark every `_Position` instance undecodable after a position-layer count mismatch.
+///
+/// Anti-masking: `transform` stays `None`; no identity fallback is written.
+pub fn mark_position_layer_undecodable(
+    instances: &mut [ProductInstanceRecord],
+    n_explicit: usize,
+    n_identity: usize,
+) {
+    let n_positioned = instances.iter().filter(|i| i.has_position_attr).count();
+    for inst in instances.iter_mut().filter(|i| i.has_position_attr) {
+        inst.placement_status = PlacementStatus::Undecodable;
+        inst.transform = None;
+        inst.object_tag = None;
+        inst.classification_detail = Some(format!(
+            "position layer count mismatch: {} explicit + {} identity records for {} positioned instances",
+            n_explicit, n_identity, n_positioned
+        ));
+    }
 }
 
 #[cfg(test)]
@@ -490,6 +609,113 @@ mod tests {
                 inst.transform.is_none(),
                 "anti-masking violation: undecodable transform masked to Some!"
             );
+            assert!(inst.classification_detail.is_some());
+        }
+    }
+
+    fn make_position(kind: PositionKind, t: [f64; 3]) -> PositionRecord {
+        PositionRecord {
+            kind,
+            transform: TransformRecord::from_placement(t, [1.0, 0.0, 0.0, 0.0], 0),
+            offset: 0,
+        }
+    }
+
+    #[test]
+    fn position_layer_binds_explicit_then_identity_in_document_order() {
+        // Coso shape: 7 instanced parts, 6 explicit + 1 identity position record.
+        let mut instances: Vec<ProductInstanceRecord> = [
+            "Part4.1",
+            "Part5.1",
+            "Part5.1.2",
+            "Part7.1",
+            "Part7.2",
+            "Part5.1.1",
+            "Part5.1.1.1",
+        ]
+        .iter()
+        .map(|n| make_test_instance(n, n.split('.').next().unwrap(), true))
+        .collect();
+
+        let positions = vec![
+            make_position(PositionKind::Explicit, [-10.0, 11.0, 2.0]),
+            make_position(PositionKind::Identity, [0.0, 0.0, 0.0]),
+            make_position(PositionKind::Explicit, [9.0, 11.0, 6.0]),
+            make_position(PositionKind::Explicit, [-9.0, 46.0, 11.0]),
+            make_position(PositionKind::Explicit, [-16.0, -18.0, 2.0]),
+            make_position(PositionKind::Explicit, [-5.0, -6.0, 6.0]),
+            make_position(PositionKind::Explicit, [-1.0, 32.0, 6.0]),
+        ];
+
+        let mode = bind_position_layer(&mut instances, &positions).expect("bound");
+        assert_eq!(mode, BindingMode::PositionStream8d81);
+        assert_eq!(
+            instances[0].transform,
+            Some([-10.0, 11.0, 2.0, 1.0, 0.0, 0.0, 0.0])
+        );
+        // The identity record occupies document position 1 -> Part5.1.
+        assert_eq!(
+            instances[1].transform,
+            Some([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])
+        );
+        assert_eq!(
+            instances[2].transform,
+            Some([9.0, 11.0, 6.0, 1.0, 0.0, 0.0, 0.0])
+        );
+        assert!(
+            instances
+                .iter()
+                .all(|i| i.placement_status == PlacementStatus::Placed)
+        );
+    }
+
+    #[test]
+    fn position_layer_root_ref_keeps_root_undecodable() {
+        // Servo shape: ac2:1, ac1:1, main:1; 3 explicit + 1 identity record.
+        let mut instances = vec![
+            make_test_instance("ac2:1", "ac2", true),
+            make_test_instance("ac1:1", "ac1", true),
+            make_test_instance("main:1", "main", true),
+        ];
+        let positions = vec![
+            make_position(PositionKind::Explicit, [0.0, 0.0, -22.9]),
+            make_position(PositionKind::Explicit, [43.2, 51.3, 0.0]),
+            make_position(PositionKind::Explicit, [43.2, 51.3, -1.7]),
+            make_position(PositionKind::Identity, [0.0, 0.0, 0.0]),
+        ];
+
+        let mode = bind_position_layer(&mut instances, &positions).expect("bound");
+        assert_eq!(mode, BindingMode::PositionStream8d81);
+        assert_eq!(
+            instances[0].transform,
+            Some([0.0, 0.0, -22.9, 1.0, 0.0, 0.0, 0.0])
+        );
+        assert_eq!(
+            instances[1].transform,
+            Some([43.2, 51.3, 0.0, 1.0, 0.0, 0.0, 0.0])
+        );
+        assert_eq!(instances[2].placement_status, PlacementStatus::Undecodable);
+        assert!(instances[2].transform.is_none());
+    }
+
+    #[test]
+    fn position_layer_count_mismatch_fails_closed() {
+        // 3 positioned instances, but only 2 explicit + 0 identity records.
+        let mut instances = vec![
+            make_test_instance("A.1", "A", true),
+            make_test_instance("B.1", "B", true),
+            make_test_instance("C.1", "C", true),
+        ];
+        let positions = vec![
+            make_position(PositionKind::Explicit, [1.0, 0.0, 0.0]),
+            make_position(PositionKind::Explicit, [2.0, 0.0, 0.0]),
+        ];
+
+        assert!(bind_position_layer(&mut instances, &positions).is_none());
+        mark_position_layer_undecodable(&mut instances, 2, 0);
+        for inst in &instances {
+            assert_eq!(inst.placement_status, PlacementStatus::Undecodable);
+            assert!(inst.transform.is_none());
             assert!(inst.classification_detail.is_some());
         }
     }
