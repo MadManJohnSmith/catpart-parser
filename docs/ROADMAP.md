@@ -24,6 +24,17 @@ Build a diverse, reproducible corpus of public CATIA V5 files.
 **Acceptance:** manifest complete, spot-check digests reproduce, version
 coverage summarized in `docs/corpus-report.md`.
 
+**Status (2026-11-07): met.** `manifests/corpus-manifest.csv` records
+**1,824 unique rows = 1,442 parts + 382 products**, from 2,527 downloads
+(703 duplicate copies deduped), split dev 1,751 / held-out 73 per ADR-0001
+(grouped by repo/author). Version coverage in `docs/corpus-report.md`:
+41 distinct detected tokens spanning V5R15–V5R24, **1,480/1,818 = 81.4%**
+(1,402 in the first 8 KB + 78 from the 64 KB fallback), 338 `unknown`
+(backfill ticket #13). Digests reproduce (Git-LFS oid at download + 10
+random re-hashes, 0 mismatches); **1,818/1,824** carry the `V5_CFV2\0`
+magic, and the 6 `magic_ok=no` misfits are itemised and excluded by
+column, never deleted.
+
 ## Phase 1 — Byte-level triage (L0)
 
 Reproducible evidence, not guesses.
@@ -37,6 +48,21 @@ Reproducible evidence, not guesses.
 
 **Acceptance:** a written triage report identifying at least the outer
 container structure and compression status, backed by evidence notes.
+
+**Status (2026-11-07): met.** `docs/evidence/2026-11-07-container-triage.md`
+records the outer structure with byte offsets and corpus counts (magic
+`V5_CFV2\0` 0–8 in 1,818/1,818; big-endian length dword 8–12; `ff×8`
+16–24 in 1,672/1,818 = 92.0%; plaintext `CATContainer` name table
+~0x7e4–0xd00) and a section titled "Compression status (Phase 1
+acceptance)": files are **not wholly compressed** (magic/table/version
+marker/trailer plaintext; codec unknown, marked *inference*). The
+similar-file comparison is recorded as a **negative with its parser
+consequence** (common prefixes 9–11 B; no fixed offsets beyond the
+32-byte header), and open questions are listed. Reproduction:
+`scripts/triage/header_scan.py` → committed
+`docs/evidence/data/header-scan.csv`. Extended 2026-11-08 by the
+header/tail, container-tree, container-table+trailer, payload-layout,
+kind-law and R19/R21 differential notes.
 
 ## Phase 2 — Structure inference (L1)
 
@@ -245,6 +271,28 @@ census**, not the open-ended `docs/format/` inventory — the old
 **Acceptance:** 100% of the frozen vocabulary resolved (decoded or
 negatived); the L3 headline reported alongside L1/L2 under no-regret;
 the corpus rate is reported alongside and never gates.
+
+**Status (2026-11-18): CLOSED — 23/23 constructs resolved; L3 headline
+23/23 accepted under no-regret.** BR1 froze the 23-construct vocabulary
+(#48); BR2–BR5 decoded the planar, curve, quadric and CGM slices
+(#54–#57); BR6 assembled the topology graph + STEP exporter, decoded
+`TOP-03` Shell as a derived partition law and closed the L3 level
+(#58). Final row `20261118T171127Z-0882ce` (`tool_version 1.0.0`,
+`accepted: true`, `reason: L3 recorded with L1/L2 intact`): **L3 23/23**
+(14 decoded · 3 documented negative · 6 documented open · 0 candidate),
+L1 and L2 unchanged at **1,745/1,751 Dev + 73/73** and **1,033/1,381 =
+74.80% + 56/61**. The documented opens each publish a ceiling: CRV-04/05
+on the 357-file conic carrier, CRV-08 on the 1,277-file/1,573,239-record
+curve superset, SRF-05/06 and SRF-07 on the 67,919-loop classified total
+(the earlier 4,289 "ceiling" was false and is withdrawn). The graph
+refuses rather than invents: **0/76** closed shells satisfy the
+loop-segment B-rep pairing law, **exact STEP exports 0/1,442** parts,
+`facet` mode 53/1,442. Disclosure: 8 of the frozen vocabulary's 23
+count/rate cells have no committed generator
+(`docs/agents/br6-vocabulary-provenance.md`); the L3 headline is
+row-level construct coverage and does not rest on them, and the corpus
+rate (21,659/33,166 = 0.6530) is reported and never gates. Evidence:
+[docs/evidence/2026-11-18-phase7-close.md](../evidence/2026-11-18-phase7-close.md).
 
 ## Terminal state and closure (owner decision 2026-11-10; ADR-0004)
 

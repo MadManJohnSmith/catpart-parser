@@ -45,7 +45,7 @@ for everyone who receives CATIA files without owning a CATIA seat.
 | **L2 — mesh export** (`catpart-export` → binary PLY) | 74.80% Dev (1,033/1,381), 56/61 held-out; closed at the measured ceiling with documented negatives, bar re-adjusted under the pre-authorized rule — Phase 4 closed 2026-11-13 | [close-out](docs/evidence/2026-11-13-phase4-close.md) |
 | **Part viewer** (WASM, in the browser) | Rust/Python fidelity 3,266/3,266 (0 mismatches, full dual-slice corpus run); in-browser scalar reproduction WITHIN exact at the declared margin 0 — Phase 5 closed 2026-11-14 | [fidelity run](docs/evidence/2026-11-14-v6-fidelity-full-corpus.md), [acceptance](docs/evidence/2026-11-14-v6-phase5-close.md) |
 | **Assembly viewer** (`.CATProduct`, multi-file) | Folder/`.zip` drag-drop ingestion, decoded `[tx, ty, tz, qw, qx, qy, qz]` transforms (f64le, w-first quaternion), GPU-instanced rendering, exploded view, 4-state classification tree; P4 Assembly Bar met digit-for-digit, headless acceptance 8/8 — Phase 6 closed 2026-11-16 | [spec](docs/specs/phase6-assembly-viewer-spec.md), [bar](docs/evidence/2026-11-14-p4-assembly-bar.md), [review](docs/evidence/2026-11-16-p3-v6-acceptance-review.md) |
-| **L3 — full parametric B-rep** | in progress (Phase 7, [Spec G #47](https://github.com/MadManJohnSmith/catpart-parser/issues/47)) | — |
+| **L3 — B-rep constructs** | 23/23 frozen constructs resolved (14 decoded, 9 closed with published ceilings), L3 23/23 accepted — Phase 7 closed 2026-11-18 | [close-out](docs/evidence/2026-11-18-phase7-close.md) |
 
 A decoded L2 mesh — one entry of the
 [export gallery](https://madmanjohnsmith.github.io/catpart-parser/gallery.html)
