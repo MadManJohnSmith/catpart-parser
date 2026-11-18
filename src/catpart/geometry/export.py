@@ -53,6 +53,7 @@ WARN_UNUSED_VERTICES = "unused-pool-vertices"
 WARN_NO_FACETS = "no-facet-records"
 WARN_CURVE_ENTRY = "curve-entry-loops-unexported"
 WARN_CURVE_ENTRY_EXPORTED = "curve-entry-loops-exported-dup-pin"
+WARN_EXTENDED_DECLINED = "extended-header-geometry-declined"
 WARN_DEDUP = "duplicate-triangles-deduped"
 WARN_DEDUP_DECLINED = "duplicate-triangles-dedup-declined"
 
@@ -505,6 +506,19 @@ def _export_composite_store(
                 "(no new vertices — the U4-D dup law); loops the "
                 "battery or mesh guard refuses stay unexported and "
                 "counted under curve-entry-loops-unexported",
+            }
+        )
+    if info.get("extended_header_declined"):
+        warnings.append(
+            {
+                "class": WARN_EXTENDED_DECLINED,
+                "detail": f"{info['extended_header_declined']} "
+                "extended-header records (0x47/0x4f) declined: their "
+                "triangles would push an undirected edge past two uses "
+                "in the assembled mesh, so the record is not exported "
+                "(the 2026-11-18 manifold-assembly gate, "
+                "docs/evidence/2026-11-18-extended-header-family.md); "
+                "the store's other geometry exports unchanged",
             }
         )
     if info.get("unordered_dedup_dropped"):

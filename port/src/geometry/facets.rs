@@ -62,6 +62,14 @@
 //! match's end) and the twin's ``finditer(data, pos, endpos)``
 //! bounds (a match must fit the window).
 //!
+//! AMENDED 2026-11-18 (twin commit a4eff33, docs/evidence/
+//! 2026-11-18-extended-header-family.md): the facet count table is P1g
+//! (a u8, ``ff`` escaping to u32le) and the header length is derived
+//! from the ``ff`` position by :fn:`header_len` (4/5/6); the 6-byte
+//! extended form is discovered by :fn:`facet_headers` for its own
+//! parser (``composite::parse_extended_facet_records``) and is NOT a
+//! candidate of this module's short grammar.
+//!
 //! Evidence (the same citations the twin's docstring carries):
 //!
 //! - ``docs/evidence/2026-11-09-facet-semantics.md`` (the G3 model:
@@ -116,14 +124,16 @@ pub struct FacetRecord {
     pub marker: u8,
     /// The type byte.
     pub ty: u8,
-    /// 4 (``ff`` header form) or 5 (one extra byte before ``ff``).
+    /// 4 (``ff`` header form) or 5 (one extra byte before ``ff``); the
+    /// 6-byte extended form is a different grammar and never a record
+    /// of this parser.
     pub header_len: usize,
     /// The reference count (u32le).
     pub n: u32,
     /// 1 = u8 references, 2 = u16be (big-endian) references.
     pub width: u8,
-    /// The k loop-count bytes, summing to n.
-    pub counts: Vec<u8>,
+    /// The k loop counts (u8, or ``ff``-escaped u32le), summing to n.
+    pub counts: Vec<u32>,
     /// The references — lexicographic ranks into the pool.
     pub refs: Vec<u32>,
     /// The record's end position (the tiling law's extent).
@@ -164,6 +174,94 @@ pub fn strip_headers(data: &[u8], body_lo: usize, body_hi: usize) -> Vec<usize> 
     out
 }
 
+/// Header length of the facet record at ``o``, derived from ``ff`` —
+/// the twin's ``facets.header_len``: 4 for the short form
+/// (``01 <mk> <ty> ff``), 5 for the observed 0x4b/0x4e variant (``ff``
+/// at +4, reachable only by direct callers), 6 for the extended form
+/// (``01 <mk> ty b3 b4 ff``, ``ff`` at +5). ``None`` when no form
+/// matches at ``o``.
+pub fn header_len(data: &[u8], o: usize) -> Option<usize> {
+    [4usize, 5, 6]
+        .into_iter()
+        .find(|&length| data[o + length - 1] == 0xFF)
+}
+
+/// One facet count: a u8, or ``ff`` escaping to a u32le (the P1g form)
+/// — the twin's ``facets.read_count``. Returns ``(value, next_pos)``.
+pub fn read_count(data: &[u8], pos: usize) -> (u32, usize) {
+    if data[pos] == 0xFF {
+        (
+            u32::from_le_bytes([data[pos + 1], data[pos + 2], data[pos + 3], data[pos + 4]]),
+            pos + 5,
+        )
+    } else {
+        (u32::from(data[pos]), pos + 1)
+    }
+}
+
+/// ``k`` P1g counts from ``base``: ``(counts, byte_length)`` or
+/// ``None`` when the last count's bytes pass ``limit`` — the twin's
+/// ``facets.read_counts`` (the composite parser reuses it so the
+/// escape and the byte length cannot drift).
+pub fn read_counts(data: &[u8], base: usize, k: usize, limit: usize) -> Option<(Vec<u32>, usize)> {
+    let mut counts = Vec::with_capacity(k);
+    let mut pos = base;
+    for _ in 0..k {
+        let end = if pos < limit && data[pos] == 0xFF {
+            pos + 5
+        } else {
+            pos + 1
+        };
+        if end > limit {
+            return None;
+        }
+        let (value, next) = read_count(data, pos);
+        if value > MAX_REFS {
+            return None;
+        }
+        counts.push(value);
+        pos = next;
+    }
+    Some((counts, pos - base))
+}
+
+/// The regex form of one header at ``i`` within ``[lo, hi)``: the
+/// twin's ``FACET_HEADER_RE`` alternatives in order (short first).
+fn header_form_len(data: &[u8], i: usize, hi: usize) -> Option<usize> {
+    if i + 4 > hi || data[i] != 0x01 || !(0x41..=0x4F).contains(&data[i + 1]) {
+        return None;
+    }
+    if data[i + 3] == 0xFF {
+        return Some(4);
+    }
+    if i + 6 <= hi && data[i + 5] == 0xFF {
+        return Some(6);
+    }
+    None
+}
+
+/// Every EXTENDED-header candidate position in ``[lo, hi)`` — the
+/// twin's ``facets.facet_headers``: the ``FACET_HEADER_RE`` scan (the
+/// regex engine's leftmost-non-overlapping order: a short-form match
+/// consumes four bytes, an extended one six) filtered to the 6-byte
+/// form. The committed short-form discovery (:fn:`strip_headers`) is
+/// untouched, so short-record parses stay identical.
+pub fn facet_headers(data: &[u8], lo: usize, hi: usize) -> Vec<usize> {
+    let mut out = Vec::new();
+    let mut i = lo;
+    while i + 4 <= hi {
+        match header_form_len(data, i, hi) {
+            Some(6) => {
+                out.push(i);
+                i += 6;
+            }
+            Some(length) => i += length,
+            None => i += 1,
+        }
+    }
+    out
+}
+
 /// Parse one facet record at header offset ``o`` under the tiling law —
 /// the twin's :func:`catpart.geometry.facets.parse_facet_record`.
 ///
@@ -188,7 +286,14 @@ pub fn parse_facet_record(
 ) -> Option<FacetRecord> {
     let mk = data[o + 1];
     let ty = data[o + 2];
-    let header_len: usize = if data[o + 3] == 0xFF { 4 } else { 5 };
+    let header_len = match header_len(data, o) {
+        Some(6) | None => {
+            // The extended 6-byte form is a different grammar (its own
+            // parser: composite::parse_extended_facet_records).
+            return None;
+        }
+        Some(length) => length,
+    };
     if o + header_len + 4 > body_hi {
         return None;
     }
@@ -209,22 +314,24 @@ pub fn parse_facet_record(
     // best = (rank, width, counts, refs, end); rank = (tiling, width
     // preference) ordered lexicographically, the twin's tuple rank.
     type Rank = (u8, u32);
-    type BestParse = (Rank, u8, Vec<u8>, Vec<u32>, usize);
+    type BestParse = (Rank, u8, Vec<u32>, Vec<u32>, usize);
     let mut best: Option<BestParse> = None;
     for width in [1u8, 2u8] {
         for k in 0u8..5 {
-            // The count bytes read over the WHOLE buffer past base —
-            // the twin's ``data[base + j]`` reaches into the catalog
-            // territory when base sits at the body edge (unreachable
-            // here: base <= body_hi <= len - 36 for a validated span,
-            // and the byte range only panics past the buffer end,
-            // which is the twin's IndexError crash).
-            let counts: Vec<u8> = (0..k).map(|j| data[base + j as usize]).collect();
-            let sum: u32 = counts.iter().map(|&c| u32::from(c)).sum();
+            // The P1g counts (a u8, ff escaping to u32le; the escaped
+            // entry's five bytes are why the ref start is
+            // ``counts_end``, not ``base + k``).
+            let Some((counts, counts_bytes)) =
+                read_counts(data, base, k as usize, nxt.min(body_hi))
+            else {
+                break;
+            };
+            let sum: u32 = counts.iter().copied().sum();
             if !((n > 0 && sum == n) || (n == 0 && k == 0)) {
                 continue;
             }
-            let end = base + k as usize + width as usize * n as usize;
+            let counts_end = base + counts_bytes;
+            let end = counts_end + width as usize * n as usize;
             if end > nxt {
                 continue;
             }
@@ -239,7 +346,7 @@ pub fn parse_facet_record(
             if best.as_ref().is_none_or(|(b, ..)| rank < *b) {
                 let refs: Vec<u32> = (0..n)
                     .map(|j| {
-                        let at = base + k as usize + width as usize * j as usize;
+                        let at = counts_end + width as usize * j as usize;
                         match width {
                             1 => u32::from(data[at]),
                             _ => u32::from(u16::from_be_bytes([data[at], data[at + 1]])),
@@ -808,5 +915,48 @@ mod tests {
             normal: None,
         };
         assert_eq!(record_loops(&rec), vec![&[9u32, 8][..], &[7u32, 6, 5][..]]);
+    }
+
+    /// The P1g count reader (2026-11-18): a u8, or ``ff`` escaping to
+    /// u32le; the escaped entry's five bytes move the ref start.
+    #[test]
+    fn read_counts_escapes_ff_and_reports_the_byte_length() {
+        let data = [0xFFu8, 0x10, 0x02, 0x00, 0x00, 0x07, 0x05];
+        assert_eq!(read_count(&data, 0), (528, 5));
+        assert_eq!(read_counts(&data, 0, 1, data.len()), Some((vec![528], 5)));
+        assert_eq!(read_counts(&data, 5, 2, data.len()), Some((vec![7, 5], 2)));
+        // A five-byte escape that would run past the limit is refused.
+        assert_eq!(read_counts(&data, 0, 1, 4), None);
+    }
+
+    /// The extended-header discovery mirrors the regex's
+    /// leftmost-non-overlapping order: a short match consumes four
+    /// bytes, an extended one six; only the 6-byte form is returned.
+    #[test]
+    fn facet_headers_finds_only_the_extended_form() {
+        // short (4) + extended (6) + short (4)
+        let mut body = Vec::new();
+        body.extend_from_slice(&[0x01, 0x42, 0x01, 0xFF]);
+        body.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
+        let ext_at = body.len();
+        body.extend_from_slice(&[0x01, 0x47, 0xC6, 0x4F, 0x02, 0xFF]);
+        body.extend_from_slice(&[0x23, 0x04, 0x00, 0x00]);
+        body.extend_from_slice(&[0x01, 0x42, 0x01, 0xFF]);
+        assert_eq!(facet_headers(&body, 0, body.len()), vec![ext_at]);
+        // header_len derives the form from the ff position (4/5/6).
+        assert_eq!(header_len(&body, 0), Some(4));
+        assert_eq!(header_len(&body, ext_at), Some(6));
+        assert_eq!(header_len(&body, body.len() - 4), Some(4));
+    }
+
+    /// A 6-byte extended header is not a record of the short grammar
+    /// (its own parser owns it).
+    #[test]
+    fn parse_facet_record_rejects_the_extended_form() {
+        let body = [
+            0x01u8, 0x4F, 0x42, 0x25, 0x69, 0xFF, 0xC8, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x3F,
+        ];
+        assert!(parse_facet_record(&body, 0, body.len(), body.len(), 1).is_none());
     }
 }

@@ -149,6 +149,40 @@ pub const PLANE_TOL: f64 = 2e-3;
 /// set) — twin: ``GATED``.
 pub const GATED: [u8; 4] = [0x42, 0x49, 0x4A, 0x4C];
 
+/// Markers observed in the extended-header form (the family's scope;
+/// 2026-11-18, docs/evidence/2026-11-18-extended-header-family.md).
+pub const EXTENDED_HEADER_MARKERS: [u8; 2] = [0x47, 0x4F];
+
+/// Extended-header markers carrying the 12-byte normal payload.
+pub const EXTENDED_NORMAL_MARKERS: [u8; 1] = [0x4F];
+
+/// One extended-header facet record — the twin's
+/// ``composite.ExtendedFacetRecord``: ``01 <mk> ty b3 b4 ff``, then
+/// ``u32le n``, a 12-B normal on 0x4f, ``b3 + b4`` u8 counts, and the
+/// references (``3*ty`` independent triangles first, then the loops the
+/// counts delimit; the first ``b3`` strips, the last ``b4`` polygons).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExtendedFacetRecord {
+    /// The header's absolute offset.
+    pub offset: usize,
+    /// The marker byte (0x47 or 0x4f).
+    pub marker: u8,
+    /// ``ty`` — the independent-triangle count (``3*ty`` refs).
+    pub triangles: u32,
+    /// ``b3`` — the leading loops with strip semantics.
+    pub strips: u32,
+    /// ``b4`` — the trailing loops with closed-polygon semantics.
+    pub polygons: u32,
+    /// The ``b3 + b4`` counts (each a u8 by the law).
+    pub counts: Vec<u32>,
+    /// The ``n`` references (u16be element indices).
+    pub refs: Vec<u32>,
+    /// The record's end position (last reference byte).
+    pub end: usize,
+    /// The widened f64 normal on 0x4f (none on 0x47).
+    pub normal: Option<(f64, f64, f64)>,
+}
+
 /// Noise-aware absorption tolerance (stage-4b R3): a pool vertex
 /// "re-listed with noise" matches a written point within
 /// :const:`NOISE_REL` relative, per coordinate, scaled by
@@ -186,8 +220,9 @@ pub struct CompositeRecord {
     /// The 12-B f32le normal, widened to f64 at load (spec §2.2), on
     /// the normal-carrying markers.
     pub normal: Option<(f64, f64, f64)>,
-    /// The ``k`` loop-count bytes (summing to ``n``).
-    pub counts: Vec<u8>,
+    /// The ``k`` loop counts (u8, or ``ff``-escaped u32le; summing to
+    /// ``n``) — the P1g form shared with the list node's counts.
+    pub counts: Vec<u32>,
     /// The ``n`` width-byte big-endian references (element indices).
     pub refs: Vec<u32>,
     /// The winning width (1/2/3 bytes per reference).
@@ -313,7 +348,20 @@ pub struct CompositeInfo {
     pub loops_exported: u32,
     /// Loops still dropped (0 when the dup-pin law exported them all).
     pub loops_curve_entry: u32,
-    /// Stage-10 (relaxed stage 15): the law name on a firing store.
+    /// Extended-header family (2026-11-18): the accepted record count
+    /// (absent when the store carries none).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extended_header_records: Option<usize>,
+    /// Extended-header family: the triangles those records emitted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extended_header_triangles: Option<usize>,
+    /// Extended-header family: the records the manifold-assembly gate
+    /// declined (their triangles would have tipped an edge past two
+    /// uses; absent when none were declined).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extended_header_declined: Option<usize>,
+    /// Stage-10 (relaxed stage 15) / 2026-11-18: the law name on a
+    /// firing store (``e0b-dup-pin`` or ``closed-manifold-weld``).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub curve_entry_law: Option<&'static str>,
     /// Stage-10 (relaxed stage 15): the dup-pinned loop count.
@@ -812,7 +860,10 @@ fn parse_strip_records(
     for (i, &o) in hdrs.iter().enumerate() {
         let nxt = if i + 1 < hdrs.len() { hdrs[i + 1] } else { hi };
         let mk = data[o + 1];
-        let hlen: usize = if data[o + 3] == 0xFF { 4 } else { 5 };
+        let hlen: usize = match facets::header_len(data, o) {
+            Some(6) | None => continue, // the extended form has its own parser
+            Some(length) => length,
+        };
         if o + hlen + 4 > nxt {
             continue;
         }
@@ -839,24 +890,24 @@ fn parse_strip_records(
             ));
         }
         type Rank = (u8, u8, u8, u32, u8, u32);
-        let mut best: Option<(Rank, Vec<u8>, Vec<u32>, u8)> = None;
+        let mut best: Option<(Rank, Vec<u32>, Vec<u32>, u8)> = None;
         for &width in widths {
             for k in 0..=MAX_LOOP_COUNTS {
-                if base + k > nxt {
+                let Some((counts, counts_bytes)) = facets::read_counts(data, base, k, nxt) else {
                     break;
-                }
-                let counts: Vec<u8> = (0..k).map(|j| data[base + j]).collect();
-                let sum: u32 = counts.iter().map(|&c| u32::from(c)).sum();
+                };
+                let sum: u32 = counts.iter().copied().sum();
                 if sum != n {
                     continue;
                 }
-                let end = base + k + width as usize * n as usize;
+                let counts_end = base + counts_bytes;
+                let end = counts_end + width as usize * n as usize;
                 if end > nxt {
                     continue;
                 }
                 let refs: Vec<u32> = (0..n)
                     .map(|j| {
-                        let at = base + k + width as usize * j as usize;
+                        let at = counts_end + width as usize * j as usize;
                         match width {
                             1 => u32::from(data[at]),
                             2 => u32::from(u16::from_be_bytes([data[at], data[at + 1]])),
@@ -946,19 +997,104 @@ fn parse_strip_records(
 
 /// One dropped curve-entry loop: (marker, record normal, loop refs) in
 /// encounter order — the dup-pin input and the §2.3 curve exposure's
-/// raw material.
+/// raw material. Extended-header loops ride here too, with their
+/// synthetic kind (0x42 strip / 0x4c polygon).
 type DroppedLoop = (u8, Option<(f64, f64, f64)>, Vec<u32>);
+
+/// Every extended-header record in ``[lo, hi)`` under the 2026-11-18
+/// law — the twin's ``composite.parse_extended_facet_records``.
+///
+/// Returns ``(records, candidates)``: ``candidates`` counts every
+/// 6-byte-header position and ``records`` the ones the law accepts. The
+/// loop count comes from the header (``b3 + b4``), never from a tiling
+/// search; a candidate whose refs leave the element space is NOT this
+/// family (a false-positive byte pattern) and stays unresolved instead
+/// of failing the store on the refs gate.
+fn parse_extended_facet_records(
+    data: &[u8],
+    lo: usize,
+    hi: usize,
+    element_count: u32,
+) -> (Vec<ExtendedFacetRecord>, usize) {
+    let mut records = Vec::new();
+    let mut candidates = 0usize;
+    let mut hdrs = facets::strip_headers(data, lo, hi);
+    hdrs.extend(facets::facet_headers(data, lo, hi));
+    hdrs.sort_unstable();
+    for (i, &o) in hdrs.iter().enumerate() {
+        if facets::header_len(data, o) != Some(6) {
+            continue;
+        }
+        candidates += 1;
+        let nxt = if i + 1 < hdrs.len() { hdrs[i + 1] } else { hi };
+        let mk = data[o + 1];
+        if !EXTENDED_HEADER_MARKERS.contains(&mk) {
+            continue;
+        }
+        let ty = u32::from(data[o + 2]);
+        let b3 = u32::from(data[o + 3]);
+        let b4 = u32::from(data[o + 4]);
+        let k = (b3 + b4) as usize;
+        let has_normal = EXTENDED_NORMAL_MARKERS.contains(&mk);
+        let base = o + 10 + if has_normal { 12 } else { 0 };
+        let refs_start = base + k;
+        if refs_start + 2 > hi {
+            continue;
+        }
+        let n = u32::from_le_bytes([data[o + 6], data[o + 7], data[o + 8], data[o + 9]]);
+        let end = refs_start + 2 * n as usize;
+        if end > nxt.min(hi) {
+            continue;
+        }
+        let counts: Vec<u32> = data[base..refs_start]
+            .iter()
+            .map(|&c| u32::from(c))
+            .collect();
+        if n != 3 * ty + counts.iter().copied().sum::<u32>() {
+            continue;
+        }
+        let refs: Vec<u32> = (0..n)
+            .map(|j| {
+                let at = refs_start + 2 * j as usize;
+                u32::from(u16::from_be_bytes([data[at], data[at + 1]]))
+            })
+            .collect();
+        if refs.iter().any(|&r| r >= element_count) {
+            continue;
+        }
+        let normal = if has_normal {
+            Some((
+                f32_widen(data, o + 10),
+                f32_widen(data, o + 14),
+                f32_widen(data, o + 18),
+            ))
+        } else {
+            None
+        };
+        records.push(ExtendedFacetRecord {
+            offset: o,
+            marker: mk,
+            triangles: ty,
+            strips: b3,
+            polygons: b4,
+            counts,
+            refs,
+            end,
+            normal,
+        });
+    }
+    (records, candidates)
+}
 
 /// Triangles under the identity mapping (strip/polygon semantics) —
 /// the twin's ``_triangulate``. Loop references are 0-based element
 /// indices; triangles index the WRITTEN points (the exported vertex
 /// list), so referenced elements are remapped through the written
 /// rank. Loops referencing skip slots (curve entries — their
-/// coordinates live in the curve records, U4) are skipped and
-/// counted: the conservative rule names the gap instead of guessing
-/// coordinates (the dup-pin law — the one exception — lands with
-/// stage 3). Strip triangles (0x42/0x4a) skip the degenerate ones
-/// (repeated coordinates or exactly-zero cross product, G3 F7);
+/// coordinates live in the curve records, U4) are skipped and counted:
+/// the dup-pin law is the one exception (per loop, behind the battery
+/// and the mesh guard). Strip triangles (0x42/0x4a) skip the degenerate
+/// ones (repeated coordinates or exactly-zero cross product, G3 F7);
 /// polygon fans (0x4c) skip repeated coordinates. The dropped
 /// curve-entry loops and the written rank ride on the result for the
 /// stage-3 laws (the dup-pin evaluation and the §2.3 curve exposure).
@@ -970,6 +1106,11 @@ struct Triangulation {
     /// The loop counters (the twin's ``stats`` minus ``dup_pin``).
     loops_exported: u32,
     loops_curve_entry: u32,
+    /// The triangles the extended-header records emitted (the twin's
+    /// ``extended_header_triangles`` counter).
+    extended_triangles: u32,
+    /// The extended records the manifold-assembly gate declined.
+    extended_declined: u32,
     /// The per-loop dup-pin weld block.
     dup_pin: Option<DupPin>,
     /// The dropped curve-entry loops (marker, record normal, loop
@@ -978,7 +1119,69 @@ struct Triangulation {
     dropped_loops: Vec<DroppedLoop>,
 }
 
-fn triangulate(elements: &[Element], records: &[CompositeRecord]) -> Triangulation {
+/// The mutable emission state shared by the short and extended records.
+#[derive(Default)]
+struct EmitState {
+    triangles: Vec<(u32, u32, u32)>,
+    degenerate: u32,
+    loops_exported: u32,
+    loops_curve_entry: u32,
+    dropped_loops: Vec<DroppedLoop>,
+}
+
+/// The shared emission context of one :fn:`triangulate` call (the
+/// written rank, the skip set and the written points).
+struct EmitCtx<'a> {
+    written_rank: &'a HashMap<usize, usize>,
+    skips: &'a HashSet<usize>,
+    points: &'a [(f64, f64, f64)],
+}
+
+impl EmitCtx<'_> {
+    /// Emit one loop (or one independent triangle, ``count_loop``
+    /// false) — the twin's inner ``emit`` of ``_triangulate``.
+    fn emit(
+        &self,
+        st: &mut EmitState,
+        kind: u8,
+        normal: Option<(f64, f64, f64)>,
+        loop_refs: &[u32],
+        count_loop: bool,
+    ) {
+        if loop_refs.is_empty() {
+            return;
+        }
+        if loop_refs
+            .iter()
+            .any(|&r| self.skips.contains(&(r as usize)))
+        {
+            st.loops_curve_entry += 1;
+            st.dropped_loops.push((kind, normal, loop_refs.to_vec()));
+            return;
+        }
+        if count_loop {
+            st.loops_exported += 1;
+        }
+        let idxs: Vec<u32> = loop_refs
+            .iter()
+            .map(|&r| {
+                u32::try_from(self.written_rank[&(r as usize)]).expect(
+                    "guarded: the refs gate bounds r by the element space \
+                     and the skip filter removed the unranked elements",
+                )
+            })
+            .collect();
+        let (tris, deg) = loop_triangles(kind, &idxs, self.points);
+        st.degenerate += deg;
+        st.triangles.extend(tris);
+    }
+}
+
+fn triangulate(
+    elements: &[Element],
+    records: &[CompositeRecord],
+    extended: &[ExtendedFacetRecord],
+) -> Triangulation {
     let mut written_rank: HashMap<usize, usize> = HashMap::new();
     let mut skips: HashSet<usize> = HashSet::new();
     for (i, (_v, pt)) in elements.iter().enumerate() {
@@ -990,67 +1193,95 @@ fn triangulate(elements: &[Element], records: &[CompositeRecord]) -> Triangulati
     }
     let points: Vec<(f64, f64, f64)> = elements.iter().filter_map(|e| e.1).collect();
 
-    let mut triangles: Vec<(u32, u32, u32)> = Vec::new();
-    let mut degenerate = 0u32;
-    let mut loops_exported = 0u32;
-    let mut loops_curve_entry = 0u32;
-    let mut dropped_loops: Vec<DroppedLoop> = Vec::new();
+    let ctx = EmitCtx {
+        written_rank: &written_rank,
+        skips: &skips,
+        points: &points,
+    };
+    let mut st = EmitState::default();
     for rec in records {
         if !matches!(rec.marker, 0x42 | 0x4A | 0x4C) {
             continue;
         }
-        let mut loops: Vec<&[u32]> = Vec::new();
         let mut o = 0usize;
         for c in &rec.counts {
-            loops.push(&rec.refs[o..o + *c as usize]);
+            ctx.emit(
+                &mut st,
+                rec.marker,
+                rec.normal,
+                &rec.refs[o..o + *c as usize],
+                true,
+            );
             o += *c as usize;
         }
-        for loop_refs in loops {
-            if loop_refs.is_empty() {
-                continue;
-            }
-            if loop_refs.iter().any(|&r| skips.contains(&(r as usize))) {
-                loops_curve_entry += 1;
-                dropped_loops.push((rec.marker, rec.normal, loop_refs.to_vec()));
-                continue;
-            }
-            loops_exported += 1;
-            let idxs: Vec<u32> = loop_refs
-                .iter()
-                .map(|&r| {
-                    u32::try_from(written_rank[&(r as usize)]).expect(
-                        "guarded: the refs gate bounds r by the element space \
-                         and the skip filter removed the unranked elements",
-                    )
-                })
-                .collect();
-            let (tris, deg) = loop_triangles(rec.marker, &idxs, &points);
-            degenerate += deg;
-            triangles.extend(tris);
+    }
+    // The extended family was the one emission outside a structural
+    // check (the 2026-11-18 review: 9 carrier parts flipped to
+    // not-manifold), so each record is emitted only when its triangles
+    // keep the assembled mesh manifold (mesh_safe — the same lever as
+    // the weld) and carry no degenerate emission. A record failing
+    // either test is declined as a whole; its skip-bearing loops stay
+    // dropped (never weld candidates of a declined record).
+    let mut extended_triangles = 0u32;
+    let mut extended_declined = 0u32;
+    let mut edge_uses = edge_uses_of(&st.triangles);
+    for rec in extended {
+        let mut rec_st = EmitState::default();
+        for j in (0..3 * rec.triangles as usize).step_by(3) {
+            ctx.emit(&mut rec_st, 0x42, rec.normal, &rec.refs[j..j + 3], false);
+        }
+        let mut o = 3 * rec.triangles as usize;
+        for (index, c) in rec.counts.iter().enumerate() {
+            let kind = if index < rec.strips as usize {
+                0x42
+            } else {
+                0x4C
+            };
+            ctx.emit(
+                &mut rec_st,
+                kind,
+                rec.normal,
+                &rec.refs[o..o + *c as usize],
+                true,
+            );
+            o += *c as usize;
+        }
+        if rec_st.degenerate == 0 && mesh_safe(&mut edge_uses, &rec_st.triangles) {
+            extended_triangles += rec_st.triangles.len() as u32;
+            st.triangles.extend(rec_st.triangles);
+            st.degenerate += rec_st.degenerate;
+            st.loops_exported += rec_st.loops_exported;
+            st.loops_curve_entry += rec_st.loops_curve_entry;
+            st.dropped_loops.extend(rec_st.dropped_loops);
+        } else {
+            extended_declined += 1;
+            st.loops_curve_entry += rec_st.loops_curve_entry;
         }
     }
     // The per-loop dup-pin weld: evaluate every dropped loop when any
     // exists (the 2026-11-18 surface-loss fix — no empty-mesh
     // precondition; each loop is welded behind the battery + mesh
     // guard independently).
-    let dup_pin = if !dropped_loops.is_empty() {
+    let dup_pin = if !st.dropped_loops.is_empty() {
         Some(e0b_dup_pin(
             elements,
             &points,
             &written_rank,
-            &dropped_loops,
-            &triangles,
+            &st.dropped_loops,
+            &st.triangles,
         ))
     } else {
         None
     };
     Triangulation {
-        triangles,
-        degenerate,
-        loops_exported,
-        loops_curve_entry,
+        triangles: st.triangles,
+        degenerate: st.degenerate,
+        loops_exported: st.loops_exported,
+        loops_curve_entry: st.loops_curve_entry,
+        extended_triangles,
+        extended_declined,
         dup_pin,
-        dropped_loops,
+        dropped_loops: st.dropped_loops,
     }
 }
 
@@ -1207,6 +1438,11 @@ fn decode_per_rep(
     let mut skipped_markers: BTreeMap<u8, u32> = BTreeMap::new();
     let mut facet_candidates = 0usize;
     let mut facet_records = 0usize;
+    // N1 (2026-11-18 review): the per-rep paths export the extended
+    // family too, so the summary must name it like the single-rep path.
+    let mut ext_records = 0usize;
+    let mut ext_triangles = 0usize;
+    let mut ext_declined = 0usize;
     let mut write_count = 0usize;
     let mut table_bytes = 0usize;
     let mut element_decl = 0usize;
@@ -1273,11 +1509,13 @@ fn decode_per_rep(
         };
         let (records, n_hdrs) =
             parse_strip_records(data, d.region_end, nxt, d.elem, Some(&d.elements));
-        let grefs: Vec<u32> = records
+        let (ext_k, ext_cands) = parse_extended_facet_records(data, d.region_end, nxt, d.elem);
+        let mut grefs: Vec<u32> = records
             .iter()
             .filter(|r| GATED.contains(&r.marker))
             .flat_map(|r| r.refs.iter().copied())
             .collect();
+        grefs.extend(ext_k.iter().flat_map(|r| r.refs.iter().copied()));
         if let Some(&mx) = grefs.iter().max()
             && mx >= d.elem
         {
@@ -1290,7 +1528,7 @@ fn decode_per_rep(
             continue;
         }
         let base = points.len();
-        let tri_res = triangulate(&d.elements, &records);
+        let tri_res = triangulate(&d.elements, &records, &ext_k);
         // The per-loop dup-pin weld (2026-11-18): the rep's dropped
         // loops were evaluated independently (pinnable + battery +
         // mesh guard). The welded ones merge at the store level below
@@ -1314,8 +1552,11 @@ fn decode_per_rep(
         for (_mk, _normal, loop_refs) in &tri_res.dropped_loops {
             curves.push(curve_sequence(loop_refs, &d.elements));
         }
-        facet_candidates += n_hdrs;
-        facet_records += records.len();
+        facet_candidates += n_hdrs + ext_cands;
+        facet_records += records.len() + ext_k.len();
+        ext_records += ext_k.len();
+        ext_triangles += tri_res.extended_triangles as usize;
+        ext_declined += tri_res.extended_declined as usize;
         write_count += d.write_count as usize;
         table_bytes += d.table_bytes;
         element_decl += d.elem as usize;
@@ -1385,11 +1626,21 @@ fn decode_per_rep(
         raw_count3: None,
         loops_exported,
         loops_curve_entry,
+        extended_header_records: None,
+        extended_header_triangles: None,
+        extended_header_declined: None,
         curve_entry_law: None,
         loops_curve_entry_exported: None,
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
     };
+    if ext_records > 0 {
+        info.extended_header_records = Some(ext_records);
+        info.extended_header_triangles = Some(ext_triangles);
+        if ext_declined > 0 {
+            info.extended_header_declined = Some(ext_declined);
+        }
+    }
     if curve_entry_law > 0 {
         info.curve_entry_law = Some("e0b-dup-pin");
         info.loops_curve_entry_exported = Some(curve_entry_law);
@@ -1416,6 +1667,25 @@ fn edge_key(a: u32, b: u32) -> (u32, u32) {
 
 /// The undirected edge-use histogram of a triangle list (twin:
 /// ``_edge_uses``).
+/// The incremental manifold guard (2026-11-18) — ONE topology lever:
+/// true when adding ``tris`` keeps every undirected edge at two uses or
+/// fewer (folding the edges in on success). The dup-pin weld and the
+/// extended-header emission share this single check; a refused unit
+/// leaves the histogram untouched (fail-closed, deterministic order).
+fn mesh_safe(edge_uses: &mut HashMap<(u32, u32), u32>, tris: &[(u32, u32, u32)]) -> bool {
+    let candidate = edge_uses_of(tris);
+    if candidate
+        .iter()
+        .any(|(edge, count)| edge_uses.get(edge).copied().unwrap_or(0) + count > 2)
+    {
+        return false;
+    }
+    for (edge, count) in candidate {
+        *edge_uses.entry(edge).or_insert(0) += count;
+    }
+    true
+}
+
 fn edge_uses_of(triangles: &[(u32, u32, u32)]) -> HashMap<(u32, u32), u32> {
     let mut uses: HashMap<(u32, u32), u32> = HashMap::new();
     for &(a, b, c) in triangles {
@@ -1520,16 +1790,9 @@ fn e0b_dup_pin(
             refused += 1;
             continue;
         }
-        let candidate = edge_uses_of(&tris);
-        if candidate
-            .iter()
-            .any(|(edge, count)| edge_uses.get(edge).copied().unwrap_or(0) + count > 2)
-        {
+        if !mesh_safe(&mut edge_uses, &tris) {
             refused += 1;
             continue;
-        }
-        for (edge, count) in candidate {
-            *edge_uses.entry(edge).or_insert(0) += count;
         }
         welds.extend(tris);
         degenerate += deg;
@@ -1761,14 +2024,18 @@ pub fn decode_composite_store(
     }
 
     let (records, n_hdrs) = parse_strip_records(data, lo, hi, elem_decl, Some(&elements));
+    let (extended, ext_candidates) = parse_extended_facet_records(data, lo, hi, elem_decl);
     // Refs are 0-based element indices: every gated family's references
     // must resolve inside the element space (the exported markers plus
-    // the normal-carrying 0x49, the stage-2c gate set).
-    let all_refs: Vec<u32> = records
+    // the normal-carrying 0x49, the stage-2c gate set). The extended
+    // family (2026-11-18) indexes the same space, so its refs are gated
+    // too.
+    let mut all_refs: Vec<u32> = records
         .iter()
         .filter(|r| GATED.contains(&r.marker))
         .flat_map(|r| r.refs.iter().copied())
         .collect();
+    all_refs.extend(extended.iter().flat_map(|r| r.refs.iter().copied()));
     if let Some(&mx) = all_refs.iter().max()
         && mx >= elem_decl
     {
@@ -1782,21 +2049,15 @@ pub fn decode_composite_store(
         ));
     }
 
-    let tri_res = triangulate(&elements, &records);
+    let tri_res = triangulate(&elements, &records, &extended);
     let mut triangles = tri_res.triangles;
     let mut degenerate = tri_res.degenerate;
     let mut loops_exported = tri_res.loops_exported;
     let mut loops_curve_entry = tri_res.loops_curve_entry;
-    // Stage-10 E0-b dup-pin law (2026-11-12, #34; RELAXED 2026-11-13
-    // stage 15, #34 — the E0-b battery criterion removed,
-    // owner-authorized overturn, handoff cont. 23): the primary
-    // triangulation is empty (the census's empty-mesh class) and every
-    // dropped curve-entry loop is pinnable under the dup pin — the
-    // loops export with their skip slots welded (single-rep path, so
-    // this call IS the store-level mesh). ``None`` (unpinnable, or no
-    // candidate) keeps the conservative non-export rule and its
-    // warning; the U4-M mid law stays unsupported and is not
-    // implemented.
+    // The dup-pin weld (2026-11-18, per loop): ``triangulate`` already
+    // evaluated every dropped loop independently (pinnable,
+    // battery-supported and mesh-safe). Merge the welded loops; refused
+    // loops stay counted as dropped.
     let mut curve_entry_law = 0u32;
     if let Some(dp) = &tri_res.dup_pin
         && dp.loops > 0
@@ -1820,8 +2081,8 @@ pub fn decode_composite_store(
         curve_entries: skip_slots,
         write_count: Some(region_info.write_count as usize),
         table_bytes: Some(region_info.table_bytes),
-        facet_candidates: n_hdrs,
-        facet_records: records.len(),
+        facet_candidates: n_hdrs + ext_candidates,
+        facet_records: records.len() + extended.len(),
         skipped_markers,
         // stage-5 fold-in (reconciliation note section 5): the list
         // node's payload byte length — lets big/small form be derived
@@ -1839,11 +2100,21 @@ pub fn decode_composite_store(
         raw_count3: None,
         loops_exported,
         loops_curve_entry,
+        extended_header_records: None,
+        extended_header_triangles: None,
+        extended_header_declined: None,
         curve_entry_law: None,
         loops_curve_entry_exported: None,
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
     };
+    if !extended.is_empty() {
+        info.extended_header_records = Some(extended.len());
+        info.extended_header_triangles = Some(tri_res.extended_triangles as usize);
+        if tri_res.extended_declined > 0 {
+            info.extended_header_declined = Some(tri_res.extended_declined as usize);
+        }
+    }
     if curve_entry_law > 0 {
         info.curve_entry_law = Some("e0b-dup-pin");
         info.loops_curve_entry_exported = Some(curve_entry_law);
@@ -2117,11 +2388,13 @@ fn decode_raw_array_path(
     // the twin's ``[(0, pt) for pt in points]``), no skip slots.
     let elements: Vec<Element> = points.iter().map(|&pt| (0, Some(pt))).collect();
     let (records, n_hdrs) = parse_strip_records(data, lo, hi, elem_decl, Some(&elements));
-    let all_refs: Vec<u32> = records
+    let (extended, ext_candidates) = parse_extended_facet_records(data, lo, hi, elem_decl);
+    let mut all_refs: Vec<u32> = records
         .iter()
         .filter(|r| GATED.contains(&r.marker))
         .flat_map(|r| r.refs.iter().copied())
         .collect();
+    all_refs.extend(extended.iter().flat_map(|r| r.refs.iter().copied()));
     if let Some(&mx) = all_refs.iter().max()
         && mx >= elem_decl
     {
@@ -2135,13 +2408,15 @@ fn decode_raw_array_path(
         ));
     }
     // The raw element space has no skip slots, so no dropped
-    // curve-entry loops exist and the dup-pin candidate is never
-    // evaluated (triangles-empty-with-dropped is unreachable here).
-    let tri_res = triangulate(&elements, &records);
+    // curve-entry loops exist and the weld candidate is never accepted
+    // here (the twin pops it on this path).
+    let tri_res = triangulate(&elements, &records, &extended);
     let triangles = tri_res.triangles;
     let degenerate = tri_res.degenerate;
     let loops_exported = tri_res.loops_exported;
     let loops_curve_entry = tri_res.loops_curve_entry;
+    let ext_triangles = tri_res.extended_triangles;
+    let ext_declined = tri_res.extended_declined;
     let mut skipped_markers: BTreeMap<u8, u32> = BTreeMap::new();
     for rec in &records {
         if !matches!(rec.marker, 0x42 | 0x4A | 0x4C) {
@@ -2155,8 +2430,8 @@ fn decode_raw_array_path(
         curve_entries: 0,
         write_count: None,
         table_bytes: None,
-        facet_candidates: n_hdrs,
-        facet_records: records.len(),
+        facet_candidates: n_hdrs + ext_candidates,
+        facet_records: records.len() + extended.len(),
         skipped_markers,
         node_bytes: payload.len(),
         reps_decoded: None,
@@ -2171,17 +2446,27 @@ fn decode_raw_array_path(
         raw_count3: raw_info.raw_count3,
         loops_exported,
         loops_curve_entry,
+        extended_header_records: None,
+        extended_header_triangles: None,
+        extended_header_declined: None,
         curve_entry_law: None,
         loops_curve_entry_exported: None,
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
     };
+    let mut info = info;
+    if !extended.is_empty() {
+        info.extended_header_records = Some(extended.len());
+        info.extended_header_triangles = Some(ext_triangles as usize);
+        if ext_declined > 0 {
+            info.extended_header_declined = Some(ext_declined as usize);
+        }
+    }
     // Stage-15 unordered-triangle dedup (see apply_unordered_dedup):
     // the raw path triangulates facet records like the other paths, so
     // the same duplicated-writer-content mechanism is in scope
     // (measured corpus incidence 0 — no identity-raw-array row is
     // not-manifold).
-    let mut info = info;
     let triangles = apply_unordered_dedup(triangles, &mut info);
     // The §2.3 curve exposure: the raw element space has NO skip
     // slots, so no dropped curve-entry loops exist and the artifact is
@@ -2716,6 +3001,11 @@ fn decode_mixedwrite(
     let mut skipped_markers: BTreeMap<u8, u32> = BTreeMap::new();
     let mut facet_candidates = 0usize;
     let mut facet_records = 0usize;
+    // N1 (2026-11-18 review): the per-rep paths export the extended
+    // family too, so the summary must name it like the single-rep path.
+    let mut ext_records = 0usize;
+    let mut ext_triangles = 0usize;
+    let mut ext_declined = 0usize;
     let mut write_count = 0usize;
     let mut table_bytes = 0usize;
     let mut element_decl = 0usize;
@@ -2744,11 +3034,13 @@ fn decode_mixedwrite(
         };
         let (records, n_hdrs) =
             parse_strip_records(data, d.region_end, nxt, d.elem, Some(&d.elements));
-        let grefs: Vec<u32> = records
+        let (ext_k, ext_cands) = parse_extended_facet_records(data, d.region_end, nxt, d.elem);
+        let mut grefs: Vec<u32> = records
             .iter()
             .filter(|r| GATED.contains(&r.marker))
             .flat_map(|r| r.refs.iter().copied())
             .collect();
+        grefs.extend(ext_k.iter().flat_map(|r| r.refs.iter().copied()));
         if let Some(&mx) = grefs.iter().max()
             && mx >= d.elem
         {
@@ -2761,7 +3053,7 @@ fn decode_mixedwrite(
             continue;
         }
         let base = points.len();
-        let tri_res = triangulate(&d.elements, &records);
+        let tri_res = triangulate(&d.elements, &records, &ext_k);
         // The per-loop dup-pin weld (see decode_per_rep).
         if let Some(dp) = &tri_res.dup_pin {
             reps_dup_pin.push((base, dp.clone()));
@@ -2781,8 +3073,11 @@ fn decode_mixedwrite(
         for (_mk, _normal, loop_refs) in &tri_res.dropped_loops {
             curves.push(curve_sequence(loop_refs, &d.elements));
         }
-        facet_candidates += n_hdrs;
-        facet_records += records.len();
+        facet_candidates += n_hdrs + ext_cands;
+        facet_records += records.len() + ext_k.len();
+        ext_records += ext_k.len();
+        ext_triangles += tri_res.extended_triangles as usize;
+        ext_declined += tri_res.extended_declined as usize;
         write_count += d.write_count as usize;
         // the twin's ``table_bytes += (d["elem"] + 3) // 4`` — the
         // table-law reps' declared table length only
@@ -2851,11 +3146,21 @@ fn decode_mixedwrite(
         raw_count3: None,
         loops_exported,
         loops_curve_entry,
+        extended_header_records: None,
+        extended_header_triangles: None,
+        extended_header_declined: None,
         curve_entry_law: None,
         loops_curve_entry_exported: None,
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
     };
+    if ext_records > 0 {
+        info.extended_header_records = Some(ext_records);
+        info.extended_header_triangles = Some(ext_triangles);
+        if ext_declined > 0 {
+            info.extended_header_declined = Some(ext_declined);
+        }
+    }
     if curve_entry_law > 0 {
         info.curve_entry_law = Some("e0b-dup-pin");
         info.loops_curve_entry_exported = Some(curve_entry_law);
@@ -3068,6 +3373,9 @@ mod tests {
             raw_count3: None,
             loops_exported: 0,
             loops_curve_entry: 0,
+            extended_header_records: None,
+            extended_header_triangles: None,
+            extended_header_declined: None,
             curve_entry_law: None,
             loops_curve_entry_exported: None,
             unordered_dedup_dropped: None,
@@ -3164,5 +3472,135 @@ mod tests {
         assert!(tol_match(far, &pts).unwrap() > NOISE_REL);
         // empty points: None (kept as unmatched)
         assert_eq!(tol_match(noisy, &[]), None);
+    }
+
+    /// One extended-header record: ``01 mk ty b3 b4 ff | u32le n |
+    /// [normal] | counts | refs``.
+    fn extended_record(
+        marker: u8,
+        ty: u8,
+        b3: u8,
+        b4: u8,
+        counts: &[u8],
+        normal: Option<(f32, f32, f32)>,
+        refs: &[u16],
+    ) -> Vec<u8> {
+        let mut out = vec![0x01, marker, ty, b3, b4, 0xFF];
+        out.extend_from_slice(&(refs.len() as u32).to_le_bytes());
+        if let Some((x, y, z)) = normal {
+            out.extend_from_slice(&x.to_le_bytes());
+            out.extend_from_slice(&y.to_le_bytes());
+            out.extend_from_slice(&z.to_le_bytes());
+        }
+        out.extend_from_slice(counts);
+        for r in refs {
+            out.extend_from_slice(&r.to_be_bytes());
+        }
+        out
+    }
+
+    /// The extended-header law (2026-11-18): ``ty`` independent
+    /// triangles, ``b3 + b4`` counts, ``sum(counts) + 3*ty == n``;
+    /// out-of-range refs are a false-positive pattern, not the family.
+    #[test]
+    fn parse_extended_records_pins_the_header_law() {
+        let refs: Vec<u16> = (0..18).collect();
+        let body = extended_record(0x4F, 2, 1, 1, &[5, 7], Some((0.0, 0.0, 1.0)), &refs);
+        let (records, candidates) = parse_extended_facet_records(&body, 0, body.len(), 64);
+        assert_eq!(candidates, 1);
+        let rec = &records[0];
+        assert_eq!(rec.marker, 0x4F);
+        assert_eq!(rec.triangles, 2);
+        assert_eq!(rec.strips, 1);
+        assert_eq!(rec.polygons, 1);
+        assert_eq!(rec.counts, vec![5, 7]);
+        assert_eq!(
+            rec.refs,
+            refs.iter().map(|&r| u32::from(r)).collect::<Vec<_>>()
+        );
+        assert_eq!(rec.normal, Some((0.0, 0.0, 1.0)));
+        assert_eq!(rec.end, body.len());
+        // The sum law is load-bearing: one extra ref is not the family.
+        let bad = extended_record(0x47, 2, 1, 1, &[5, 7], None, &(0..19).collect::<Vec<_>>());
+        assert!(
+            parse_extended_facet_records(&bad, 0, bad.len(), 64)
+                .0
+                .is_empty()
+        );
+        // Out-of-range refs: the candidate stays unresolved.
+        let oob = extended_record(0x47, 1, 1, 0, &[3], None, &[0, 1, 2, 0, 1, 0xFFFF]);
+        let (records, candidates) = parse_extended_facet_records(&oob, 0, oob.len(), 64);
+        assert_eq!(candidates, 1);
+        assert!(records.is_empty());
+    }
+
+    /// The extended split: soup triples first (not loops), then the
+    /// first ``b3`` loops as strips and the last ``b4`` as polygons —
+    /// emitted only when the assembled mesh stays manifold; a record
+    /// that would tip an edge past two uses is declined as a whole.
+    #[test]
+    fn triangulate_extended_soup_strips_polygons() {
+        let elements: Vec<Element> = vec![
+            (0, Some((0.0, 0.0, 0.0))),
+            (0, Some((1.0, 0.0, 0.0))),
+            (0, Some((0.0, 1.0, 0.0))),
+            (0, Some((1.0, 0.0, 1.0))),
+            (0, Some((0.0, 0.0, 1.0))),
+            (0, Some((0.0, 1.0, 1.0))),
+            (0, Some((2.0, 0.0, 0.0))),
+            (0, Some((3.0, 0.0, 0.0))),
+            (0, Some((3.0, 1.0, 0.0))),
+            (0, Some((2.0, 1.0, 0.0))),
+        ];
+        let rec = ExtendedFacetRecord {
+            offset: 0,
+            marker: 0x47,
+            triangles: 1,
+            strips: 1,
+            polygons: 1,
+            counts: vec![3, 4],
+            refs: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            end: 0,
+            normal: None,
+        };
+        let tri = triangulate(&elements, &[], &[rec.clone()]);
+        // 1 soup + 1 strip (3 refs) + 2 fan triangles (4 refs)
+        assert_eq!(tri.triangles.len(), 4);
+        assert_eq!(tri.degenerate, 0);
+        assert_eq!(tri.extended_triangles, 4);
+        assert_eq!(tri.extended_declined, 0);
+        assert_eq!(tri.loops_exported, 2); // strip + polygon (soup not a loop)
+        assert_eq!(tri.loops_curve_entry, 0);
+        // The manifold-assembly gate: re-using the fan's (6, 8) edge
+        // would push it to three uses -> declined as a whole.
+        let overlapping = ExtendedFacetRecord {
+            offset: 1,
+            marker: 0x47,
+            triangles: 0,
+            strips: 1,
+            polygons: 0,
+            counts: vec![3],
+            refs: vec![6, 8, 9],
+            end: 1,
+            normal: None,
+        };
+        let tri = triangulate(&elements, &[], &[rec, overlapping]);
+        assert_eq!(tri.triangles.len(), 4);
+        assert_eq!(tri.extended_triangles, 4);
+        assert_eq!(tri.extended_declined, 1);
+    }
+
+    /// The shared incremental guard: accepts units that keep every
+    /// undirected edge at two uses or fewer, refuses the rest without
+    /// touching the histogram.
+    #[test]
+    fn mesh_safe_is_the_incremental_edge_use_lever() {
+        let mut uses = HashMap::new();
+        assert!(mesh_safe(&mut uses, &[(0, 1, 2)]));
+        assert!(mesh_safe(&mut uses, &[(0, 2, 3)]));
+        // (0, 2) is already used twice -> refused and not folded in.
+        let before = uses.clone();
+        assert!(!mesh_safe(&mut uses, &[(0, 2, 9)]));
+        assert_eq!(uses, before);
     }
 }

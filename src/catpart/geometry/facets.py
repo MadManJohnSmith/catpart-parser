@@ -62,6 +62,15 @@ import struct
 
 STRIP_RE = re.compile(rb"\x01[\x41-\x4f].\xff", re.DOTALL)
 
+#: Candidate discovery for the two observed header forms: the 4-byte form
+#: (``ff`` at +3) and the extended 6-byte form (``ff`` at +5, the
+#: 0x47/0x4f family — docs/evidence/2026-11-18-extended-header-family.md).
+#: The 5-byte variant (``ff`` at +4, the 0x4b/0x4e gap family) stays OUT of
+#: discovery: its semantics are open (G2 unknown 6) and this scanner does
+#: not change its status. The header length is derived from the ff position
+#: (:func:`header_len`), never assumed to be +3.
+FACET_HEADER_RE = re.compile(rb"\x01[\x41-\x4f](?:.\xff|...\xff)", re.DOTALL)
+
 #: Loop families: strips (triangle-strip segments) and closed polygons.
 STRIP_MARKERS = (0x41, 0x42, 0x49, 0x4A)
 POLY_MARKERS = (0x4C,)
@@ -76,6 +85,55 @@ EXPORTED_MARKERS = (0x42, 0x4A, 0x4C)
 MAX_REFS = 1_000_000  # G3's sanity cap on n
 
 
+def header_len(data, o: int) -> int | None:
+    """Header length of the facet record at ``o``, derived from ``ff``.
+
+    4 for the short form (``01 <mk> <ty> ff``), 5 for the observed
+    0x4b/0x4e variant (``ff`` at +4, reached only by direct callers —
+    :data:`FACET_HEADER_RE` does not discover it), 6 for the extended
+    form (``01 <mk> ty b3 b4 ff``, the 0x47/0x4f family, ``ff`` at +5).
+    ``None`` when no form matches at ``o``.
+    """
+    for length in (4, 5, 6):
+        if data[o + length - 1] == 0xFF:
+            return length
+    return None
+
+
+def read_count(data, pos: int) -> tuple[int, int]:
+    """One facet count: a u8, or ``ff`` escaping to a u32le (P1g form).
+
+    Returns ``(value, next_pos)``. The escaped form appears at the count
+    table's *first* entry on this corpus (the 528-ref 0x42 records,
+    docs/evidence/2026-11-18-extended-header-family.md section 1); the
+    same P1g encoding is already implemented by
+    :func:`catpart.geometry.composite.read_count` for the list node's
+    counts, and is reused here for the facet count table.
+    """
+    if data[pos] == 0xFF:
+        return int.from_bytes(data[pos + 1 : pos + 5], "little"), pos + 5
+    return data[pos], pos + 1
+
+
+def read_counts(data, base: int, k: int, limit: int):
+    """``k`` P1g counts from ``base``: ``(counts, byte_length)`` or ``None``.
+
+    ``limit`` bounds the last count's bytes (the next header or the body
+    end, whichever is nearer). The composite path reuses this reader so the
+    escape and the byte length cannot drift between the two facet parsers."""
+    counts = []
+    pos = base
+    for _ in range(k):
+        end = pos + 5 if pos < limit and data[pos] == 0xFF else pos + 1
+        if end > limit:
+            return None
+        value, pos = read_count(data, pos)
+        if value > MAX_REFS:
+            return None
+        counts.append(value)
+    return counts, pos - base
+
+
 @dataclasses.dataclass(frozen=True)
 class FacetRecord:
     """One facet record parsed under the (width, k) tiling law (F1/F1w)."""
@@ -86,7 +144,7 @@ class FacetRecord:
     header_len: int
     n: int
     width: int  # 1 = u8, 2 = u16be
-    counts: tuple[int, ...]  # k loop-count bytes, summing to n
+    counts: tuple[int, ...]  # k loop counts (u8 or ff-escaped u32le), summing to n
     refs: tuple[int, ...]  # lexicographic ranks into the pool
     end: int
     normal: tuple[float, float, float] | None
@@ -117,23 +175,31 @@ def parse_facet_record(
     """
     mk = data[o + 1]
     ty = data[o + 2]
-    header_len = 4 if data[o + 3] == 0xFF else 5
-    if o + header_len + 4 > body_hi:
+    hlen = header_len(data, o)
+    if hlen is None or hlen == 6:
+        # The extended 6-byte form is a different grammar (its own parser:
+        # catpart.geometry.composite.parse_extended_facet_records).
         return None
-    n = int.from_bytes(data[o + header_len : o + header_len + 4], "little")
+    if o + hlen + 4 > body_hi:
+        return None
+    n = int.from_bytes(data[o + hlen : o + hlen + 4], "little")
     if not (0 <= n <= MAX_REFS):
         return None
     has_normal = mk in NORMAL_MARKERS_ALL
-    base = o + header_len + 4 + (12 if has_normal else 0)
+    base = o + hlen + 4 + (12 if has_normal else 0)
     if base > body_hi:
         return None
     best = None
     for width in (1, 2):
         for k in range(0, 5):
-            counts = [data[base + j] for j in range(k)]
+            read = read_counts(data, base, k, min(nxt, body_hi))
+            if read is None:
+                break
+            counts, counts_bytes = read
             if not ((n > 0 and sum(counts) == n) or (n == 0 and k == 0)):
                 continue
-            end = base + k + width * n
+            counts_end = base + counts_bytes
+            end = counts_end + width * n
             if end > nxt:
                 continue
             if end == nxt:
@@ -146,7 +212,7 @@ def parse_facet_record(
             if best is None or rank < best[0]:
                 refs = [
                     int.from_bytes(
-                        data[base + k + width * j : base + k + width * (j + 1)],
+                        data[counts_end + width * j : counts_end + width * (j + 1)],
                         "big",
                     )
                     for j in range(n)
@@ -157,12 +223,12 @@ def parse_facet_record(
     _, width, counts, refs, end = best
     normal = None
     if has_normal:
-        normal = struct.unpack("<fff", data[o + header_len + 4 : o + header_len + 16])
+        normal = struct.unpack("<fff", data[o + hlen + 4 : o + hlen + 16])
     return FacetRecord(
         offset=o,
         marker=mk,
         type=ty,
-        header_len=header_len,
+        header_len=hlen,
         n=n,
         width=width,
         counts=tuple(counts),
@@ -170,6 +236,24 @@ def parse_facet_record(
         end=end,
         normal=normal,
     )
+
+
+def facet_headers(data, lo: int, hi: int) -> list[int]:
+    """Every extended-header candidate position in ``[lo, hi)``.
+
+    Discovery for the 6-byte extended form only (:data:`FACET_HEADER_RE`
+    matches both forms; :func:`header_len` filters). The committed
+    short-form discovery (:data:`STRIP_RE`) is unchanged, so the
+    short-record parses of existing stores stay byte-identical — the
+    extended records are parsed by their own law
+    (:func:`catpart.geometry.composite.parse_extended_facet_records`) and
+    counted on the summary instead of silently sitting in the gaps.
+    """
+    return [
+        m.start()
+        for m in FACET_HEADER_RE.finditer(data, lo, hi)
+        if header_len(data, m.start()) == 6
+    ]
 
 
 def scan_facets(
