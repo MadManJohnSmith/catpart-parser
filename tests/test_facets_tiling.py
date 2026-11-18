@@ -326,3 +326,48 @@ def test_export_composite_classification_unchanged() -> None:
         export_body(gap_edge_store_body(composite=True))
     assert excinfo.value.error_class == "undecoded-variant"
     assert excinfo.value.detail == COMPOSITE_DETAIL
+
+
+# --- the escaped facet count (2026-11-18) ---------------------------------
+
+
+def escaped_count_record(n: int, refs: bytes) -> bytes:
+    """One 4-byte-form record whose single count is the P1g escape
+    ``ff <u32le n>`` (the 528-ref 0x42 records of the Gabarit store)."""
+    out = bytearray(bytes((0x01, 0x42, 0x01, 0xFF)))
+    out += u32le(n)
+    out += b"\xff" + u32le(n)
+    out += refs
+    return bytes(out)
+
+
+def test_escaped_facet_count_parses_as_one_count() -> None:
+    """The count position reads the P1g escape (one byte, ``ff`` escapes
+    to u32le) like the list node's counts do: the 300-ref record's
+    single escaped count parses as ``(300,)`` instead of five raw u8
+    count bytes that would not sum to n."""
+    refs = u16be_refs(tuple(range(300)))
+    body = escaped_count_record(300, refs)
+    scan = scan_facets(body, 0, len(body))
+    assert scan.candidates == 1
+    assert scan.unresolved_candidates == 0
+    (record,) = scan.records
+    assert record.counts == (300,)
+    assert record.n == 300
+    assert record.width == 2
+    assert record.end == len(body)
+    assert record.refs[0] == 0 and record.refs[-1] == 299
+
+
+def test_raw_u8_reading_of_the_escaped_count_would_reject() -> None:
+    """The escape is load-bearing: reading the count position as raw u8
+    bytes gives (255, 44, 1, 0, 0) — a sum of 300 that only tiles if the
+    reference payload shifts five bytes, so the escaped form is the only
+    exact tile. Pinned as a negative fixture: a record whose escaped
+    count disagrees with n is not accepted."""
+    refs = u16be_refs(tuple(range(300)))
+    body = escaped_count_record(300, refs)
+    broken = body[:4] + b"\xff" + u32le(301) + refs
+    scan = scan_facets(broken, 0, len(broken))
+    assert scan.records == ()
+    assert scan.unresolved_candidates == 1

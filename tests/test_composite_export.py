@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 
+from catpart.geometry import composite
 from catpart.geometry.composite import parse_strip_records
 from catpart.schema import load_schema
 from catpart.schema.validate import validate
@@ -1396,3 +1397,122 @@ def test_labios_main_welds_panels_on_nonempty_primary_mesh(tmp_path, capsys):
     assert info["curve_entry_law"] == "e0b-dup-pin"
     vertices, faces = parse_ply(tmp_path / "labios.ply")
     assert abs(_ply_area(vertices, faces) - 5410.18) < 0.05
+# --- the escaped facet count + the extended-header family (2026-11-18) -----
+
+
+def _escaped_count_record(marker: int, n: int, refs: bytes, tail: bytes = b"") -> bytes:
+    """One short-form record whose single count is the P1g escape."""
+    out = bytearray(bytes((0x01, marker, 0x01, 0xFF)))
+    out += struct.pack("<I", n)
+    out += b"\xff" + struct.pack("<I", n)
+    out += refs
+    out += tail
+    return bytes(out)
+
+
+def test_parse_strip_records_reads_the_escaped_count() -> None:
+    """The facet count position uses the same P1g escape as the list
+    node (composite.read_count): the Gabarit store's 528-ref 0x42
+    records parse as one 528 count instead of five raw u8 bytes summing
+    to 273 (which no (width, k) tile accepts)."""
+    refs = b"".join(struct.pack(">H", r) for r in range(528))
+    body = _escaped_count_record(0x42, 528, refs)
+    records, n_hdrs = parse_strip_records(body, 0, len(body), 1000)
+    assert n_hdrs == 1
+    (record,) = records
+    _o, marker, _normal, counts, got_refs, width = record
+    assert marker == 0x42
+    assert counts == (528,)
+    assert width == 2
+    assert len(got_refs) == 528
+    assert got_refs[0] == 0 and got_refs[-1] == 527
+
+
+def _extended_record(
+    marker: int,
+    ty: int,
+    b3: int,
+    b4: int,
+    counts: tuple[int, ...],
+    normal: tuple[float, float, float] | None,
+    refs: tuple[int, ...],
+) -> bytes:
+    """One 6-byte-form record (``01 mk ty b3 b4 ff``, normal iff 0x4f)."""
+    out = bytearray(bytes((0x01, marker, ty, b3, b4, 0xFF)))
+    out += struct.pack("<I", len(refs))
+    if normal is not None:
+        out += struct.pack("<fff", *normal)
+    out += bytes(counts)
+    out += b"".join(struct.pack(">H", r) for r in refs)
+    return bytes(out)
+
+
+def test_parse_extended_facet_records_pins_the_header_law() -> None:
+    """The extended form's three header bytes are load-bearing: `ty` is
+    the number of independent triangles at the start of the refs,
+    `b3 + b4` is the counts-table length, and ``sum(counts) + 3*ty == n``
+    — the Gabarit store's 9/9 law."""
+    counts = (5, 7)
+    ty = 2
+    refs = tuple(range(3 * ty)) + tuple(range(10, 10 + sum(counts)))
+    body = _extended_record(0x4F, ty, 1, 1, counts, (0.0, 0.0, 1.0), refs)
+    records, candidates = composite.parse_extended_facet_records(
+        body, 0, len(body), element_count=64
+    )
+    assert candidates == 1
+    (record,) = records
+    assert record.marker == 0x4F
+    assert record.triangles == 2
+    assert record.strips == 1
+    assert record.polygons == 1
+    assert record.counts == counts
+    assert record.refs == refs
+    assert record.normal == (0.0, 0.0, 1.0)
+    assert record.end == len(body)
+
+
+def test_parse_extended_facet_records_rejects_out_of_range_refs() -> None:
+    """A false-positive ``01 4x ... ff`` byte pattern whose refs leave
+    the element space is NOT the family: the candidate stays unresolved
+    instead of failing the store on the refs gate."""
+    refs = (0, 1, 2, 0xFFFF)
+    body = _extended_record(0x47, 1, 1, 0, (3,), None, refs)
+    records, candidates = composite.parse_extended_facet_records(
+        body, 0, len(body), element_count=64
+    )
+    assert candidates == 1
+    assert records == []
+
+
+def test_triangulate_extended_record_soup_strips_polygons() -> None:
+    """The extended record's refs decode under the pinned split: `ty`
+    independent triangles, then the first `b3` loops under the strip law
+    and the last `b4` loops under the polygon-fan law."""
+    elements = [
+        (0, (0.0, 0.0, 0.0)),
+        (0, (1.0, 0.0, 0.0)),
+        (0, (0.0, 1.0, 0.0)),
+        (0, (1.0, 1.0, 0.0)),
+        (0, (2.0, 1.0, 0.0)),
+        (0, (2.0, 0.0, 0.0)),
+    ]
+    record = composite.ExtendedFacetRecord(
+        offset=0,
+        marker=0x47,
+        triangles=1,
+        strips=1,
+        polygons=1,
+        counts=(3, 4),
+        refs=(0, 1, 2, 3, 4, 5, 0, 1, 2, 3),
+        end=0,
+        normal=None,
+    )
+    triangles, degenerate, stats = composite._triangulate(
+        elements, (), extended=[record]
+    )
+    # 1 soup + 1 strip (3 refs) + 2 fan triangles (4 refs)
+    assert len(triangles) == 4
+    assert degenerate == 0
+    assert stats["extended_triangles"] == 4
+    assert stats["loops_exported"] == 2  # strip + polygon (soup triples are not loops)
+    assert stats["loops_curve_entry"] == 0
