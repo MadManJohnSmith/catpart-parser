@@ -1,0 +1,75 @@
+claim,statement,label,scope,release,observations,passes,rate,value
+BR6G-01_parts_with_closed_shell,parts whose graph decodes >= 1 closed shell (anchor BR6S-04 = 66),fact,corpus parts,all,1442,66,0.0457698,
+BR6G-02_parts_complete,parts whose graph is status=complete (all_faces_closed with no excluded face family and no unknown record; anchor BR6S-10 = 66),fact,corpus parts,all,1442,64,0.0443828,
+BR6G-03a_body_nodes,"body nodes over the corpus graphs (one body per located store is an assumption, BR5-04a/b)",fact,located graphs,all,1,1,1.0,1317
+BR6G-03b_lump_nodes,lump nodes over the corpus graphs (all export_label=assumed),fact,located graphs,all,1,1,1.0,1317
+BR6G-03c_shell_nodes,"shell nodes (all components, open included)",fact,located graphs,all,1,1,1.0,145
+BR6G-03d_face_nodes,face nodes (normal-bearing planar family only),fact,located graphs,all,1,1,1.0,1495
+BR6G-03e_loop_nodes,loop nodes,fact,located graphs,all,1,1,1.0,1523
+BR6G-03f_edge_nodes,"edge nodes (loop segments, never triangle chords)",fact,located graphs,all,1,1,1.0,4767
+BR6G-03g_vertex_nodes,"vertex nodes (pool slots, no welding)",fact,located graphs,all,1,1,1.0,2829
+BR6G-04_composite_parts,"parts whose first located store is composite (index_space=composite-element; anchor BR6S-08 = 1,036 stores)",fact,corpus parts,all,1442,1036,0.718447,
+BR6G-05a_graphs_without_violations,graphs for which check_invariants returns no violation,fact,corpus parts,all,1442,1322,0.916782,
+BR6G-05b_closed_shells_brep_paired,"closed shells whose loop segments are each used exactly twice (the F7 B-rep pairing law, distinct from the triangle closure)",fact,closed shells,all,76,0,0,
+BR6G-05c_closed_shells_with_one_use_segment,closed shells carrying at least one loop segment used once,fact,closed shells,all,76,76,1,
+BR6G-06a_exact_mode_success_parts,"parts whose graph exports in exact mode with caller-supplied MM and the assumed lump accepted (expected 0/76 closed shells, published pre-run)",fact,corpus parts,all,1442,0,0,
+BR6G-06b_exact_refusal_index-space-unplaceable,parts whose exact-mode render raises index-space-unplaceable (strict order's first class),fact,corpus parts,all,1442,1036,0.718447,
+BR6G-06b_exact_refusal_lump-undecoded,parts whose exact-mode render raises lump-undecoded (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-06b_exact_refusal_body-no-shell,parts whose exact-mode render raises body-no-shell (strict order's first class),fact,corpus parts,all,1442,283,0.196255,
+BR6G-06b_exact_refusal_unknown-node,parts whose exact-mode render raises unknown-node (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-06b_exact_refusal_provenance-incomplete,parts whose exact-mode render raises provenance-incomplete (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-06b_exact_refusal_face-family-unread,parts whose exact-mode render raises face-family-unread (strict order's first class),fact,corpus parts,all,1442,10,0.00693481,
+BR6G-06b_exact_refusal_face-count-variant,parts whose exact-mode render raises face-count-variant (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-06b_exact_refusal_face-unplaced,parts whose exact-mode render raises face-unplaced (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-06b_exact_refusal_shell-open,parts whose exact-mode render raises shell-open (strict order's first class),fact,corpus parts,all,1442,49,0.0339806,
+BR6G-06b_exact_refusal_shell-non-manifold,parts whose exact-mode render raises shell-non-manifold (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-06b_exact_refusal_shell-not-oriented,parts whose exact-mode render raises shell-not-oriented (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-06b_exact_refusal_shell-not-brep-paired,parts whose exact-mode render raises shell-not-brep-paired (strict order's first class),fact,corpus parts,all,1442,64,0.0443828,
+BR6G-06b_exact_refusal_vertex-not-shared,parts whose exact-mode render raises vertex-not-shared (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-06b_exact_refusal_surface-disagreement,parts whose exact-mode render raises surface-disagreement (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-06b_exact_refusal_surface-unbound,parts whose exact-mode render raises surface-unbound (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-06b_exact_refusal_unsupported-surface,parts whose exact-mode render raises unsupported-surface (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-06b_exact_refusal_loop-role-undecided,parts whose exact-mode render raises loop-role-undecided (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-06b_exact_refusal_shell-role-undecided,parts whose exact-mode render raises shell-role-undecided (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-06b_exact_refusal_lump-assumed,parts whose exact-mode render raises lump-assumed (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-06b_exact_refusal_unit-undetermined,parts whose exact-mode render raises unit-undetermined (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-06b_exact_refusal_no-orphan,parts whose exact-mode render raises no-orphan (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-06b_exact_refusal_determinism,parts whose exact-mode render raises determinism (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-06b_exact_refusal_arc-kind-table,parts whose exact-mode render raises arc-kind-table (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-07a_facet_mode_success_parts,parts whose graph exports in facet mode (the default mode),fact,corpus parts,all,1442,53,0.0367545,
+BR6G-07b_facet_refused_parts,parts whose facet-mode render is refused for any class,fact,corpus parts,all,1442,1389,0.963245,
+BR6G-05d_graphs_with_structural_violations,"graphs with any construction-guarantee violation (no-orphan, index-space-homogeneous, determinism, arc-kind-table)",fact,corpus parts,all,1442,0,0,
+BR6G-07c_facet_refusal_index-space-unplaceable,parts whose facet-mode render raises index-space-unplaceable (strict order's first class),fact,corpus parts,all,1442,1036,0.718447,
+BR6G-07c_facet_refusal_lump-undecoded,parts whose facet-mode render raises lump-undecoded (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-07c_facet_refusal_body-no-shell,parts whose facet-mode render raises body-no-shell (strict order's first class),fact,corpus parts,all,1442,283,0.196255,
+BR6G-07c_facet_refusal_unknown-node,parts whose facet-mode render raises unknown-node (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-07c_facet_refusal_provenance-incomplete,parts whose facet-mode render raises provenance-incomplete (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-07c_facet_refusal_face-family-unread,parts whose facet-mode render raises face-family-unread (strict order's first class),fact,corpus parts,all,1442,10,0.00693481,
+BR6G-07c_facet_refusal_face-count-variant,parts whose facet-mode render raises face-count-variant (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-07c_facet_refusal_face-unplaced,parts whose facet-mode render raises face-unplaced (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-07c_facet_refusal_shell-open,parts whose facet-mode render raises shell-open (strict order's first class),fact,corpus parts,all,1442,49,0.0339806,
+BR6G-07c_facet_refusal_shell-non-manifold,parts whose facet-mode render raises shell-non-manifold (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-07c_facet_refusal_shell-not-oriented,parts whose facet-mode render raises shell-not-oriented (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-07c_facet_refusal_shell-not-brep-paired,parts whose facet-mode render raises shell-not-brep-paired (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-07c_facet_refusal_vertex-not-shared,parts whose facet-mode render raises vertex-not-shared (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-07c_facet_refusal_surface-disagreement,parts whose facet-mode render raises surface-disagreement (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-07c_facet_refusal_surface-unbound,parts whose facet-mode render raises surface-unbound (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-07c_facet_refusal_unsupported-surface,parts whose facet-mode render raises unsupported-surface (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-07c_facet_refusal_loop-role-undecided,parts whose facet-mode render raises loop-role-undecided (strict order's first class),fact,corpus parts,all,1442,9,0.00624133,
+BR6G-07c_facet_refusal_shell-role-undecided,parts whose facet-mode render raises shell-role-undecided (strict order's first class),fact,corpus parts,all,1442,2,0.00138696,
+BR6G-07c_facet_refusal_lump-assumed,parts whose facet-mode render raises lump-assumed (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-07c_facet_refusal_unit-undetermined,parts whose facet-mode render raises unit-undetermined (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-07c_facet_refusal_no-orphan,parts whose facet-mode render raises no-orphan (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-07c_facet_refusal_determinism,parts whose facet-mode render raises determinism (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-07c_facet_refusal_arc-kind-table,parts whose facet-mode render raises arc-kind-table (strict order's first class),fact,corpus parts,all,1442,0,0,
+BR6G-08_determinism_renders,same graph rendered twice byte-identically (sha16 01d289f459924d13; sha256 d37e973da3bdf6a340250556c5b445d70cd425e2822ff972b5cf7171553ebc68),fact,first facet-mode success in manifest order,all,2,2,1.0,2
+BR6G-09a_unread_records,accepted records outside the face families counted in completeness.unknown (the 0x44 class; anchor BR6S-22 = 708),fact,located graphs,all,1,1,1.0,708
+BR6G-09b_skipped_refs_total,"completeness.skipped_refs summed over the corpus graphs (the composite element space is not decoded; BR4's 78,255 is cited, not re-derived)",fact,located graphs,all,1,1,1.0,0
+BR6G-10a_lumps_per_body,lump nodes per body node (the derived-single-lump assumption),fact,body nodes,all,1317,1317,1,
+BR6G-10b_unknown_nodes_emitted,"unknown-labelled nodes in the assembled graphs (must be 0; unknown records are counted, never noded)",fact,located graphs,all,1,1,1.0,0
+BR6G-11a_ring_face_nodes,face nodes on the 0x4c ring marker (the family exact mode needs),fact,located graphs,all,1,1,1.0,101
+BR6G-11b_closed_shell_face_records,face records belonging to the closed shells (all markers),fact,located graphs,all,1,1,1.0,522
+BR6G-11c_closed_shells_ring_only,closed shells whose every attached face record is a 0x4c ring (the only shape exact mode could emit),fact,located graphs,all,1,1,1.0,0
+BR6G-11d_excluded_faces,"component face records with no FaceNode producer (0x41/0x42, no 12B normal)",fact,located graphs,all,1,1,1.0,16
+BR6G-11e_excluded_faces_in_closed_shells,the same records that sit inside a closed shell (face-family-unread),fact,located graphs,all,1,1,1.0,3
+BR6G-11f_closed_shells_with_excluded_faces,closed shells carrying at least one record with no FaceNode producer,fact,located graphs,all,1,1,1.0,2
