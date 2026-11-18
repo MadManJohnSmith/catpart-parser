@@ -4,6 +4,27 @@ Un parser open source para archivos de pieza y producto de **CATIA V5** de
 Dassault Systèmes (`.CATPart`, `.CATProduct`) — leyendo el formato binario
 directamente, **sin necesidad de una instalación de CATIA**.
 
+[![CI](https://github.com/MadManJohnSmith/catpart-parser/actions/workflows/ci.yml/badge.svg)](https://github.com/MadManJohnSmith/catpart-parser/actions/workflows/ci.yml)
+[![L1 clean-parse (Dev)](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/MadManJohnSmith/catpart-parser/gh-pages/fitness-latest.json)](https://github.com/MadManJohnSmith/catpart-parser/blob/main/fitness/history.jsonl)
+
+**Pruébalo en vivo** — corre entero en tu navegador (WebAssembly; los archivos
+nunca salen de la máquina): arrastra un `.CATPart` — o un `.CATProduct` con su
+carpeta de piezas / `.zip` — sobre el
+[visor](https://madmanjohnsmith.github.io/catpart-parser/viewer/viewer.html).
+Más ejemplos de salida decodificada en la
+[galería de exportaciones](https://madmanjohnsmith.github.io/catpart-parser/gallery.html).
+
+![Demo del visor: se arrastra un engranaje recto .CATPart, el pipeline
+WebAssembly lo decodifica y lo renderiza en el navegador — órbita, zoom,
+alternar wireframe, con la compuerta de sanidad en el navegador mostrando
+pass (906 vértices, 274 triángulos)](docs/readme-assets/viewer-demo.gif)
+
+El badge L1 es el titular de fitness (un titular por nivel, ADR-0001), leído
+del endpoint de `gh-pages` y refrescado localmente por
+`scripts/publish_fitness.py` — nunca en CI (ADR-0003). La serie de
+corridas aceptadas de L1 y L2 vive en `fitness/history.jsonl` (append-only) y
+`fitness-history.json`.
+
 ## Por qué
 
 CATIA V5 guarda los modelos en un formato binario propietario y sin
@@ -14,185 +35,103 @@ documentar. Hoy las únicas formas de leer estos archivos son:
   licencia de pago).
 
 No existe ningún parser binario libre y open source. Este proyecto pretende
-ser el primero completo, habilitando interoperabilidad, acceso a archivos y
+ser el primero completo, habilitando interoperabilidad, acceso de archivo y
 tooling para quien recibe archivos CATIA sin tener un puesto de CATIA.
 
-## Estado
+## Qué funciona hoy
 
-[![L1 clean-parse (Dev)](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/MadManJohnSmith/catpart-parser/gh-pages/fitness-latest.json)](https://github.com/MadManJohnSmith/catpart-parser/blob/main/fitness/history.jsonl)
+| Capacidad | Resultado | Evidencia |
+|---|---|---|
+| **L1 — metadatos y contenedores** (`catpart-inspect`) | 99.66% Dev (1,745/1,751), 100% held-out (73/73) — Fase 3 cerrada 2026-11-08 | [ROADMAP](docs/ROADMAP.md), [docs de formato](docs/format/README.md) |
+| **L2 — exportación de mallas** (`catpart-export` → PLY binario) | 74.80% Dev (1,033/1,381), 56/61 held-out; cerrada en el techo medido con negativos documentados, barra re-ajustada por la regla pre-autorizada — Fase 4 cerrada 2026-11-13 | [cierre](docs/evidence/2026-11-13-phase4-close.md) |
+| **Visor de piezas** (WASM, en el navegador) | Fidelidad Rust/Python 3,266/3,266 (0 mismatches, corrida completa de ambos slices del corpus); reproducción del escalar en el navegador WITHIN exact con el margen declarado 0 — Fase 5 cerrada 2026-11-14 | [corrida de fidelidad](docs/evidence/2026-11-14-v6-fidelity-full-corpus.md), [aceptación](docs/evidence/2026-11-14-v6-phase5-close.md) |
+| **Visor de ensamblajes** (`.CATProduct`, multi-archivo) | Ingesta por arrastre de carpeta/`.zip`, transformaciones decodificadas `[tx, ty, tz, qw, qx, qy, qz]` (f64le, cuaternión w-first), render instanciado en GPU, vista explosionada, árbol de clasificación de 4 estados; Barra de Ensamblaje P4 cumplida dígito por dígito, aceptación headless 8/8 — Fase 6 cerrada 2026-11-16 | [spec](docs/specs/phase6-assembly-viewer-spec.md), [barra](docs/evidence/2026-11-14-p4-assembly-bar.md), [revisión](docs/evidence/2026-11-16-p3-v6-acceptance-review.md) |
+| **L3 — B-rep paramétrico completo** | en curso (Fase 7, [Spec G #47](https://github.com/MadManJohnSmith/catpart-parser/issues/47)) | — |
 
-**Parser L1 disponible — Fase 3 cerrada (2026-11-08).** `catpart-inspect`
-emite JSON schema-v1 (cabecera, inventario de contenedores con anotación de
-clase base, `document_name`, trailer, versión detectada) y
-`catpart-fitness` mide el parseo limpio sobre el corpus: **Dev 99.66%
-(1745/1751), held-out 100% (73/73)**, no-regret según ADR-0001. Ver
-[docs/ROADMAP.md](docs/ROADMAP.md) (bloque de estado de la Fase 3),
-[docs/format/README.md](docs/format/README.md) (estructuras documentadas)
-y `fitness/history.jsonl`. Publicado en vivo: el badge de arriba lee el
-endpoint de `gh-pages`, refrescado localmente por
-`scripts/publish_fitness.py` (ADR-0003, nunca en CI) — reconstruye y fuerza
-el push del JSON de `gh-pages`.
+Una malla L2 decodificada — una entrada de la
+[galería de exportaciones](https://madmanjohnsmith.github.io/catpart-parser/gallery.html)
+(render del PLY exportado para una pieza del corpus, del conjunto de
+render-sanity de la Fase 4):
 
-**Geometría L2 (spec D, [#33](https://github.com/MadManJohnSmith/catpart-parser/issues/33)) —
-disponible, baseline publicado.** `catpart-fitness` también mide el
-escalar L2 por ADR-0001: la proporción de filas `kind=part` del manifest
-cuya salida de `catpart-export` pasa la sanidad — exportación exitosa,
-malla no vacía, manifold, bounding box finito y plausible, sin
-triángulos degenerados por encima del umbral F7 de G3 (0 en cada soup de
-store limpio). La población L2 es solo de piezas: los products se
-excluyen (el negativo documentado — 0/37 products muestreados llevan
-algún store de geometría,
-[docs/evidence/2026-11-08-geometry-payloads.md](docs/evidence/2026-11-08-geometry-payloads.md)).
-Las señales por componente (volumen cerrado donde se espera, shells
-abiertos, conteos degenerados) se reportan por ejecución y nunca
-colapsan en el titular; el badge de arriba sigue siendo L1 (un titular
-por nivel, ADR-0001), y `fitness-history.json` lleva la serie L2 de
-ejecuciones aceptadas junto a la L1. El baseline L2 aceptado (run
-`20261110T172440Z-3ea53d`, 2026-11-10): **Dev 76/1,381 = 5.50%,
-held-out 0/61**. La brecha está clasificada, no es anecdótica:
-1,024 `undecoded-variant` (espacio de índices compuesto, lecturas
-primitivas 0x4b/0x4e y 0x41/0x44 sin fijar — los abiertos que ponen la
-barra), 313 `missing-geometry-store` (consistente con el rango
-documentado 0.82–0.93 de presencia de stores), 29
-`malformed-store-header`; de los 76 pases, 66 volúmenes cerrados +
-10 shells abiertos (señales por componente).
-[#34](https://github.com/MadManJohnSmith/catpart-parser/issues/34) (G6)
-mueve las variantes no decodificadas hacia la barra de ≥ 80% bajo
-no-regret.
+![Render de malla decodificada (vista frontal) de una pieza del corpus](docs/evidence/data/close-renders/ef61cfc2.front.png)
 
-**Estado del grind (2026-11-13, CIERRE):** la fila final aceptada (run
-`20261113T231506Z-c2ab64`) pone L2 en **Dev 1,033/1,381 = 74.80%,
-held-out 56/61**, L1 plano, 1,173 exportaciones — desde el baseline
-de 76 pases por las 15 etapas #34 aterrizadas (absorción de pools
-por-rep + leyes de anchos, recuperación de locators incluida la
-extensión other-container, decode composite table-walk /
-por-rep / raw-array, la ley E0 de curve-entries, la ley de espacio
-de elementos de stage-13, y los levers dup-pin-ALL + dedup
-unordered de stage-15, autorizados por el dueño). La barra del 80%
-es inalcanzable: el techo medido del residual es exactamente lo
-aterrizado (+32), y toda clase de fallo restante está cerrada por
-bytes contra cualquier ley con evidencia commiteada (128 stores
-no-pool llevan CERO registros de facetas; 125 cabeceras
-missing-locator inalcanzables; las coordenadas de elementos UV no
-están en el payload; los not-manifold son content-fins/libros
-coplanares en los bytes). Bajo la regla pre-autorizada de revisión
-de barra del ROADMAP, la barra L2 se re-ajusta al techo medido
-**74.80% (margen 0)** con negativos documentados — la tabla por
-clase y la compuerta de render sanity (PASS, subconjunto Dev de 6
-stores) viven en
-[docs/evidence/2026-11-13-phase4-close.md](docs/evidence/2026-11-13-phase4-close.md).
-Historia: `fitness/history.jsonl` (append-only).
+Notas:
 
-**Estado del visor (2026-11-14, FASE 5 CERRADA):** el pipeline de
-decode está portado a Rust compilado a WASM (ADR-0004) con Fidelity
-demostrada sobre el corpus — la corrida completa de ambos slices (un
-CSV, sin muestreo): **3,266/3,266 match, 0 mismatches, 0
-harness-errors** (L1-JSON las 1,824 filas del manifest; L2-export los
-1,442 parts: 1,173 PLYs byte-idénticos + 269 rechazos clasificados
-reproducidos exactamente, por pares — `undecoded-variant` 144,
-`missing-geometry-store` 125), wall-clock 255.9 s
-([docs/evidence/2026-11-14-v6-fidelity-full-corpus.md](docs/evidence/2026-11-14-v6-fidelity-full-corpus.md),
-`docs/evidence/data/v6-fidelity-full-corpus-claims.csv`). La corrida
-de reproducción en el navegador igualó el escalar L2 publicado
-dígito por dígito bajo el margen 0 declarado por el dueño (V5, #52:
-dev 1,033/1,381, held-out 56/61 — WITHIN exact). El visor está vivo
-en gh-pages: arrastra un `.CATPart` en
-[viewer/viewer.html](https://madmanjohnsmith.github.io/catpart-parser/viewer/viewer.html)
-— orbit/zoom, wireframe/solid, panel de metadatos, overlay de curvas,
-compuerta de sanidad en el navegador, display de fallos clasificados —
-publicado por el flujo `scripts/publish_fitness.py` sin cambios
-(commit gh-pages `e8c0ebc`). La referencia Python y fitness intactas
-(no-regret). El checklist completo de aceptación:
-[docs/evidence/2026-11-14-v6-phase5-close.md](docs/evidence/2026-11-14-v6-phase5-close.md).
+- La población L2 es solo de piezas: los products muestreados no llevan
+  stores de geometría (0/37 — negativo documentado,
+  [docs/evidence/2026-11-08-geometry-payloads.md](docs/evidence/2026-11-08-geometry-payloads.md)).
+- Cada clase de fallo residual de L2 está cerrada por bytes contra evidencia
+  commiteada; la tabla por clase vive en el documento de cierre de la Fase 4.
+- Las transformaciones no decodificables se clasifican como tales — nunca se
+  enmascaran al origen de identidad; las piezas no resueltas se preservan en
+  el árbol de instancias — nunca se ocultan.
 
-**Estado de ensamblajes (2026-11-16, FASE 6 CERRADA):** soporte de
-ensamblajes multi-archivo `.CATProduct` disponible en el navegador mediante
-WebAssembly bajo la Spec F #45 (autoridad de diseño
-[docs/specs/phase6-assembly-viewer-spec.md](docs/specs/phase6-assembly-viewer-spec.md)).
-La implementación cumple con la Barra de Ensamblaje P4 declarada
-([docs/evidence/2026-11-14-p4-assembly-bar.md](docs/evidence/2026-11-14-p4-assembly-bar.md))
-dígito por dígito en todas sus cláusulas:
-1. **Estructura de instancias**: 100% de acuerdo contra la ley de
-   emparejamiento confirmada (framing `fe 7c 02` y emparejamiento de pool
-   Ley B).
-2. **Resolución por PartNumber**: join por stem normalizado en minúsculas
-   según la ley de join de corpus 248/382; las piezas no encontradas se
-   mantienen y clasifican en el árbol — **nunca se ocultan**.
-3. **Colocación con transformaciones decodificadas**: `[tx, ty, tz, qw, qx, qy, qz]`
-   en `f64le` con filtro de cuaternión unitario y orden w-first; invariante
-   estricto de anti-enmascaramiento — transformaciones no decodificables se
-   clasifican como tales y **nunca caen por defecto al origen**.
+## Inicio rápido
 
-Las 5 cláusulas de aceptación de la Spec §9.2 fueron verificadas por el
-runner automatizado headless de Playwright
-([scripts/assembly_viewer_acceptance.py](scripts/assembly_viewer_acceptance.py),
-[tests/test_assembly_acceptance.py](tests/test_assembly_acceptance.py))
-sobre fixtures sintéticos canónicos (canónico espacial, identidad, parcial y
-no decodificable). El visor incluye ingesta nativa por arrastrar-soltar de
-carpetas y archivos `.zip`, renderizado 3D instanciado con compartición de
-mallas en GPU sin redundancia, control deslizante de vista explosionada y
-árbol de clasificación de 4 estados.
-Revisión independiente PASS:
-[docs/evidence/2026-11-16-p3-v6-acceptance-review.md](docs/evidence/2026-11-16-p3-v6-acceptance-review.md).
+Requiere Python ≥ 3.11. Sin instalación de CATIA, sin licencia.
+
+```console
+$ pip install .
+
+$ catpart-inspect model.CATPart      # JSON schema-v1: cabecera, inventario
+                                     # de contenedores, document_name, trailer
+$ catpart-export model.CATPart -o mesh.ply
+                                     # exportación de geometría (PLY binario);
+                                     # los fallos clasificados salen con código 1
+                                     # y un JSON error_class en stderr
+$ catpart-fitness                    # protocolo de fitness del corpus
+                                     # (ADR-0001); ejecutar desde la raíz
+```
+
+Opción en el navegador (sin instalar nada): el
+[visor](https://madmanjohnsmith.github.io/catpart-parser/viewer/viewer.html)
+de arriba — órbita/zoom, wireframe/sólido, panel de metadatos, overlay de
+curvas, compuerta de sanidad en el navegador, vista de ensamblaje
+explosionada.
+
+## Documentación
+
+| Documento | Contenido |
+|---|---|
+| [docs/format/README.md](docs/format/README.md) | La documentación del formato `.CATPart`/`.CATProduct` obtenida por ingeniería inversa |
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Plan fase por fase y bloques de estado |
+| [docs/adr/](docs/adr/) | ADRs: 0001 protocolo de fitness · 0002 parser Python-first · 0003 corridas locales de fitness + publicación en gh-pages · 0004 visor web en estado terminal |
+| [docs/specs/](docs/specs/) | Autoridades de diseño por fase (visor, visor de ensamblajes) |
+| [docs/evidence/](docs/evidence/) | Notas de evidencia fechadas + CSVs de claims detrás de cada cifra titular |
+| [docs/corpus-report.md](docs/corpus-report.md) | El corpus público: composición y resumen de triage |
+| [docs/research/format-landscape.md](docs/research/format-landscape.md) | Estudio de los lectores de CATIA existentes (el contexto de *Por qué*, en detalle) |
+
+## Hoja de ruta
+
+| Nivel / Fase | Entregable | Estado |
+|---|---|---|
+| L0 | Corpus público + triage a nivel de bytes con evidencia reproducible | hecho (Fases 0/1) |
+| L1 | Mapa de contenedores/secciones, metadatos, inventario de contenedores, nombres | hecho (Fase 3) |
+| L2 | Geometría básica: mallas y curvas exportables a STEP o renderizables | cerrada al 74.80% (barra re-ajustada por la regla pre-autorizada) |
+| Fase 5 (Visor: Piezas) | Parseo de .CATPart en WebAssembly en cliente, render 3D WebGL | hecho (Fase 5) |
+| Fase 6 (Ensamblajes) | Parseo de .CATProduct en cliente, instanciación multi-pieza, colocación 3D | hecho (Fase 6) |
+| L3 | B-rep paramétrico completo (sólidos CAD precisos) | planeado, el más difícil (Fase 7) |
 
 ## Progreso
 
-Tracker de implementación — 23 tickets bajo las specs
-[#8](https://github.com/MadManJohnSmith/catpart-parser/issues/8) (tooling),
-[#9](https://github.com/MadManJohnSmith/catpart-parser/issues/9) (inferencia
-de formato) y [#10](https://github.com/MadManJohnSmith/catpart-parser/issues/10)
-(parser L1). Se actualiza a medida que se cierran los tickets; el estado
-autoritativo vive en el issue tracker.
+Resumen spec por spec — el estado autoritativo por ticket vive en el
+[issue tracker](https://github.com/MadManJohnSmith/catpart-parser/issues).
 
-**Specs A/B/C completas (17/17, 2026-11-09). Fase 4 completa: spec D (#28, geometría L2) 6/6 tickets (G6 #34 cerrada 2026-11-13 — L2 al 74.80%, la barra re-ajustada al techo medido por la regla pre-autorizada). Fase 5 completa (spec E, #39 — autoridad de diseño `docs/specs/phase5-viewer-spec.md`): 7/7 tickets V0-V6 (#51 #40 #41 #42 #43 #52 #44) cerrados 2026-11-14 — Fidelity-1 0 mismatches (3,266/3,266, corrida completa de ambos slices), reproducción en el navegador al margen 0 declarado, visor vivo en gh-pages. Fase 6 completa (spec F, #45 — autoridad de diseño `docs/specs/phase6-assembly-viewer-spec.md`): los 12 tickets cerrados 2026-11-16 — decodificación de ensamblajes .CATProduct y colocación 3D espacial en WebAssembly, barra P4 cumplida sin enmascaramiento de identidad, suite de aceptación headless verificada (8/8 passed).**
-
-| Spec | Ticket | Estado |
+| Spec | Alcance | Estado |
 |---|---|---|
-| A | [#11](https://github.com/MadManJohnSmith/catpart-parser/issues/11) A1 package skeleton & CLI | hecho |
-| A | [#13](https://github.com/MadManJohnSmith/catpart-parser/issues/13) A3 version detection + manifest backfill | hecho |
-| A | [#14](https://github.com/MadManJohnSmith/catpart-parser/issues/14) A4 fitness runner | hecho |
-| A | [#12](https://github.com/MadManJohnSmith/catpart-parser/issues/12) A2 fixture generator | hecho |
-| A | [#15](https://github.com/MadManJohnSmith/catpart-parser/issues/15) A5 GitHub Actions CI (after A2) | hecho |
-| A | [#16](https://github.com/MadManJohnSmith/catpart-parser/issues/16) A6 gh-pages publication | hecho |
-| B | [#17](https://github.com/MadManJohnSmith/catpart-parser/issues/17) B1 container table & trailer | hecho |
-| B | [#19](https://github.com/MadManJohnSmith/catpart-parser/issues/19) B3 container payload blocks | hecho |
-| B | [#18](https://github.com/MadManJohnSmith/catpart-parser/issues/18) B2 header/tail semantics | hecho |
-| B | [#20](https://github.com/MadManJohnSmith/catpart-parser/issues/20) B4 CGMGeom/CATCGRCont payloads | hecho |
-| B | [#21](https://github.com/MadManJohnSmith/catpart-parser/issues/21) B5 R19 vs R21 differential | hecho |
-| B | [#22](https://github.com/MadManJohnSmith/catpart-parser/issues/22) B6 format document v1 (Phase 2 close) | hecho |
-| C | [#23](https://github.com/MadManJohnSmith/catpart-parser/issues/23) C1 schema v1 + L1 baseline | hecho |
-| C | [#24](https://github.com/MadManJohnSmith/catpart-parser/issues/24) C2 feature tree (documented negative) | hecho |
-| C | [#25](https://github.com/MadManJohnSmith/catpart-parser/issues/25) C3 units/names (document_name; units negative) | hecho |
-| C | [#26](https://github.com/MadManJohnSmith/catpart-parser/issues/26) C4 Phase 3 acceptance | hecho |
-| C | [#27](https://github.com/MadManJohnSmith/catpart-parser/issues/27) C5 fitness publication (after A6) | hecho |
-| D | [#29](https://github.com/MadManJohnSmith/catpart-parser/issues/29) G1 nested store navigation decoded | hecho |
-| D | [#30](https://github.com/MadManJohnSmith/catpart-parser/issues/30) G2 vertex pool decoded | hecho |
-| D | [#31](https://github.com/MadManJohnSmith/catpart-parser/issues/31) G3 primitive semantics (triangles) | hecho |
-| D | [#32](https://github.com/MadManJohnSmith/catpart-parser/issues/32) G4 catpart-export CLI + geometry fixtures | hecho |
-| D | [#33](https://github.com/MadManJohnSmith/catpart-parser/issues/33) G5 L2 fitness + publication | hecho |
-| D | [#34](https://github.com/MadManJohnSmith/catpart-parser/issues/34) G6 grind L2 to the bar (Phase 4 close) | hecho (cerrada al 74.80%) |
-| E | [#51](https://github.com/MadManJohnSmith/catpart-parser/issues/51) V0 Rust toolchain + port crate skeleton + CI wiring (Phase 5 opens) | hecho |
-| E | [#40](https://github.com/MadManJohnSmith/catpart-parser/issues/40) V1 port L1 slice + Fidelity harness (L1 fidelity at the seam) | hecho |
-| E | [#41](https://github.com/MadManJohnSmith/catpart-parser/issues/41) V2 port geometry core non-composite (numeric contract live; keystone arm seam-covered) | hecho |
-| E | [#42](https://github.com/MadManJohnSmith/catpart-parser/issues/42) V3 port composite decode — the whale (decode pipeline complete in Rust) | hecho |
-| E | [#43](https://github.com/MadManJohnSmith/catpart-parser/issues/43) V4 WASM boundary + viewer shell (decode in the browser) | hecho |
-| E | [#52](https://github.com/MadManJohnSmith/catpart-parser/issues/52) V5 in-browser reproduction — margin 0 declared pre-run; 1,442/1,442 match, both splits WITHIN exact | hecho |
-| E | [#44](https://github.com/MadManJohnSmith/catpart-parser/issues/44) V6 Phase 5 acceptance + publication (Fidelity-1 full run 3,266/3,266; viewer live on gh-pages — Phase 5 close) | hecho |
-| F | [#46](https://github.com/MadManJohnSmith/catpart-parser/issues/46) P1 product census (382/382 clasificados, techo publicado, registros localizados) | hecho |
-| F | [#53](https://github.com/MadManJohnSmith/catpart-parser/issues/53) P2 structure pool pairing law (tripletas de identidad 216/253 hecho; techo 260 reconciliado) | hecho |
-| F | P4 Barra de ensamblaje de Fase 6 declarada (Opción 2 barra colocada, compuerta pre-compromiso) | hecho |
-| F | P2.5 Probe de codificación de valores _Position (cuaternión w-first [t, q] f64le decodificado) | hecho |
-| F | P2.6 Probe de binding de instancias (anatomía 129B/81B, tiling de contenedores, reconciliación) | hecho |
-| F | P3-V0 Rust product core (framing, pool, pairing en port/src/product/) | hecho |
-| F | P3-V1 Decodificadores de registros de transformación y motor de binding | hecho |
-| F | P3-V2 Límite WASM y empaquetado (decode_product_structure expuesto) | hecho |
-| F | Fixtures Generador de fixtures de ensamblaje multi-archivo sintéticos y suite de pruebas | hecho |
-| F | P3-V3 Ingesta multi-archivo y catálogo virtual (carpetas/zip/resolución de stems) | hecho |
-| F | P3-V4 Colocación 3D espacial y grafo de escena (instanciación, buffers GPU compartidos) | hecho |
-| F | P3-V5 UI de ensamblaje y árbol de clasificación (conteos de 4 estados, inspector) | hecho |
-| F | P3-V6 Runner de aceptación headless de Playwright y arnés de pruebas | hecho |
+| A — tooling y CI ([#8](https://github.com/MadManJohnSmith/catpart-parser/issues/8)) | esqueleto del paquete, CLI, generador de fixtures, runner de fitness, GitHub Actions, gh-pages | 6/6 hecho (2026-11-09) |
+| B — inferencia de formato ([#9](https://github.com/MadManJohnSmith/catpart-parser/issues/9)) | tabla de contenedores y trailer, semántica de cabecera/cola, payload blocks, CGMGeom/CATCGRCont, R19 vs R21, doc de formato v1 | 6/6 hecho (2026-11-09) |
+| C — parser L1 ([#10](https://github.com/MadManJohnSmith/catpart-parser/issues/10)) | schema v1 + baseline, árbol de features, nombres/unidades, aceptación, publicación | 5/5 hecho (Fase 3, 2026-11-08) |
+| D — geometría L2 ([#28](https://github.com/MadManJohnSmith/catpart-parser/issues/28)) | navegación de stores, vertex pool, semántica de primitivas, CLI de exportación, fitness L2, grind hasta la barra | 6/6 hecho (Fase 4, 2026-11-13, cerrada al 74.80%) |
+| E — visor WASM ([#39](https://github.com/MadManJohnSmith/catpart-parser/issues/39)) | toolchain Rust, port L1/L2 + arnés de fidelidad, decode composite, límite WASM + shell del visor, reproducción en el navegador, publicación | 7/7 hecho (Fase 5, 2026-11-14) |
+| F — ensamblajes ([#45](https://github.com/MadManJohnSmith/catpart-parser/issues/45)) | censo de products, ley de emparejamiento, transformaciones y binding de instancias, núcleo de producto en WASM, ingesta multi-archivo, colocación 3D, UI + árbol de clasificación, aceptación headless con Playwright | 12/12 hecho (Fase 6, 2026-11-16) |
+| G — B-rep ([#47](https://github.com/MadManJohnSmith/catpart-parser/issues/47)) | B-rep paramétrico completo (Fase 7) | en curso |
 
-### Pipeline Arquitectónico de Ensamblajes
+## Arquitectura
+
+Dos implementaciones mantenidas en sincronía por el arnés de fidelidad: la
+referencia en Python (`src/catpart/`) y el port Rust→WASM (`port/`) que
+alimenta al visor del navegador. El pipeline de ensamblajes:
 
 ```mermaid
 flowchart TD
@@ -212,7 +151,7 @@ flowchart TD
     end
 
     subgraph ViewerScene["3. Grafo de Escena 3D en Navegador (Three.js)"]
-        CAT --> STEM["Emparejador de Stems por Nombre"]
+        CAT --> STEM["Emparejador de Stems Normalizado\n(por nombre, case-insensitive)"]
         WASM --> STEM
         STEM --> CACHE["Caché de Geometría\n(Asignación Única por Pieza)"]
         CACHE --> INST["Nodos de Instanciación 3D\n(Buffers GPU Compartidos)"]
@@ -233,22 +172,38 @@ flowchart TD
     end
 ```
 
-## Hoja de ruta
+## Desarrollo
 
-| Nivel / Fase | Entregable | Estado |
-|---|---|---|
-| L0 | Corpus público + triage a nivel de bytes con evidencia reproducible | hecho (Fases 0/1) |
-| L1 | Mapa de contenedores/secciones, metadatos, inventario de contenedores, nombres | hecho (Fase 3) |
-| L2 | Geometría básica: mallas y curvas exportables a STEP o renderizables | cerrada al 74.80% (barra re-ajustada por la regla pre-autorizada) |
-| Fase 5 (Visor: Piezas) | Parseo de .CATPart en WebAssembly en cliente, render 3D WebGL | hecho (Fase 5) |
-| Fase 6 (Ensamblajes) | Parseo de .CATProduct en cliente, instanciación multi-pieza, colocación 3D | hecho (Fase 6) |
-| L3 | B-rep paramétrico completo (sólidos CAD precisos) | planeado, el más difícil (Fase 7) |
+Layout del repositorio:
+
+| Ruta | Contenido |
+|---|---|
+| `src/catpart/` | Implementación de referencia en Python (`catpart-inspect` / `-export` / `-fitness`) |
+| `port/` | Port Rust → WASM que alimenta al visor del navegador (toolchain fijado en `port/rust-toolchain.toml`) |
+| `docs/` | docs de formato, ROADMAP, ADRs, specs, evidencia |
+| `fitness/` | `history.jsonl` + reportes por corrida (append-only) |
+| `manifests/` | CSV del manifest del corpus |
+| `scripts/` | scripts de triage, publicación de fitness, runners de aceptación |
+| `viewer/` | fuentes del visor del navegador — publicadas desde la rama `gh-pages` |
+
+Setup local y merge gate (espejo de CI):
+
+```console
+$ python -m venv .venv && .venv/bin/pip install -e '.[test,lint]'
+$ scripts/check.sh    # ruff fijado + pytest + la suite cargo de port/
+```
+
+El corpus nunca se commitea, descarga ni cachea — CI corre sin fixtures
+(ADR-0003); las corridas reales de fitness suceden localmente en la máquina
+que tiene `corpus/` y publican a `gh-pages`.
 
 ## Método
 
 - **Dirigido por corpus.** El fitness es la proporción del corpus que parsea
-  limpio, más verificaciones de sanidad geométrica (renderizable sin NaNs,
-  volúmenes cerrados).
+  limpiamente (L1), más la proporción de sanidad geométrica L2 de las piezas
+  cuya exportación es sana (malla manifold no vacía, bounding box finito;
+  el volumen cerrado donde se espera se reporta como componente, no como
+  compuerta).
 - **Dirigido por evidencia.** Cada afirmación estructural está atada a rangos
   de bytes concretos y digests de archivo; los hallazgos negativos también se
   registran.

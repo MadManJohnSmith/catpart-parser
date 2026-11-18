@@ -28,6 +28,14 @@ echo "check: ruff check ."
 "$RUFF" check .
 echo "check: pytest -q"
 "$PY" -m pytest -q
+# Claims-CSV composability (dispatch hard rule, see
+# docs/agents/dispatch-recipes.md): every docs/evidence/data/*claims*.csv
+# must parse at header width so csv.DictReader cannot shift rate/label/scope
+# into wrong columns. The BR5 review found this checker was documented as
+# gate-covered but never invoked here, so an unquoted-comma claims row could
+# land green.
+echo "check: claims CSV quoting"
+"$PY" scripts/triage/check_claims_csv_quoting.py
 # Port crate (Phase 5 spec §7, ticket #51): the cargo steps mirror
 # ci.yml's port job, same order. From V0 the Rust toolchain is a
 # REQUIRED dev dependency — a machine without it fails the gate

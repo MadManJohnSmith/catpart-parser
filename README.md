@@ -21,8 +21,8 @@ triangles)](docs/readme-assets/viewer-demo.gif)
 
 The L1 badge is the fitness headline (one headline per level, ADR-0001),
 read from the `gh-pages` endpoint and refreshed locally by
-`scripts/publish_fitness.py` — never in CI. The accepted-run series for L1
-and L2 lives in `fitness/history.jsonl` (append-only) and
+`scripts/publish_fitness.py` — never in CI (ADR-0003). The accepted-run
+series for L1 and L2 lives in `fitness/history.jsonl` (append-only) and
 `fitness-history.json`.
 
 ## Why
