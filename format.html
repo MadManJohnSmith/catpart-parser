@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Format portal — catpart-parser</title>
+<meta name="description" content="The reverse-engineered CATIA V5 binary structures: header, container table, payload blocks, geometry, trailer and validation.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1120'/%3E%3Cpath d='M22 10a8 8 0 1 0 0 12' stroke='%2338e1ff' stroke-width='3.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page"><div class="wrap">
+
+  <nav data-page="format"></nav>
+
+  <div class="page-head">
+    <div class="crumb">docs/format · rendered live</div>
+    <h1>The format, documented</h1>
+    <p class="lead">Everything the parser knows about the CATIA V5 binary layout — structures decoded
+    from bytes, each claim carried with a byte range and a reproduction command. These pages render
+    the committed <code>docs/format/</code> sources directly.</p>
+  </div>
+
+  <div class="doc-layout">
+    <div class="doc-list" id="doc-list"></div>
+    <div class="doc-pane md" id="doc-pane">
+      <div class="doc-status" id="doc-status">Loading…</div>
+      <div id="doc-body"></div>
+    </div>
+  </div>
+
+  <footer data-common></footer>
+
+</div></div>
+
+<script src="markdown.js"></script>
+<script src="common.js"></script>
+<script>
+(function () {
+  var DOCS = [
+    ["README.md", "Overview"],
+    ["header.md", "Header"],
+    ["container-table.md", "Container table"],
+    ["payload-blocks.md", "Payload blocks"],
+    ["geometry.md", "Geometry"],
+    ["tail-catalog.md", "Tail catalog"],
+    ["trailer.md", "Trailer"],
+    ["validation.md", "Validation"],
+  ];
+  var list = document.getElementById("doc-list");
+  list.innerHTML = DOCS.map(function (d) {
+    return '<a href="#' + d[0] + '" data-f="' + d[0] + '">' + d[1] + "</a>";
+  }).join("");
+
+  var statusEl = document.getElementById("doc-status");
+  var bodyEl = document.getElementById("doc-body");
+
+  function show(name) {
+    var entry = DOCS.filter(function (d) { return d[0] === name; })[0] || DOCS[0];
+    name = entry[0];
+    list.querySelectorAll("a").forEach(function (a) {
+      a.classList.toggle("active", a.getAttribute("data-f") === name);
+    });
+    statusEl.textContent = "docs/format/" + name + " · rendered by a minimal renderer (source of truth: the repo)";
+    bodyEl.innerHTML = '<p style="color:#64789b">Loading…</p>';
+    fetch("format/" + name, { cache: "no-cache" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.text();
+      })
+      .then(function (text) {
+        bodyEl.innerHTML = window.MD.renderMarkdown(text);
+        var first = bodyEl.querySelector("h1");
+        if (first && entry[1] !== "Overview") first.remove(); // the page head already names it
+        document.title = entry[1] + " — catpart-parser format";
+      })
+      .catch(function (e) {
+        bodyEl.innerHTML =
+          '<p style="color:#ff7a7a">Could not load <code>format/' + name + "</code> (" +
+          e.message + '). The docs ship with the repository: see them on ' +
+          '<a href="https://github.com/MadManJohnSmith/catpart-parser/tree/main/docs/format">GitHub</a>.</p>';
+      });
+  }
+
+  window.addEventListener("hashchange", function () { show(location.hash.slice(1)); });
+  show(location.hash.slice(1) || "README.md");
+})();
+</script>
+</body>
+</html>

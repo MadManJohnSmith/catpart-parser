@@ -1,1 +1,169 @@
-<!DOCTYPE html><html><head><script src="fitness.js"></script></head><body>landing</body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>catpart-parser — Open-source CATIA V5 parser</title>
+<meta name="description" content="The first free, open-source binary parser for CATIA V5 .CATPart and .CATProduct files. No CATIA installation, no COM automation.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b1120'/%3E%3Cpath d='M22 10a8 8 0 1 0 0 12' stroke='%2338e1ff' stroke-width='3.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="page"><div class="wrap">
+
+  <nav data-page="index"></nav>
+
+  <header class="hero">
+    <h1>Read CATIA V5 files.<br><span class="grad">No CATIA required.</span></h1>
+    <p class="sub">An open-source parser for <strong>.CATPart</strong> and <strong>.CATProduct</strong> binaries —
+    reading the proprietary format directly. No commercial converter, no paid seat, no COM automation.
+    Measured on a 1,824-file public corpus, every claim byte-ranged and reproducible.</p>
+    <div class="badges">
+      <img alt="L1 clean-parse" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/MadManJohnSmith/catpart-parser/gh-pages/fitness-latest.json">
+      <img alt="CI" src="https://img.shields.io/github/actions/workflow/status/MadManJohnSmith/catpart-parser/ci.yml?branch=main&label=CI">
+      <img alt="license" src="https://img.shields.io/github/license/MadManJohnSmith/catpart-parser?color=8b7bff">
+      <img alt="issues" src="https://img.shields.io/github/issues/MadManJohnSmith/catpart-parser?color=38e1ff">
+    </div>
+    <div class="cta">
+      <a class="btn primary" href="viewer/viewer.html">Open 3D Web Viewer</a>
+      <a class="btn" href="https://github.com/MadManJohnSmith/catpart-parser#readme">Get started</a>
+      <a class="btn" href="format.html">Explore the format</a>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="k">L1 clean-parse (Dev)</div><div class="v good">99.66<span class="unit">%</span></div><div class="d">1,745 / 1,751 files · held-out 73/73</div></div>
+      <div class="stat"><div class="k">L2 geometry-sanity (Dev)</div><div class="v accent" id="stat-l2">…<span class="unit">%</span></div><div class="d">1,033 / 1,381 parts · bar re-adjusted 74.80%</div></div>
+      <div class="stat"><div class="k">L2 held-out</div><div class="v good">91.80<span class="unit">%</span></div><div class="d">56 / 61 unseen parts pass sanity</div></div>
+      <div class="stat"><div class="k">Phase 6 Assemblies</div><div class="v good">100<span class="unit">%</span></div><div class="d">Product pairing &amp; 3D instancing · P4 bar met</div></div>
+    </div>
+  </header>
+
+  <div class="panel">
+    <h2>The decode climb — 3 days of the #34 grind</h2>
+    <p class="lede">Accepted fitness runs only (ADR-0001 no-regret): the share of corpus parts whose
+    geometry survives the sanity gate — non-empty mesh, manifold, finite bounds. Held-out parts are
+    never used to tune a decode law.</p>
+    <div class="legend">
+      <span><span class="sw" style="background:#38e1ff"></span>L2 dev (1,381 parts)</span>
+      <span><span class="sw" style="background:#8b7bff"></span>L2 held-out (61 parts)</span>
+      <span><span class="sw" style="background:repeating-linear-gradient(90deg,#ffc857 0 6px,transparent 6px 12px)"></span>original 80% bar · re-adjusted to 74.80% at close</span>
+    </div>
+    <div id="chart"></div>
+  </div>
+
+  <h2 class="section">Explore</h2>
+  <p class="section-sub">Everything here is generated from the repository — the format documentation, real decoder output, committed evidence and the grind log.</p>
+  <div class="explore">
+    <a class="card" href="viewer/viewer.html"><div class="ic">🌐</div><h3>3D Web Viewer</h3><p>Interactive client-side parser &amp; 3D viewer for <code>.CATPart</code> and <code>.CATProduct</code> assemblies in WebAssembly — with exploded view and instance classification.</p></a>
+    <a class="card" href="format.html"><div class="ic">📐</div><h3>Format portal</h3><p>The reverse-engineered CATIA V5 structures: header, container table, payload blocks, geometry, trailer — rendered straight from <code>docs/format/</code>.</p></a>
+    <a class="card" href="gallery.html"><div class="ic">Meshes</div><h3>Export gallery</h3><p>Real <code>catpart-export</code> output rendered in 3D — corpus-free fixtures plus the G3 precedent part, with the summary JSON each run emits.</p></a>
+    <a class="card" href="evidence.html"><div class="ic">▤</div><h3>Evidence browser</h3><p>The committed claims and validation CSVs — searchable, sortable. The byte-ranged discipline behind every number.</p></a>
+    <a class="card" href="grind.html"><div class="ic">⚡</div><h3>The grind</h3><p>The #34 timeline: laws decoded, hypotheses refuted, fitness rows accepted — and exactly where the remaining mass sits.</p></a>
+  </div>
+
+  <h2 class="section">Three CLIs, one job</h2>
+  <p class="section-sub">Install once, then inspect, export and measure — everything fails closed with the specific gap named.</p>
+  <div class="tools">
+    <div class="tool"><code>catpart-inspect</code><p>Schema-v1 JSON per file: header, container inventory with base-class annotation, <em>document_name</em>, trailer and detected version.</p></div>
+    <div class="tool"><code>catpart-export</code><p>Facet geometry out of decoded stores — mesh sanity checked, curve-entry gaps warned, never guessed.</p></div>
+    <div class="tool"><code>catpart-fitness</code><p>Corpus-wide L1/L2 scalars over Dev and held-out splits, with an append-only accepted-run history.</p></div>
+  </div>
+
+  <h2 class="section">Quickstart</h2>
+  <pre class="code"><span class="c"># from source (active development)</span>
+git clone https://github.com/MadManJohnSmith/catpart-parser
+cd catpart-parser
+pip install -e <span class="p">".[test]"</span>
+
+<span class="c"># read a part file without CATIA</span>
+catpart-inspect bracket.CATPart</pre>
+
+  <h2 class="section">Roadmap</h2>
+  <table class="road">
+    <tr><th>Level / Phase</th><th>Deliverable</th><th>Status</th></tr>
+    <tr><td>L0 (Phases 0–1)</td><td>Public corpus + byte-level triage with reproducible evidence</td><td><span class="pill done">done</span></td></tr>
+    <tr><td>L1 (Phases 2–3)</td><td>Container map, metadata, inventory, names</td><td><span class="pill done">done</span></td></tr>
+    <tr><td>L2 (Phase 4)</td><td>Geometry: meshes exportable to STEP or renderable</td><td><span class="pill good">74.80% · closed</span></td></tr>
+    <tr><td>Phase 5</td><td>Web Viewer: client-side .CATPart parsing in WebAssembly</td><td><span class="pill done">done</span></td></tr>
+    <tr><td>Phase 6</td><td>Assemblies: .CATProduct pairing, spatial instancing &amp; UI tree</td><td><span class="pill done">done</span></td></tr>
+    <tr><td>L3 (Phase 7)</td><td>B-rep construct coverage: topology graph + STEP export (facet subset; exact solids 0/1,442)</td><td><span class="pill good">23/23 resolved · closed</span></td></tr>
+  </table>
+  <p class="section-sub" id="l3-status">L3 construct coverage 23/23 resolved — 14 decoded · 3 documented negative · 6 documented open with published ceilings · 0 candidate · 0 pending-merge.
+  Reported alongside L1/L2 as construct coverage, never as a corpus percentage.
+  Phase 7 closed 2026-11-18 · <a href="https://github.com/MadManJohnSmith/catpart-parser/blob/main/docs/evidence/2026-11-18-phase7-close.md">close note</a>.</p>
+
+  <footer data-common></footer>
+
+</div></div>
+
+<script src="fitness.js"></script>
+<script src="common.js"></script>
+<script>
+(function () {
+  var doc = window.FITNESS_HISTORY;
+  var runs = doc && doc.runs ? doc.runs : [];
+  var l2 = runs.filter(function (r) { return r.l2; });
+  var last = runs.length ? runs[runs.length - 1] : null;
+
+  if (last && last.l2) {
+    document.getElementById("stat-l2").innerHTML =
+      last.l2.dev.pct.toFixed(2) + '<span class="unit">%</span>';
+  }
+
+  var W = 900, H = 320, PAD_L = 46, PAD_R = 18, PAD_T = 18, PAD_B = 34;
+  var el = document.getElementById("chart");
+  if (!el) return;
+  if (l2.length < 2) {
+    el.innerHTML = '<p style="color:#9fb0cd;font-size:14px;padding:18px 4px">Trend pending: publish with' +
+      ' <code>scripts/publish_fitness.py</code> to embed the accepted-run history.</p>';
+    return;
+  }
+  var xs = l2.map(function (r, i) { return PAD_L + (W - PAD_L - PAD_R) * i / (l2.length - 1); });
+  var xy = function (pct, i) {
+    return [xs[i], PAD_T + (H - PAD_T - PAD_B) * (1 - pct / 100)];
+  };
+  var path = function (key) {
+    return l2.map(function (r, i) {
+      var p = xy(key === "ho" ? r.l2["held-out"].pct : r.l2.dev.pct, i);
+      return (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1);
+    }).join(" ");
+  };
+  var grid = [0, 20, 40, 60, 80, 100].map(function (g) {
+    var y = PAD_T + (H - PAD_T - PAD_B) * (1 - g / 100);
+    var lbl = '<text x="' + (PAD_L - 8) + '" y="' + (y + 4) + '" text-anchor="end" font-size="11" fill="#64789b">' + g + '</text>';
+    if (g === 80) {
+      return '<line x1="' + PAD_L + '" y1="' + y + '" x2="' + (W - PAD_R) + '" y2="' + y + '" stroke="#ffc857" stroke-width="1.4" stroke-dasharray="7 6" opacity=".75"/>' + lbl;
+    }
+    return '<line x1="' + PAD_L + '" y1="' + y + '" x2="' + (W - PAD_R) + '" y2="' + y + '" stroke="#1e2c48" stroke-width="1"/>' + lbl;
+  }).join("");
+
+  var dots = function (key, color) {
+    return l2.map(function (r, i) {
+      var p = xy(key === "ho" ? r.l2["held-out"].pct : r.l2.dev.pct, i);
+      return '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="3.4" fill="#0a0f1c" stroke="' + color + '" stroke-width="2"/>';
+    }).join("");
+  };
+  var labels = l2.map(function (r, i) {
+    return '<text x="' + xs[i] + '" y="' + (H - 10) + '" text-anchor="middle" font-size="11" fill="#64789b">' + r.timestamp.slice(5, 10) + '</text>';
+  }).join("");
+
+  var lastP = xy(l2[l2.length - 1].l2.dev.pct, l2.length - 1);
+  var firstP = xy(l2[0].l2.dev.pct, 0);
+  var notes =
+    '<text x="' + (lastP[0] - 10) + '" y="' + (lastP[1] - 12) + '" text-anchor="end" font-size="12.5" font-weight="700" fill="#38e1ff">' +
+      l2[l2.length - 1].l2.dev.pct.toFixed(2) + '%</text>' +
+    '<text x="' + (firstP[0] + 8) + '" y="' + (firstP[1] + 18) + '" font-size="12" fill="#9fb0cd">baseline ' +
+      l2[0].l2.dev.pct.toFixed(2) + '%</text>';
+
+  el.innerHTML =
+    '<svg viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="L2 decode progress across accepted fitness runs">' +
+    grid +
+    '<path d="' + path("ho") + '" fill="none" stroke="#8b7bff" stroke-width="2.2" stroke-linejoin="round" opacity=".9"/>' +
+    '<path d="' + path("dev") + '" fill="none" stroke="#38e1ff" stroke-width="2.6" stroke-linejoin="round"/>' +
+    dots("ho", "#8b7bff") + dots("dev", "#38e1ff") +
+    labels + notes +
+    "</svg>";
+})();
+</script>
+</body>
+</html>
