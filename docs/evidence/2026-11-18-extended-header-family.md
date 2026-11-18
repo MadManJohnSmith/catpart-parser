@@ -12,7 +12,7 @@ indices, like 0x42/0x4a/0x4c.
 **Shipped code**: `src/catpart/geometry/facets.py` (P1g count escape, header
 length from the `ff` position), `src/catpart/geometry/composite.py`
 (`parse_extended_facet_records`, the `ty`/`b3`/`b4` split, the closed-manifold
-weld gate), `src/catpart/geometry/export.py` (the weld warning's detail).
+per-loop weld), `src/catpart/geometry/export.py` (the weld and decline warnings).
 **Rust port** (2026-11-18, same commit family): `port/src/geometry/facets.rs`
 and `port/src/geometry/composite.rs` carry the same law, counters and warning
 strings; the differential parity table is section 11.
@@ -27,7 +27,7 @@ negative fixtures).
 | Fact | Verdict | Anchor measurement |
 | :--- | :--- | :--- |
 | F1 — the escaped facet count | **Landed.** The count position now uses the P1g escape (`ff` + `u32le`), the same encoding `composite.read_count` already applied to the list node's counts. | the Gabarit's two 528-ref 0x42 records parse as one count `(528,)`; each exports 526 triangles, 87.96 mm² (EXTH-11 rows; the pair = 175.92 mm², the ticket's +176) |
-| F2 — the extended header family | **Discovered and pinned.** `01 <mk> ty b3 b4 ff` (`ff` at +5): `ty` = independent triangles, `b3 + b4` = the counts-table length, `sum(counts) + 3*ty == n`; first `b3` loops are strips, last `b4` are polygon fans. | 13,300 accepted records over 581 parts; 13,300/13,300 pass the three byte laws; 0x4f b4 loops coplanar 23,356/24,934 (93.7%) |
+| F2 — the extended header family | **Discovered and pinned.** `01 <mk> ty b3 b4 ff` (`ff` at +5): `ty` = independent triangles, `b3 + b4` = the counts-table length, `sum(counts) + 3*ty == n`; first `b3` loops are strips, last `b4` are polygon fans. | 13,300 accepted records over 581 parts; the independent measurements hold (sum law 13,300/13,300, exact tiling 6,587/13,300, unit normal 4,075/4,075, b4 coplanarity 23,356/24,934 = 93.7%); the marker/`b3+b4`/refs rows are construction invariants (§5) |
 | Loop-split law | **Pinned** — not stopped at discovery. | the Gabarit's 9 records: 9/9 marker, `b3 + b4`, sum law; three 0x4f faces reproduce `pi*(r_out^2 - r_in^2)` to <2% |
 | Gabarit export | **Recovered**: 4,420 → 15,688 triangles; 401.89 → 27,082.12 mm²; open → **closed** manifold; 4,308 → 0 unused vertices | section 4 |
 
@@ -112,7 +112,7 @@ loop of 296; that re-split is what makes the store's assembled mesh close
 
 **Correction to the ticket's expected delta (measured, not massaged):** the
 part's *export* delta from the escape fix is larger than +176 because the
-correct split changes which loops the weld gate accepts. Measured with the
+correct split changes which loops the per-loop weld accepts. Measured with the
 escape reading reverted and everything else identical: 11,853 triangles /
 23,926.36 mm² (open, 2,439 boundary edges) vs 15,688 / 27,082.12 (closed) —
 the escaped reading is load-bearing for the closed-mesh weld, not just for
@@ -159,8 +159,11 @@ is what the pinned law carries; it is reported here as measured, and the
 
 The split is pinned by the header, not by a search:
 
-1. `k = b3 + b4` = the counts-table length (13,300/13,300 corpus records).
-2. `sum(counts) = n - 3*ty` (13,300/13,300).
+1. `k = b3 + b4` = the counts-table length — **construction invariant**: the
+   parser takes the loop count from the header and reads exactly that many
+   count bytes, so it cannot disagree (13,300/13,300 is by construction, not
+   a measurement).
+2. `sum(counts) = n - 3*ty` — an **independent measurement** (13,300/13,300).
 3. The first `3*ty` references are independent triangles; the counts then
    delimit the loops, **first `b3` loops under the strip law (0x42), last
    `b4` under the closed-polygon fan law (0x4c)**.
@@ -182,7 +185,7 @@ comparison isolates the split):
 The strip-only shortcut overdraws the plate 2.6× and the all-fan reading
 6.1×; both leave thousands of over-used edges, exactly the failure mode the
 ticket flagged. The pinned split is the only one with zero over-used edges,
-and with the weld gate it closes (section 4).
+and with the per-loop weld it closes (section 4).
 
 **Planar coherence** (the ticket's z=14/1/−0.5 probe): the 0x4f records put
 every triangle on one plane, and their `b4` polygon loops are coplanar against
@@ -191,22 +194,22 @@ corpus-wide — the non-coplanar remainder is the multi-plane fillet/bevel
 content the committed battery already treats as legitimate (stage-3b loop
 battery 98.3%).
 
-## 6. The weld gate (why the plate closes)
+## 6. Why the plate closes: the per-loop weld + the assembly gate
 
 The 9 records reference the store's skip slots (curve entries) on 542 loops
 (the four curve-sample loops of each face plus the short records' 11). The
-committed rule drops those loops (`curve-entry-loops-unexported`). On this
-store the dropped loops weld to their preceding written vertices (the U4-D dup
-law) and the merged mesh is a **closed manifold** — so the weld is accepted
-under a new structural gate: on a **non-empty** primary mesh the weld fires
-only when the assembled mesh is closed and manifold (every edge used twice, no
-boundary). The committed E0 unconditional acceptance is unchanged; every other
-store keeps the conservative drop.
+committed rule drops those loops (`curve-entry-loops-unexported`); the
+per-loop dup-pin weld (main's `ae254b1`, 2026-11-18) welds each one behind
+its battery and the incremental edge-use guard. On this store the accepted
+welds complete the shell: the assembled mesh is a **closed manifold** with
+every edge used exactly twice and every written point referenced.
 
-This is deliberately stronger than the stage-10/15 E0 rule and narrower than a
-general weld: the gate is a geometric invariant, not a store class. The
-negative direction is measured — the same code with the escape fix reverted
-produces an *open* mesh and the gate declines the weld (23,926 mm², section 3).
+The review's remediation applies the *same* lever to the extended family
+(section 12): a record's triangles are emitted only when they keep the
+assembled mesh manifold (the shared `_mesh_safe`/`mesh_safe` edge-use check
+the weld uses) and carry no degenerate emission. One lever, two call sites —
+not two gates: the extended check adds no new topology rule, it only refuses
+units that would break the invariant the weld already enforces.
 
 ## 7. Corpus measurement
 
@@ -217,13 +220,19 @@ produces an *open* mesh and the gate declines the weld (23,926 mm², section 3).
 | :--- | --: | --: | --: |
 | EXTH-01 parts with an extended-header candidate | 1,442 | 732 | 0.5076 |
 | EXTH-02 parts with ≥1 accepted record | 1,442 | 581 | 0.4029 |
-| EXTH-03 marker in family (0x47/0x4f) | 13,300 | 13,300 | 1.0000 |
-| EXTH-04 `b3 + b4` = counts length | 13,300 | 13,300 | 1.0000 |
-| EXTH-05 `sum(counts) + 3*ty == n` | 13,300 | 13,300 | 1.0000 |
-| EXTH-06 exact tile to the next header | 13,300 | 6,587 | 0.4953 |
-| EXTH-07 refs inside the element space | 13,300 | 13,300 | 1.0000 |
-| EXTH-08a 0x4f normal unit length | 4,075 | 4,075 | 1.0000 |
-| EXTH-08b 0x4f b4 loop coplanar | 24,934 | 23,356 | 0.9367 |
+| EXTH-03 marker in family (0x47/0x4f) — construction | 13,300 | 13,300 | 1.0000 |
+| EXTH-04 `b3 + b4` = counts length — construction | 13,300 | 13,300 | 1.0000 |
+| EXTH-05 `sum(counts) + 3*ty == n` — independent | 13,300 | 13,300 | 1.0000 |
+| EXTH-06 exact tile to the next header — independent | 13,300 | 6,587 | 0.4953 |
+| EXTH-07 refs inside the element space — construction | 13,300 | 13,300 | 1.0000 |
+| EXTH-08a 0x4f normal unit length — independent | 4,075 | 4,075 | 1.0000 |
+| EXTH-08b 0x4f b4 loop coplanar — independent | 24,934 | 23,356 | 0.9367 |
+
+Only EXTH-05/06/08a/08b are independent measurements. The marker filter
+(EXTH-03), the `b3 + b4` loop count (EXTH-04) and the in-element-space refs
+(EXTH-07) are the parser's construction: it accepts only the two markers,
+reads exactly `b3 + b4` counts, and rejects a candidate whose refs leave the
+space — they are stated as scope definitions, never counted as evidence.
 
 **What this detector does NOT discriminate** (the dispatch-rule line):
 - It does not test the 0x47 normal (none is stored): planarity is only
@@ -241,28 +250,46 @@ Synthetic negative fixtures: `probe_extended_header_family.py --selftest`
 (bad sum, out-of-range refs) and
 `tests/test_facets_tiling.py::test_raw_u8_reading_of_the_escaped_count_would_reject`.
 
-## 8. Export A/B (185-part stratified sample)
+## 8. Export A/B — the 581 carriers, complete (no size cap, no spacing)
 
-Sample: 8 parts per `detected_version` bucket, evenly spaced by size among
-parts ≤ 3 MB (185 distinct parts), each exported twice through the seam —
-once with `main`'s code, once with this branch — and scored with the single
-gate authority `catpart.fitness.runner._score_export`.
+The 581 parts that carry at least one accepted extended record (EXTH-02) are
+exported twice through the shipped seam — `main`'s code and this branch — and
+scored with the single gate authority `catpart.fitness.runner._score_export`.
+No size cap and no per-version spacing: every carrier is measured (1.58 GB of
+corpus, largest 190 MB).
 
 | measurement | claim | result |
 | :--- | :--- | :--- |
-| L2 pass before / after | EXAB-02 / EXAB-03 | 146 / 149 |
+| carriers exported twice | EXAB-01 | **581** |
+| L2 pass before / after | EXAB-02 / EXAB-03 | 539 / **559** |
 | pass → fail flips | EXAB-04 | **0** |
-| fail → pass flips | EXAB-05 | **3** (all `empty-mesh` → pass: `CorrugateTube1`, `SpatialLoft-4064E`, `Shell_VStf_005.1`) |
+| fail → pass flips | EXAB-05 | **20** |
 | not-manifold regressions | EXAB-06 | **0** |
-| triangle-count changes | EXAB-07 | 30 parts |
-| closed-mesh gains | EXAB-08 | 4 parts |
+| records declined by the new assembly gate | EXAB-09 | 628 on 16 parts |
+| parts gaining a closed mesh (non-empty base) | EXAB-10 | **86**, 0 real losses |
 
-The rows live in
-[br6-extended-header-ab-claims.csv](data/br6-extended-header-ab-claims.csv)
-(aggregates + one row per changed part).
+Rows: [br6-extended-header-ab-claims.csv](data/br6-extended-header-ab-claims.csv)
+(aggregates + one row per carrier whose row changed). The 19 "closed losses"
+the first pass showed are all base rows with **0 triangles** (an empty mesh is
+vacuously closed) that now export an open shell and pass — not a closed-mesh
+loss; the non-empty closed-gain set has zero losses.
 
-The 3 fail→pass rows are stores whose previously empty triangulation now has
-the extended family's triangles (26, 40, 5,877 triangles).
+The 9 parts the review found regressing are all back to pass, each with the
+gate declining the offending records:
+
+| part | records | declined | triangles |
+| :--- | --: | --: | --: |
+| CAASddEditStiffener | 9 | 3 | 7,946 |
+| CAASddCreateStiffener | 3 | 3 | 1,552 |
+| rodamiento_4mm | 83 | 13 | 20,736 |
+| Hitbox_Preview_01 | 37 | 31 | 13,749 |
+| R0805_L2.0-W1.3-H0.6_eucq | 6 | 1 | 236 |
+| Hitbox_WorkFile_main | 73 | 2 | — |
+| TouchCols_Wires | 29 | 3 | — |
+| _NPart#440520 | 14 | 1 | — |
+| Base (Case_Base / Base / Base inferior …) | 1–93 | 0–31 | — |
+
+Five decline examples with the record/geometry counts are in section 12.
 
 ## 9. Reproduction
 
@@ -296,18 +323,19 @@ print(build_export(Path('corpus/povdoigt/SP-02/CATIA/CATIA_vol/Usinage/Gabarit_t
   parity is demonstrated on the corpus, and the artifact is rebuilt from the
   ported code.
 
-## 11. Rust port parity (2026-11-18)
+## 11. Rust port parity (2026-11-18, rebased on `ae254b1`)
 
 The port mirrors the law byte-for-byte: the P1g count reader (escaped
 counts), the 6-byte header discovery (`facets::facet_headers`, the regex's
 leftmost-non-overlapping order), `composite::parse_extended_facet_records`
 (ty / b3 / b4 / `b3+b4` counts / `sum(counts)+3*ty == n` / in-element-space
 refs), the `triangulate` split (soup triples first, then b3 strips and b4
-polygons), the `welded_mesh_gate` (E0 unconditional, else closed+manifold)
-with its `closed-manifold-weld` law string, and the twin's warning text.
+polygons), the shared edge-use lever (`mesh_safe`, used by both the per-loop
+weld and the extended assembly gate), and the twin's warning text and
+`extended_header_*` keys (single-rep, per-rep, mixedwrite and raw paths).
 
 **Differential run** (`catpart-export` vs `fidelity-cli export`, the exact
-shipped seams, the 185-part sample of section 8; every figure a row of
+shipped seams, the 185-part stratified sample; every figure a row of
 [br6-extended-header-parity-claims.csv](data/br6-extended-header-parity-claims.csv)):
 
 | measurement | claim | result |
@@ -323,19 +351,25 @@ shipped seams, the 185-part sample of section 8; every figure a row of
 | manifold regressions | EXPAR-09 | **0** |
 | fail → pass | EXPAR-10 | 3 |
 
-The 20-part PLY sample is a subset of the 152 byte-compared exports
-(EXPAR-04), so it is byte-identical for the same reason. The Gabarit's Rust
-export is the same file byte-for-byte: 15,688 triangles, 27,082.12 mm²,
-closed manifold, 0 boundary edges, 0 unused vertices, and the summary is
-dict-identical (including `extended_header_records = 9`,
-`extended_header_triangles = 7,433`, `curve_entry_law = "closed-manifold-weld"`,
+Plus the **official Fidelity harness** (corpus mode, L2 slice, the
+composite-family-stratified sample; the harness's own per-row CSV):
+`--sample composite-stratified:20` → **154 / 154 match, 0 mismatches, 0
+harness-level failures**. The 20-part PLY sample is a subset of the 152
+byte-compared exports (EXPAR-04). The Gabarit's Rust export is the same file
+byte-for-byte: 15,688 triangles, 27,082.12 mm², closed manifold, 0 boundary
+edges, 0 unused vertices, and the summary is dict-identical (including
+`extended_header_records = 9`, `extended_header_triangles = 7,433`,
+`extended_header_declined` absent, `curve_entry_law = "e0b-dup-pin"`,
 `loops_curve_entry_exported = 542`).
 
-One divergence was found and fixed during the differential (not shipped):
-the Python raw-array path leaked the internal `extended_triangles` counter
-into its summary while the port did not; the counter is now popped on both
-sides, so the summary carries only `extended_header_records` /
-`extended_header_triangles`.
+`port/pkg` was rebuilt (`wasm-pack build --target web --release`) and
+`site/viewer/pkg` re-synced byte-identically from it.
+
+One divergence was found and fixed during the first differential (not
+shipped): the Python raw-array path leaked the internal `extended_triangles`
+counter into its summary while the port did not; both sides now lift it into
+`extended_header_triangles`, and the extended keys are emitted on every path
+(N1).
 
 Reproduction:
 
@@ -345,3 +379,36 @@ cargo build --release --manifest-path port/Cargo.toml
 port/target/release/fidelity-cli export <part> /tmp/rs.ply > /tmp/rs.json
 cmp /tmp/py.ply /tmp/rs.ply && python -c 'import json,sys; a=json.load(open("/tmp/py.json")); b=json.load(open("/tmp/rs.json")); assert a==b'
 ```
+
+## 12. Remediation: the manifold-assembly gate (2026-11-18, post-review)
+
+The review found the extended family was the one emission outside a
+structural check: 9 carrier parts flipped to not-manifold when the records
+merged with the short mesh. **Fix:** every extended record is emitted only
+when its triangles keep the assembled mesh manifold — the *same* incremental
+edge-use check the per-loop weld uses (`mesh_safe` / `_mesh_safe`), plus no
+degenerate emission (a degenerate skip is an L2 failure). One lever, two call
+sites: no second topology rule, no double gate. A refused record is declined
+**as a whole** (its skip-bearing loops are never weld candidates of a
+declined record), counted in `extended_header_declined`, and named by the
+warning class `extended-header-geometry-declined` — never silent.
+
+Gabarit: all 9 records accepted (the assembled mesh is closed manifold), so
+the closed gain is preserved — **15,688 triangles / 27,082.12 mm² / closed
+manifold / 0 boundary / 0 unused**. The 581-carrier A/B (section 8) has
+**0 pass→fail, 0 manifold regressions, 20 fail→pass**, and the 9 named
+regressions are back to pass.
+
+Five decline examples (all L2 pass):
+
+| part | records | declined | triangles |
+| :--- | --: | --: | --: |
+| CAASddEditStiffener | 9 | 3 | 7,946 |
+| CAASddCreateStiffener | 3 | 3 | 1,552 |
+| rodamiento_4mm | 83 | 13 | 20,736 |
+| Hitbox_Preview_01 | 37 | 31 | 13,749 |
+| R0805_L2.0-W1.3-H0.6_eucq | 6 | 1 | 236 |
+
+Declines are concentrated on the heavy carriers: LedStrips_Smooth declines
+493 of 4,763 records; the rest of the 16 affected parts decline 1–31 each
+(628 records in total).

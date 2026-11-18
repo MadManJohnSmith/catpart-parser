@@ -100,6 +100,8 @@ pub const WARN_NO_FACETS: &str = "no-facet-records";
 /// The composite-path warning classes (stage-10/12/15 #34; V3, #42).
 pub const WARN_CURVE_ENTRY: &str = "curve-entry-loops-unexported";
 pub const WARN_CURVE_ENTRY_EXPORTED: &str = "curve-entry-loops-exported-dup-pin";
+/// The extended-header manifold-assembly decline (2026-11-18).
+pub const WARN_EXTENDED_DECLINED: &str = "extended-header-geometry-declined";
 pub const WARN_DEDUP: &str = "duplicate-triangles-deduped";
 pub const WARN_DEDUP_DECLINED: &str = "duplicate-triangles-dedup-declined";
 
@@ -795,6 +797,20 @@ fn export_composite_store(
                  battery or mesh guard refuses stay unexported and \
                  counted under curve-entry-loops-unexported",
                 info.loops_curve_entry_exported.unwrap_or(0)
+            ),
+        });
+    }
+    if let Some(declined) = info.extended_header_declined {
+        warnings.push(Warning {
+            class: WARN_EXTENDED_DECLINED.to_string(),
+            detail: format!(
+                "{declined} \
+                 extended-header records (0x47/0x4f) declined: their \
+                 triangles would push an undirected edge past two uses \
+                 in the assembled mesh, so the record is not exported \
+                 (the 2026-11-18 manifold-assembly gate, \
+                 docs/evidence/2026-11-18-extended-header-family.md); \
+                 the store's other geometry exports unchanged"
             ),
         });
     }

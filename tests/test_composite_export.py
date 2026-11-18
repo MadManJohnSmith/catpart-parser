@@ -1380,7 +1380,13 @@ def test_labios_main_welds_panels_on_nonempty_primary_mesh(tmp_path, capsys):
     AFTER fix 1 + the gap-edge width battery (fix 2): 4,464 triangles /
     5,410.18 mm² (96.6% of the ~5,600 mm² envelope), manifold.
 
-    The test pins the 1+2 numbers and the zero-non-manifold outcome."""
+    2026-11-18 (the extended-header family): the store is a carrier
+    (27 records, all accepted behind the manifold-assembly gate), so the
+    pinned totals now include its 4,527 triangles / 1,614.63 mm²:
+    8,995 triangles / 7,024.81 mm², manifold, 29 loops welded under
+    ``e0b-dup-pin``. The per-loop weld assertions are unchanged in
+    kind — the store's primary mesh is non-empty and the welded loops
+    still ride the same battery + mesh guard."""
     from catpart.cli import main_export
 
     code = main_export([str(LABIOS_MAIN), "-o", str(tmp_path / "labios.ply")])
@@ -1389,14 +1395,16 @@ def test_labios_main_welds_panels_on_nonempty_primary_mesh(tmp_path, capsys):
     summary = json.loads(captured.out)
     validate(summary, load_schema("export-summary-v1"))
     info = summary["composite"]
-    assert summary["triangle_count"] == 4464
+    assert summary["triangle_count"] == 8995
     assert summary["vertex_count"] == 4813
     assert summary["mesh"]["manifold"] is True
     assert info["loops_curve_entry"] == 0
-    assert info["loops_curve_entry_exported"] == 10
+    assert info["loops_curve_entry_exported"] == 29
     assert info["curve_entry_law"] == "e0b-dup-pin"
+    assert info["extended_header_records"] == 27
+    assert info["extended_header_triangles"] == 4427
     vertices, faces = parse_ply(tmp_path / "labios.ply")
-    assert abs(_ply_area(vertices, faces) - 5410.18) < 0.05
+    assert abs(_ply_area(vertices, faces) - 7024.81) < 0.05
 # --- the escaped facet count + the extended-header family (2026-11-18) -----
 
 
@@ -1487,14 +1495,19 @@ def test_parse_extended_facet_records_rejects_out_of_range_refs() -> None:
 def test_triangulate_extended_record_soup_strips_polygons() -> None:
     """The extended record's refs decode under the pinned split: `ty`
     independent triangles, then the first `b3` loops under the strip law
-    and the last `b4` loops under the polygon-fan law."""
+    and the last `b4` loops under the polygon-fan law — emitted only
+    when the assembled mesh stays manifold (the 2026-11-18 gate)."""
     elements = [
         (0, (0.0, 0.0, 0.0)),
         (0, (1.0, 0.0, 0.0)),
         (0, (0.0, 1.0, 0.0)),
-        (0, (1.0, 1.0, 0.0)),
-        (0, (2.0, 1.0, 0.0)),
+        (0, (1.0, 0.0, 1.0)),
+        (0, (0.0, 0.0, 1.0)),
+        (0, (0.0, 1.0, 1.0)),
         (0, (2.0, 0.0, 0.0)),
+        (0, (3.0, 0.0, 0.0)),
+        (0, (3.0, 1.0, 0.0)),
+        (0, (2.0, 1.0, 0.0)),
     ]
     record = composite.ExtendedFacetRecord(
         offset=0,
@@ -1503,7 +1516,7 @@ def test_triangulate_extended_record_soup_strips_polygons() -> None:
         strips=1,
         polygons=1,
         counts=(3, 4),
-        refs=(0, 1, 2, 3, 4, 5, 0, 1, 2, 3),
+        refs=(0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
         end=0,
         normal=None,
     )
@@ -1514,5 +1527,25 @@ def test_triangulate_extended_record_soup_strips_polygons() -> None:
     assert len(triangles) == 4
     assert degenerate == 0
     assert stats["extended_triangles"] == 4
-    assert stats["loops_exported"] == 2  # strip + polygon (soup triples are not loops)
+    assert stats["extended_declined"] == 0
+    assert stats["loops_exported"] == 2  # strip + polygon (soup not a loop)
     assert stats["loops_curve_entry"] == 0
+    # The manifold-assembly gate: a second record re-using the fan's
+    # (6, 8) edge would push it to three uses -> declined as a whole.
+    overlapping = composite.ExtendedFacetRecord(
+        offset=1,
+        marker=0x47,
+        triangles=0,
+        strips=1,
+        polygons=0,
+        counts=(3,),
+        refs=(6, 8, 9),
+        end=1,
+        normal=None,
+    )
+    triangles, degenerate, stats = composite._triangulate(
+        elements, (), extended=[record, overlapping]
+    )
+    assert len(triangles) == 4
+    assert stats["extended_triangles"] == 4
+    assert stats["extended_declined"] == 1

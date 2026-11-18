@@ -759,6 +759,24 @@ def _edge_uses(triangles):
     return uses
 
 
+def _mesh_safe(edge_uses, tris):
+    """The incremental manifold guard (2026-11-18) — ONE topology lever.
+
+    True when adding ``tris`` keeps every undirected edge at two uses or
+    fewer, in which case the edges are folded into ``edge_uses``.  The
+    dup-pin weld (:func:`_e0b_dup_pin`) and the extended-header emission
+    (:func:`_triangulate`) share this single check; a refused unit
+    leaves the histogram untouched (fail-closed, deterministic in
+    record/loop order).  ``False`` means the unit would tip the
+    assembled mesh past the G3 manifold invariant."""
+    candidate = _edge_uses(tris)
+    if any(edge_uses.get(edge, 0) + n > 2 for edge, n in candidate.items()):
+        return False
+    for edge, n in candidate.items():
+        edge_uses[edge] = edge_uses.get(edge, 0) + n
+    return True
+
+
 def _e0b_dup_pin(elements, points, written_rank, dropped, triangles):
     """The dup-pin weld, evaluated PER LOOP behind a mesh guard
     (2026-11-18, #34).
@@ -821,17 +839,12 @@ def _e0b_dup_pin(elements, points, written_rank, dropped, triangles):
             # is not a clean facet — do not weld it.
             refused += 1
             continue
-        # Incremental manifold guard: any edge the candidate loop would
-        # push past two uses rejects the whole loop (no partial weld).
-        candidate = _edge_uses(tris)
-        if any(
-            edge_uses.get(edge, 0) + count > 2
-            for edge, count in candidate.items()
-        ):
+        # Incremental manifold guard (the shared _mesh_safe lever): any
+        # edge the candidate loop would push past two uses rejects the
+        # whole loop (no partial weld).
+        if not _mesh_safe(edge_uses, tris):
             refused += 1
             continue
-        for edge, count in candidate.items():
-            edge_uses[edge] = edge_uses.get(edge, 0) + count
         welded_triangles += tris
         degenerate += deg
         welded += 1
@@ -871,7 +884,15 @@ def _triangulate(elements, records, extended=()):
     triangles first (each is one triangle, not a loop — the loop counters
     exclude them), then the loops the counts delimit — the first
     ``strips`` loops under the 0x42 strip law, the last ``polygons``
-    loops under the 0x4c fan law. Skip-slot references follow the same
+    loops under the 0x4c fan law. The family's geometry was the one
+    emission outside a structural check (the 2026-11-18 review: 9 carrier
+    parts flipped to not-manifold), so each record is emitted ONLY when
+    its triangles keep the assembled mesh manifold (:func:`_mesh_safe` —
+    the same lever as the weld) and its emission carries no degenerate
+    triangle (the G3 F7 skip convention makes any degenerate emission an
+    L2 failure). A record failing either test is declined as a whole,
+    counted in ``extended_declined``, and its skip-bearing loops stay
+    dropped; skip-slot references of an accepted record follow the same
     conservative curve-entry rule as the short records.
 
     Returns ``(triangles, degenerate, stats)`` where ``stats`` carries
@@ -919,15 +940,47 @@ def _triangulate(elements, records, extended=()):
             emit(mk, normal, refs[o : o + c])
             o += c
 
+    extended_declined = 0
+    edge_uses = _edge_uses(triangles)
     for rec in extended:
-        before = len(triangles)
+        rec_triangles = []
+        rec_degenerate = 0
+        rec_loops = 0
+        rec_dropped = []
         for j in range(0, 3 * rec.triangles, 3):
-            emit(0x42, rec.normal, rec.refs[j : j + 3], count_loop=False)
+            loop = rec.refs[j : j + 3]
+            if any(r in skips for r in loop):
+                rec_dropped.append((0x42, rec.normal, loop))
+                continue
+            idxs = [written_rank[r] for r in loop]
+            tris, deg = _loop_triangles(0x42, idxs, points)
+            rec_triangles += tris
+            rec_degenerate += deg
         o = 3 * rec.triangles
         for index, c in enumerate(rec.counts):
-            emit(0x42 if index < rec.strips else 0x4C, rec.normal, rec.refs[o : o + c])
+            loop = rec.refs[o : o + c]
             o += c
-        extended_triangles += len(triangles) - before
+            if not loop:
+                continue
+            kind = 0x42 if index < rec.strips else 0x4C
+            if any(r in skips for r in loop):
+                rec_dropped.append((kind, rec.normal, loop))
+                continue
+            idxs = [written_rank[r] for r in loop]
+            tris, deg = _loop_triangles(kind, idxs, points)
+            rec_triangles += tris
+            rec_degenerate += deg
+            rec_loops += 1
+        if rec_degenerate == 0 and _mesh_safe(edge_uses, rec_triangles):
+            triangles += rec_triangles
+            degenerate += rec_degenerate
+            loops_exported += rec_loops
+            loops_curve_entry += len(rec_dropped)
+            dropped += rec_dropped
+            extended_triangles += len(rec_triangles)
+        else:
+            extended_declined += 1
+            loops_curve_entry += len(rec_dropped)
 
     stats = {
         "loops_exported": loops_exported,
@@ -935,6 +988,7 @@ def _triangulate(elements, records, extended=()):
     }
     if extended:
         stats["extended_triangles"] = extended_triangles
+        stats["extended_declined"] = extended_declined
     if dropped:
         stats["dup_pin"] = _e0b_dup_pin(
             elements, points, written_rank, dropped, triangles
@@ -1205,9 +1259,10 @@ def decode_composite_store(data, span, groups, kinds, allow_unrouted_elements=Fa
         if mk not in (0x42, 0x4A, 0x4C):
             skipped_markers[mk] = skipped_markers.get(mk, 0) + 1
 
-    # The extended records' triangle counter rides its own summary key
-    # (the soup triples are not loops).
+    # The extended records' counters ride their own summary keys (the
+    # soup triples are not loops; the declined records are named).
     ext_triangles = loop_stats.pop("extended_triangles", 0)
+    ext_declined = loop_stats.pop("extended_declined", 0)
     info = {
         "stage": "identity-table-walk",
         "element_decl": elem_decl,
@@ -1227,6 +1282,8 @@ def decode_composite_store(data, span, groups, kinds, allow_unrouted_elements=Fa
     if extended:
         info["extended_header_records"] = len(extended)
         info["extended_header_triangles"] = ext_triangles
+        if ext_declined:
+            info["extended_header_declined"] = ext_declined
     if curve_entry_law:
         info["curve_entry_law"] = "e0b-dup-pin"
         info["loops_curve_entry_exported"] = curve_entry_law
@@ -1350,6 +1407,11 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool):
     element_decl = 0
     curve_entries = 0
     node_bytes = 0
+    # N1 (2026-11-18 review): the per-rep path exports the extended
+    # family too, so its summary must name it like the single-rep path.
+    ext_records = 0
+    ext_triangles = 0
+    ext_declined = 0
     reps_unexported = []
     reps_dup_pin = []
     for k, d in enumerate(decoded):
@@ -1419,6 +1481,9 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool):
         degenerate += deg_k
         loop_stats["loops_exported"] += stats_k["loops_exported"]
         loop_stats["loops_curve_entry"] += stats_k["loops_curve_entry"]
+        ext_records += len(ext_k)
+        ext_triangles += stats_k.pop("extended_triangles", 0)
+        ext_declined += stats_k.pop("extended_declined", 0)
         facet_candidates += n_hdrs + ext_cands
         facet_records += len(records) + len(ext_k)
         write_count += d["write_count"]
@@ -1467,10 +1532,13 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool):
         "rep_reasons": reps_unexported,
         **loop_stats,
     }
+    if ext_records:
+        info["extended_header_records"] = ext_records
+        info["extended_header_triangles"] = ext_triangles
+        if ext_declined:
+            info["extended_header_declined"] = ext_declined
     if curve_entry_law:
-        info["curve_entry_law"] = (
-            "e0b-dup-pin"
-        )
+        info["curve_entry_law"] = "e0b-dup-pin"
         info["loops_curve_entry_exported"] = curve_entry_law
     # Stage-15 unordered-triangle dedup (see _apply_unordered_dedup):
     # the store-level gate — the reps' element spaces are disjoint, so
@@ -1690,11 +1758,12 @@ def _decode_raw_array(data, lo, hi, groups, payload, elem_decl):
         elements, records, extended=extended
     )
     # The raw-array path keeps the committed curve-entry rule (it has no
-    # weld branch; measured corpus incidence 0) and reports the extended
-    # records only through the facet counters: drop the weld candidate and
-    # the extended triangle counter so neither leaks into the summary.
+    # weld branch; measured corpus incidence 0) and names the extended
+    # family like every other path (N1): consume the weld candidate and
+    # lift the extended counters into their own summary keys.
     loop_stats.pop("dup_pin", None)
-    loop_stats.pop("extended_triangles", None)
+    ext_triangles = loop_stats.pop("extended_triangles", 0)
+    ext_declined = loop_stats.pop("extended_declined", 0)
     skipped_markers: dict[int, int] = {}
     for _o, mk, _n, _c, _refs, _w in records:
         if mk not in (0x42, 0x4A, 0x4C):
@@ -1711,6 +1780,11 @@ def _decode_raw_array(data, lo, hi, groups, payload, elem_decl):
         **raw_info,
         **loop_stats,
     }
+    if extended:
+        info["extended_header_records"] = len(extended)
+        info["extended_header_triangles"] = ext_triangles
+        if ext_declined:
+            info["extended_header_declined"] = ext_declined
     # Stage-15 unordered-triangle dedup (see _apply_unordered_dedup):
     # the raw path triangulates facet records like the other paths, so
     # the same duplicated-writer-content mechanism is in scope (measured
@@ -2077,6 +2151,11 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups):
     element_decl = 0
     curve_entries = 0
     node_bytes = 0
+    # N1 (2026-11-18 review): the per-rep path exports the extended
+    # family too, so its summary must name it like the single-rep path.
+    ext_records = 0
+    ext_triangles = 0
+    ext_declined = 0
     reps_unexported = []
     reps_dup_pin = []
     for k, d in enumerate(decoded):
@@ -2117,6 +2196,9 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups):
         degenerate += deg_k
         loop_stats["loops_exported"] += stats_k["loops_exported"]
         loop_stats["loops_curve_entry"] += stats_k["loops_curve_entry"]
+        ext_records += len(ext_k)
+        ext_triangles += stats_k.pop("extended_triangles", 0)
+        ext_declined += stats_k.pop("extended_declined", 0)
         facet_candidates += n_hdrs + ext_cands
         facet_records += len(records) + len(ext_k)
         write_count += d["write_count"]
@@ -2161,10 +2243,13 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups):
         "rep_laws": law_counts,
         **loop_stats,
     }
+    if ext_records:
+        info["extended_header_records"] = ext_records
+        info["extended_header_triangles"] = ext_triangles
+        if ext_declined:
+            info["extended_header_declined"] = ext_declined
     if curve_entry_law:
-        info["curve_entry_law"] = (
-            "e0b-dup-pin"
-        )
+        info["curve_entry_law"] = "e0b-dup-pin"
         info["loops_curve_entry_exported"] = curve_entry_law
     # Stage-15 unordered-triangle dedup (see _apply_unordered_dedup):
     # the store-level gate, as in _decode_per_rep.
