@@ -13,6 +13,9 @@ indices, like 0x42/0x4a/0x4c.
 length from the `ff` position), `src/catpart/geometry/composite.py`
 (`parse_extended_facet_records`, the `ty`/`b3`/`b4` split, the closed-manifold
 weld gate), `src/catpart/geometry/export.py` (the weld warning's detail).
+**Rust port** (2026-11-18, same commit family): `port/src/geometry/facets.rs`
+and `port/src/geometry/composite.rs` carry the same law, counters and warning
+strings; the differential parity table is section 11.
 **Probe**: `scripts/triage/probe_extended_header_family.py` (stdlib,
 deterministic, manifest order; `--selftest` carries the synthetic positive and
 negative fixtures).
@@ -208,7 +211,7 @@ produces an *open* mesh and the gate declines the weld (23,926 mm², section 3).
 ## 7. Corpus measurement
 
 `scripts/triage/probe_extended_header_family.py` over the full manifest
-(1,442 `kind=part` rows; 58 claims CSVs still parse at header width):
+(1,442 `kind=part` rows; 59 claims CSVs still parse at header width):
 
 | claim | observations | passes | rate |
 | :--- | --: | --: | --: |
@@ -287,8 +290,58 @@ print(build_export(Path('corpus/povdoigt/SP-02/CATIA/CATIA_vol/Usinage/Gabarit_t
   dedup law does not fire — the coordinates differ).
 - The gap bytes of the 6,713 non-exact records are unread; `EXTH-06` bounds
   the number but not the content.
-- The Rust port (`port/src/geometry/composite.rs`) does not implement the
-  extended family yet: its exported summaries for these 581 parts will differ
-  from Python's until the port slice lands. The fidelity fixtures are
-  corpus-free and stay green; this is a known, named divergence, not a silent
-  one.
+- The Rust port now implements the extended family (section 11). The WASM
+  fixture subset does not yet carry a synthetic extended-header store (the A2
+  generator's variant list is shared with the Python gate); the boundary
+  parity is demonstrated on the corpus, and the artifact is rebuilt from the
+  ported code.
+
+## 11. Rust port parity (2026-11-18)
+
+The port mirrors the law byte-for-byte: the P1g count reader (escaped
+counts), the 6-byte header discovery (`facets::facet_headers`, the regex's
+leftmost-non-overlapping order), `composite::parse_extended_facet_records`
+(ty / b3 / b4 / `b3+b4` counts / `sum(counts)+3*ty == n` / in-element-space
+refs), the `triangulate` split (soup triples first, then b3 strips and b4
+polygons), the `welded_mesh_gate` (E0 unconditional, else closed+manifold)
+with its `closed-manifold-weld` law string, and the twin's warning text.
+
+**Differential run** (`catpart-export` vs `fidelity-cli export`, the exact
+shipped seams, the 185-part sample of section 8; every figure a row of
+[br6-extended-header-parity-claims.csv](data/br6-extended-header-parity-claims.csv)):
+
+| measurement | claim | result |
+| :--- | :--- | :--- |
+| sample parts | EXPAR-01 | 185 |
+| outcomes `match` | EXPAR-02 | **185 / 185** |
+| mismatches | EXPAR-03 | **0** |
+| PLY byte-identical (compared exports) | EXPAR-05 | **152 / 152** |
+| summaries dict-identical | EXPAR-06 | **152 / 152** |
+| error-class rows (both sides refused, same class) | — | 33 / 33 |
+| Rust L2 pass | EXPAR-07 | **149** |
+| pass → fail | EXPAR-08 | **0** |
+| manifold regressions | EXPAR-09 | **0** |
+| fail → pass | EXPAR-10 | 3 |
+
+The 20-part PLY sample is a subset of the 152 byte-compared exports
+(EXPAR-04), so it is byte-identical for the same reason. The Gabarit's Rust
+export is the same file byte-for-byte: 15,688 triangles, 27,082.12 mm²,
+closed manifold, 0 boundary edges, 0 unused vertices, and the summary is
+dict-identical (including `extended_header_records = 9`,
+`extended_header_triangles = 7,433`, `curve_entry_law = "closed-manifold-weld"`,
+`loops_curve_entry_exported = 542`).
+
+One divergence was found and fixed during the differential (not shipped):
+the Python raw-array path leaked the internal `extended_triangles` counter
+into its summary while the port did not; the counter is now popped on both
+sides, so the summary carries only `extended_header_records` /
+`extended_header_triangles`.
+
+Reproduction:
+
+```
+cargo build --release --manifest-path port/Cargo.toml
+.venv/bin/catpart-export  <part> -o /tmp/py.ply > /tmp/py.json
+port/target/release/fidelity-cli export <part> /tmp/rs.ply > /tmp/rs.json
+cmp /tmp/py.ply /tmp/rs.ply && python -c 'import json,sys; a=json.load(open("/tmp/py.json")); b=json.load(open("/tmp/rs.json")); assert a==b'
+```

@@ -782,10 +782,10 @@ fn export_composite_store(
         warnings.push(Warning {
             class: WARN_CURVE_ENTRY_EXPORTED.to_string(),
             detail: format!(
-                "{} facet \
-                 loops referencing skip slots (curve entries) exported \
-                 under the dup-pin law (#34; stage-10 2026-11-12, made \
-                 per loop 2026-11-18): each loop was fully pinnable, \
+                "{} facet loops \
+                 referencing skip slots (curve entries) exported under \
+                 the dup-pin law (#34; stage-10 2026-11-12, made per \
+                 loop 2026-11-18): each loop was fully pinnable, \
                  battery-supported (its record carries no normal, or \
                  the dup-pinned coordinates are coplanar at 2e-3) and \
                  mesh-safe (its triangles keep the assembled mesh \

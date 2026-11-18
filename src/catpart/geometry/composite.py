@@ -1690,9 +1690,11 @@ def _decode_raw_array(data, lo, hi, groups, payload, elem_decl):
         elements, records, extended=extended
     )
     # The raw-array path keeps the committed curve-entry rule (it has no
-    # weld branch; measured corpus incidence 0): drop the candidate so it
-    # cannot leak into the summary.
+    # weld branch; measured corpus incidence 0) and reports the extended
+    # records only through the facet counters: drop the weld candidate and
+    # the extended triangle counter so neither leaks into the summary.
     loop_stats.pop("dup_pin", None)
+    loop_stats.pop("extended_triangles", None)
     skipped_markers: dict[int, int] = {}
     for _o, mk, _n, _c, _refs, _w in records:
         if mk not in (0x42, 0x4A, 0x4C):
