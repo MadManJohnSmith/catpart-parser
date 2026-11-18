@@ -441,12 +441,12 @@ def evaluate_no_regret(
             reason = REASON_ACCEPTED_L3_ROSE
     elif any_held_out_fell:
         reason = REASON_REJECTED_HELD_OUT if any_dev_rose else REASON_REJECTED_BOTH
-    elif l3_fell:
-        reason = REASON_REJECTED_L3_FELL
     elif dev_fell.get("L1"):
         reason = REASON_REJECTED_L1_DEV
     elif l2_compared and dev_fell["L2"]:
         reason = REASON_REJECTED_L2_DEV
+    elif l3_fell:
+        reason = REASON_REJECTED_L3_FELL
     else:
         reason = REASON_REJECTED_DEV
     return NoRegret(
