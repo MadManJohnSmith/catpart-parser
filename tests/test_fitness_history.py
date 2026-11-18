@@ -69,7 +69,7 @@ L3_BLOCK = {
 }
 
 #: The last accepted committed row (the pre-#58 baseline; L3 still null).
-LAST_ACCEPTED_RUN_ID = "20261113T231506Z-c2ab64"
+LAST_ACCEPTED_RUN_ID = "20261118T171127Z-0882ce"
 
 
 def row_with_l3(l3: object) -> dict:
@@ -170,10 +170,12 @@ def test_every_committed_history_row_still_validates() -> None:
         for line in HISTORY_PATH.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    assert len(rows) == 14
+    assert len(rows) == 15
     for row in rows:
         validate(row, ROW_SCHEMA)
-        assert row["scalars"]["L3"] is None  # every pre-#58 row is unchanged
+    # The 14 pre-#58 rows are unchanged; only the v1.0 row carries L3.
+    assert all(row["scalars"]["L3"] is None for row in rows[:-1])
+    assert rows[-1]["scalars"]["L3"] is not None
 
 
 def test_last_accepted_row_keeps_its_recorded_verdict() -> None:
@@ -181,9 +183,14 @@ def test_last_accepted_row_keeps_its_recorded_verdict() -> None:
     assert row is not None
     assert row["run_id"] == LAST_ACCEPTED_RUN_ID
     assert row["accepted"] is True
-    assert row["no_regret"]["reason"] == "L2 dev rose with L1 dev flat"
-    assert row["scalars"]["L3"] is None
-    assert coverage_from_scalars(row["scalars"], "row scalars") is None
+    # The v1.0 row introduces L3 with L1/L2 intact; the adoption is the
+    # increment, so no Dev rise is required.
+    assert row["no_regret"]["reason"] == "L3 recorded with L1/L2 intact"
+    assert row["no_regret"]["dev_rose"] is False
+    assert row["no_regret"]["held_out_fell"] is False
+    coverage = coverage_from_scalars(row["scalars"], "row scalars")
+    assert coverage is not None
+    assert (coverage.resolved, coverage.total) == (23, 23)
 
 
 # --- the CoverageScore type -------------------------------------------------
