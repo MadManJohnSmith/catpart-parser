@@ -115,7 +115,9 @@ verdict. **What does lean**, all avoidably:
 
 No L3 verdict in BR2–BR5 currently depends on an unprovenanced number: SRF-03's "decoded" rests on 4 files/12
 loops (`br4:22`), SRF-04's on 93 files (`br4:34`), SRF-05/06's on the 67,919-loop bound (`br4:54`), SRF-07's on 388 (`br4:36`),
-CRV-08's on `C08_trim_presence` (969) — all independent of the frozen cells.
+CRV-08's on the 1,277-file superset ceiling (`C08_trim_curve_ceiling`; the 969 carrier row is a reading, not the ceiling) — all independent of the frozen cells.
+
+**Dated addendum (2026-11-18).** CRV-08 and SRF-07 were adjudicated from `candidate` to `documented-open` on committed ceiling rows (`c636172`), so the L3 headline closes at 23/23 with zero candidates; the paragraphs above describe the state before that adjudication and are kept as history.
 
 ## 4. Recommendation
 

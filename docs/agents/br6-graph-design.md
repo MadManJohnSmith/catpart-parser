@@ -197,7 +197,10 @@ for the cylinder's perpendicular foot), `shell.decode_shells` (components,
 - Both supported surfaces are `label="candidate"`: a planar patch may be a
   curved surface's tessellation (SRF-01) and a torus band is a valid
   cylinder at either equator (SRF-05's upper bound). Same escape class,
-  same label (F2).
+  same label (F2). SRF-06 is never emitted (no separable signature); SRF-07
+  is closed as documented-open on the 67,919-loop superset, and its 5,517
+  pencil-noncyl loops are published as a floor, never as a bound (BR4
+  adjudication, 23/23).
 
 Status: `complete` iff every placed face closes (`all_faces_closed`), no
 record was excluded by the face family, and no unknown record exists;
