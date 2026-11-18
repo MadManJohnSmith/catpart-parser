@@ -10,8 +10,12 @@ from __future__ import annotations
 
 import csv
 import dataclasses
+import os
+import pickle
 import re
 import struct
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -993,6 +997,36 @@ def test_step_is_deterministic(cube, step_options):
     assert first.sha256 == second.sha256
     assert first.text == second.text
     assert len(first.sha256) == 64
+
+
+def test_step_is_deterministic_across_processes(cube, step_options, tmp_path):
+    # Same-process double render cannot see a salted-set ordering: the
+    # interpreter's str hash seed is fixed for the process. Exact mode once
+    # emitted its edges in a set's iteration order, so 6 seeds gave 4
+    # digests. Render the pickled graph in fresh interpreters.
+    options = dataclasses.replace(step_options, face_mode="exact")
+    payload = tmp_path / "graph.pickle"
+    with payload.open("wb") as handle:
+        pickle.dump((cube, options), handle)
+    script = (
+        "import pickle, sys\n"
+        "from catpart.brep import step_export as S\n"
+        "with open(sys.argv[1], 'rb') as handle:\n"
+        "    graph, options = pickle.load(handle)\n"
+        "print(S.render_step(graph, options=options).sha256)\n"
+    )
+    digests = set()
+    for seed in ("0", "1", "2", "3", "4", "5"):
+        result = subprocess.run(
+            [sys.executable, "-c", script, str(payload)],
+            capture_output=True,
+            text=True,
+            check=True,
+            env={**os.environ, "PYTHONHASHSEED": seed},
+        )
+        digests.add(result.stdout.strip())
+    assert len(digests) == 1, digests
+    assert digests == {S.render_step(cube, options=options).sha256}
 
 
 def test_step_has_no_wall_clock_and_honours_the_header(cube, step_options):

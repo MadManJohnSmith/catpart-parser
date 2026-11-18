@@ -284,6 +284,11 @@ the fit's perpendicular foot; triangle windings (facet mode).
 `SURFACE_OF_LINEAR_EXTRUSION` (decoded per-loop, unbound to faces). Each
 is a named refusal, never a silent plane substitution.
 
+**Winding inference (exact mode).** `ADVANCED_FACE.same_sense` is
+`FaceData.oriented` — the record's Newell-winding-vs-stored-normal
+reading (BR2 §4) — an inference, not a stored byte. It is not separately
+labelled in the file; the loop-edge orientations carry the same reading.
+
 **4.3 Face modes (F1).**
 
 - `facet` is the **default**. One `ADVANCED_FACE` per decoded triangle,
@@ -354,8 +359,11 @@ the triangle-closure role belongs to `shell-open`/`shell-non-manifold`.
 `PatchFit.label → refusal` (F9): `planar` → PLANE (record plane gate);
 `cylinder` → CYLINDRICAL_SURFACE (exact: `unsupported-surface`);
 `cone`, `sphere`, `curved-unclassified` → `surface-unbound`;
-`pencil-noncyl` → `unsupported-surface`; `degenerate` → `face-unplaced`;
-mixed labels → `surface-disagreement`.
+`pencil-noncyl` → `unsupported-surface`; mixed labels →
+`surface-disagreement`. A `degenerate`-only face surface is structurally
+unreachable for a built graph — a record with no usable triangles joins
+no component (BR6S-21 = 0) — and a hand-built graph carrying it yields
+`surface-unbound` (no surface decision), not a fabricated plane.
 
 **Mode filtering.** `exact` and `facet` share the structural refusals
 (§5 guarantees, shell status, face family, count-variant, loop roles,
@@ -463,7 +471,10 @@ are not part of the L3 construct denominator.
    onto pool ranks. `skipped_refs`/`excluded_loops` stay 0 and BR4's
    exclusion rows are cited, not re-derived.
 2. **`0x44` unread** — the `unknown` class: counted, `label="unknown"`, no
-   node (BR6S-22).
+   node (BR6S-22). A pool-only store carrying one still exports its closed
+   shells (the record is counted and annotated, but is not a refusal
+   class); corpus-unreachable, since all 708 sit on composite stores
+   (BR6S-22b).
 3. **Face family** — FaceNodes exist only for 0x49/0x4a/0x4c (the 12B
    normal). A component carrying a 0x41/0x42 record has no FaceNode for
    it: `Completeness.excluded_faces`, and the export refuses

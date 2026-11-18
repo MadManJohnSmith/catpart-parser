@@ -315,7 +315,12 @@ def _topology(graph: BodyGraph, shell: NodeId) -> _ShellTopology:
                 for arc in graph.arcs
                 if arc.kind == ARC_LOOP_EDGE and arc.parent == loop
             ]
-    wanted_edges = {edge for uses in loop_edges.values() for _orientation, edge in uses}
+    # Sorted, not a set iteration: NodeId hashes over str are salted per
+    # process (PYTHONHASHSEED), and this order drives vertex/edge emission and
+    # the instance numbering.
+    wanted_edges = sorted(
+        {edge for uses in loop_edges.values() for _orientation, edge in uses}
+    )
     for edge in wanted_edges:
         node = nodes.get(edge)
         if node is None or not isinstance(node.data, EdgeData):
