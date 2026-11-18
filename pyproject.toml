@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "catpart-parser"
-version = "0.1.0"
+version = "1.0.0"
 description = "Reader for CATIA V5 .CATPart/.CATProduct binaries, built by evidence-driven reverse engineering."
 readme = "README.md"
 requires-python = ">=3.11"
