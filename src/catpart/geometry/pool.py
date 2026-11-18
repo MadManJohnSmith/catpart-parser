@@ -12,7 +12,7 @@ Model (docs/evidence/2026-11-09-vertex-pool.md):
   when it fits (<= 255), else ``ff`` escaping to a u32le count at +11
   (P1g). The 15-byte vertex records ``[05 08 01][f32le x][f32le y]
   [f32le z]`` follow contiguously and the walked record count equals the
-  count field on every corpus group (P2/P2g, 2,090/2,090 = 1.000) — a
+  count field on every corpus group (P2/P2g, 2,326/2,326 = 1.000) — a
   mismatch is broken structure, not a variant, and raises
   ``malformed-pool-group``.
 - Coordinates are little-endian float32 triplets, one vertex per record,

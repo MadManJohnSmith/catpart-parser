@@ -69,11 +69,11 @@ LAW_CLAIMS = {
         "CRV-01",
         "33 32 canonical (len==2) records whose 40-B f32le block at +0x09 (9d) decodes finite (layout evidence)",
         "established",
-        "block position byte-verified; skip-42 walk; denominator = walked canonical records (52 short-block rejects named)",
+        "block position byte-verified; skip-42 walk; denominator = walked canonical records (52 non-finite/out-of-scale block rejects)",
     ),
     "C01_line_prep_law": (
         "CRV-01",
-        "33 32 blocks whose floats at +0x21 (33d)..+0x29 (41d) repeat the first triple (+0x15 (21d)..+0x1D (29d)) bit-exact (G2 law, subpopulation)",
+        "33 32 blocks whose floats at +0x21 (33d)..+0x29 (41d) repeat the first triple at +0x09 (9d)..+0x11 (17d) bit-exact (G2 law, subpopulation)",
         "candidate",
         "laws hold and fail within single stores; field semantics open",
     ),
@@ -104,14 +104,14 @@ LAW_CLAIMS = {
     "C03_conic_dir_law": (
         "CRV-03",
         "33 38 direction pairs (both mid-range) with unit norm (tol 2e-3)",
-        "established",
-        "BR3 direction law (skip-42 canonical walk)",
+        "candidate",
+        "BR3 direction law (skip-42 canonical walk); measured from the payload before the decode gate, so direction-law rejects stay in the denominator",
     ),
     "C03_conic_decode_ok": (
         "CRV-03",
         "33 38 records decoding under the 30-B layout and the direction law",
         "established",
-        "corpus rejections split by committed counters: 2 direction-law + 2 b-positivity + 7 short-payload (11 = 15,768 - 15,757)",
+        "corpus rejections split across the committed rejection rows C03_conic_rej_short / _dir / _b / _implausible (11 = 15,768 - 15,757)",
     ),
     "C03_conic_b_pos": (
         "CRV-03",
@@ -119,11 +119,35 @@ LAW_CLAIMS = {
         "established",
         "BR3 positivity law",
     ),
+    "C03_conic_rej_short": (
+        "CRV-03",
+        "33 38 walked records whose payload is below the 30-B layout (rejection-reason counter)",
+        "fact",
+        "decode_conic length gate; denominator = walked 33 38 records",
+    ),
+    "C03_conic_rej_dir": (
+        "CRV-03",
+        "33 38 walked records rejected by the direction law (mid-range pair non-unit) (rejection-reason counter)",
+        "fact",
+        "measured from the payload before the decode gate; denominator = walked 33 38 records",
+    ),
+    "C03_conic_rej_b": (
+        "CRV-03",
+        "33 38 walked records rejected by b-positivity (b <= 0) (rejection-reason counter)",
+        "fact",
+        "measured from the payload before the decode gate; denominator = walked 33 38 records",
+    ),
+    "C03_conic_rej_implausible": (
+        "CRV-03",
+        "33 38 walked records rejected for non-finite/out-of-scale fields (rejection-reason counter)",
+        "fact",
+        "measured from the payload before the decode gate; denominator = walked 33 38 records",
+    ),
     "C08_midring_dir_law": (
         "CRV-08",
         "33 33 records decoding under the direction law (mid-range unit / zero sentinel / unit pair)",
         "candidate",
-        "BR3 re-read of the stage-4a p1/p2 params as an in-plane direction pair; denominator = walked canonical records (rejects named)",
+        "BR3 re-read of the stage-4a p1/p2 params as an in-plane direction pair; denominator = walked canonical records (rejects = walked minus decoded, row-derived)",
     ),
     "C08_midring_midrange_unit": (
         "CRV-08",
@@ -141,13 +165,25 @@ LAW_CLAIMS = {
         "CRV-01",
         "33 32 canonical records walked by the skip-42 walker (volume anchor)",
         "fact",
-        "walked, not decoded; the 52 short-block rejects are the C01_line_block_finite gap",
+        "walked, not decoded; the 52 non-finite/out-of-scale block rejects are the C01_line_block_finite gap",
     ),
     "C08_midring_walked": (
         "CRV-08",
         "33 33 canonical records walked by the skip-42 walker (volume anchor)",
         "fact",
         "walked, not decoded; the rejects are the C08_midring_dir_law gap",
+    ),
+    "C08_midring_zero_sentinel": (
+        "CRV-08",
+        "33 33 walked records whose direction pair is exactly (0, 0) - the observed axis-aligned sentinel",
+        "fact",
+        "dominant value of the BR3 re-read; denominator = walked 33 33 records with a readable direction pair (len >= 24 B)",
+    ),
+    "C08_midring_axis_pair": (
+        "CRV-08",
+        "33 33 walked records whose direction pair is exactly (+-1, 0) or (0, +-1)",
+        "fact",
+        "second dominant value of the BR3 re-read; denominator = walked 33 33 records with a readable direction pair (len >= 24 B)",
     ),
 }
 
@@ -324,19 +360,20 @@ def audit_part(mm):
         for key in (
             "pool_vertices", "pool_groups", "pool_groups_ok",
             "edge_groups", "edge_groups_ok", "polyline_lists",
-            "edge_records", "polyline_strips",
+            "polyline_strips",
             "c32", "c37", "c33", "c38",
             "c32_raw", "c37_raw", "c38_raw", "unwrapped_raw",
             "edge_wrapped_raw", "elem_decl",
-            "line_obs", "line_prep_ok", "line_len_ok", "line_both",
+            "line_obs", "line_prep_ok", "line_len_ok",
             "line_prep_shift2", "line_walked_full",
             "circ_obs", "circ_ok", "circ_on_pool",
             "conic_obs", "conic_ok", "conic_dir_obs", "conic_dir_ok",
-            "conic_b_ok", "conic_circform",
+            "conic_b_ok",
             "conic_rej_short", "conic_rej_dir", "conic_rej_b",
             "conic_rej_implausible",
-            "mid_obs", "mid_ok", "mid_midrange", "mid_midrange_unit",
-            "c36", "c36_block_fail", "c36_block_ok",
+            "mid_obs", "mid_ok", "mid_pair_obs", "mid_midrange",
+            "mid_midrange_unit", "mid_zero_sentinel", "mid_axis_pair",
+            "c36", "c36_block_ok",
             "edge_misaligned",
         )
     }
@@ -362,7 +399,6 @@ def audit_part(mm):
         )
         counts["edge_groups_ok"] = len(egroups)
         for g in egroups:
-            counts["edge_records"] += len(g.records)
             counts["polyline_strips"] += sum(1 for n, _refs in g.records if n > 2)
         if len(egroups) < counts["edge_groups"]:
             counts["edge_misaligned"] = 1
@@ -410,7 +446,7 @@ def audit_part(mm):
             block = mm[start : start + curves.LINE_BLOCK.size]
             if len(block) == curves.LINE_BLOCK.size:
                 # The law flags, measured on the full-block walked
-                # population (the short-block and non-finite rejects
+                # population (the non-finite/out-of-scale block rejects
                 # never reach the laws — the honest denominators live
                 # in the rows).
                 counts["line_walked_full"] += 1
@@ -421,9 +457,8 @@ def audit_part(mm):
                 if len(b2) == curves.LINE_BLOCK.size:
                     counts["line_prep_shift2"] += curves.line_laws(b2)[0]
             try:
-                seg = curves.decode_line(rec, mm)
+                curves.decode_line(rec, mm)
                 counts["line_obs"] += 1
-                counts["line_both"] += seg.p_rep_ok and seg.length_ok
             except ExportError:
                 pass
         elif rec.family == curves.FAMILY_CIRCLE:
@@ -441,6 +476,11 @@ def audit_part(mm):
             if len(rec.payload) >= 24:
                 c = curves.BE_F32.unpack_from(rec.payload, 12)[0]
                 s = curves.BE_F32.unpack_from(rec.payload, 16)[0]
+                counts["mid_pair_obs"] += 1
+                counts["mid_zero_sentinel"] += c == 0.0 and s == 0.0
+                counts["mid_axis_pair"] += (
+                    (abs(c) == 1.0 and s == 0.0) or (c == 0.0 and abs(s) == 1.0)
+                )
                 mid = (
                     curves.DIR_TOL < abs(c) < 1 - curves.DIR_TOL
                     and curves.DIR_TOL < abs(s) < 1 - curves.DIR_TOL
@@ -459,10 +499,13 @@ def audit_part(mm):
         elif rec.family == curves.FAMILY_CONIC:
             counts["c38"] += 1  # walked canonical 33 38 records
             counts["conic_obs"] += 1
-            # Rejection-reason split (short payload / non-unit mid-range
-            # direction / b-positivity), so the row note's figures trace
-            # to committed counters.
-            if len(rec.payload) < 28:
+            # Rejection-reason split (short payload / non-finite-scale
+            # field / non-unit mid-range direction / b-positivity),
+            # measured from the PAYLOAD before the decode gate so the
+            # direction-law denominator includes the direction-law
+            # rejects themselves.  Threshold 30 B matches
+            # decode_conic's length gate.
+            if len(rec.payload) < 30:
                 counts["conic_rej_short"] += 1
             else:
                 v = [curves.BE_F32.unpack_from(rec.payload, 4 * i)[0] for i in range(7)]
@@ -474,6 +517,10 @@ def audit_part(mm):
                         curves.DIR_TOL < abs(v[3]) < 1 - curves.DIR_TOL
                         and curves.DIR_TOL < abs(v[4]) < 1 - curves.DIR_TOL
                     )
+                    counts["conic_dir_obs"] += mid
+                    counts["conic_dir_ok"] += mid and (
+                        abs(norm - 1.0) <= curves.DIR_TOL
+                    )
                     if mid and abs(norm - 1.0) > curves.DIR_TOL:
                         counts["conic_rej_dir"] += 1
                     elif v[6] <= 0:
@@ -481,17 +528,7 @@ def audit_part(mm):
             try:
                 conic = curves.decode_conic(rec)
                 counts["conic_ok"] += 1
-                cos_t, sin_t = conic.direction
-                mid = (
-                    curves.DIR_TOL < abs(cos_t) < 1 - curves.DIR_TOL
-                    and curves.DIR_TOL < abs(sin_t) < 1 - curves.DIR_TOL
-                )
-                counts["conic_dir_obs"] += mid
-                counts["conic_dir_ok"] += mid and (
-                    abs(math.hypot(cos_t, sin_t) - 1.0) <= curves.DIR_TOL
-                )
                 counts["conic_b_ok"] += conic.semi_b > 0
-                counts["conic_circform"] += abs(conic.semi_a) == conic.semi_b
             except ExportError:
                 pass
         elif rec.family == 0x36:
@@ -501,14 +538,10 @@ def audit_part(mm):
             counts["c36"] += 1  # walked 33 36 records
             start = rec.offset + 2
             block = mm[start : start + curves.LINE_BLOCK.size]
-            if len(block) < curves.LINE_BLOCK.size:
-                counts["c36_block_fail"] += 1
-            else:
+            if len(block) == curves.LINE_BLOCK.size:
                 vals = curves.LINE_BLOCK.unpack(block)
                 if all(math.isfinite(x) for x in vals):
                     counts["c36_block_ok"] += 1
-                else:
-                    counts["c36_block_fail"] += 1
     return counts
 
 
@@ -635,9 +668,15 @@ def _law_counter(key):
         "C02_circle_decode_ok": ("circ_obs", "circ_ok"),
         "C03_conic_dir_law": ("conic_dir_obs", "conic_dir_ok"),
         "C03_conic_b_pos": ("conic_ok", "conic_b_ok"),
+        "C03_conic_rej_short": ("c38", "conic_rej_short"),
+        "C03_conic_rej_dir": ("c38", "conic_rej_dir"),
+        "C03_conic_rej_b": ("c38", "conic_rej_b"),
+        "C03_conic_rej_implausible": ("c38", "conic_rej_implausible"),
         "C03_conic_decode_ok": ("conic_obs", "conic_ok"),
         "C08_midring_dir_law": ("c33", "mid_obs"),
         "C08_midring_midrange_unit": ("mid_midrange", "mid_midrange_unit"),
+        "C08_midring_zero_sentinel": ("mid_pair_obs", "mid_zero_sentinel"),
+        "C08_midring_axis_pair": ("mid_pair_obs", "mid_axis_pair"),
         "C08_midring_walked": ("c33", "c33"),
         "C36_block_read": ("c36", "c36_block_ok"),
         "T07_pool_count_law": ("pool_groups", "pool_groups_ok"),
