@@ -67,7 +67,7 @@ gates**: 21,659/33,166 = 0.653048.
   (fixtures `test_torus_equator_lands_cylinder`, `test_torus_pole_band_lands_planar`), so no class
   population is a torus population. Ceiling: the full classified strip-loop total **67,919**
   (`SRF-05_upper_bound_classified_patches`, 975/1,442 files). The earlier 4,289 "ceiling" was false
-  and is withdrawn in the BR4 note §6.4.
+  and is withdrawn in the BR4 note §6 item 4.
 - **SRF-07** — the `pencil-noncyl` signature isolates non-circular profile extrusions only; a
   circular-profile extrusion **is** a cylinder. The 5,517 loops (388 files) are a **floor**, never a
   bound; the published bound is the same 67,919 superset (`SRF-07_extrusion_ceiling`).
@@ -85,8 +85,9 @@ Corpus expectations, published before the run and then measured (`br6-graph-clai
 - **0/76** closed shells satisfy the loop-segment pairing law (**76/76** carry a one-use segment);
   the B-rep pairing law is distinct from `shell.py`'s triangle closure, and the exporter refuses
   with `shell-not-brep-paired` (`BR6G-05b/05c`).
-- **exact mode: 0/1,442** (predicted 0/76 pre-run: no closed shell is ring-only, 16 rings among 522
-  closed-shell face records); **facet mode: 53/1,442** (`BR6G-06`, `BR6G-07`).
+- **exact mode: 0/1,442** (predicted 0/76 pre-run: **0** closed shells are ring-only, `BR6G-11c`;
+  only **101** ring face nodes exist corpus-wide, `BR6G-11a`, among the 522 closed-shell face
+  records, `BR6G-11b`); **facet mode: 53/1,442** (`BR6G-07a`; refusals `BR6G-07b`).
 - `body-no-shell` 283 = 125 no-store + 128 face-free + 30 no-placeable (`BR6G-06b`).
 - 708 unread `0x44` records counted in `unknown`, never noded (`BR6G-09`).
 

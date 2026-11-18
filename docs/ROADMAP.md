@@ -303,7 +303,7 @@ The project is **100% done** when, in order:
    the pre-authorized rule below (CLOSED 2026-11-13).
 2. **Phase 5 (viewer, parts)** acceptance met (CLOSED 2026-11-14).
 3. **Phase 6 (assemblies)** acceptance met (CLOSED 2026-11-16).
-4. **Phase 7 (B-rep)** acceptance met.
+4. **Phase 7 (B-rep)** acceptance met (CLOSED 2026-11-18).
 5. **Closure artifacts shipped**: tag `v1.0` + release notes; final
    fitness report published (gh-pages); this ROADMAP with every phase
    closed or negatived; corpus frozen (the verified 2026-11-07 backup
