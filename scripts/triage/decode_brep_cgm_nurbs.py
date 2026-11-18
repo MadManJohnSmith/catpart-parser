@@ -25,11 +25,17 @@ Measured per file (all read-only, mmap, deterministic):
 - BR5-04 TOP-01 structural carrier (``CATSeeBodyCont`` block + nested
   store root via the committed locator law).
 - BR5-05 ``XX-0`` version-tag reference records inside the CGM region.
+- BR5-03d knot-guard sweep: what each knot-detector guard removes
+  (one-guard relaxations + the audit's joint distinct>=2 / chain-off
+  policy), so the zero rate is explained rather than asserted.
+- BR5-08 worked-example byte anchors: every absolute / block-relative
+  pin the note cites for ``07a57767``, ``1d4214e5`` and ``13bb5c0c``,
+  read back from the corpus at run time (the committed anchor row).
 - BR5-07 bulk window: the record-stream region immediately preceding
   the CGMGeom block of the largest part (``17930bab``, the dental
   mold): window span, zlib magic-pair counts (window and full region),
   zlib stream trials, knot/weight signatures (window) and the
-  whole-file weight scan.
+  whole-file knot/weight scan.
 
 Outputs docs/evidence/data/br5-cgm-nurbs-claims.csv with per-release
 and corpus-wide rows plus the numeric ceiling rows; prints the
@@ -51,6 +57,7 @@ import argparse
 import csv
 import mmap
 import re
+import struct
 import sys
 import zlib
 from collections import Counter, defaultdict
@@ -103,6 +110,110 @@ def release_of(detected_version: str) -> str:
     return f"R{v[3:5]}" if v.startswith("V5R") and len(v) >= 5 else "unk"
 
 
+def _manifest_part(sha16: str) -> dict:
+    with MANIFEST.open() as f:
+        for r in csv.DictReader(f):
+            if r["kind"] == "part" and r["sha256"].startswith(sha16):
+                return r
+    raise SystemExit(f"manifest has no part {sha16}")
+
+
+#: Pins the worked-example anchor row must reproduce (BR5-08).  A corpus
+#: whose bytes moved is a different measurement, not a silently updated
+#: note: fail loudly instead.
+_ANCHORS = {
+    "07a57767": {"block": 15860, "vendor": 1374, "catia": 1395,
+                 "first_run": 288, "plus392": b"\x00\x23\x00\x00"},
+    "1d4214e5": {"u16_abs": 178820},
+    "13bb5c0c": {"two_pi_abs": 746608, "b203_abs": 746632},
+}
+
+
+def anchor_detail(corpus_root: Path) -> str:
+    """Measure the worked-example byte anchors (BR5-08).
+
+    One row carries every absolute/block-relative pin the note's prose
+    cites for the three worked examples, each read back from the corpus
+    at run time — the anchor artifact the dispatch hard rules require.
+    """
+    # The file's near-2pi/4pi pair: 6.283185307179589 / 12.566370614359174
+    # (the stored f64s are NOT exactly 2*pi / 4*pi, so search their bytes).
+    two_pi = (struct.pack("<d", 6.283185307179589)
+              + struct.pack("<d", 12.566370614359174))
+    out: list[str] = []
+
+    def open_region(sha16: str):
+        part = _manifest_part(sha16)
+        fh = (corpus_root / part["local_path"]).open("rb")
+        mm = mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ)
+        regs = cgm_nurbs.valid_regions(mm)
+        cgm = [(b, e) for b, nm, e in regs if nm == cgm_nurbs.CGM_BLOCK_NAME]
+        if not cgm:
+            fh.close()
+            raise SystemExit(f"{sha16}: no CGMGeom block")
+        return mm, fh, cgm[0]
+
+    mm, fh, (blk, end) = open_region("07a57767")
+    try:
+        ident = cgm_nurbs.parse_identity(mm, blk, end)
+        run = cgm_nurbs.scan_dictionary(mm, blk, end).runs[0]
+        catia = mm.find(cgm_nurbs.APPLICATION, blk + ident.vendor_offset, end)
+        plus392 = bytes(mm[blk + 392: blk + 396])
+        want = _ANCHORS["07a57767"]
+        got = {"block": blk, "vendor": ident.vendor_offset, "catia": catia - blk,
+               "first_run": run.start - blk, "plus392": plus392}
+        if got != want:
+            raise SystemExit(f"07a57767 anchors moved: {got} != {want}")
+        out.append(
+            f"sha16=07a57767;block={blk};block_hex=0x{blk:x}"
+            f";writer_offset={ident.writer_offset};name_offset={ident.cont_name_offset}"
+            f";vendor_offset={ident.vendor_offset};vendor_offset_hex=0x{ident.vendor_offset:x}"
+            f";catia_offset={catia - blk};catia_delta={catia - blk - ident.vendor_offset}"
+            f";plus392_hex={plus392.hex(' ')}"
+            f";first_run_offset={run.start - blk}"
+            f";first_run_hex={bytes(mm[run.start:run.start + 16]).hex(' ')}"
+        )
+    finally:
+        mm.close()
+        fh.close()
+
+    mm, fh, (blk, end) = open_region("1d4214e5")
+    try:
+        u16 = next(r for r in cgm_nurbs.scan_dictionary(mm, blk, end).runs if r.width == 16)
+        if u16.start != _ANCHORS["1d4214e5"]["u16_abs"]:
+            raise SystemExit(f"1d4214e5 u16 anchor moved: {u16.start}")
+        out.append(
+            f"sha16=1d4214e5;u16_abs={u16.start};u16_abs_hex=0x{u16.start:x}"
+            f";u16_region_offset={u16.start - blk}"
+            f";u16_hex={bytes(mm[u16.start:u16.start + 15]).hex(' ')}"
+        )
+    finally:
+        mm.close()
+        fh.close()
+
+    mm, fh, (_blk, _end) = open_region("13bb5c0c")
+    try:
+        # The file repeats the near-2pi pair with a ``b2 03`` marker at +24
+        # hundreds of times, so the pin is a byte check at the documented
+        # absolute offset, not a search: a corpus whose bytes moved fails.
+        want = _ANCHORS["13bb5c0c"]
+        two, marker = want["two_pi_abs"], want["b203_abs"]
+        if len(mm) < marker + 2 or bytes(mm[two: two + 16]) != two_pi:
+            raise SystemExit(f"13bb5c0c: no near-2pi pair at abs {two}")
+        if bytes(mm[marker: marker + 2]) != b"\xb2\x03":
+            raise SystemExit(f"13bb5c0c: no b2 03 marker at abs {marker}")
+        out.append(
+            f"sha16=13bb5c0c;l2=out-of-population"
+            f";two_pi_abs={two};two_pi_abs_hex=0x{two:x}"
+            f";two_pi_hex={two_pi[:8].hex(' ')};four_pi_hex={two_pi[8:].hex(' ')}"
+            f";b203_abs={marker};b203_abs_hex=0x{marker:x}"
+        )
+    finally:
+        mm.close()
+        fh.close()
+    return ";".join(out)
+
+
 def audit_file(path: Path) -> dict:
     with path.open("rb") as fh:
         mm = mmap.mmap(fh.fileno(), 0, access=mmap.ACCESS_READ)
@@ -120,10 +231,12 @@ def audit_file(path: Path) -> dict:
             row["cont_name_prefix_ok"] = False
             row["release_token"] = ""
             row["writer_offset"] = -1
+            row["vendor_offset"] = -1
             row["region_bytes"] = 0
             row["has_runs"] = False
             row["has_u16"] = False
             row["run_records"] = 0
+            row["u16_records"] = 0
             row["id_refs"] = 0
             row["id_refs_local"] = 0
             row["framed_bytes"] = 0
@@ -133,6 +246,12 @@ def audit_file(path: Path) -> dict:
             row["knot_runs"] = 0
             row["knot_sig"] = False
             row["weight_sig"] = False
+            row["guard_sweep"] = cgm_nurbs.KnotGuardSweep(
+                shipped=0, chain_guard_dropped=0, odd_phases=0,
+                value_floor_dropped=0, value_floor_per_phase=0,
+                distinct_2_runs=0, distinct_2_with_chain_guard=0,
+                weight_min_run_2=0,
+            )
             row["xx0_tags"] = 0
             row["carrier_seebody"] = False
             row["carrier_root"] = ""
@@ -153,11 +272,13 @@ def audit_file(path: Path) -> dict:
                 )
                 row["release_token"] = ident.release
                 row["writer_offset"] = ident.writer_offset
+                row["vendor_offset"] = ident.vendor_offset
                 dscan = cgm_nurbs.scan_dictionary(mm, blk, end)
                 local = cgm_nurbs.scan_dictionary(mm, blk, end, width_policy="local")
                 row["has_runs"] = bool(dscan.runs)
                 row["has_u16"] = any(r.width == 16 for r in dscan.runs)
                 row["run_records"] = len(dscan.runs)
+                row["u16_records"] = sum(1 for r in dscan.runs if r.width == 16)
                 row["id_refs"] = dscan.id_refs
                 row["id_refs_local"] = local.id_refs
                 row["framed_bytes"] = dscan.framed_bytes
@@ -168,6 +289,7 @@ def audit_file(path: Path) -> dict:
                 row["knot_runs"] = len(sig.knot_runs)
                 row["knot_sig"] = bool(sig.knot_runs)
                 row["weight_sig"] = bool(sig.weight_runs)
+                row["guard_sweep"] = cgm_nurbs.knot_guard_sweep(mm, blk, end)
                 row["xx0_tags"] = len(_XX0_TAG.findall(mm, blk, end))
             carrier = cgm_nurbs.top01_carrier(mm)
             row["carrier_seebody"] = carrier.seebody_block
@@ -237,6 +359,7 @@ def bulk_window(path: Path, mib: int) -> dict:
             window["weight_runs"] = len(sig.weight_runs)
             whole = cgm_nurbs.nurbs_signatures(mm, 0, len(mm))
             window["wholefile_bytes"] = len(mm)
+            window["wholefile_knot_runs"] = len(whole.knot_runs)
             window["wholefile_weight_runs"] = len(whole.weight_runs)
             return window
         finally:
@@ -278,6 +401,9 @@ def main() -> int:
     xx0_total = 0
     xx0_files: list[tuple[str, int]] = []
     knot_total = 0
+    u16_records_total = 0
+    guard_totals: Counter = Counter()
+    vendor_offsets: Counter = Counter()
     name_offsets: Counter = Counter()
     writer_offsets: Counter = Counter()
     prefix_ok = 0
@@ -305,12 +431,19 @@ def main() -> int:
         if row["xx0_tags"]:
             xx0_files.append((r["sha256"][:16], row["xx0_tags"]))
         knot_total += row["knot_runs"]
+        u16_records_total += row["u16_records"]
+        for field in ("shipped", "chain_guard_dropped", "odd_phases",
+                      "value_floor_dropped", "value_floor_per_phase",
+                      "distinct_2_runs", "distinct_2_with_chain_guard",
+                      "weight_min_run_2"):
+            guard_totals[field] += getattr(row["guard_sweep"], field)
         writer_offsets[row["writer_offset"]] += 1
+        vendor_offsets[row["vendor_offset"]] += 1
         if row["cont_name_offset"] >= 0:
             name_offsets[row["cont_name_offset"]] += 1
         prefix_ok += 1 if row["cont_name_prefix_ok"] else 0
         releases[row["release_token"]] += 1
-        if row["region_bytes"] > U16_GATE_SPAN:
+        if row["region_bytes"] >= U16_GATE_SPAN:
             big_regions += 1
             big_region_bytes += row["region_bytes"]
         if row["id_refs"] > max_id_refs_file[1]:
@@ -355,19 +488,28 @@ def main() -> int:
          detail="cont_name_offset=" + hist(name_offsets)
          + f";u16_prefix_2len_plus_2={prefix_ok}/{n_total}")
     emit("BR5-01d_cgm_identity_footer", "identity_footer",
-         detail=f"release_token={hist(releases)};vendor=DASSAULT-SYSTEMES")
+         detail=f"release_token={hist(releases)};vendor=DASSAULT-SYSTEMES"
+         f";vendor_offset={hist(vendor_offsets)}")
 
     emit("BR5-02a_dictionary_idruns", "has_runs",
          detail="id-list shape parsed for every k in 0..15")
     emit_rel("BR5-02a_dictionary_idruns", "has_runs")
-    emit("BR5-02b_id_references_total", "has_runs",
-         detail=f"id_refs={id_refs_total};run_records={run_records_total}"
-         f";max_id_refs_file={max_id_refs_file[0]}:{max_id_refs_file[1]}"
-         f";max_run_file={max_run_file[0]}:{max_run_file[1]}")
-    emit("BR5-02c_marker1_records", "has_runs",
-         detail=f"marker1_records={marker1_total};field layout not established")
+    claims.append([
+        "BR5-02b_id_references_total", "all", "", "", "", "fact",
+        f"metric=none;aggregate totals, not a file rate"
+        f";id_refs={id_refs_total};run_records={run_records_total}"
+        f";max_id_refs_file={max_id_refs_file[0]}:{max_id_refs_file[1]}"
+        f";max_run_file={max_run_file[0]}:{max_run_file[1]}",
+    ])
+    claims.append([
+        "BR5-02c_marker1_records", "all", "", "", "", "unknown",
+        f"metric=none;aggregate total, not a file rate"
+        f";marker1_records={marker1_total};field layout not established",
+    ])
     emit("BR5-02f_u16_width_files", "has_u16",
-         detail="per-record u16le count width; accepted on every release bucket")
+         detail=f"per-record u16le count width;u16_records={u16_records_total}"
+         f" of {run_records_total}"
+         f";record_share={round(u16_records_total / max(run_records_total, 1), 4)}")
     emit_rel("BR5-02f_u16_width_files", "has_u16")
     emit_ceiling(
         "BR5-02d_dictionary_framed_bytes", "fact",
@@ -376,7 +518,7 @@ def main() -> int:
     )
     emit_ceiling(
         "BR5-02e_u16_width_recall_ceiling", "fact",
-        f"ceiling: regions_gt_{U16_GATE_SPAN}B={big_regions}"
+        f"ceiling: regions_at_or_above_{U16_GATE_SPAN}B={big_regions}"
         f";their_region_bytes={big_region_bytes}"
         f";id_refs_gated={id_refs_total};id_refs_local={id_refs_local_total}"
         f";u16_unreachable_refs={id_refs_local_total - id_refs_total}",
@@ -388,6 +530,7 @@ def main() -> int:
     emit_rel("BR5-03a_nurbs_knot_sig_cgm_region", "knot_sig")
     emit("BR5-03b_nurbs_weight_sig_cgm_region", "weight_sig",
          detail=">=4 consecutive exact f64 1.0 inside the CGM region")
+    emit_rel("BR5-03b_nurbs_weight_sig_cgm_region", "weight_sig")
     content_hits = sum(
         1 for x in per_release["all"] if x["knot_sig"] or x["weight_sig"]
     )
@@ -395,6 +538,20 @@ def main() -> int:
         "BR5-03c_nurbs_content_rate_vs_census", "all", str(n_total),
         str(content_hits), str(round(content_hits / max(n_total, 1), 4)),
         "fact", "census BR1 labels 100% from cgm_present alone",
+    ])
+    claims.append([
+        "BR5-03d_nurbs_knot_guard_sweep", "all", "", "", "", "fact",
+        "policy=shipped walk (one count per physical array;cross-phase "
+        "overlaps suppressed)"
+        f";shipped={guard_totals['shipped']}"
+        f";chain_guard_dropped={guard_totals['chain_guard_dropped']}"
+        f";odd_phases={guard_totals['odd_phases']}"
+        f";value_floor_dropped={guard_totals['value_floor_dropped']}"
+        f";value_floor_per_phase={guard_totals['value_floor_per_phase']}"
+        f";distinct_2_runs={guard_totals['distinct_2_runs']}"
+        f";distinct_2_with_chain_guard={guard_totals['distinct_2_with_chain_guard']}"
+        f";weight_min_run_2={guard_totals['weight_min_run_2']}"
+        f";cgm_region_bytes={region_total}",
     ])
 
     emit("BR5-04a_top01_seebody_block", "carrier_seebody")
@@ -434,18 +591,20 @@ def main() -> int:
     win_ratios = [bulk["magic_window"][m] / chance_window for m in _ZLIB_MAGICS]
     bulk_ratios = [bulk["magic_bulk"][m] / chance_bulk for m in _ZLIB_MAGICS]
     claims.append([
-        "BR5-07d_bulk_window_zlib_magics", "all", "4",
-        str(sum(1 for x in win_ratios if x >= 2.0)),
-        str(round(sum(1 for x in win_ratios if x >= 2.0) / 4, 4)), "fact",
-        "counts=" + ",".join(str(bulk["magic_window"][m]) for m in _ZLIB_MAGICS)
+        "BR5-07d_bulk_window_zlib_magics", "all", "", "", "", "fact",
+        "metric=none;4 magic-pair counts against per-pattern chance;"
+        f"excess_bar=2.0x;patterns_at_or_above_bar="
+        f"{sum(1 for x in win_ratios if x >= 2.0)}"
+        + ";counts=" + ",".join(str(bulk["magic_window"][m]) for m in _ZLIB_MAGICS)
         + f";chance_per_pattern={chance_window:.1f}"
         + ";ratios=" + ",".join(f"{x:.2f}" for x in win_ratios),
     ])
     claims.append([
-        "BR5-07e_bulk_zlib_magics", "all", "4",
-        str(sum(1 for x in bulk_ratios if x >= 2.0)),
-        str(round(sum(1 for x in bulk_ratios if x >= 2.0) / 4, 4)), "fact",
-        "counts=" + ",".join(str(bulk["magic_bulk"][m]) for m in _ZLIB_MAGICS)
+        "BR5-07e_bulk_zlib_magics", "all", "", "", "", "fact",
+        "metric=none;4 magic-pair counts against per-pattern chance;"
+        f"excess_bar=2.0x;patterns_at_or_above_bar="
+        f"{sum(1 for x in bulk_ratios if x >= 2.0)}"
+        + ";counts=" + ",".join(str(bulk["magic_bulk"][m]) for m in _ZLIB_MAGICS)
         + f";chance_per_pattern={chance_bulk:.1f}"
         + ";ratios=" + ",".join(f"{x:.2f}" for x in bulk_ratios),
     ])
@@ -457,24 +616,29 @@ def main() -> int:
         f";trial_bytes={_ZLIB_TRIAL_BYTES}",
     ])
     claims.append([
-        "BR5-07g_wholefile_weight_sig", "all", "1",
-        str(1 if bulk["wholefile_weight_runs"] else 0),
-        str(1.0 if bulk["wholefile_weight_runs"] else 0.0), "fact",
-        f"weight_runs={bulk['wholefile_weight_runs']}"
+        "BR5-07g_wholefile_signatures", "all", "1",
+        str(1 if bulk["wholefile_weight_runs"] or bulk["wholefile_knot_runs"] else 0),
+        str(1.0 if bulk["wholefile_weight_runs"] or bulk["wholefile_knot_runs"] else 0.0),
+        "fact",
+        f"knot_runs={bulk['wholefile_knot_runs']}"
+        f";weight_runs={bulk['wholefile_weight_runs']}"
         f";bytes={bulk['wholefile_bytes']}",
     ])
 
     # --- construct ceilings (numeric; the ticket disallows a third state)
     claims.append([
         "BR5-06a_top02_lump_detector", "all", "0", "0", "", "unknown",
-        "construct=TOP-02;no committed record-level detector;the census "
-        "TOPO_LUMP trigger is shared with TOPO_BODY",
+        "construct=TOP-02;no committed record-level detector;"
+        "the census emits no TOPO_LUMP label at all;the nearest label,"
+        "TOPO_BODY,cannot separate bodies from lumps",
     ])
     emit_ceiling(
         "BR5-06b_top02_lump_ceiling", "fact",
         f"ceiling: cgm_region_bytes={region_total};framed_bytes={framed_total}"
         f";framed_fraction={round(framed_total / max(region_total, 1), 4)}"
+        f";cgm_scope=corpus;bulk_scope={args.bulk_sha16[:16]}"
         f";bulk_window_bytes={bulk['bytes']};bulk_region_bytes={bulk['bulk_bytes']}"
+        f";bulk_uncovered_bytes={bulk['bulk_bytes'] - bulk['bytes']}"
         f";lump_record_classes=0",
     )
     claims.append([
@@ -487,12 +651,20 @@ def main() -> int:
         "BR5-06d_crv06_srf08_ceiling", "fact",
         f"ceiling: knot_sig_files={sum(1 for x in per_release['all'] if x['knot_sig'])}"
         f";weight_sig_files={sum(1 for x in per_release['all'] if x['weight_sig'])}"
-        f";cgm_region_bytes={region_total}"
+        f";cgm_scope=corpus;cgm_region_bytes={region_total}"
+        f";bulk_scope={args.bulk_sha16[:16]}"
         f";bulk_window_bytes={bulk['bytes']};bulk_region_bytes={bulk['bulk_bytes']}"
+        f";bulk_uncovered_bytes={bulk['bulk_bytes'] - bulk['bytes']}"
         f";knot_runs_bulk_window={bulk['knot_runs']}"
         f";weight_runs_bulk_window={bulk['weight_runs']}"
+        f";knot_runs_wholefile={bulk['wholefile_knot_runs']}"
         f";weight_runs_wholefile={bulk['wholefile_weight_runs']}",
     )
+    claims.append([
+        "BR5-08_worked_example_byte_anchors", "all", "", "", "", "fact",
+        "policy=anchor (every pin read back from the corpus at run time)"
+        ";" + anchor_detail(corpus_root),
+    ])
 
     with OUT_CLAIMS.open("w", newline="") as f:
         w = csv.writer(f)
@@ -517,7 +689,10 @@ def main() -> int:
     print(f"Bulk window: {bulk['bytes']} B of {bulk['bulk_bytes']} B; "
           f"knot={bulk['knot_runs']} weight={bulk['weight_runs']} "
           f"zlib_trials={bulk['zlib_attempts']} zlib_ok={bulk['zlib_ok']} "
+          f"wholefile_knot={bulk['wholefile_knot_runs']} "
           f"wholefile_weight={bulk['wholefile_weight_runs']}")
+    print("Knot guard sweep: " + " ".join(
+        f"{k}={v}" for k, v in sorted(guard_totals.items())))
     return 0
 
 

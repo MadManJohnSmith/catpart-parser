@@ -2,9 +2,12 @@
 payload detector (ticket #57).
 
 Fixtures are built from byte patterns observed in the corpus (worked
-examples in docs/evidence/2026-11-17-br5-cgm-nurbs.md); offsets are
-pinned to the corpus values.  The negative fixtures carry the detector
-honesty edges:
+examples in docs/evidence/2026-11-17-br5-cgm-nurbs.md).  Block-relative
+offsets of the fields a fixture reproduces (writer +0x6a (106d), name
++0xc3 (195d)) are pinned to the corpus values; the vendor-footer offset
+is fixture-local (the corpus's 07a57767 footer sits at +1374 (0x55e),
+pinned in the claims CSV's BR5-08 anchor row).  The negative fixtures
+carry the detector honesty edges:
 
 - the u32-alias guard (a sequential u32le array must NOT flag as a
   knot array — the corpus's object-id arrays alias as denormal f64s);
@@ -58,9 +61,11 @@ def cgm_identity_region(cont_name: str = "Cont_4ab1dbcf_2dac_5f11b2db_42be",
     """The CGMGeom preamble shape of the corpus: the writer id at
     ``+0x6a (106d)`` (framed by ``9f 36 08``), the UTF-16LE
     CATStorageProperty + Cont_ identity fields (name at ``+0xc3
-    (195d)``, preceded by the u16le length unit ``2*len(name)+2``), the
-    vendor footer at ``+0x188 (392d)``.  Offsets match the 07a57767
-    prefix; the fields between them are synthetic."""
+    (195d)``, preceded by the u16le length unit ``2*len(name)+2``).
+    The vendor footer's offset is fixture-local: neither ``+392`` nor
+    the corpus's ``+1374`` is a layout constant (the footer moves with
+    the name/preamble content).  The fields between the anchors are
+    synthetic."""
     head = b"\x00" * 103 + b"\x9f\x36\x08"
     body = (
         b"FINJPL  "
@@ -94,7 +99,10 @@ class TestIdentity:
         assert ident.cont_name == "Cont_4ab1dbcf_2dac_5f11b2db_42be"
         # The unit before "Cont_" is the UTF-16 byte length + terminator.
         assert ident.cont_name_prefix == 2 * len(ident.cont_name) + 2 == 0x42
-        assert ident.vendor_offset == 392
+        # Fixture-local: the footer follows the fixture's synthetic
+        # fields.  The corpus value (+1374 on 07a57767) is a measurement
+        # in the BR5-08 anchor row, not a layout invariant.
+        assert ident.vendor_offset >= 0
         assert ident.release == "041803P"
 
     def test_identity_without_footer_release(self):
@@ -179,8 +187,9 @@ class TestDictionary:
         assert scan.marker1_records == 0
 
     def test_idrun_u16_count(self):
-        # u16le count: a per-record width variant accepted in 648/1,089
-        # files across all releases (1d4214e5 region +274).
+        # u16le count: a per-record width variant, present in 1,089/1,089
+        # files (1,050,878 of the 1,106,253 id-run records corpus-wide;
+        # BR5-02f); 1d4214e5 region +274 (abs 0x2ba84).
         rec = (
             b"\x09\x00\x04\x00" + u32le(9) + b"\x00" + b"\x05\x00"
             + u32le(3, 4, 5, 6, 7) + b"\x00\x00"
@@ -338,6 +347,39 @@ class TestNurbsSignatures:
         assert sig.knot_runs == ()
         assert sig.weight_runs == ()
         assert not sig.present
+
+
+class TestKnotGuardSweep:
+    """The near-miss sweep must attribute the zero to the right guard."""
+
+    def test_value_floor_edge_is_live(self):
+        # A denormal-band array in (0, 1e-8): the value floor cuts it, so
+        # only the floor relaxation finds it.
+        denormal = f64le(0.0, 1e-9, 1e-9, 1e-9, 2e-9, 2e-9, 2e-9, 3e-9)
+        data = f64le(-1.0) + denormal + f64le(-1.0)
+        assert cgm_nurbs.nurbs_signatures(data, 0, len(data)).knot_runs == ()
+        sweep = cgm_nurbs.knot_guard_sweep(data, 0, len(data))
+        assert sweep.shipped == 0
+        assert sweep.value_floor_dropped >= 1
+        assert sweep.value_floor_per_phase >= sweep.value_floor_dropped
+
+    def test_distinct_two_edge_needs_the_chain_guard_off(self):
+        # A two-value array whose f64 words chain (high half of one equals
+        # the low half of the next) has repeats but fails the u32-alias
+        # guard: the distinct>=2 edge only fires with the chain guard
+        # dropped — the joint policy the corpus sweep (BR5-03d) reports.
+        a = struct.pack("<Q", 0x4040000040400000)
+        b = struct.pack("<Q", 0x4040100040401000)
+        data = f64le(-1.0) + a + b * 7 + f64le(-1.0)
+        assert cgm_nurbs.nurbs_signatures(data, 0, len(data)).knot_runs == ()
+        sweep = cgm_nurbs.knot_guard_sweep(data, 0, len(data))
+        assert sweep.distinct_2_with_chain_guard == 0
+        assert sweep.distinct_2_runs == 1
+
+    def test_transform_pair_is_a_weight_near_miss(self):
+        data = f64le(1.0, 1.0) + b"\x00" * 16
+        sweep = cgm_nurbs.knot_guard_sweep(data, 0, len(data))
+        assert sweep.weight_min_run_2 == 1
 
 
 def _catalog_tail(catalog_len: int) -> bytes:
