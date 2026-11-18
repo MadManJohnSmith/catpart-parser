@@ -50,7 +50,7 @@ import math
 import re
 import struct
 import sys
-from collections import Counter, defaultdict
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
