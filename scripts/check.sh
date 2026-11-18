@@ -5,7 +5,11 @@
 # reaches main. CI remains the authority; this script is the local copy
 # of the same checks (see dispatch-recipes.md hard rules).
 set -e -o pipefail
-cd "$(git rev-parse --show-toplevel)"
+# Hook-safe root: a pre-push hook exports GIT_DIR, and `git rev-parse
+# --show-toplevel` would then resolve to the hook's repository instead of
+# this checkout (the gate must always test the tree it lives in).
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
 if [ -x .venv/bin/python ]; then
   PY=.venv/bin/python
   RUFF=.venv/bin/ruff
@@ -85,7 +89,7 @@ wasm-pack test --node
 # gh-pages serves verbatim) stays byte-identical to the built crate
 # (port/pkg/). Refresh both together or neither.
 echo "check: pkg sync (port/pkg vs site/viewer/pkg)"
-cd "$(git rev-parse --show-toplevel)"
+cd "$ROOT"
 diff -q -r port/pkg site/viewer/pkg || {
   echo "check: FAIL — port/pkg and site/viewer/pkg have diverged." >&2
   echo "        Rebuild with wasm-pack and refresh BOTH copies together," >&2
