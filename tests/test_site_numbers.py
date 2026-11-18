@@ -10,8 +10,14 @@ scalar to ``56/61``.
 This pin reads every displayed L1/L2 number from the last accepted row of
 ``fitness/history.jsonl`` — the committed source the rest of the ladder
 already trusts — and fails the gate when a new accepted row is not
-mirrored on the site. Corpus-free by construction: the history and the
-pages are both committed artifacts.
+mirrored on the site. The L3 close is pinned the same way: the roadmap
+pill and its support line quote the last row's ``L3`` block
+(``resolved``/``total`` and every ``by_outcome`` count), and L3 is
+construct coverage, never a fitness percentage. The chart legend is pinned
+to the original acceptance bar and the current re-adjustment, so the
+stale "acceptance bar 80%" claim cannot come back next to a 74.80% tile.
+Corpus-free by construction: the history and the pages are both committed
+artifacts.
 
 Formatting follows the pages' own convention: percentages to two
 decimals, pass/total counts with thousands separators on the index tiles.
@@ -37,6 +43,25 @@ _STAT = re.compile(
     r'<div class="d">(?P<detail>[^<]*)</div></div>'
 )
 
+#: The roadmap's L3 support paragraph, captured as markup so the close-note
+#: href is pinned alongside its visible text.
+_L3_STATUS = re.compile(
+    r'<p class="section-sub" id="l3-status">(?P<html>.*?)</p>', re.S
+)
+
+#: ``by_outcome`` keys as the support line spells them.
+_L3_OUTCOME_LABEL = {
+    "decoded": "decoded",
+    "documented-negative": "documented negative",
+    "documented-open": "documented open",
+    "candidate": "candidate",
+    "pending-merge": "pending-merge",
+}
+
+#: The Phase 4 acceptance bar as the ROADMAP wrote it before the
+#: pre-authorized revision (``docs/ROADMAP.md``, Phase 4 acceptance).
+L2_ORIGINAL_BAR = 80
+
 
 def pct(rate: float) -> str:
     """A rate as the pages print it: two decimals, never a bare fraction."""
@@ -52,6 +77,15 @@ def last_row() -> dict:
     row = load_last_accepted_row(HISTORY_PATH)
     assert row is not None, f"{HISTORY_PATH}: no accepted row to quote"
     return row
+
+
+def l3_status(page: str) -> tuple[str, str]:
+    """The L3 support paragraph: (visible text, raw markup)."""
+    match = _L3_STATUS.search(page)
+    assert match, f"{INDEX_PATH}: the L3 status paragraph changed shape"
+    html = match.group("html")
+    text = " ".join(re.sub(r"<[^>]+>", " ", html).split())
+    return text, html
 
 
 def stat_tiles(page: str) -> dict[str, tuple[str, str]]:
@@ -100,6 +134,46 @@ def test_l2_dev_tile_keeps_one_live_source() -> None:
         f"{num(dev['pass'])} / {num(dev['total'])} parts"
         f" · bar re-adjusted {pct(dev['rate'])}%"
     )
+
+
+def test_l3_pill_and_support_quote_the_last_accepted_l3_row() -> None:
+    # L3 is construct coverage, not a corpus percentage: the pill and the
+    # support line mirror the resolved/total and by_outcome block of the
+    # last accepted row (Phase 7 closed on run 20261118T171127Z-0882ce).
+    l3 = last_row()["scalars"].get("L3")
+    assert l3 is not None, "the last accepted row carries no L3 block to quote"
+    page = INDEX_PATH.read_text(encoding="utf-8")
+    resolved, total = l3["resolved"], l3["total"]
+
+    assert f'<span class="pill good">{resolved}/{total} resolved · closed</span>' in page
+
+    text, html = l3_status(page)
+    assert f"L3 construct coverage {resolved}/{total} resolved" in text
+    for key, label in _L3_OUTCOME_LABEL.items():
+        count = l3["by_outcome"][key]
+        assert f"{count} {label}" in text, (
+            f"the L3 support line does not quote {key}={count}"
+        )
+    assert "%" not in text, "L3 is construct coverage; never print it as a percentage"
+    assert "Phase 7 closed 2026-11-18" in text
+    assert "docs/evidence/2026-11-18-phase7-close.md" in html
+
+
+def test_l2_legend_names_the_original_bar_and_its_readjustment() -> None:
+    # The legend called 80% the live acceptance bar while the L2 tile said
+    # the bar had been re-adjusted — two contradictory claims about the
+    # same scalar. Keep the original bar's name, print the re-adjustment
+    # from the last accepted row, and keep the held-out population current.
+    l2 = last_row()["scalars"]["L2"]
+    dev, held_out = l2["dev"], l2["held-out"]
+    page = INDEX_PATH.read_text(encoding="utf-8")
+
+    assert (
+        f"original {L2_ORIGINAL_BAR}% bar · re-adjusted to {pct(dev['rate'])}% at close"
+        in page
+    )
+    assert "acceptance bar 80%" not in page
+    assert f"L2 held-out ({held_out['total']} parts)" in page
 
 
 def test_roadmap_pill_and_chart_legends_quote_the_committed_populations() -> None:
