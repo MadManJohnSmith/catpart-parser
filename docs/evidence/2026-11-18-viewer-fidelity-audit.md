@@ -306,3 +306,166 @@ found pool. The movement is evidence that the weld emits the loops it
 accepts, not that the resulting surface matches the part. The screen's
 verdict is unchanged: 15/20 export, the same 5 rows fail to export, and the
 three empty-mesh rows stay empty.
+
+## Post-extended-header re-measurement (2026-11-18)
+
+**Base: `8c1b120` (`main`, merged as `4b51443`)** — the extended-header facet
+family (`bce5073`, `b26f563`, `def16ea`): escaped counts are read, the
+`0x47`/`0x4f` records are ported (Python + Rust parity) and their geometry is
+gated on manifold assembly. The comparison baseline is the post-weld run at
+`e783d03`. The harness and its pin module are **byte-identical** to that
+baseline (verified with `diff`), and the sample, anchors, report row and
+command are unchanged; only `--out` differs. Data:
+[`fidelity-2026-11-18-post-extended.csv`](data/fidelity-2026-11-18-post-extended.csv)
+(20 rows, SHA-256 `943e3ed18e5ec663be6d0f9a24d0bc54df3a738ccc1d6244f362b24bcee9c7fd`,
+byte-identical on three runs).
+
+`◆` marks a coverage change, `†` an audit anchor. Metric cells are
+`before (e783d03) → after (8c1b120)`; an em dash is a row that did not export
+before or after.
+
+### Totals
+
+| metric | before (`e783d03`) | after (`8c1b120`) |
+|---|---|---|
+| parts exported / sampled | 15 / 20 | 15 / 20 |
+| pass rows exported | 9 / 9 | 9 / 9 |
+| fail rows exported | 6 / 11 | 6 / 11 |
+| sampled rows emitting triangles | 12 / 20 | **15 / 20** |
+| `used_vertex_fraction` pass, min / median | 0.066181 / 0.820513 | 0.461946 / 1.0 |
+| `used_vertex_fraction` fail, min / median | 0 / 0 | 0 / 0.320319 |
+| triangles, all exported rows | 182,098 | 221,869 |
+| triangles, exported rows excluding `LedStrips_Smooth` | 43,952 | 69,764 |
+| exported area, all exported rows (mm²) | 516,163,640.545 | 1,088,166,151.874 |
+| exported area excluding `LedStrips_Smooth` (mm²) | 1,361,732.757 | 24,046,498.514 |
+| parts that moved from no triangles to triangles | — | **3** |
+
+Medians stay conservative: a non-exported row counts as zero coverage. The
+fail median rises only to 0.320319 because five sampled rows still fail to
+export (four classified errors and `CAAMmrPartCopy_Comp1`); the three rows
+that used to export an empty mesh now carry real triangles. The aggregate area
+is still dominated by one non-manifold row and sums overlapping triangles; it
+is not a fidelity total.
+
+### Per part
+
+| # | part | report class | triangles | exported_area_mm2 | used_vertex_fraction | manifold | area_density |
+|---|---|---|---|---|---|---|---|
+| 1†◆ | `Gabarit_trou_alu_alpha` | pass:curve-entry | 5,338 → 15,688 | 714.027 → 27,082.120 | 0.566402 → 1.0 | True → True | 0.028224 → 1.070514 |
+| 2†◆ | `labios/main` | pass:curve-entry | 4,464 → 8,995 | 5,410.181 → 7,024.812 | 0.819447 → 1.0 | True → True | 1.34233 → 1.742939 |
+| 3†◆ | `SP02_BETA_COIFFE (new_catia)` | fail:empty-mesh | 0 → 424 | 0.000 → 636.850 | 0.0 → 1.0 | True → True | 0.0 → 0.012489 |
+| 4† | `CAAMmrPartCopy_Comp1` | fail:undecoded-variant | — → — | — → — | — → — | — → — | — → — |
+| 5 | `F09VP` | pass:closed | 12 → 12 | 401.143 → 401.143 | 1.0 → 1.0 | True → True | 0.428772 → 0.428772 |
+| 6 | `10uF` | pass:closed | 12 → 12 | 1.678 → 1.678 | 1.0 → 1.0 | True → True | 1.043158 → 1.043158 |
+| 7◆ | `SP02_ALPHA5_SEPA2_RETENUE_ROULEMENT` | pass:curve-entry | 512 → 1,066 | 1,121.686 → 3,548.697 | 0.959108 → 1.0 | True → True | 0.26356 → 0.833828 |
+| 8◆ | `SP02_MAQUETTE_VITE` | pass:curve-entry | 108 → 750 | 138,727.888 → 675,346.063 | 0.066181 → 0.461946 | True → True | 0.027233 → 0.132575 |
+| 9 | `SpatialLoft-4072E` | pass:open-shell | 28 → 28 | 1,176,263.968 → 1,176,263.968 | 0.820513 → 0.820513 | True → True | 0.71639 → 0.71639 |
+| 10 | `MutliSupport` | pass:open-shell | 160 → 160 | 29,970.323 → 29,970.323 | 1.0 → 1.0 | True → True | 0.863988 → 0.863988 |
+| 11◆ | `SP02_BETA_COIFFE (CATIA_vol)` | fail:empty-mesh | 0 → 2,764 | 0.000 → 60,936.404 | 0.0 → 1.0 | True → True | 0.0 → 1.310128 |
+| 12◆ | `Shell_VStf_006.1` | fail:empty-mesh | 0 → 1,961 | 0.000 → 22,020,586.541 | 0.0 → 0.320319 | True → True | 0.0 → 0.045848 |
+| 13◆ | `LedStrips_Smooth` | fail:not-manifold | 138,146 → 152,105 | 514,801,907.789 → 1,064,119,653.360 | 0.692983 → 0.718802 | False → False | 375.247212 → 775.653562 |
+| 14◆ | `Guntle.ver5` | fail:not-manifold | 868 → 3,060 | 6,921.069 → 41,415.443 | 0.277878 → 0.722122 | False → False | 0.142838 → 0.854739 |
+| 15◆ | `_NPart#194321` | fail:degenerate-triangles | 31,175 → 31,205 | 2,018.729 → 2,585.261 | 0.842457 → 0.842943 | True → True | 0.447441 → 0.57301 |
+| 16 | `attribut` | fail:undecoded-variant | — → — | — → — | — → — | — → — | — → — |
+| 17 | `CAACafSearch` | fail:undecoded-variant | — → — | — → — | — → — | — → — | — → — |
+| 18 | `BundleSegment3` | fail:missing-geometry-store | — → — | — → — | — → — | — → — | — → — |
+| 19 | `CAAAxisSystemCreation` | fail:missing-geometry-store | — → — | — → — | — → — | — → — | — → — |
+| 20◆ | `_NPart#194294` | pass:curve-entry | 1,275 → 3,639 | 182.064 → 699.209 | 0.453843 → 0.862408 | True → True | 0.339034 → 1.302046 |
+
+### Highlights
+
+- **The three formerly empty-mesh parts now export triangles**: the
+  `new_catia` anchor `SP02_BETA_COIFFE` **0 → 424 triangles / 636.850 mm²**
+  (uvf 1.0), the `CATIA_vol` copy **0 → 2,764 / 60,936.404 mm²** (uvf 1.0,
+  **closed**, zero boundary edges, no warning at all) and `Shell_VStf_006.1`
+  **0 → 1,961 / 22,020,586.541 mm²** (uvf 0.320). The `no-facet-records`
+  warning disappears from all three: the extended family supplies the facet
+  records that had no mapping before. None changes report class — all three
+  are still L2 `fail:empty-mesh`, the row the accepted fitness report
+  classified at the time of selection.
+- **`Gabarit_trou_alu_alpha`** (audit anchor): 5,338 → **15,688** triangles,
+  714.027 → **27,082.120 mm²**, uvf 0.566 → **1.0**, boundary edges
+  3,510 → **0**, and **`closed` False → True**. The dup-pin warning grows
+  from 10 to **542** loops. It is now an exported closed mesh.
+- **`labios/main`** (the weld's motivating part): 4,464 → **8,995**
+  triangles, 5,410.181 → **7,024.812 mm²**, uvf 0.819 → **1.0**, boundary
+  edges 3,408 → 651, still `closed=False`. Dup-pin loops 10 → 29.
+- **Every changed row is a composite store**: 11 of 20. The four non-composite
+  success rows (`F09VP`, `10uF`, `SpatialLoft-4072E`, `MutliSupport`) are
+  unchanged in every metric, and the five undecodable rows are unchanged
+  errors. No report class or status changed; **no `manifold` flag changed**
+  (the two `not-manifold` rows stay `False`). `closed` changed on three rows:
+  Gabarit `False → True`, `new_catia` and `Shell_VStf_006.1` `True → False`
+  (the last two were vacuously closed while empty).
+- **`LedStrips_Smooth`** (already `not-manifold`) dominates the aggregate:
+  138,146 → 152,105 triangles and `area_density` 375.25 → 775.65. Its new
+  `extended-header-geometry-declined` warning records **493** `0x47`/`0x4f`
+  records refused by the manifold-assembly gate, so the gain is what survived
+  the gate, not the whole discovered family. A density in the hundreds is
+  folded/overlapping emitted area inside the bounding box — **not** recovered
+  surface, and its L2 failure is unchanged.
+- Several rows now post `area_density` above 1 (`Gabarit` 1.07, `labios`
+  1.74, `new_catia` 1.31, `_NPart#194294` 1.30). That is expected inside a
+  bounding-box envelope (a compact solid can exceed 1 as well as a folded
+  mesh); it is not evidence of completeness.
+- The extended family moved loops as well as triangles: dup-pin loop counts
+  rise on nearly every composite row (`Gabarit` 10 → 542, `labios` 10 → 29,
+  `SP02_ALPHA5...` 12 → 44, `LedStrips_Smooth` 32,565 → 40,609,
+  `Guntle.ver5` 161 → 499, `_NPart#194321` 1,711 → 1,717,
+  `_NPart#194294` 54 → 166) and `SP02_MAQUETTE_VITE` gains the class
+  (282 loops; 108 → 750 triangles). `SP02_ALPHA5...` and `_NPart#194294`
+  reach uvf 1.0.
+
+Warning classes over the sample before → after (files):
+`no-facet-records` 3 → **0**; new `extended-header-geometry-declined` 1
+(`LedStrips_Smooth`); `curve-entry-loops-exported-dup-pin` 7 → 8;
+`open-shell` 10 → 11; `unused-pool-vertices` 9 → 7;
+`curve-entry-loops-unexported` 3 → 3 (`LedStrips_Smooth` 1,654 → 20,276
+loops, `Guntle.ver5` 5 → 23); `degenerate-triangles-skipped` 2 → 2;
+`duplicate-triangles-deduped` 1 → 1; `duplicate-triangles-dedup-declined`
+1 → 1 (`LedStrips_Smooth`, 34 → 35 duplicates).
+
+### What this run does and does not show
+
+The extended family changes what the exporter *emits*, and these numbers
+measure exactly that: three stores that emitted only vertices now emit
+triangles, and several composite stores reference all of their element space.
+**That is still not a fidelity claim, and it is not a claim that the three
+rows now pass L2.** The corpus carries no reference surface; the report
+classes come from the fixed accepted fitness row, not from this CSV.
+`used_vertex_fraction` describes the found pool (and for composite stores the
+re-listed element space), `area_density` sums emitted triangle area inside the
+exporter's own bounding box and is not bounded by 1, and the manifold gate
+declines records instead of repairing them. The screen's verdict moves from
+"12/20 rows emit triangles" to "15/20", but the five undecodable rows and the
+two `not-manifold` rows are unchanged, and the proxies cannot rank how close
+any surface is to the real part.
+
+### Reproduction and verification
+
+```bash
+export LD_LIBRARY_PATH=/usr/lib:$LD_LIBRARY_PATH   # this host
+.venv/bin/python scripts/triage/measure_viewer_fidelity.py \
+  --manifest --sample-size 20 \
+  --anchor CATIA/CATIA_vol/Usinage/Gabarit_trou_alu_alpha.CATPart \
+  --anchor 'diseño_3d/labios/main.CATPart' \
+  --anchor CATIA/new_catia/SP02_BETA/SP02_BETA_COIFFE.CATPart \
+  --anchor sample/CAAMechanicalModeler.edu/InputData/CAAMmrPartCopy_Comp1.CATPart \
+  --out docs/evidence/data/fidelity-2026-11-18-post-extended.csv
+
+.venv/bin/python -m pytest -q tests/test_measure_viewer_fidelity.py
+.venv/bin/python scripts/triage/check_claims_csv_quoting.py
+bash scripts/check.sh
+```
+
+- Determinism: three independent runs (including one from the editable `src/`
+  install) produced the same SHA-256,
+  `943e3ed18e5ec663be6d0f9a24d0bc54df3a738ccc1d6244f362b24bcee9c7fd`;
+  all 21 rows parse at the 34-column header width.
+- Pins: `tests/test_measure_viewer_fidelity.py` — 10 passed, 1 skipped.
+- Claims-CSV quoting checker: 60 claims CSVs, 14,356 rows, all at header
+  width.
+- Full merge gate `scripts/check.sh` — PASS: ruff clean, **706 passed / 7
+  skipped**, cargo build (native + wasm32), fmt, clippy, port tests,
+  wasm-pack build/test, `port/pkg` ↔ `site/viewer/pkg` sync, Node tests and
+  the assembly viewer acceptance.
