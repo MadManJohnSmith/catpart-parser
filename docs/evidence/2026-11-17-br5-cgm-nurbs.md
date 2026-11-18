@@ -1,55 +1,58 @@
 # Evidence: CGM exact-model container decode — identity, object dictionary, NURBS payload ceiling (Ticket #57, BR5, Spec G #47)
 
-**Date**: 2026-11-17
-**Status**: COMPLETE (structural decode + NURBS ceiling; record-stream framing parked)
+**Date**: 2026-11-17 (review corrections 2026-11-18)
+**Status**: COMPLETE (structural decode + numeric NURBS ceiling; record-stream framing not decoded)
 **Target Ticket**: Ticket #57 (`BR5: CGM exact model & freeform NURBS stream parser`)
 **Parent Spec**: Spec G #47 (Phase 7, B-rep / L3 fitness)
-**Method**: Byte-level RE over the L2-pass population (1,089 files), `scripts/triage/decode_brep_cgm_nurbs.py` + `src/catpart/brep/cgm_nurbs.py`; worked examples byte-verified on `07a57767` (R21, 41,491 B), `1d4214e5` (R19, 230,423 B), `17930bab` (R20, 375,670,078 B), `13bb5c0c` (R21, 190,164,863 B).
+**Method**: Byte-level RE over the L2-pass population (1,089 files), `scripts/triage/decode_brep_cgm_nurbs.py` + `src/catpart/brep/cgm_nurbs.py`; worked examples byte-verified on `07a57767` (R21, 41,491 B), `1d4214e5` (R19, 230,423 B), `8d34ab85` (R21, 42,269 B), `17930bab` (R20, 375,670,078 B). Every figure below is a row of [`data/br5-cgm-nurbs-claims.csv`](data/br5-cgm-nurbs-claims.csv) or arithmetic on row fields; each row carries a `label` (fact / inference / unknown).
 
 ---
 
 ## 1. Executive Summary
 
-BR5 resolves its four constructs as follows (outcome table; every figure traces to [`data/br5-cgm-nurbs-claims.csv`](data/br5-cgm-nurbs-claims.csv)):
+BR5 resolves its four constructs in the ticket's two states only — decoded, or documented negative with a numeric ceiling. There is no third "open/parked" row:
 
-| Construct | Outcome | Corpus rate (L2-pass) |
+| Construct | Outcome | Corpus measurement |
 | :--- | :--- | :--- |
-| `TOP-01` Solid/Body | **Decoded (structural carrier)** | 1,089/1,089 = 1.000 |
-| `TOP-02` Lump | **Open (parked)** — carrier-only | 0 discriminating rows |
-| `CRV-06` NURBS/BSpline Curve | **Open (parked)** — payload framing | 0.000 content signatures |
-| `SRF-08` NURBS/BSpline Surface | **Open (parked)** — payload framing | 0.000 content signatures |
-| `CONT_CGMGEOM` (carrier, BR1 vocabulary) | **Decoded**: identity + object dictionary | 1,089/1,089 identity; 1,082/1,089 dictionaries |
+| `TOP-01` Solid/Body | **Decoded (structural carrier)** | 1,089/1,089 (BR5-04a/b) |
+| `TOP-02` Lump | **Documented negative (ceiling only)** | 0 record classes isolated (BR5-06a, observations=0); ceiling BR5-06b |
+| `CRV-06` NURBS/BSpline Curve | **Documented negative (ceiling only)** | 0/1,089 content signatures (BR5-03a/b); ceiling BR5-06d |
+| `SRF-08` NURBS/BSpline Surface | **Documented negative (ceiling only)** | 0/1,089 content signatures (BR5-03a/b); ceiling BR5-06d |
+| `CONT_CGMGEOM` (carrier, BR1 vocabulary) | **Decoded**: identity + object dictionary | 1,089/1,089 identity (BR5-01a); 1,089/1,089 dictionaries (BR5-02a); 8,998,657 id references (BR5-02b) |
 
 Two results matter beyond the table:
 
-1. **The CGMGeom block region is the CGM object dictionary, not the geometry payload.** It decodes as a property preamble (identity record) plus object id-run records; corpus-wide it carries **zero** NURBS payload signatures (BR5-03a/b: 0/1,089).
-2. **Detector-honesty correction to BR1**: the census labels `GEOM_CURV_NURBS`/`GEOM_SURF_NURBS` from `cgm_present` alone (`scripts/triage/census_brep_constructs.py:383-384` — every CGMGeom-carrying file gets both NURBS labels, the source of the frozen vocabulary's 100% rates). The content-based detector measures **0.000** (BR5-03c). The census's 100% is a carrier-presence label; the content rate is the honest number until a payload decode lands.
+1. **The CGMGeom region is the CGM object dictionary, not the geometry payload.** It decodes as a property preamble (identity record) plus object id-run records; corpus-wide the decoded region (151,999,604 B) carries **zero** NURBS payload signatures (BR5-03a/b: 0/1,089) while validated id-run records frame 50,486,667 B (0.3321, BR5-02d).
+2. **Detector-honesty correction to BR1**: the census labels `GEOM_CURV_NURBS`/`GEOM_SURF_NURBS` from `cgm_present` alone (`scripts/triage/census_brep_constructs.py:383-384` — every CGMGeom-carrying file gets both NURBS labels, the source of the frozen vocabulary's 100% rates). The content-based detector measures **0.000** (BR5-03c). The census's 100% is a carrier-presence label; the content rate is the honest number.
+
+**Reading the ceiling rows.** Rows with a `ceiling:` prefix carry byte arithmetic in `detail`; their `observations`/`passes` count the population files the ceiling is defined on (1,089), not detections. Rows with `observations=0` are the no-detector rows: no rate exists, so the `rate` field is empty. Nothing in this note is a third state: a construct either has a decoded model or a measured ceiling on what was not decoded.
 
 ## 2. The CGM container identity record (BR5-01, decoded)
 
 Byte layout of the `CGMGeom` block region's preamble (worked example `07a57767`, block at 15860 (0x3df4); offsets block-relative, both bases):
 
-- **Writer id** `FINJPL  ` (8 B ASCII, space-padded) at block-relative `+0x6a (106d)` — observed `+0x69 (105d)`/`+0x6a (106d)` across the sample (varies ±1 with the preceding `9f 36 08` frame bytes). Rate: 1,089/1,089 = 1.000 (BR5-01b).
-- **Identity name fields** (UTF-16LE): `CATStorageProperty`, then the container name `Cont_<hex>` (e.g. `07a57767`: `Cont_4ab1dbcf_2dac_5f11b2db_42be` at `+0x150 (336d)`). The byte unit preceding `Cont_` varies (`42` 'B', `34` '4', `32` '2') — field structure (type byte), not name content. Rate: 1,089/1,089 = 1.000 (BR5-01c).
-- **Vendor footer**: `DASSAULT-SYSTEMES` + `CATIA` + a release token matching `[0-3][0-9][0-9]{4}[A-Z]` (worked example: `041803P`). Rate: 1,089/1,089 = 1.000 (BR5-01d).
-- **Full identity** (all three elements): 1,089/1,089 = 1.000 (BR5-01a), on every sampled release bucket (R19 482, R20 147, R21 269, unk 35 — all 1.000).
+- **Writer id** `FINJPL  ` (8 B ASCII, space-padded) at `+0x6a (106d)`: 1,089/1,089 files, value 106 on every one (BR5-01b). (fact)
+- **Identity name fields** (UTF-16LE): `CATStorageProperty`, then the container name `Cont_<hex>` (e.g. `07a57767`: `Cont_4ab1dbcf_2dac_5f11b2db_42be`) at `+0xc3 (195d)` on 1,081/1,089 files. The other eight sit at block-relative 3055, 4042, 5255, 9758, 11431, 14781, 15749 and 19630 (BR5-01c). The u16le unit immediately before `Cont_` is `2 * len(name) + 2` on 1,089/1,089 — the UTF-16 byte length plus its 2-byte terminator (`0x42` for the 32-character `07a57767` name), not a type byte. (fact)
+- **Vendor footer**: `DASSAULT-SYSTEMES` + `CATIA` + a 7-byte token matching `[0-3][0-9][0-9]{4}[A-Z]`; the observed token is `041803P` on 1,089/1,089 (BR5-01d). Because it is constant it is a writer build stamp, not a release discriminator — the manifest's `detected_version` is. (fact + inference)
+- **Full identity** (writer + name + footer): 1,089/1,089 = 1.000 (BR5-01a), on every release bucket (R15 11, R16 59, R17 40, R18 14, R19 482, R20 147, R21 269, R23 13, R24 14, R25 1, R26 2, R28 1, R32 1, unk 35 — all 1.0).
 
-**Detector honesty**: the identity parser extracts elements by content (no structural length fields trusted); it does NOT validate the GUID slot semantics, does not join the `Cont_` name to a tail-catalog region (B4 recorded that join fails 0/19), and does not discriminate which `Cont_*` naming variant maps to which sub-container role.
+**Detector honesty**: the identity parser extracts every element by content (no structural length fields trusted), which is also why the eight non-195 names are found rather than missed. It does NOT validate the GUID slot semantics, does NOT join the `Cont_` name to a tail-catalog region (B4 recorded that join fails 0/19), and does NOT discriminate which `Cont_*` naming variant maps to which sub-container role. (unknown)
 
 ## 3. The object dictionary (BR5-02, decoded)
 
-After the preamble, the CGMGeom region is a record stream of three classes:
+After the preamble, the CGMGeom region is a record stream. The parse is payload- and terminator-discriminated, not marker-discriminated: **every** `k 00 04 00` candidate (k = 0..15 observed) is parsed as an id-run first, and only a k=1 candidate whose id-list parse fails is counted as a marker-1 record. The marker byte is not treated as a type. (fact)
 
-1. **Object id-run records** (decoded): `[u32le marker 0x0004000k]` (bytes `k 00 04 00`, k = 2..15) + `[u32le x][u8 flag]` + count + `count` u32le ids + `00 00` terminator. Two count-width forms, both byte-verified:
-   - u32le count (R20/R21 sample; e.g. `07a57767` at region `+0x6e (110d)`: `02 00 04 00 | 09 00 00 00 | 00 | 05 00 00 00 | ids 3,4,5,6,7 | 00 00`);
-   - u16le count (R19 sample; `1d4214e5` at abs `0x2ba82 (179074d)`: `09 00 04 00 | 09 00 00 00 | 00 | 05 00 | ids 3,4,5,6,7 | 00 00`). The u16 fallback applies only when the u32 count cannot describe any record in the remaining span (the shifted-parse negative fixture pins this edge).
-   The largest run: `17930bab` marker-5 record with count = 106,912 sequential ids from 0x1f (count field `60 a1 01 00` = 0x1a160). Validation: terminator `00 00`, ids < 2^28.
-2. **Marker-1 offset records** (counted, not decoded): `01 00 04 00 <u32le x> 00 00 02 00 <u32le b> <u32le c> 00 <4-byte guid> <u16le d>` — the identity/offset shape observed interleaved with id-runs; a second tail-region shape (`01 00 04 00 <off> ... 03 00 04 00 ...` per-object entries) exists and is parked. Corpus total: 3,100,590 marker-1 records (BR5-02c).
-3. **`XX-0` version-tag reference records**: `[u16le ctr][u32le off]"12-0"/"22-0"/"23-0"..."` cycles — 70,148 tags on 9/1,089 files = 0.0083 (BR5-05), consistent with B4's GE-V7 content-dependence claim; the large-dictionary files (`13bb5c0c`: 8,499 tags) carry the dense reference cycles.
+1. **Object id-run records** (decoded): `[u32le 0x0004000k][u32le x][u8 flag][count][count u32le ids][00 00]`. Two count widths exist and both validate by their closing terminator:
+   - u32le count, e.g. `07a57767` at region `+0x120 (288d)`: `02 00 04 00 | 09 00 00 00 | 00 | 05 00 00 00 | ids 3,4,5,6,7 | 00 00`; `8d34ab85` at `+0x120` carries the identical record with marker `01`.
+   - u16le count, e.g. `1d4214e5` at abs `0x2ba84 (178,820d)`, region `+274`: `09 00 04 00 | 09 00 00 00 | 00 | 05 00 | ids 3,4,5,6,7 | 00 00`. This is a per-record width variant, accepted in 1,089/1,089 files on every release bucket (BR5-02f) — not an R19-only form. (fact)
+   The u16 read is attempted only when the u32 count cannot describe a record in the remaining span. That gate blocks the shifted re-read (a u32 record whose terminator fails must not validate as u16; pinned by the shifted-parse negative fixture) and costs recall: wherever the u32 re-read still fits the span — from 786,467 B remaining for the smallest shape (count 5, first id 3) — the u16 form is unreachable. 23 CGM regions are larger than that threshold (124,411,157 B); the measured cost is 5,833 id refs: the ungated local width policy decodes 9,004,490 against the shipped 8,998,657 (0.065%) (BR5-02e). (fact for the measurement; the gate is a deliberate trade-off)
+   - **Largest run**: `17930bab`, marker `05`, count field `60 a1 01 00` = 0x1a160 = **106,848** sequential ids from 31, last 106,878 (BR5-02b detail; the byte reading is pinned in `tests/test_brep_cgm_nurbs.py`). The dental mold's 1,552,108 id references are the corpus maximum (BR5-02b).
+2. **Marker-1 records that fail the id-list parse** (counted, not decoded): 2,071,639 (BR5-02c). Their field layout is **not established**: the earlier "offset record" label was marker-based, so it is withdrawn rather than reasserted. (unknown)
+3. **`XX-0` version-tag reference records**: 70,148 tags on 9/1,089 files = 0.0083 (BR5-05), consistent with B4's GE-V7 content-dependence claim. The dense file is `50cd280f` with 68,707 tags (0.9795 of the total); the rest are `8269ca4e` 992, `ba6ae0de` 132, `f393cea8` 99, `e8c4fe20` 77, `34aebc45` 45, `6489ed16` 36, `0a64c44c` 30, `5de8b8fc` 30. `13bb5c0c` is **out of population** (L2 fail, not-manifold), so the earlier "8,499 tags on `13bb5c0c`" attribution was wrong on both counts and is withdrawn. (fact)
 
-**Rates**: 1,082/1,089 files carry ≥1 validated id-run = 0.9936 (BR5-02a; R19 0.9979, R20 0.9864, R21 0.9851, unk 1.000). Total decoded objects: 5,076,186 (BR5-02b); single-file maximum 872,438 (`17930bab`, the dental mold). Corpus marker-1 offset records: 3,100,590 (BR5-02c). The 7 files without validated runs carry dictionary structures whose record shapes reject all validated forms (the marker-8 flag-1 shape with mid-list `00 00` anomalies — parked, see §6).
+**Rates**: 1,089/1,089 files carry ≥1 validated id-run = 1.0 (BR5-02a; every release bucket 1.0), after the k-dispatch fix — the seven files that previously failed were the k=0/k=1 record shapes. 1,106,253 id-run records, 8,998,657 **id references** (positions in id lists, repeats included — not distinct object count; the per-object records list e.g. `(self, 28, 2)`, so list lengths repeat ids) (BR5-02b). The committed draft's total was the same sum under the k=2..15 dispatch, so the increase is added id-list positions from the k=0/k=1 records, not a change of metric. (fact)
 
-**Detector honesty**: the id-run decode does NOT interpret `x`/`flag`/marker-k semantics (candidate: owner object / grouping), does not decode the marker-1 offset shapes, and does not join dictionary objects to the record-stream bulk (the `x` fields look like stream offsets — unverified, not claimed).
+**Detector honesty**: the id-run decode does NOT interpret `x`/`flag`/marker-k semantics (candidate: owner object / grouping), does not decode the marker-1 shapes, and does not join dictionary ids to the record-stream bulk (the `x` fields look like stream offsets — unverified, not claimed). (unknown)
 
 ## 4. TOP-01 Solid/Body — decoded at the structural carrier (BR5-04)
 
@@ -59,30 +62,43 @@ The census's TOPO_BODY signature ("`CATSeeBodyCont` block & store root") decodes
 - Nested store root located: 1,089/1,089 = 1.000 (BR5-04b) — `stdcont` is the mass family; the worked example `01f2a48c` located through `xdoclink`.
 - CGM side: the identity record of §2 anchors the exact-model container on every part.
 
-**Detector honesty**: this is a structural-carrier decode — it proves container/root structure, not body topology semantics. The body/lump *record* semantics (what makes a CGM object a solid body vs a lump) live in the record-stream bulk and are not decoded; nothing here discriminates body count, lump boundaries, or orientation.
+**Detector honesty**: this is a structural-carrier decode — it proves container/root structure, not body topology semantics. The body/lump *record* semantics (what makes a CGM object a solid body vs a lump) live in the record-stream bulk and are not decoded; nothing here discriminates body count, lump boundaries, or orientation. (unknown)
 
-## 5. TOP-02 Lump — open (parked)
+## 5. TOP-02 Lump — documented negative (ceiling only)
 
-No committed detector discriminates lump records. The census classifies `TOPO_LUMP` with the same trigger as `TOPO_BODY` (store root or CGM presence) — it cannot separate the two, and BR5's dictionary decode does not reach object-record semantics. Ceiling arithmetic: the lump boundary records (per the census signature, "lump boundary records in store & CGM") must be object-level records in the CGM stream (bulk territory) and/or store structures outside the decoded pool/facet grammar; with the record framing parked (§6) the lump record class cannot be isolated this ticket. Rate rows: BR5-06a = 0.000 (no discriminating rows exist). The re-entry belongs to a follow-up with the record-stream framing.
+No committed detector isolates lump records. The census classifies `TOPO_LUMP` with the same trigger as `TOPO_BODY` (store root or CGM presence), so it cannot separate the two; BR5's dictionary decode does not reach object-record semantics. BR5-06a records that fact with `observations=0` — no rate exists, because no detector exists. (fact about the census; unknown about lumps)
 
-## 6. CRV-06 / SRF-08 NURBS — open (parked) with ceiling arithmetic
+**Ceiling arithmetic** (BR5-06b, BR5-02d, BR5-07a):
 
-**What is measured (the ceiling):**
+- CGM dictionary region decoded/framed: **50,486,667 of 151,999,604 B = 0.3321**; the other 101,512,937 B (0.6679) is not framed by a validated id-run.
+- Id references located: **8,998,657** (BR5-02b); `XX-0` tags located: **70,148 on 9 files** (BR5-05).
+- Record-stream bulk measured: **100,663,296 of 337,242,057 B = 0.2985** (one part's pre-CGM region, §6).
+- Lump record classes isolated: **0** (BR5-06b).
 
-- The CGMGeom dictionary regions carry **zero** NURBS payload signatures corpus-wide: knot-array signature 0/1,089 (BR5-03a), in-region rational-weight signature 0/1,089 (BR5-03b), on every release bucket. The dictionary is pure structure.
-- A 96 MB window of the `17930bab` bulk (the record-stream territory before the CGM block) carries **zero** knot/weight signatures, and the whole-file weight scan found none. The exact-model record stream does not store knots/weights as plain little-endian f64 at any even byte phase (the scan walks all four phases; odd-start arrays are a named residual limitation).
-- No compression signature either: zlib magic byte-pairs in the `17930bab` bulk appear at chance rates (each of `78 01`/`78 9c`/`78 da`/`78 5e` ≈ 33-35k occurrences over 337 MB ≈ the 4/65536 random expectation ≈ 20.6k; one attempted decompress failed with `incorrect data check`). The stream's encoding is neither plain f64 nor zlib — it is record-structured with an open encoding (B4's 7.5 bits/byte density observation stands).
-- The `b2 03` record family (B4's observation) is confirmed in the bulk with f64 coordinate payloads in ±-symmetric pairs (e.g. `13bb5c0c` abs 0xb6480 (745,088d): `19 2d 44 54 fb 21 19 40` = +6.286 and `... 29 40` = +13.286 axis pairs) — but its framing resisted tiling under all tested length-field hypotheses (the ~20-minute park rule).
+**What the ceiling means** (inference): a lump record class can only be in the unframed 101,512,937 B of CGM region or in the bulk not covered by the window, and nothing in this measurement says lumps are absent. The re-entry is the record-stream framing (§6), not a new TOP-02 probe.
 
-**What is parked (the ambiguity, named):** the record-stream framing of the unnamed bulk. Without it, the NURBS record classes (curve/surface, degree, knots, control points, weights) cannot be located — so CRV-06/SRF-08 stay open with the ceiling above, not documented-negatives of absence: freeform parts (the dental mold's ~872k dictionary objects) must carry surface definitions somewhere in that stream.
+## 6. CRV-06 / SRF-08 NURBS — documented negative (ceiling only)
 
-**Detector honesty (the content-based detector, `cgm_nurbs.nurbs_signatures`)**: a knot-array signature = ≥ 8 non-decreasing finite f64 in [0, 1e7) with ≥ 3 distinct values, ≥ 1 repeat, chain-fraction < 0.75 (u32-alias guard) and the (0, 1e-8) denormal band excluded (second alias guard); a weight signature = ≥ 4 consecutive exact f64 1.0. What it does NOT discriminate: it does not prove a flagged array belongs to a NURBS record (no record framing), does not distinguish rational from non-rational splines (non-rational splines store no weight array — a zero weight rate is not evidence of zero splines), does not distinguish curve knots from surface knots, and its value floor (1e-8) assumes normalized parameter ranges. The synthetic negative fixtures (`tests/test_brep_cgm_nurbs.py`): u32-alias array (chain guard), denormal-aliased index array (band cut), strictly-increasing array (no multiplicity), transform-style 1.0 pair (weight threshold), and the corpus-shaped no-signature dictionary.
+**Content signatures (BR5-03a/b/c):** 0/1,089 CGMGeom regions carry a knot-array signature, 0/1,089 carry a weight-1.0 signature — on every release bucket — and the content rate against BR1's carrier label is 0.000. (fact)
+
+**The bulk measurement (BR5-07).** The measured bulk is the `CATPrtCont` region immediately preceding the CGMGeom block of `17930bab` (the dental mold): abs `[56,742, 337,298,799)` = **337,242,057 B** (BR5-07a). The measured window is its first 96 MiB = **100,663,296 B = 0.2985 of the region**; every window figure below is scoped to that span. (fact)
+
+- **Knot/weight signatures**: 0 knot runs and 0 weight runs in the 100,663,296 B window (BR5-07b/c); 0 weight runs in the whole 375,670,078 B file (BR5-07g). The record stream therefore stores no knots or weights as plain little-endian f64 at an even byte phase in that span; odd-start arrays and non-normalized parameter values stay outside the detector (named limitations). (fact + scope)
+- **zlib magic pairs**: in the 96 MiB window `78 01`/`78 9c`/`78 da`/`78 5e` occur 1,423/514/454/1,467 times against 1,536.0 expected per pattern — 0.93/0.33/0.30/0.96× chance, i.e. no excess at all (BR5-07d). Over the full 337,242,057 B region the same four occur 35,208/33,252/33,175/35,428 against 5,145.9 expected — 6.84/6.46/6.45/6.88× chance (BR5-07e). The excess is real and localized outside the first 96 MiB; the earlier draft's framing (per-pattern counts against the four-pattern *sum* expectation, "chance rates") was an arithmetic error — per-pattern chance is 5,145.9, and each pair is ~6.6× that. (fact)
+- **No zlib stream is proven**: 0 of **137,063** magic positions yield any output from a fresh `zlib.decompressobj()` over the first 8 KiB at the position (BR5-07f). Whatever the 6.6× excess is, it is not a zlib stream starting at any of those positions. Trial set limitation: only the four 32 KiB-window CMF/FLG pairs (`78 xx`) are trialled; smaller-window zlib streams are not covered. (fact for the trials; unknown for the excess)
+- **The `b2 03` record family** (B4's observation) is present in the bulk, but its field framing is not decoded. Byte-verified example, `13bb5c0c` abs `0xb6470 (746,608d)`: `1b 2d 44 54 fb 21 19 40` = 6.283185307179589 and `19 2d 44 54 fb 21 29 40` = 12.566370614359174 (a 2π/4π pair); the next `b2 03` record marker starts at abs `0xb6488 (746,632d)`. No record layout is claimed. (fact for the bytes; unknown for the structure)
+
+**What is not decoded (the ambiguity, named):** the record-stream framing of the pre-CGM bulk. Without it the NURBS record classes (curve/surface, degree, knots, control points, weights) cannot be located, so CRV-06/SRF-08 carry a measured ceiling rather than an absence claim: freeform parts (the dental mold's 1,552,108 id references) must carry surface definitions somewhere in that stream. (unknown)
+
+**Detector honesty (content-based detector, `cgm_nurbs.nurbs_signatures`)**: a knot-array signature = ≥ 8 non-decreasing finite f64 in [0, 1e7) with ≥ 3 distinct values, ≥ 1 repeat, chain-fraction < 0.75 (u32-alias guard) and the (0, 1e-8) denormal band excluded (second alias guard); a weight signature = ≥ 4 consecutive exact f64 1.0. What it does NOT discriminate: it does not prove a flagged array belongs to a NURBS record (no record framing), does not distinguish rational from non-rational splines (non-rational splines store no weight array — a zero weight rate is not evidence of zero splines), does not distinguish curve knots from surface knots, and its value floor (1e-8) assumes normalized parameter ranges. The synthetic negative fixtures (`tests/test_brep_cgm_nurbs.py`): u32-alias array (chain guard), denormal-aliased index array (band cut), strictly-increasing array (no multiplicity), transform-style 1.0 pair (weight threshold), and the corpus-shaped no-signature dictionary.
+
+**Ceiling rows**: BR5-06c records that no record-class detector exists (`observations=0`); BR5-06d carries the numbers: 0 knot-signature files and 0 weight-signature files over 151,999,604 B of CGM region, 0 knot/weight runs in the 100,663,296 B window, 0 weight runs over the whole file.
 
 **Census coupling (detector honesty correction, to be re-entered by BR1's owner or a follow-up)**: `brep-census-files.csv`'s `construct_classes` labels `GEOM_SURF_NURBS`/`GEOM_CURV_NURBS` on every CGMGeom-carrying file (census script lines 383-384), producing the frozen vocabulary's 100% rates. The content-based rate is 0.000 (BR5-03c). The 100% rows measure carrier presence; they do not measure NURBS content. Not re-implemented here (census file is outside BR5's ownership).
 
 **Sibling couplings — state only, not advanced:**
-- BR2's parked composite-index-space normals (19,509/54,265 out-of-pool): BR5's dictionary decode provides no composite index space; not advanced.
-- BR4's parked 125 composite stores / CGM tab-cyl discrimination / revolution scope / torus parameters on CGM construction records: the construction records live in the parked record stream; not advanced.
+- BR2's parked composite-index-space normals: BR5's dictionary decode provides no composite index space; not advanced.
+- BR4's parked composite stores / CGM tab-cyl discrimination / revolution scope / torus parameters on CGM construction records: the construction records live in the un-framed record stream; not advanced.
 - BR3's parked CRV-04/05 conic type on a CGMGeom cross-check of the `33 38` 2-B payload trailer: the `33 38` records are nested-store (CATStdCont) territory; BR5's CGM decode does not reach them; not advanced.
 
 ## 7. Reproduction
@@ -93,4 +109,22 @@ export LD_LIBRARY_PATH=/usr/lib:${LD_LIBRARY_PATH:-}
   --corpus-root /home/alan/Documents/Repos/catpart-parser
 ```
 
-Outputs `docs/evidence/data/br5-cgm-nurbs-claims.csv` (58 rows: per-release + corpus-wide). Tests: `.venv/bin/python -m pytest tests/test_brep_cgm_nurbs.py -q` (22 passed).
+Outputs `docs/evidence/data/br5-cgm-nurbs-claims.csv` (83 rows: per-release + corpus-wide rate rows, numeric ceiling rows, and the BR5-07 bulk rows). The bulk window defaults to `17930bab` and 96 MiB (`--bulk-sha16`, `--bulk-mib`); the corpus binaries are gitignored, so the run is read-only against the main checkout. Tests: `.venv/bin/python -m pytest tests/test_brep_cgm_nurbs.py -q` (27 passed).
+
+## 8. Review corrections (2026-11-18)
+
+The independent review returned FIX with nine blocking findings; this section records each correction. Byte evidence is given for the two findings where the previous text was not merely stale but wrong.
+
+| # | Finding | Change |
+| :--- | :--- | :--- |
+| B1 | TOP-02/CRV-06/SRF-08 used a third "open (parked)" state and §5 had no numbers | Rows relabelled **Documented negative (ceiling only)**; numeric ceiling rows added (BR5-02d, 02e, 06b, 06d, 07a-g) and cited in §5/§6; no-detector rows now use `observations=0` instead of a 0/1089 rate |
+| B2 | k-dispatch restricted id-runs to k=2..15 and treated every `01 00 04 00` as an offset record | `scan_dictionary` parses the id-list shape first for every k in 0..15 and only counts a k=1 record as marker-1 on parse failure; CSV regenerated (1,089/1,089 files, 8,998,657 refs); k=0 and k=1 unit fixtures added |
+| B3 | Largest run prose said 106,912 while the bytes say otherwise | Count field `60 a1 01 00` = 0x1a160 = **106,848** (ids 31..106,878) in prose, code comment, CSV detail and unit test |
+| B4 | "13bb5c0c: 8,499 tags" was wrong and out of population | Tag attribution rewritten: `50cd280f` 68,707 of 70,148 (0.9795), the nine-file list in BR5-05; `13bb5c0c` labelled out of population (L2 fail, not-manifold) and the attribution withdrawn |
+| B5 | The `0xb6480` byte citation was fabricated (wrong offset, wrong bytes, a 2π pattern that occurs nowhere) | Re-derived: 2π/4π pair at abs `0xb6470 (746,608d)`, `b2 03` marker at `0xb6488 (746,632d)`; the quoted bytes are the file's actual bytes |
+| B6 | zlib counts were compared to the four-pattern sum expectation | Per-pattern chance (5,145.9 over 337,242,057 B) and the measured ~6.6× excess stated; the 96 MiB window (0.30-0.96×) is reported separately |
+| B7 | Bulk/NURBS figures had no committed artifact and the script only scanned the CGM region | `--bulk-sha16`/`--bulk-mib` bulk-window mode added (span, zlib counts window+region, decompress trials, knot/weight scan, whole-file weight scan); BR5-07a-g rows; the unverifiable single-decompress anecdote replaced by 0/137,063 trials |
+| B8 | Four offset citations were wrong (`±1` writer, `+0x150` name, `+0x6e` first run, `0x2ba82` u16 marker) | Writer `+0x6a (106d)` on 1,089/1,089; name `+0xc3 (195d)` on 1,081 with the eight outliers listed; first accepted run `07a57767` region `+0x120 (288d)`; u16 record `1d4214e5` abs `0x2ba84 (178,820d)` region `+274`; identity offsets and the +288 run start pinned by unit assertions |
+| B9 | The note claimed a shifted-parse negative fixture that did not exist; u16 was described as an R19 form; the u32 gate's recall hole was unstated | `test_shifted_parse_rejected` added (u32 fits, terminator fails, u16 reading would validate → no run under the default policy, and the local policy's acceptance pinned); u16 described as a per-record variant with a committed file rate (BR5-02f); the gate's recall ceiling quantified in BR5-02e and §3 |
+
+Non-blocking items: dead `_CHUNK_F64` and the stale `KnotRun.aliased` docstring removed; one release-token regex pinned (`[0-3][0-9][0-9]{4}[A-Z]`) with a near-miss negative fixture; the unit before `Cont_` documented as `2*len(name)+2` and asserted; the tautological `vendor_offset` assertion replaced by the literal +392 pin; the CSV gained a `label` column (fact / inference / unknown) and `id_refs` replaces "objects" (the metric counts id-list positions).

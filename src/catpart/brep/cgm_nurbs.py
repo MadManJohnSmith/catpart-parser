@@ -10,20 +10,29 @@ L2-pass files):
 - The ``CGMGeom`` storage block's region (B3 boundary rule) is the CGM
   **object dictionary**: a property preamble (writer id ``FINJPL  ``,
   the ``Cont_<hex>`` UTF-16LE identity name, the vendor footer) followed
-  by object id-run records and offset records.  The dictionary carries
+  by object id-run records and marker-1 records.  The dictionary carries
   no coordinate payload.
-- **Identity record** (byte-verified on R18-R21 files): the UTF-16LE
+- **Identity record** (byte-verified on R15-R32 files): the UTF-16LE
   ``CATStorageProperty`` field, then the UTF-16LE ``Cont_<hex>``
-  container name, ASCII ``FINJPL  `` writer id at ``+0x69 (105d)`` /
-  ``+0x6a (106d)`` from the block start, and the footer
-  ``DASSAULT-SYSTEMES`` / ``CATIA`` / a ``[0-9]{6}[A-Z]`` release token.
+  container name, ASCII ``FINJPL  `` writer id at ``+0x6a (106d)`` from
+  the block start (observed at 106 on all 1,089 files), and the footer
+  ``DASSAULT-SYSTEMES`` / ``CATIA`` / the release token ``041803P``
+  (the same token on all 1,089 files: a writer build stamp, not a
+  version discriminator).
 - **Object id-run records**: marker ``[u32le 0x0004000k]`` (bytes
-  ``k 00 04 00``, k = 2..15) + ``[u32le x][u8 flag][u32le count]`` +
-  ``count`` u32le ids + the ``00 00`` terminator.  Verified on id runs
-  up to count = 106,912 (the ``17930bab`` dental mold: the corpus's
-  largest observed object space).  Marker-1 (``01 00 04 00``) records
-  are offset records of two further shapes; this scan counts them and
-  covers the id runs, it does not decode the offset shapes.
+  ``k 00 04 00``, observed for every ``k`` in 0..15) +
+  ``[u32le x][u8 flag][count]`` + ``count`` u32le ids + ``00 00``.
+  The marker byte is *not* a type discriminator: every ``k 00 04 00``
+  candidate is parsed as an id-run first and only counted as a
+  marker-1 record when that parse fails (payload-discriminated).  Two
+  count widths occur, both terminator-validated: u32le (sampled form)
+  and u16le (valid in 1,089/1,089 files across all releases).  The
+  u16le read is attempted only when the u32le count cannot describe a
+  record in the remaining span; that gate is what keeps a corrupted
+  u32 record from re-parsing shifted as a u16 record, and it is also a
+  named recall ceiling (a u16 record is unreachable wherever its u32
+  re-read still fits the span — from 786,467 B remaining for the
+  smallest shape; see ``scan_dictionary`` and the note's BR5-02e).
 - **NURBS payload detector** (the BR1 census honesty fix): the census
   labels ``GEOM_CURV_NURBS``/``GEOM_SURF_NURBS`` from ``cgm_present``
   alone (``scripts/triage/census_brep_constructs.py``: every
@@ -57,39 +66,43 @@ CGM_BLOCK_NAME = "CGMGeom"
 SEE_BODY_BLOCK_NAME = "CATSeeBodyCont"
 
 #: CGM writer id (ASCII, 8 bytes incl. padding), block-relative
-#: ``+0x69 (105d)``..``+0x6a (106d)`` observed.
+#: ``+0x6a (106d)`` on all 1,089 L2-pass files.
 WRITER_ID = b"FINJPL  "
 #: Vendor / application footer tokens (ASCII, length-prefixed in the
 #: stream; extracted by presence).
 VENDOR = b"DASSAULT-SYSTEMES"
 APPLICATION = b"CATIA"
-_RELEASE_TOKEN = re.compile(rb"[0-3][0-9](?:[0-9][0-9])?[0-9]{4}[A-Z]")
+#: The footer's 7-byte release/build token.  OBSERVED VALUE: every
+#: L2-pass file carries ``041803P`` — a writer build stamp, so it does
+#: not discriminate releases (the ``detected_version`` column does).
+_RELEASE_TOKEN = re.compile(rb"[0-3][0-9][0-9]{4}[A-Z]")
+
 
 def _utf16le(s: str) -> bytes:
     return b"".join(bytes([ord(c), 0]) for c in s)
 
 
-#: UTF-16LE ``Cont_<hex>``.  The byte unit preceding ``Cont_`` varies
-#: across files (``B``, ``4``, ``2``) — it is field structure (a type
-#: byte), not name content, so the match anchors on ``Cont_`` itself.
-_UTF16_CONT_NAME = re.compile(
-    _utf16le("Cont_") + b"(?:[0-9a-fA-F_]\x00){8,}"
-)
+#: UTF-16LE ``Cont_<hex>``.  The u16le unit immediately before
+#: ``Cont_`` is ``2 * len(name) + 2`` (the UTF-16 byte length plus the
+#: 2-byte terminator), not a type byte: measured on 1,089/1,089 files.
+#: The match anchors on ``Cont_`` itself.
+_UTF16_CONT_NAME = re.compile(_utf16le("Cont_") + b"(?:[0-9a-fA-F_]\x00){8,}")
 
-#: Object id-run record markers: ``k 00 04 00`` with k = 2..15.
-#: Marker-1 (``01 00 04 00``) offset records are counted, not decoded.
-_RUN_MARKER_FIRST = 2
-_RUN_MARKER_LAST = 15
-_MARKER_RE = re.compile(rb"[\x01-\x0f]\x00\x04\x00")
+#: Object record markers: ``k 00 04 00`` for every observed k in 0..15.
+#: Marker-1 (``01 00 04 00``) candidates that fail the id-run parse are
+#: counted as marker-1 records (their field layout is not established;
+#: the earlier "offset record" label was marker-based, not decoded).
+_MARKER_RE = re.compile(rb"[\x00-\x0f]\x00\x04\x00")
+_MARKER1 = 1
 
 _MAX_RUN_COUNT = 1_000_000
+_MAX_ID = 0x10000000
 
 #: Knot-value floor: parameter values below this (but above zero) are
 #: the denormal-alias band of integer arrays, never knot parameters.
 _KNOT_FLOOR = 1e-8
 
 _ONE_F64 = struct.pack("<d", 1.0)
-_CHUNK_F64 = 1 << 13  # 8192 f64 per unpack batch
 
 
 @dataclasses.dataclass(frozen=True)
@@ -97,9 +110,8 @@ class ContainerIdentity:
     """The CGM container's identity preamble, byte-verified.
 
     Offsets are relative to the ``CGMGeom`` block start; both bases in
-    the evidence note.  ``cont_name`` is the UTF-16LE container name
-    (``Cont_<hex>``; the varying byte unit before ``Cont_`` is field
-    structure, not name content).
+    the evidence note.  ``cont_name_prefix`` is the u16le unit before
+    the name (``2 * len(cont_name) + 2`` on every measured file).
     """
 
     block_start: int
@@ -107,6 +119,7 @@ class ContainerIdentity:
     writer_offset: int
     cont_name: str
     cont_name_offset: int
+    cont_name_prefix: int
     vendor_offset: int
     release: str
 
@@ -124,12 +137,16 @@ class ContainerIdentity:
 class IdRun:
     """One validated object id-run record.
 
-    Layout: ``[u32le marker 0x0004000k][u32le x][u8 flag][u32le count]
+    Layout: ``[u32le marker 0x0004000k][u32le x][u8 flag][count]
     [count x u32le ids][u16le 0000]``.  ``start``/``end`` are absolute
     buffer offsets (``end`` exclusive, terminator included).
+    ``marker`` is the raw marker byte (0..15 observed); it is not
+    interpreted as a type.  ``width`` is the count-field width that
+    validated (32 or 16 bits).
     """
 
-    marker: int  # k, 2..15
+    marker: int
+    width: int
     x: int
     flag: int
     ids: tuple[int, ...]
@@ -142,13 +159,23 @@ class DictionaryScan:
     """The id-run decode of one CGMGeom dictionary region."""
 
     runs: tuple[IdRun, ...]
-    offset_markers: int  # count of marker-1 offset records (not decoded)
+    marker1_records: int  # k=1 records that failed the id-list parse
     region_size: int
 
     @property
-    def objects(self) -> int:
-        """Total object ids across the validated runs."""
+    def id_refs(self) -> int:
+        """Total object id references across the validated runs.
+
+        This is the sum of id-list lengths: a record that repeats an id
+        (e.g. the per-object ``self, type, parent`` triple) contributes
+        one reference per position, not one distinct object.
+        """
         return sum(len(r.ids) for r in self.runs)
+
+    @property
+    def framed_bytes(self) -> int:
+        """Bytes covered by validated id-run records (terminator included)."""
+        return sum(r.end - r.start for r in self.runs)
 
     @property
     def max_id(self) -> int:
@@ -161,9 +188,7 @@ class KnotRun:
     """One accepted knot-array signature.
 
     ``offset`` is absolute; ``distinct``/``repeats`` describe the run's
-    f64 values (repeats = knot multiplicity evidence).  ``aliased`` is
-    always False for accepted runs (the u32-alias guard rejected the
-    rest); it is kept for the CSV rows.
+    f64 values (repeats = knot multiplicity evidence).
     """
 
     offset: int
@@ -209,7 +234,7 @@ class BodyCarrier:
     -> ``other-container``, ``None`` when no region locates one).
     What this does NOT discriminate: body *topology* semantics — the
     locator proves container/root structure, not the body/lump record
-    contents (parked, see the evidence note).
+    contents (not decoded; see the evidence note).
     """
 
     seebody_block: bool
@@ -283,6 +308,7 @@ def parse_identity(data, block_start: int, region_end: int) -> ContainerIdentity
     catstor = _utf16le("CATStorageProperty")
     name = ""
     name_off = -1
+    prefix = -1
     j = data.find(catstor, block_start, end)
     if j >= 0:
         m = _UTF16_CONT_NAME.search(data, j, min(j + 512, end))
@@ -292,6 +318,7 @@ def parse_identity(data, block_start: int, region_end: int) -> ContainerIdentity
             raw = bytes(data[m.start(): min(m.start() + 200, end)])
             name = _decode_utf16_ascii(raw)
             name_off = m.start() - block_start
+            prefix = int.from_bytes(bytes(data[m.start() - 2: m.start()]), "little")
     vendor = data.find(VENDOR, block_start, end)
     release = ""
     if vendor >= 0:
@@ -304,66 +331,88 @@ def parse_identity(data, block_start: int, region_end: int) -> ContainerIdentity
         writer_offset=writer - block_start if writer >= 0 else -1,
         cont_name=name,
         cont_name_offset=name_off,
+        cont_name_prefix=prefix,
         vendor_offset=vendor - block_start if vendor >= 0 else -1,
         release=release,
     )
 
 
-def scan_dictionary(data, lo: int, hi: int) -> DictionaryScan:
+def _parse_id_run(data, s: int, hi: int, width_policy: str) -> IdRun | None:
+    """Try the id-run shape at marker ``s`` (payload-discriminated).
+
+    Both count widths are terminator-validated.  ``width_policy``
+    selects when the u16le read is attempted:
+
+    - ``"gated"`` (default): only when the u32le count cannot describe
+      a record in the remaining span.  A u32 record whose terminator
+      fails is *not* re-read shifted as u16 (the shifted-parse negative
+      fixture).  Recall ceiling: a u16le record is unreachable
+      wherever its first 4 payload bytes read as a u32 count that fits
+      the remaining span and then fail the terminator check (from
+      786,467 B remaining for the smallest shape).
+    - ``"local"``: try both widths per record and take the first whose
+      terminator closes.  Wider recall, but a corrupted u32 record can
+      then re-parse shifted (measured cost/benefit in the note).
+    """
+    k = data[s]
+    x = int.from_bytes(bytes(data[s + 4: s + 8]), "little")
+    flag = data[s + 8]
+    forms: list[tuple[int, int, int]] = []
+    u32_count = int.from_bytes(bytes(data[s + 9: s + 13]), "little")
+    if u32_count and s + 13 + 4 * u32_count + 2 <= hi:
+        forms.append((u32_count, s + 13, 32))
+    if width_policy == "local" or not forms:
+        forms.append(
+            (int.from_bytes(bytes(data[s + 9: s + 11]), "little"), s + 11, 16)
+        )
+    for count, ids_at, width in forms:
+        if count > _MAX_RUN_COUNT or ids_at + 4 * count + 2 > hi:
+            continue
+        if bytes(data[ids_at + 4 * count: ids_at + 4 * count + 2]) != b"\x00\x00":
+            continue
+        ids = struct.unpack_from(f"<{count}I", data, ids_at)
+        if not ids or max(ids) >= _MAX_ID:
+            continue
+        return IdRun(
+            marker=k,
+            width=width,
+            x=x,
+            flag=flag,
+            ids=ids,
+            start=s,
+            end=ids_at + 4 * count + 2,
+        )
+    return None
+
+
+def scan_dictionary(
+    data, lo: int, hi: int, width_policy: str = "gated"
+) -> DictionaryScan:
     """Decode the object id-run records of one dictionary span (BR5-02).
 
-    Walks every ``k 00 04 00`` candidate marker (k = 2..15) and accepts
-    it as an id run when the record validates: sane count, the id array
-    fits, and the ``00 00`` terminator closes it.  Marker-1 offset
-    records are counted (two shapes exist in the corpus; their field
-    decode is parked, see the evidence note).  The walk resumes at the
-    terminator of each accepted run; rejected candidates advance by one
-    marker occurrence, so coverage is measured, not assumed.
+    Walks every ``k 00 04 00`` candidate marker (k = 0..15), parses the
+    id-run shape first, and only counts the candidate as a marker-1
+    record when that parse fails — the dispatch is payload- and
+    terminator-discriminated, not marker-discriminated.  The walk
+    resumes at the terminator of each accepted run, so id arrays are
+    not re-scanned.
     """
     runs: list[IdRun] = []
-    offset_markers = 0
+    marker1 = 0
     pos = lo
     for m in _MARKER_RE.finditer(data, lo, hi):
         s = m.start()
         if s < pos:
             continue
-        k = data[s]
-        if k == 1:
-            offset_markers += 1
-            pos = s + 4
+        run = _parse_id_run(data, s, hi, width_policy)
+        if run is not None:
+            runs.append(run)
+            pos = run.end
             continue
-        if k < _RUN_MARKER_FIRST or k > _RUN_MARKER_LAST:
-            continue
-        x = int.from_bytes(bytes(data[s + 4: s + 8]), "little")
-        flag = data[s + 8]
-        # Count-width variants (both byte-verified): the u32le count is
-        # the sampled R20/R21 form; R19-era records write a u16le count
-        # (``05 00``) with the id array immediately after.  The u16le
-        # fallback applies only when the u32le count cannot describe
-        # any record in the remaining span — otherwise a u32le record
-        # whose terminator fails would re-parse shifted as u16le and
-        # accept garbage ids (the shifted-parse negative fixture).
-        u32_count = int.from_bytes(bytes(data[s + 9: s + 13]), "little")
-        forms = [(u32_count, s + 13)]
-        if u32_count * 4 + 15 > hi - s:
-            forms.append((int.from_bytes(bytes(data[s + 9: s + 11]), "little"), s + 11))
-        for count, ids_at in forms:
-            end_ids = ids_at + 4 * count
-            if count > _MAX_RUN_COUNT or end_ids + 2 > hi:
-                continue
-            if bytes(data[end_ids: end_ids + 2]) != b"\x00\x00":
-                continue
-            ids = struct.unpack_from(f"<{count}I", data, ids_at)
-            if not ids or max(ids) >= 0x10000000:
-                continue
-            runs.append(
-                IdRun(marker=k, x=x, flag=flag, ids=ids, start=s, end=end_ids + 2)
-            )
-            pos = end_ids + 2
-            break
-    return DictionaryScan(
-        runs=tuple(runs), offset_markers=offset_markers, region_size=hi - lo
-    )
+        if data[s] == _MARKER1:
+            marker1 += 1
+        pos = s + 4
+    return DictionaryScan(runs=tuple(runs), marker1_records=marker1, region_size=hi - lo)
 
 
 def _chain_fraction(words: list[bytes]) -> float:
@@ -397,8 +446,8 @@ def nurbs_signatures(data, lo: int, hi: int) -> NurbsSignatures:
 
     The signatures locate payload, not record semantics: a flagged
     array is not proven to belong to a NURBS record (the exact-model
-    record framing is parked), and non-rational splines carry no weight
-    array at all.  See the module docstring's honesty line.
+    record framing is not decoded), and non-rational splines carry no
+    weight array at all.  See the module docstring's honesty line.
     """
     # --- weight runs (exact 1.0 f64)
     weight_runs: list[tuple[int, int]] = []

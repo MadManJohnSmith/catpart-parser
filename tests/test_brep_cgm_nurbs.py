@@ -1,9 +1,10 @@
 """BR5 unit tests: CGM container identity, object dictionary, NURBS
 payload detector (ticket #57).
 
-Every fixture is built from the byte patterns observed in the corpus
-(worked examples in docs/evidence/2026-11-17-br5-cgm-nurbs.md); the
-negative fixtures carry the detector honesty edges:
+Fixtures are built from byte patterns observed in the corpus (worked
+examples in docs/evidence/2026-11-17-br5-cgm-nurbs.md); offsets are
+pinned to the corpus values.  The negative fixtures carry the detector
+honesty edges:
 
 - the u32-alias guard (a sequential u32le array must NOT flag as a
   knot array — the corpus's object-id arrays alias as denormal f64s);
@@ -11,7 +12,10 @@ negative fixtures carry the detector honesty edges:
 - the repeat/distinct edge (a strictly increasing array without knot
   multiplicity must NOT flag);
 - the weight threshold (a transform-style ``1.0`` pair is not a
-  rational-weight run).
+  rational-weight run);
+- the shifted-parse edge (a u32 record whose terminator fails is not
+  re-read as a u16 record by the default width policy);
+- the release-token edge (a near-miss token is not accepted).
 """
 
 from __future__ import annotations
@@ -51,9 +55,12 @@ def storage_block(name: str) -> bytes:
 
 def cgm_identity_region(cont_name: str = "Cont_4ab1dbcf_2dac_5f11b2db_42be",
                         release: str = "041803P") -> bytes:
-    """The CGMGeom preamble shape of the sampled files: the writer id
-    at ``+0x6a (106d)`` (``9f 36 08`` frames it), the UTF-16LE
-    CATStorageProperty + Cont_ identity fields, the vendor footer."""
+    """The CGMGeom preamble shape of the corpus: the writer id at
+    ``+0x6a (106d)`` (framed by ``9f 36 08``), the UTF-16LE
+    CATStorageProperty + Cont_ identity fields (name at ``+0xc3
+    (195d)``, preceded by the u16le length unit ``2*len(name)+2``), the
+    vendor footer at ``+0x188 (392d)``.  Offsets match the 07a57767
+    prefix; the fields between them are synthetic."""
     head = b"\x00" * 103 + b"\x9f\x36\x08"
     body = (
         b"FINJPL  "
@@ -62,6 +69,7 @@ def cgm_identity_region(cont_name: str = "Cont_4ab1dbcf_2dac_5f11b2db_42be",
         + b"\x15\x00\x02\x00\x00\x00\x28\x00\x03\x00"
         + utf16("CATStorageProperty")
         + b"\x00\x00"
+        + b"\x00" * 2
         + b"\x50\x00\x00\x00\x14\x00\x02\x00\x00\x00\x42\x00"
         + utf16(cont_name)
         + b"\x00\x0d\x00\x01\x00\x00\x00\x00"
@@ -82,8 +90,11 @@ class TestIdentity:
         ident = cgm_nurbs.parse_identity(data, 0, len(data))
         assert ident.ok()
         assert ident.writer_offset == 106
+        assert ident.cont_name_offset == 195
         assert ident.cont_name == "Cont_4ab1dbcf_2dac_5f11b2db_42be"
-        assert ident.vendor_offset == data.find(b"DASSAULT-SYSTEMES")
+        # The unit before "Cont_" is the UTF-16 byte length + terminator.
+        assert ident.cont_name_prefix == 2 * len(ident.cont_name) + 2 == 0x42
+        assert ident.vendor_offset == 392
         assert ident.release == "041803P"
 
     def test_identity_without_footer_release(self):
@@ -95,11 +106,30 @@ class TestIdentity:
         assert not ident.ok()
         assert ident.release == ""
 
+    def test_release_token_rejects_near_miss(self):
+        # One pinned token regex: six digits without the trailing letter,
+        # and a leading digit outside 0..3, are not release tokens.
+        for token in ("041803", "541803P"):
+            data = cgm_identity_region(release=token)
+            ident = cgm_nurbs.parse_identity(data, 0, len(data))
+            assert ident.release == "", token
+            assert not ident.ok()
+
     def test_identity_missing_writer(self):
         data = cgm_identity_region().replace(b"FINJPL  ", b"XXXXXXXX")
         ident = cgm_nurbs.parse_identity(data, 0, len(data))
         assert ident.writer_offset == -1
         assert not ident.ok()
+
+
+def id_run(marker: int, x: int, flag: int, ids: tuple[int, ...],
+           width: int = 32) -> bytes:
+    """One corpus-shaped id-run record (the 01d289f4 / 8d34ab85 shape)."""
+    count = struct.pack("<I", len(ids)) if width == 32 else struct.pack("<H", len(ids))
+    return (
+        bytes([marker, 0, 4, 0]) + u32le(x) + bytes([flag]) + count
+        + u32le(*ids) + b"\x00\x00"
+    )
 
 
 class TestDictionary:
@@ -113,22 +143,53 @@ class TestDictionary:
         assert len(scan.runs) == 1
         run = scan.runs[0]
         assert run.marker == 2
+        assert run.width == 32
         assert run.x == 9
         assert run.flag == 0
         assert run.ids == (3, 4, 5, 6, 7)
-        assert scan.objects == 5
+        assert scan.id_refs == 5
         assert run.end == len(rec)
 
+    def test_idrun_k0(self):
+        # k=0 id-run, byte-for-byte the 01d289f4 region +288 record:
+        # the marker byte is not a type discriminator.
+        rec = (
+            b"\x00\x00\x04\x00" + u32le(9) + b"\x00" + u32le(5)
+            + u32le(3, 4, 5, 6, 7) + b"\x00\x00"
+        )
+        scan = cgm_nurbs.scan_dictionary(rec, 0, len(rec))
+        assert len(scan.runs) == 1
+        assert scan.runs[0].marker == 0
+        assert scan.runs[0].ids == (3, 4, 5, 6, 7)
+        assert scan.id_refs == 5
+
+    def test_idrun_k1(self):
+        # k=1 id-run, byte-for-byte the 8d34ab85 region +288 record.
+        # A marker-1 record is an id-run when the id-list shape closes;
+        # only the failures are counted as marker-1 records.
+        rec = (
+            b"\x01\x00\x04\x00" + u32le(9) + b"\x00" + u32le(5)
+            + u32le(3, 4, 5, 6, 7) + b"\x00\x00"
+        )
+        scan = cgm_nurbs.scan_dictionary(rec, 0, len(rec))
+        assert len(scan.runs) == 1
+        assert scan.runs[0].marker == 1
+        assert scan.runs[0].ids == (3, 4, 5, 6, 7)
+        assert scan.id_refs == 5
+        assert scan.marker1_records == 0
+
     def test_idrun_u16_count(self):
-        # R19 form (byte-verified on 1d4214e5): u16le count, ids at +11.
+        # u16le count: a per-record width variant accepted in 648/1,089
+        # files across all releases (1d4214e5 region +274).
         rec = (
             b"\x09\x00\x04\x00" + u32le(9) + b"\x00" + b"\x05\x00"
             + u32le(3, 4, 5, 6, 7) + b"\x00\x00"
         )
         scan = cgm_nurbs.scan_dictionary(rec, 0, len(rec))
         assert len(scan.runs) == 1
+        assert scan.runs[0].width == 16
         assert scan.runs[0].ids == (3, 4, 5, 6, 7)
-        assert scan.objects == 5
+        assert scan.id_refs == 5
 
     def test_idrun_rejects_bad_terminator(self):
         rec = (
@@ -136,6 +197,21 @@ class TestDictionary:
             + u32le(3, 4, 5, 6, 7) + b"\x01\x00"
         )
         assert cgm_nurbs.scan_dictionary(rec, 0, len(rec)).runs == ()
+
+    def test_shifted_parse_rejected(self):
+        # The u32 count (5) fits the span, its terminator fails, and a
+        # u16 re-read at +11 would validate (ids 3<<16 .. 7<<16 with a
+        # closing terminator).  The gated policy refuses the shifted
+        # parse; the local policy accepts it, which is exactly the
+        # trade-off the gate buys (see scan_dictionary's docstring).
+        rec = (
+            b"\x03\x00\x04\x00" + u32le(9) + b"\x00" + u32le(5)
+            + u32le(3, 4, 5, 6, 7) + b"\x01\x00" + b"\x00" * 5
+        )
+        assert cgm_nurbs.scan_dictionary(rec, 0, len(rec)).runs == ()
+        local = cgm_nurbs.scan_dictionary(rec, 0, len(rec), width_policy="local")
+        assert len(local.runs) == 1
+        assert local.runs[0].ids == (3 << 16, 4 << 16, 5 << 16, 6 << 16, 7 << 16)
 
     def test_idrun_rejects_out_of_range_id(self):
         # A misparse (the corpus's marker-8 mid-list anomaly) yields
@@ -146,30 +222,42 @@ class TestDictionary:
         )
         assert cgm_nurbs.scan_dictionary(rec, 0, len(rec)).runs == ()
 
-    def test_offset_markers_counted(self):
+    def test_marker1_record_counted(self):
+        # The marker-1 shape that does not close as an id list (count 0
+        # in both widths) is counted, not decoded.  Byte-for-byte the
+        # 01d289f4 region +323 record.
         rec = (
-            b"\x01\x00\x04\x00" + u32le(2) + b"\x00\x00\x02\x00"
-            + u32le(8) + u32le(0x38) + b"\x00" + b"\xdb\xb2\x11\x5f"
-            + b"\xc8\x26"
-            + b"\x02\x00\x04\x00" + u32le(9) + b"\x00" + u32le(1)
-            + u32le(3) + b"\x00\x00"
+            b"\x01\x00\x04\x00" + u32le(2) + b"\x00\x00\x00\x00\x00"
+            + b"\x00\x00\x02\x00"
+            + id_run(0, 9, 0, (3,))
         )
         scan = cgm_nurbs.scan_dictionary(rec, 0, len(rec))
-        assert scan.offset_markers == 1
-        assert scan.objects == 1
+        assert scan.marker1_records == 1
+        assert scan.id_refs == 1
+
+    def test_first_run_offset_pinned(self):
+        # 07a57767 / 01d289f4: the first accepted id-run starts at
+        # region +0x120 (288d); the +0x109 candidate fails the parse.
+        rec = b"\x00" * 288 + id_run(0, 9, 0, (3, 4, 5, 6, 7))
+        scan = cgm_nurbs.scan_dictionary(rec, 0, len(rec))
+        assert len(scan.runs) == 1
+        assert scan.runs[0].start == 288
 
     def test_large_run_dental_shape(self):
-        # The 17930bab dental mold's big run: count = 106,912
-        # sequential ids from 0x1f.
-        count = 106_912
+        # The 17930bab dental mold's big run: count field
+        # ``60 a1 01 00`` = 106,848 sequential ids from 0x1f, last
+        # id 106,878.
+        count = 106_848
+        assert int.from_bytes(b"\x60\xa1\x01\x00", "little") == count
         rec = (
-            b"\x05\x00\x04\x00" + u32le(0x1d) + b"\x00" + u32le(count)
+            b"\x05\x00\x04\x00" + u32le(0x1D) + b"\x00" + u32le(count)
             + u32le(*range(0x1F, 0x1F + count)) + b"\x00\x00"
         )
         scan = cgm_nurbs.scan_dictionary(rec, 0, len(rec))
         assert len(scan.runs) == 1
-        assert scan.objects == count
-        assert scan.max_id == 0x1F + count - 1
+        assert scan.id_refs == count
+        assert scan.max_id == 0x1F + count - 1 == 106_878
+        assert scan.framed_bytes == len(rec)
 
 
 class TestNurbsSignatures:
@@ -243,7 +331,7 @@ class TestNurbsSignatures:
         # payload signature — the corpus-wide BR5-03 negative, at unit
         # scale.
         region = cgm_identity_region() + (
-            b"\x02\x00\x04\x00" + u32le(9) + b"\x00" + u32le(5)
+            b"\x00\x00\x04\x00" + u32le(9) + b"\x00" + u32le(5)
             + u32le(3, 4, 5, 6, 7) + b"\x00\x00"
         )
         sig = cgm_nurbs.nurbs_signatures(region, 0, len(region))
@@ -319,9 +407,11 @@ class TestValidRegions:
         blk, end = cgm[0]
         ident = cgm_nurbs.parse_identity(data, blk, end)
         assert ident.ok()
-        # Writer id at block-relative +106 (105d/106d observed), after
-        # the block preamble the fixture prepends.
+        # Offsets are block-relative: writer +0x6a (106d), name +0xc3
+        # (195d) on the corpus's dominant layout.  This fixture's
+        # block_start is the prepended preamble, not the identity region.
         assert ident.writer_offset == len(pre) + 106
+        assert ident.cont_name_offset == len(pre) + 195
         assert ident.cont_name == "Cont_4ab1dbcf_2dac_5f11b2db_42be"
         assert ident.region_size == end - blk
 
