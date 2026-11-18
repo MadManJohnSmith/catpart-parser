@@ -152,7 +152,7 @@ SMOKE_VARIANTS = [
     ("geometry", "gate pass, closed, warning-free"),
     ("geometry-composite-law-curve-entries", "gate pass with warnings (composite path)"),
     ("geometry-composite-law-dedup-unordered", "gate pass with dedup warning"),
-    ("geometry-composite-law-e0b-relaxed-not-manifold", "gate fail: not-manifold"),
+    ("geometry-composite-law-dedup-declined", "gate fail: not-manifold"),
     ("geometry-composite-law-dedup-degenerate", "gate fail: degenerate-triangles"),
     ("geometry-open-shell", "gate fail: degenerate-triangles + open-shell warning"),
     ("geometry-nan-coords", "decode failure: malformed-pool-vertex"),

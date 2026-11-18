@@ -18,9 +18,10 @@
 //! u24be above 65,535 elements, the no-repeated-refs rule, the loop
 //! plane tiebreak), the stage-4b/5 per-rep decomposition with the
 //! noise-aware absorption tolerance, the stage-6 raw-array law, the
-//! stage-8/9 mixedwrite composition, the stage-10 E0-b dup-pin law
-//! (RELAXED 2026-11-13 stage 15, owner-authorized — the battery
-//! criterion removed) and the stage-15 unordered-triangle dedup. The
+//! stage-8/9 mixedwrite composition, the stage-10 E0-b dup-pin weld
+//! (PER LOOP 2026-11-18: pinnability + 2e-3 coplanarity battery + an
+//! incremental mesh-manifold guard, no empty-mesh precondition) and the
+//! stage-15 unordered-triangle dedup. The
 //! fail-closed ladder names every gap; there is no guessing.
 //!
 //! Port stage order (ticket #42's internal order, one commit + harness
@@ -37,7 +38,8 @@
 //! 2. **Stage 2**: the raw-array law + the mixedwrite composition
 //!    (``decode_raw_array``/``decode_mixedwrite`` and the per-node
 //!    table/raw/flat law set + the walk-mismatch family signature).
-//! 3. **Stage 3**: the E0-b dup-pin law (relaxed), the stage-15
+//! 3. **Stage 3**: the per-loop dup-pin weld (battery + mesh guard),
+//!    the stage-15
 //!    unordered-triangle dedup, and the curve exposure for the
 //!    viewer's overlay — spec §2.3 pins the curve-entry point
 //!    sequences ADDITIVE and OUTSIDE the Fidelity definition (the
@@ -47,11 +49,10 @@
 //! Named-ambiguity discipline (the dispatch's rule): the twin's
 //! docstring carries dated law amendments; where two passages could
 //! disagree, the LATEST dated law wins. Verified at port time: the
-//! stage-10 battery criterion (2026-11-12) vs the stage-15 relaxation
-//! (2026-11-13) — the twin's code implements the RELAXED law
-//! consistently (``_e0b_dup_pin`` carries the removal comment dated
-//! 2026-11-13, the battery call sites are gone); no passage
-//! disagreement remains. The twin is untouchable — a twin bug
+//! 2026-11-18 per-loop weld (battery + mesh guard) supersedes the
+//! stage-10/15 empty-mesh and relaxed variants; the twin's code and
+//! this port implement the same per-loop predicate and the same
+//! incremental edge-use guard. The twin is untouchable — a twin bug
 //! discovered mid-port is STOP-and-report, never a silent divergence
 //! (spec §3.3).
 //!
@@ -194,36 +195,35 @@ pub struct CompositeRecord {
 }
 
 /// The loop counters of one :fn:`triangulate` call — the twin's
-/// ``stats`` dict: the two loop counters plus the stage-10 ``dup_pin``
-/// candidate (present exactly when this call's primary triangulation
-/// is empty and dropped curve-entry loops exist).
+/// ``stats`` dict: the two loop counters plus the per-loop dup-pin
+/// weld block (present exactly when dropped curve-entry loops exist).
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct LoopStats {
     /// Loops exported (no skip reference).
     pub loops_exported: u32,
     /// Loops dropped for referencing a skip slot (the curve entries).
     pub loops_curve_entry: u32,
-    /// The stage-10 ``stats["dup_pin"]`` key: ``Some(None)`` =
-    /// evaluated but UNPINNABLE (a referenced skip slot with no
-    /// preceding written element — the fail-closed veto);
-    /// ``Some(Some(_))`` = pinnable (the merge candidate);
-    /// ``None`` = not evaluated (triangles exported, or no dropped
-    /// loops).
-    pub dup_pin: Option<Option<DupPin>>,
+    /// The ``stats["dup_pin"]`` key: the per-loop weld result (the
+    /// welded triangles and counts), ``None`` when no dropped loop was
+    /// evaluated.
+    pub dup_pin: Option<DupPin>,
 }
 
-/// The stage-10 E0-b dup-pin candidate (RELAXED 2026-11-13 stage 15,
-/// owner-authorized — the battery criterion removed): the pinned
-/// loops' triangles (written-rank indexed), the degenerate count and
-/// the pinned loop count.
+/// The per-loop dup-pin weld result (2026-11-18: battery + mesh guard
+/// per loop): the welded loops' triangles (written-rank indexed), the
+/// degenerate count, the welded-loop count and the guard/battery
+/// refusal count.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DupPin {
-    /// The pinned loops' triangles (written-rank indexed).
+    /// The welded loops' triangles (written-rank indexed).
     pub triangles: Vec<(u32, u32, u32)>,
-    /// The pinned loops' degenerate skips.
+    /// The welded loops' degenerate skips (always 0: a degenerate
+    /// emission refuses the loop, fail-closed).
     pub degenerate: u32,
-    /// The pinned loop count (``len(dropped)``).
+    /// The welded loop count.
     pub loops: u32,
+    /// The loops refused by the pinnability/battery/mesh-guard tests.
+    pub refused: u32,
 }
 
 /// The mixedwrite ``rep_laws`` block — the twin's
@@ -886,13 +886,32 @@ fn parse_strip_records(
                         if loop_refs.is_empty() {
                             continue;
                         }
-                        if loop_refs
-                            .iter()
-                            .any(|&r| sk.contains(&(r as usize)) || r as usize >= els.len())
-                        {
+                        if loop_refs.iter().any(|&r| r as usize >= els.len()) {
                             continue;
                         }
-                        let (st, _m) = loop_plane_status(loop_refs, nm, els);
+                        let resolved: Vec<u32>;
+                        let test: &[u32] = if loop_refs.iter().any(|&r| sk.contains(&(r as usize)))
+                        {
+                            // Gap-edge width choice (2026-11-18): a
+                            // parse whose loop lands on skip slots is
+                            // the usual misread. Test it on its
+                            // dup-pinned coordinates with the SAME
+                            // battery; a wrong width is nonplanar
+                            // there while a real curve loop stays
+                            // coplanar, so the fully-written width wins
+                            // the rank.
+                            let Some(pin) = dup_pin_map(els, sk, loop_refs) else {
+                                continue; // untestable: no battery
+                            };
+                            resolved = loop_refs
+                                .iter()
+                                .map(|&r| pin.get(&r).copied().unwrap_or(r))
+                                .collect();
+                            &resolved
+                        } else {
+                            loop_refs
+                        };
+                        let (st, _m) = loop_plane_status(test, nm, els);
                         if st == "nonplanar" {
                             nonplanar += 1;
                         }
@@ -925,6 +944,11 @@ fn parse_strip_records(
     (out, hdrs.len())
 }
 
+/// One dropped curve-entry loop: (marker, record normal, loop refs) in
+/// encounter order — the dup-pin input and the §2.3 curve exposure's
+/// raw material.
+type DroppedLoop = (u8, Option<(f64, f64, f64)>, Vec<u32>);
+
 /// Triangles under the identity mapping (strip/polygon semantics) —
 /// the twin's ``_triangulate``. Loop references are 0-based element
 /// indices; triangles index the WRITTEN points (the exported vertex
@@ -946,12 +970,12 @@ struct Triangulation {
     /// The loop counters (the twin's ``stats`` minus ``dup_pin``).
     loops_exported: u32,
     loops_curve_entry: u32,
-    /// The stage-10 ``stats["dup_pin"]`` candidate.
-    dup_pin: Option<Option<DupPin>>,
-    /// The dropped curve-entry loops (marker, loop refs) in encounter
-    /// order — the dup-pin input and the §2.3 curve exposure's raw
-    /// material (pre-weld).
-    dropped_loops: Vec<(u8, Vec<u32>)>,
+    /// The per-loop dup-pin weld block.
+    dup_pin: Option<DupPin>,
+    /// The dropped curve-entry loops (marker, record normal, loop
+    /// refs) in encounter order — the dup-pin input and the §2.3 curve
+    /// exposure's raw material (pre-weld).
+    dropped_loops: Vec<DroppedLoop>,
 }
 
 fn triangulate(elements: &[Element], records: &[CompositeRecord]) -> Triangulation {
@@ -970,7 +994,7 @@ fn triangulate(elements: &[Element], records: &[CompositeRecord]) -> Triangulati
     let mut degenerate = 0u32;
     let mut loops_exported = 0u32;
     let mut loops_curve_entry = 0u32;
-    let mut dropped_loops: Vec<(u8, Vec<u32>)> = Vec::new();
+    let mut dropped_loops: Vec<DroppedLoop> = Vec::new();
     for rec in records {
         if !matches!(rec.marker, 0x42 | 0x4A | 0x4C) {
             continue;
@@ -987,7 +1011,7 @@ fn triangulate(elements: &[Element], records: &[CompositeRecord]) -> Triangulati
             }
             if loop_refs.iter().any(|&r| skips.contains(&(r as usize))) {
                 loops_curve_entry += 1;
-                dropped_loops.push((rec.marker, loop_refs.to_vec()));
+                dropped_loops.push((rec.marker, rec.normal, loop_refs.to_vec()));
                 continue;
             }
             loops_exported += 1;
@@ -1005,15 +1029,17 @@ fn triangulate(elements: &[Element], records: &[CompositeRecord]) -> Triangulati
             triangles.extend(tris);
         }
     }
-    // The stage-10 candidate: this call's primary triangulation is
-    // empty and dropped loops exist — evaluate (the None case rides
-    // for the per-rep unpinnable veto, stage-10 review F1).
-    let dup_pin = if triangles.is_empty() && !dropped_loops.is_empty() {
+    // The per-loop dup-pin weld: evaluate every dropped loop when any
+    // exists (the 2026-11-18 surface-loss fix — no empty-mesh
+    // precondition; each loop is welded behind the battery + mesh
+    // guard independently).
+    let dup_pin = if !dropped_loops.is_empty() {
         Some(e0b_dup_pin(
             elements,
             &points,
             &written_rank,
             &dropped_loops,
+            &triangles,
         ))
     } else {
         None
@@ -1187,7 +1213,7 @@ fn decode_per_rep(
     let mut curve_entries = 0usize;
     let mut node_bytes = 0usize;
     let mut reps_unexported: Vec<String> = Vec::new();
-    let mut reps_dup_pin: Vec<(usize, Option<DupPin>)> = Vec::new();
+    let mut reps_dup_pin: Vec<(usize, DupPin)> = Vec::new();
     let mut curves: Vec<Vec<(f64, f64, f64)>> = Vec::new();
     for (k, d) in decoded.iter().enumerate() {
         node_bytes += d.payload_len;
@@ -1265,17 +1291,11 @@ fn decode_per_rep(
         }
         let base = points.len();
         let tri_res = triangulate(&d.elements, &records);
-        // stage-10 E0-b candidate for this rep (its own triangulation
-        // is empty and its dropped loops were dup-pin-evaluated):
-        // recorded even when the law REJECTED (None — an unpinnable
-        // referenced skip slot) — a rep with an unpinnable dropped loop
-        // must veto another rep's fire at the store-level gate below
-        // (stage-10 review F1: dropping the None candidate made that
-        // veto dead code and zeroed the curve-entry counters while
-        // unexported loops remained). Merged at the STORE level below
-        // only when the whole store's mesh is empty — a rep-level fire
-        // inside an otherwise-exporting store would be the
-        // 471-passing-stores downside exposure.
+        // The per-loop dup-pin weld (2026-11-18): the rep's dropped
+        // loops were evaluated independently (pinnable + battery +
+        // mesh guard). The welded ones merge at the store level below
+        // with this rep's point offset; refused loops stay counted as
+        // dropped.
         if let Some(dp) = &tri_res.dup_pin {
             reps_dup_pin.push((base, dp.clone()));
         }
@@ -1291,7 +1311,7 @@ fn decode_per_rep(
         loops_curve_entry += tri_res.loops_curve_entry;
         // The §2.3 curve exposure: this exported rep's dropped loops'
         // pre-weld sequences (additive, outside Fidelity).
-        for (_mk, loop_refs) in &tri_res.dropped_loops {
+        for (_mk, _normal, loop_refs) in &tri_res.dropped_loops {
             curves.push(curve_sequence(loop_refs, &d.elements));
         }
         facet_candidates += n_hdrs;
@@ -1322,26 +1342,25 @@ fn decode_per_rep(
             ),
         ));
     }
-    // Stage-10 E0-b store-level gate: fire only when the WHOLE store's
-    // mesh is empty and every rep with dropped loops is pinnable; one
-    // unpinnable rep keeps everything conservative.
+    // The dup-pin weld at the store level (2026-11-18, per loop):
+    // every rep's dropped loops were evaluated independently; merge
+    // each rep's welded loops with its point offset. A rep whose loops
+    // the battery/guard refused contributes none — its loops stay in
+    // ``loops_curve_entry``.
     let mut curve_entry_law = 0u32;
-    if triangles.is_empty()
-        && !reps_dup_pin.is_empty()
-        && reps_dup_pin.iter().all(|(_b, c)| c.is_some())
-    {
-        for (b, c) in &reps_dup_pin {
-            let dp = c.as_ref().expect("all(...) guarded");
-            triangles.extend(
-                dp.triangles
-                    .iter()
-                    .map(|&(a, s, t)| (a + *b as u32, s + *b as u32, t + *b as u32)),
-            );
-            degenerate += dp.degenerate;
-            loops_exported += dp.loops;
-            curve_entry_law += dp.loops;
+    for (b, dp) in &reps_dup_pin {
+        if dp.loops == 0 {
+            continue;
         }
-        loops_curve_entry = 0;
+        triangles.extend(
+            dp.triangles
+                .iter()
+                .map(|&(a, s, t)| (a + *b as u32, s + *b as u32, t + *b as u32)),
+        );
+        degenerate += dp.degenerate;
+        loops_exported += dp.loops;
+        loops_curve_entry -= dp.loops;
+        curve_entry_law += dp.loops;
     }
     let mut info = CompositeInfo {
         stage: "identity-per-rep",
@@ -1389,79 +1408,102 @@ fn decode_per_rep(
     })
 }
 
-/// The U4-D dup law over one call's dropped loops — the twin's
-/// ``_e0b_dup_pin`` (the curve-entry coordinate law; see the module
-/// header). Ported from the stage-4a decoder's ``dup_prev``, not
+/// The undirected edge key of the mesh invariant (twin:
+/// ``_edge_key``; ``manifold`` == every use count <= 2).
+fn edge_key(a: u32, b: u32) -> (u32, u32) {
+    if a <= b { (a, b) } else { (b, a) }
+}
+
+/// The undirected edge-use histogram of a triangle list (twin:
+/// ``_edge_uses``).
+fn edge_uses_of(triangles: &[(u32, u32, u32)]) -> HashMap<(u32, u32), u32> {
+    let mut uses: HashMap<(u32, u32), u32> = HashMap::new();
+    for &(a, b, c) in triangles {
+        for key in [edge_key(a, b), edge_key(b, c), edge_key(c, a)] {
+            *uses.entry(key).or_insert(0) += 1;
+        }
+    }
+    uses
+}
+
+/// The dup-pin weld targets for one loop — ``{skip slot: written
+/// element}`` — or ``None`` when a referenced skip slot has no
+/// preceding written element (unpinnable: the weld's fail-closed arm).
+/// The U4-D dup law (twin: ``_dup_pin_map``).
+fn dup_pin_map(
+    elements: &[Element],
+    skips: &HashSet<usize>,
+    loop_refs: &[u32],
+) -> Option<HashMap<u32, u32>> {
+    let mut pin: HashMap<u32, u32> = HashMap::new();
+    for &r in loop_refs {
+        let r = r as usize;
+        if !skips.contains(&r) {
+            continue;
+        }
+        let mut j = r as i64 - 1;
+        while j >= 0 && elements[j as usize].1.is_none() {
+            j -= 1;
+        }
+        if j < 0 {
+            return None;
+        }
+        pin.insert(r as u32, j as u32);
+    }
+    Some(pin)
+}
+
+/// The per-loop dup-pin weld behind the battery and mesh guard — the
+/// twin's ``_e0b_dup_pin`` (2026-11-18; the curve-entry coordinate
+/// law). Ported from the stage-4a decoder's ``dup_prev``, not
 /// re-derived: a loop-referenced skip slot carries the bit-exact
 /// coordinates of the written vertex of its immediately preceding
-/// written element (the per-face copy — no new vertices). RELAXED
-/// 2026-11-13 (stage 15, #34; owner-authorized overturn of the
-/// stage-10 U4 conservative rule, handoff cont. 23): the stage-10 E0-b
-/// battery criterion (every dropped loop normal-carrying AND coplanar
-/// against its record normal with the dup-pinned coordinates) is
-/// REMOVED — normal-less and nonplanar dropped loops export under the
-/// dup pin exactly like the battery-supported ones (stage-14
-/// probe-measured: 25/26 pinned meshes pass every gate check incl.
-/// degenerate, docs/evidence/2026-11-13-stage14-export-failures.md
-/// section 2 + the review's C4). The fail-closed arm stays: a
-/// loop-referenced skip slot with NO preceding written element to weld
-/// to (element 0 — unpinnable) rejects the whole store onto the
-/// conservative non-export rule.
+/// written element (the per-face copy — no new vertices).
 ///
-/// Returns ``Some`` (the pinned loops' triangles, written-rank
-/// indexed) when every referenced skip slot is pinnable, ``None``
-/// otherwise.
+/// Each dropped loop is welded independently when it is (1) fully
+/// pinnable, (2) battery-supported (record normal absent, or the
+/// dup-pinned coordinates coplanar against it at :const:`PLANE_TOL`),
+/// and (3) mesh-safe: no degenerate emission and no undirected edge
+/// pushed past two uses in the assembled mesh (``base_triangles`` is
+/// the primary mesh already emitted by this call; accepted welds are
+/// folded into the histogram as they go). The guard is incremental —
+/// O(the loop's triangles) per loop — and fail-closed: a rejected loop
+/// leaves the histogram untouched and stays dropped. Refused loops do
+/// not veto another loop's weld.
 fn e0b_dup_pin(
     elements: &[Element],
     points: &[(f64, f64, f64)],
     written_rank: &HashMap<usize, usize>,
-    dropped: &[(u8, Vec<u32>)],
-) -> Option<DupPin> {
+    dropped: &[DroppedLoop],
+    base_triangles: &[(u32, u32, u32)],
+) -> DupPin {
     let skips: HashSet<usize> = elements
         .iter()
         .enumerate()
         .filter(|(_, (_, pt))| pt.is_none())
         .map(|(i, _)| i)
         .collect();
-    let mut pin: HashMap<usize, usize> = HashMap::new();
-    for (_mk, loop_refs) in dropped {
-        for &r in loop_refs {
-            let r = r as usize;
-            if skips.contains(&r) && !pin.contains_key(&r) {
-                let mut j = r as i64 - 1;
-                while j >= 0 && elements[j as usize].1.is_none() {
-                    j -= 1;
-                }
-                if j >= 0 {
-                    pin.insert(r, j as usize);
-                }
-                // j < 0: no preceding written element — unpinnable
-            }
-        }
-    }
-    if dropped.iter().any(|(_mk, loop_refs)| {
-        loop_refs.iter().any(|&r| {
-            let r = r as usize;
-            skips.contains(&r) && !pin.contains_key(&r)
-        })
-    }) {
-        return None;
-    }
-    // The battery criterion is removed (owner-authorized 2026-11-13,
-    // see the docstring): normal-less and nonplanar dropped loops
-    // export under the dup pin — the weld's written ranks are exact
-    // (the pinned coordinates are bit-identical to the pin target's,
-    // so the mesh never needed them; only the battery did).
-    let mut triangles: Vec<(u32, u32, u32)> = Vec::new();
+    let mut welds: Vec<(u32, u32, u32)> = Vec::new();
     let mut degenerate = 0u32;
-    for (mk, loop_refs) in dropped {
+    let mut welded = 0u32;
+    let mut refused = 0u32;
+    let mut edge_uses = edge_uses_of(base_triangles);
+    for (mk, normal, loop_refs) in dropped {
+        let Some(pin) = dup_pin_map(elements, &skips, loop_refs) else {
+            refused += 1;
+            continue;
+        };
         let resolved: Vec<u32> = loop_refs
             .iter()
-            .map(|&r| {
-                let r = r as usize;
-                pin.get(&r).copied().unwrap_or(r) as u32
-            })
+            .map(|&r| pin.get(&r).copied().unwrap_or(r))
             .collect();
+        if let Some(nm) = normal {
+            let (status, _dev) = loop_plane_status(&resolved, *nm, elements);
+            if status != "coplanar" {
+                refused += 1;
+                continue;
+            }
+        }
         let idxs: Vec<u32> = resolved
             .iter()
             .map(|&r| {
@@ -1472,14 +1514,33 @@ fn e0b_dup_pin(
             })
             .collect();
         let (tris, deg) = loop_triangles(*mk, &idxs, points);
-        triangles.extend(tris);
+        if deg > 0 {
+            // Fail-closed: a degenerate emission means the pinned loop
+            // is not a clean facet — do not weld it.
+            refused += 1;
+            continue;
+        }
+        let candidate = edge_uses_of(&tris);
+        if candidate
+            .iter()
+            .any(|(edge, count)| edge_uses.get(edge).copied().unwrap_or(0) + count > 2)
+        {
+            refused += 1;
+            continue;
+        }
+        for (edge, count) in candidate {
+            *edge_uses.entry(edge).or_insert(0) += count;
+        }
+        welds.extend(tris);
         degenerate += deg;
+        welded += 1;
     }
-    Some(DupPin {
-        triangles,
+    DupPin {
+        triangles: welds,
         degenerate,
-        loops: dropped.len() as u32,
-    })
+        loops: welded,
+        refused,
+    }
 }
 
 /// The unordered-triangle dedup at one store's assembled mesh — the
@@ -1737,12 +1798,14 @@ pub fn decode_composite_store(
     // warning; the U4-M mid law stays unsupported and is not
     // implemented.
     let mut curve_entry_law = 0u32;
-    if let Some(Some(dp)) = &tri_res.dup_pin {
+    if let Some(dp) = &tri_res.dup_pin
+        && dp.loops > 0
+    {
         triangles.extend(dp.triangles.iter().copied());
         degenerate += dp.degenerate;
         loops_exported += dp.loops;
+        loops_curve_entry -= dp.loops;
         curve_entry_law = dp.loops;
-        loops_curve_entry = 0;
     }
     let mut skipped_markers: BTreeMap<u8, u32> = BTreeMap::new();
     for rec in &records {
@@ -1795,7 +1858,7 @@ pub fn decode_composite_store(
     let curves: Vec<Vec<(f64, f64, f64)>> = tri_res
         .dropped_loops
         .iter()
-        .map(|(_mk, loop_refs)| curve_sequence(loop_refs, &elements))
+        .map(|(_mk, _normal, loop_refs)| curve_sequence(loop_refs, &elements))
         .collect();
     Ok(CompositeDecode {
         points,
@@ -2659,7 +2722,7 @@ fn decode_mixedwrite(
     let mut curve_entries = 0usize;
     let mut node_bytes = 0usize;
     let mut reps_unexported: Vec<String> = Vec::new();
-    let mut reps_dup_pin: Vec<(usize, Option<DupPin>)> = Vec::new();
+    let mut reps_dup_pin: Vec<(usize, DupPin)> = Vec::new();
     let mut curves: Vec<Vec<(f64, f64, f64)>> = Vec::new();
     for (k, m) in decoded.iter().enumerate() {
         let d = &m.rep;
@@ -2699,10 +2762,7 @@ fn decode_mixedwrite(
         }
         let base = points.len();
         let tri_res = triangulate(&d.elements, &records);
-        // stage-10 E0-b candidate (see decode_per_rep; the None case
-        // recorded too — the unpinnable veto, stage-10 review F1):
-        // merged at the store level below, only when the whole mesh is
-        // empty.
+        // The per-loop dup-pin weld (see decode_per_rep).
         if let Some(dp) = &tri_res.dup_pin {
             reps_dup_pin.push((base, dp.clone()));
         }
@@ -2718,7 +2778,7 @@ fn decode_mixedwrite(
         loops_curve_entry += tri_res.loops_curve_entry;
         // The §2.3 curve exposure: this exported rep's dropped loops'
         // pre-weld sequences (additive, outside Fidelity).
-        for (_mk, loop_refs) in &tri_res.dropped_loops {
+        for (_mk, _normal, loop_refs) in &tri_res.dropped_loops {
             curves.push(curve_sequence(loop_refs, &d.elements));
         }
         facet_candidates += n_hdrs;
@@ -2752,24 +2812,21 @@ fn decode_mixedwrite(
             ),
         ));
     }
-    // Stage-10 E0-b store-level gate (see decode_per_rep).
+    // The dup-pin weld at the store level (see decode_per_rep).
     let mut curve_entry_law = 0u32;
-    if triangles.is_empty()
-        && !reps_dup_pin.is_empty()
-        && reps_dup_pin.iter().all(|(_b, c)| c.is_some())
-    {
-        for (b, c) in &reps_dup_pin {
-            let dp = c.as_ref().expect("all(...) guarded");
-            triangles.extend(
-                dp.triangles
-                    .iter()
-                    .map(|&(a, s, t)| (a + *b as u32, s + *b as u32, t + *b as u32)),
-            );
-            degenerate += dp.degenerate;
-            loops_exported += dp.loops;
-            curve_entry_law += dp.loops;
+    for (b, dp) in &reps_dup_pin {
+        if dp.loops == 0 {
+            continue;
         }
-        loops_curve_entry = 0;
+        triangles.extend(
+            dp.triangles
+                .iter()
+                .map(|&(a, s, t)| (a + *b as u32, s + *b as u32, t + *b as u32)),
+        );
+        degenerate += dp.degenerate;
+        loops_exported += dp.loops;
+        loops_curve_entry -= dp.loops;
+        curve_entry_law += dp.loops;
     }
     let mut info = CompositeInfo {
         stage: "identity-mixedwrite-reps",
@@ -2884,9 +2941,10 @@ mod tests {
         assert_eq!(elements[2], (2, Some((1.0, 2.0, 7.0))));
     }
 
-    /// The stage-10 dup-pin law (relaxed): a loop-referenced skip slot
-    /// welds to the immediately preceding written element; element 0
-    /// (no predecessor) is unpinnable and vetoes.
+    /// The per-loop dup-pin weld: a loop-referenced skip slot welds to
+    /// the immediately preceding written element; element 0 (no
+    /// predecessor) is unpinnable and refused (per loop — no store
+    /// veto).
     #[test]
     fn dup_pin_welds_to_the_preceding_written_element() {
         let elements: Vec<Element> = vec![
@@ -2903,9 +2961,10 @@ mod tests {
         }
         let points: Vec<(f64, f64, f64)> = elements.iter().filter_map(|e| e.1).collect();
         // One dropped loop referencing the skip slot 1.
-        let dropped = vec![(0x4Au8, vec![1u32, 2, 3])];
-        let pin = e0b_dup_pin(&elements, &points, &written_rank, &dropped).expect("pinnable");
+        let dropped = vec![(0x4Au8, None, vec![1u32, 2, 3])];
+        let pin = e0b_dup_pin(&elements, &points, &written_rank, &dropped, &[]);
         assert_eq!(pin.loops, 1);
+        assert_eq!(pin.refused, 0);
         // The skip slot resolved to element 0 (its predecessor): the
         // loop's ranks are [0, 1, 2] -> one strip triangle.
         assert_eq!(pin.triangles, vec![(0u32, 1u32, 2u32)]);
@@ -2918,8 +2977,64 @@ mod tests {
             }
         }
         let points0: Vec<(f64, f64, f64)> = elements0.iter().filter_map(|e| e.1).collect();
-        let dropped0 = vec![(0x4Au8, vec![0u32, 1])];
-        assert!(e0b_dup_pin(&elements0, &points0, &rank0, &dropped0).is_none());
+        let dropped0 = vec![(0x4Au8, None, vec![0u32, 1])];
+        let pin0 = e0b_dup_pin(&elements0, &points0, &rank0, &dropped0, &[]);
+        assert_eq!(pin0.loops, 0);
+        assert_eq!(pin0.refused, 1);
+    }
+
+    /// The per-loop battery and mesh guard (2026-11-18, twin parity):
+    /// a NONPLANAR loop under the dup pin is refused; a coplanar loop
+    /// whose fan would push an edge past two uses is refused; a
+    /// disjoint coplanar loop welds; a degenerate emission refuses.
+    #[test]
+    fn dup_pin_battery_and_mesh_guard_refuse_fail_closed() {
+        // Four written points on y=0 plus one skip slot at index 4
+        // (pins to element 3).  The coplanar fan (0,1,3) touches edge
+        // {0,1}; the base mesh already uses {0,1} twice -> guard
+        // refuses.
+        let elements: Vec<Element> = vec![
+            (0, Some((0.0, 0.0, 0.0))),
+            (0, Some((1.0, 0.0, 0.0))),
+            (0, Some((0.0, 1.0, 0.0))),
+            (0, Some((1.0, 1.0, 0.0))),
+            (1, None),
+        ];
+        let mut written_rank = HashMap::new();
+        for (i, (_v, pt)) in elements.iter().enumerate() {
+            if pt.is_some() {
+                written_rank.insert(i, written_rank.len());
+            }
+        }
+        let points: Vec<(f64, f64, f64)> = elements.iter().filter_map(|e| e.1).collect();
+        // A 0x4c fan over [skip(->3), 0, 1] -> triangle (3,0,1).
+        let coplanar = (0x4Cu8, Some((0.0, 0.0, 1.0)), vec![4u32, 0, 1]);
+        // Base mesh uses {0,1} twice (two triangles over 0-1).
+        let base = vec![(0u32, 1u32, 2u32), (1u32, 0u32, 3u32)];
+        let pin = e0b_dup_pin(
+            &elements,
+            &points,
+            &written_rank,
+            &[coplanar.clone()],
+            &base,
+        );
+        assert_eq!(pin.loops, 0);
+        assert_eq!(pin.refused, 1);
+        // With no base over-use the same loop welds.
+        let pin = e0b_dup_pin(&elements, &points, &written_rank, &[coplanar], &[]);
+        assert_eq!(pin.loops, 1);
+        assert_eq!(pin.triangles, vec![(3u32, 0u32, 1u32)]);
+        // Nonplanar under the stored normal is refused by the battery:
+        // the loop (3,0,1) is not coplanar against the x normal.
+        let tilted = (0x4Cu8, Some((1.0, 0.0, 0.0)), vec![4u32, 0, 1]);
+        let pin = e0b_dup_pin(&elements, &points, &written_rank, &[tilted], &[]);
+        assert_eq!(pin.loops, 0);
+        assert_eq!(pin.refused, 1);
+        // A degenerate emission (repeated coordinates) refuses.
+        let degenerate = (0x42u8, None, vec![4u32, 3, 3]);
+        let pin = e0b_dup_pin(&elements, &points, &written_rank, &[degenerate], &[]);
+        assert_eq!(pin.loops, 0);
+        assert_eq!(pin.refused, 1);
     }
 
     /// The stage-15 unordered-triangle dedup: fires on a not-manifold

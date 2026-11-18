@@ -220,7 +220,7 @@ COMPOSITE_EXPORT_STAGES: dict[int, tuple[str, ...]] = {
         "geometry-composite-law-e0b-multi-rep-conservative",
         "geometry-composite-law-e0b-multi-rep-unsupported-veto",
         "geometry-composite-law-e0b-unpinnable",
-        "geometry-composite-law-e0b-relaxed-not-manifold",
+        "geometry-composite-law-e0b-nonplanar-refused",
         "geometry-composite-law-e0b-multi-rep-relaxed",
         "geometry-composite-law-dedup-unordered",
         "geometry-composite-law-dedup-manifold-no-fire",

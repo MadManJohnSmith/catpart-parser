@@ -721,13 +721,15 @@ fn unrouted_element_space(
 /// non-finite coordinates, unabsorbed pool, references beyond the
 /// element space). Loops referencing skip slots (curve entries, U4)
 /// are not exported — their coordinates are not pinned — and surface
-/// as the ``curve-entry-loops-unexported`` warning; the dup-pin law is
-/// the one exception (composite.py; stage-10 2026-11-12, RELAXED
-/// stage-15 2026-11-13 owner-authorized — the E0-b battery criterion
-/// removed): on an otherwise-empty primary triangulation whose every
-/// referenced skip slot has a preceding written element to weld to,
-/// those loops export and surface as
-/// ``curve-entry-loops-exported-dup-pin`` (stage 3). A not-manifold
+/// as the ``curve-entry-loops-unexported`` warning; the dup-pin weld
+/// is the one exception (composite.py; stage-10 2026-11-12, made a PER
+/// LOOP decision 2026-11-18): each such loop that is fully pinnable
+/// (every skip slot has a preceding written element), battery-supported
+/// (its record carries no normal, or the dup-pinned coordinates are
+/// coplanar at 2e-3) and mesh-safe (the per-loop guard keeps the
+/// assembled mesh manifold) exports and surfaces as
+/// ``curve-entry-loops-exported-dup-pin``; refused loops stay counted
+/// as unexported. A not-manifold
 /// assembled mesh whose duplicate unordered index triples resolve it
 /// drops the later copies (``duplicate-triangles-deduped``; the
 /// stage-15 law, review F1 family) — a store whose duplicates do not
@@ -782,14 +784,16 @@ fn export_composite_store(
             detail: format!(
                 "{} facet \
                  loops referencing skip slots (curve entries) exported \
-                 under the dup-pin law (#34; stage-10 2026-11-12, \
-                 RELAXED stage-15 2026-11-13 owner-authorized — the \
-                 E0-b battery criterion removed): the store's primary \
-                 triangulation is empty (E0) and every referenced skip \
-                 slot is welded to the written vertex of its \
-                 immediately preceding written element (no new \
-                 vertices — the U4-D dup law); normal-less and \
-                 nonplanar dropped loops export under the same weld",
+                 under the dup-pin law (#34; stage-10 2026-11-12, made \
+                 per loop 2026-11-18): each loop was fully pinnable, \
+                 battery-supported (its record carries no normal, or \
+                 the dup-pinned coordinates are coplanar at 2e-3) and \
+                 mesh-safe (its triangles keep the assembled mesh \
+                 manifold), so its skip slots are welded to the written \
+                 vertex of the immediately preceding written element \
+                 (no new vertices — the U4-D dup law); loops the \
+                 battery or mesh guard refuses stay unexported and \
+                 counted under curve-entry-loops-unexported",
                 info.loops_curve_entry_exported.unwrap_or(0)
             ),
         });
