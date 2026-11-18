@@ -36,8 +36,13 @@ Model (docs/evidence/2026-11-09-facet-semantics.md):
   per loop; 0x4c loops are closed polygons in ring order, fan-
   triangulated from the first corner (orientation-preserving for the CCW
   ring order). 0x41/0x49 satisfy the byte law n == 3*type but their
-  primitive reading is not established (they carry no count bytes in the
-  grammar, so they contribute no loops); 0x44/0x4b/0x4e are open.
+  primitive reading is not established. 0x49 records DO carry count
+  bytes under the per-record count-width law (BR2 / ticket #54:
+  br2-planar-claims.csv BR2-07b resolves 3,657 of the 3,737 0x49
+  records; the remaining 80 are count-encoding variants), so their loop
+  structure is decoded while the primitive semantics stay open (F10);
+  0x41's count bytes are not established in this grammar, so it
+  contributes no loops. 0x44/0x4b/0x4e are open.
 - Export convention (F5/F7): the winding law is counter-clockwise seen
   from the stored normal (right-hand rule, the OBJ/PLY convention) —
   every decoded triangle is emitted as-is; the only skips are

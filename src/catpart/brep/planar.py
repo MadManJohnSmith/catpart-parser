@@ -54,9 +54,7 @@ import math
 
 from catpart.geometry.facets import (
     FacetRecord,
-    FacetScan,
     POLY_MARKERS,
-    lex_rank_map,
     record_loops,
 )
 
@@ -385,18 +383,3 @@ def decode_planar_face(
         loop_readings=tuple(readings),
         status=FACE_OK,
     )
-
-
-def decode_planar_faces(
-    pool: list[Point3],
-    scan: FacetScan,
-) -> list[DecodedPlanarFace]:
-    """Decode every accepted record of a store scan as a planar face.
-
-    All ``01 [41-4f]`` records accepted by the G3 tiling law decode
-    (0x41/0x42 carry no normal — plane ``None``); the caller filters by
-    marker for the planar-surface claims. ``lex`` is derived here from
-    ``pool`` (walk order in, ranks out).
-    """
-    lex = lex_rank_map(pool)
-    return [decode_planar_face(pool, lex, rec) for rec in scan.records]
