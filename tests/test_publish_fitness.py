@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -411,7 +412,21 @@ requires_git = pytest.mark.skipif(shutil.which("git") is None, reason="git is no
 
 
 def run_git(*args: str) -> str:
-    proc = subprocess.run(["git", *args], check=True, capture_output=True)
+    # A pre-push hook exports GIT_DIR; without stripping it these scratch-repo
+    # calls would act on the hook's repository instead of tmp_path.
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key
+        not in {
+            "GIT_DIR",
+            "GIT_WORK_TREE",
+            "GIT_INDEX_FILE",
+            "GIT_OBJECT_DIRECTORY",
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+        }
+    }
+    proc = subprocess.run(["git", *args], check=True, capture_output=True, env=env)
     return proc.stdout.decode("utf-8").strip()
 
 

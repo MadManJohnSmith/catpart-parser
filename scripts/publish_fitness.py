@@ -123,13 +123,28 @@ def _run_git(
     input_bytes: bytes | None = None,
     env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
-    """Run git inside ``repo``, never raising for a nonzero exit."""
+    """Run git inside ``repo``, never raising for a nonzero exit.
+
+    The git environment variables are stripped: a pre-push hook exports
+    ``GIT_DIR`` (and friends), and without this a run against a scratch
+    repo would silently operate on the hook's own repository.
+    """
+    git_keys = (
+        "GIT_DIR",
+        "GIT_WORK_TREE",
+        "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY",
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    )
+    clean = {key: value for key, value in os.environ.items() if key not in git_keys}
+    if env:
+        clean.update({key: value for key, value in env.items() if key not in git_keys})
     try:
         return subprocess.run(
             ["git", "-C", str(repo), *args],
             input=input_bytes,
             capture_output=True,
-            env=env,
+            env=clean,
         )
     except FileNotFoundError as exc:
         raise PublishError("git is not installed; publication needs git") from exc
