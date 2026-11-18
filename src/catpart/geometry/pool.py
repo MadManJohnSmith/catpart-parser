@@ -100,7 +100,7 @@ def scan_pool_groups(data, body_lo: int, body_hi: int) -> tuple[list[PoolGroup],
                 "malformed-pool-group",
                 f"pool group at {o}: count field {cnt} but walked "
                 f"{len(vertices)} vertex records (G2 P2g: the count field "
-                "is a true count, 2,090/2,090 corpus groups walk exactly)",
+                "is a true count, 2,326/2,326 corpus groups walk exactly)",
             )
         groups.append(PoolGroup(offset=o, count_field=cnt, vertices=tuple(vertices)))
     return groups, kinds
