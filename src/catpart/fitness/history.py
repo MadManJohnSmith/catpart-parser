@@ -15,6 +15,16 @@ acceptable (reason recorded). Comparisons use exact rational rates
 (:class:`fractions.Fraction` of the recorded counts) instead of the
 rounded floats in the rows, so two runs that differ below float
 precision cannot flip a verdict.
+
+L3 (construct coverage, ticket #58) has **no Dev/Held-out pair**:
+construct coverage is a property of the committed evidence, independent
+of the corpus split. It compares as a single scalar
+(:class:`CoverageScore`): recording it for the first time
+(``L3_INTRODUCED``) accepts a run with L1/L2 intact without requiring a
+Dev rise, a strictly higher rate accepts (``L3_ROSE``), and a fall — or
+dropping the scalar an accepted baseline carries — rejects
+(``L3_FELL``). With L3 null on both sides the verdict is exactly the
+pre-#58 one.
 """
 
 from __future__ import annotations
@@ -30,8 +40,13 @@ from catpart.schema.validate import SchemaError, ValidationError, validate
 
 #: Capability levels of the fitness ladder (ADR-0001). L1 (clean parse)
 #: carries a scalar since Spec C, L2 (geometry sanity over parts) since
-#: ticket #33; L3 stays null in every artifact until that level exists.
+#: ticket #33, L3 (construct coverage) since ticket #58.
 LEVELS: tuple[str, ...] = ("L1", "L2", "L3")
+
+#: The levels scored on the Dev/Held-out split pair. L3 is deliberately
+#: not one of them: construct coverage is corpus-split independent and
+#: compares as a single scalar (:class:`CoverageScore`).
+SPLIT_LEVELS: tuple[str, ...] = ("L1", "L2")
 
 ROW_SCHEMA = load_schema("fitness-history-row-v0")
 
@@ -53,6 +68,12 @@ REASON_REJECTED_HELD_OUT = "held-out fell"
 REASON_REJECTED_BOTH = "dev did not rise and held-out fell"
 REASON_REJECTED_L1_DEV = "L1 dev fell"
 REASON_REJECTED_L2_DEV = "L2 dev fell"
+#: L3 (ticket #58). The introduction has its own acceptance reason: a
+#: run that records the construct-coverage scalar for the first time is
+#: accepted with L1/L2 intact, no Dev rise required.
+REASON_ACCEPTED_L3_INTRODUCED = "L3 recorded with L1/L2 intact"
+REASON_ACCEPTED_L3_ROSE = "L3 construct coverage rose"
+REASON_REJECTED_L3_FELL = "L3 construct coverage fell"
 
 
 def _validate_counts(numerator: int, total: int, name: str) -> None:
@@ -159,6 +180,73 @@ class PartScore:
 
 
 @dataclasses.dataclass(frozen=True)
+class CoverageScore:
+    """The L3 construct-coverage scalar (ADR-0001, ticket #58).
+
+    ``resolved / total`` over the frozen construct denominator (23 at the
+    BR1 freeze), with ``by_outcome`` recording the outcome split. Unlike
+    :class:`SplitScore`/:class:`PartScore` there is **no Dev/Held-out
+    pair**: construct coverage is a property of the committed evidence
+    artifacts and is independent of the corpus split, so the row shape
+    carries one scalar. Comparisons use :meth:`fraction`, never the
+    rounded rate.
+    """
+
+    resolved: int
+    total: int
+    by_outcome: dict[str, int] = dataclasses.field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        _validate_counts(self.resolved, self.total, "resolved")
+        for outcome, count in self.by_outcome.items():
+            if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+                raise ValueError(
+                    f"by_outcome[{outcome!r}] must be a non-negative integer, "
+                    f"got {count!r}"
+                )
+
+    @property
+    def rate(self) -> float:
+        return self.resolved / self.total
+
+    def fraction(self) -> Fraction:
+        return Fraction(self.resolved, self.total)
+
+    def to_json(self) -> dict:
+        return {
+            "rate": self.rate,
+            "resolved": self.resolved,
+            "total": self.total,
+            "by_outcome": dict(self.by_outcome),
+        }
+
+    @classmethod
+    def from_json(cls, obj: object, where: str) -> CoverageScore:
+        """Rebuild the L3 scalar from a history row's ``scalars.L3`` object.
+
+        The recorded ``rate`` is not trusted (it is recomputed from the
+        counts); malformed counts or a non-object ``by_outcome`` raise
+        :class:`FitnessError` naming the row position ``where``.
+        """
+        if not isinstance(obj, dict):
+            raise FitnessError(f"{where}: expected an object, got {type(obj).__name__}")
+        by_outcome = obj.get("by_outcome", {})
+        if not isinstance(by_outcome, dict):
+            raise FitnessError(
+                f"{where}.by_outcome: expected an object, got "
+                f"{type(by_outcome).__name__}"
+            )
+        try:
+            return cls(
+                resolved=obj.get("resolved"),  # type: ignore[arg-type]
+                total=obj.get("total"),  # type: ignore[arg-type]
+                by_outcome=dict(by_outcome),
+            )
+        except (TypeError, ValueError) as exc:
+            raise FitnessError(f"{where}: {exc}") from exc
+
+
+@dataclasses.dataclass(frozen=True)
 class LevelScore:
     """One level's Dev/Held-out pair of split scores.
 
@@ -185,12 +273,19 @@ class LevelScore:
         )
 
 
-def level_scores_to_json(scores: dict[str, LevelScore | None]) -> dict:
-    """Serialize the per-level scalars, keeping room for the whole ladder."""
+def level_scores_to_json(
+    scores: dict[str, LevelScore | None], l3: CoverageScore | None = None
+) -> dict:
+    """Serialize the per-level scalars, keeping the whole ladder in one shape.
+
+    L1/L2 are the split-shaped scores; L3 is the single construct-coverage
+    scalar (``None`` until a row records it, ticket #58).
+    """
     out: dict[str, object] = {}
-    for level in LEVELS:
+    for level in SPLIT_LEVELS:
         score = scores.get(level)
         out[level] = score.to_json() if score is not None else None
+    out["L3"] = l3.to_json() if l3 is not None else None
     return out
 
 
@@ -201,14 +296,17 @@ SPLIT_SCORE_CLASSES: dict[str, type] = {"L1": SplitScore, "L2": PartScore}
 
 
 def level_scores_from_json(obj: object, where: str) -> dict[str, LevelScore | None]:
-    """Rebuild per-level scalars from a history row's ``scalars`` object."""
+    """Rebuild the split-shaped per-level scalars from a row's ``scalars``.
+
+    L3 is skipped: it has no ``dev``/``held-out`` pair and is read by
+    :func:`coverage_from_scalars` instead.
+    """
     if not isinstance(obj, dict):
         raise FitnessError(f"{where}: expected an object, got {type(obj).__name__}")
-    out: dict[str, LevelScore | None] = {}
-    for level in LEVELS:
+    out: dict[str, LevelScore | None] = {level: None for level in LEVELS}
+    for level in SPLIT_LEVELS:
         value = obj.get(level)
         if value is None:
-            out[level] = None
             continue
         if not isinstance(value, dict) or "dev" not in value or "held-out" not in value:
             raise FitnessError(f"{where}.{level}: missing 'dev' or 'held-out' split")
@@ -220,17 +318,29 @@ def level_scores_from_json(obj: object, where: str) -> dict[str, LevelScore | No
     return out
 
 
+def coverage_from_scalars(obj: object, where: str) -> CoverageScore | None:
+    """The L3 scalar of a history row's ``scalars`` object (``None`` before #58)."""
+    if not isinstance(obj, dict):
+        raise FitnessError(f"{where}: expected an object, got {type(obj).__name__}")
+    value = obj.get("L3")
+    if value is None:
+        return None
+    return CoverageScore.from_json(value, f"{where}.L3")
+
+
 @dataclasses.dataclass(frozen=True)
 class NoRegret:
-    """Verdict of the no-regret comparison (ADR-0001, extended by #33).
+    """Verdict of the no-regret comparison (ADR-0001, extended by #33/#58).
 
     ``dev_rose``/``held_out_fell`` are ``None`` when no baseline
     comparison happened (baseline runs); with L2 comparable they
     aggregate both levels (any Dev rise / any Held-out fall), and the
     ``l2_*`` fields carry L2's own outcomes — ``None`` when L2 was not
-    comparable (a pre-G5 baseline row carries no L2 scalar).
-    ``accepted`` is the run's verdict: the row and report record it at
-    their top level.
+    comparable (a pre-G5 baseline row carries no L2 scalar). L3 is
+    carried by the ``reason`` (introducing, rising and falling coverage
+    each have a fixed string) rather than by a split flag: it has no
+    Dev/Held-out pair. ``accepted`` is the run's verdict: the row and
+    report record it at their top level.
     """
 
     accepted: bool
@@ -255,21 +365,38 @@ class NoRegret:
 def evaluate_no_regret(
     baseline: dict[str, LevelScore | None],
     current: dict[str, LevelScore | None],
+    *,
+    baseline_l3: CoverageScore | None = None,
+    current_l3: CoverageScore | None = None,
 ) -> NoRegret:
-    """Apply the no-regret rule level by level (ADR-0001 + ticket #33).
+    """Apply the no-regret rule level by level (ADR-0001 + #33 + #58).
 
-    A level compares when both sides carry a scalar for it. L1 keeps the
-    ADR-0001 rule — the headline must strictly rise on Dev and not fall
-    on Held-out; L2 is protective — neither of its splits may fall. The
-    run is accepted when no comparable split regressed and at least one
-    comparable level's Dev rose, so an L2-only improvement with a flat
-    L1 is acceptable (reason recorded). Raises :class:`ValueError` when
-    no level is comparable — with a baseline row there is always at
-    least L1.
+    A split level compares when both sides carry a scalar for it. L1 keeps
+    the ADR-0001 rule — the headline must strictly rise on Dev and not
+    fall on Held-out; L2 is protective — neither of its splits may fall.
+    The run is accepted when no comparable split regressed and at least
+    one comparable level's Dev rose, so an L2-only improvement with a
+    flat L1 is acceptable (reason recorded).
+
+    L3 is a single scalar with no split. ``baseline_l3``/``current_l3``
+    describe it explicitly:
+
+    - both present: comparable — a higher rate accepts
+      (:data:`REASON_ACCEPTED_L3_ROSE`), a lower one rejects
+      (:data:`REASON_REJECTED_L3_FELL`);
+    - only the current present: ``L3_INTRODUCED`` — the first recorded
+      coverage accepts with L1/L2 intact and needs no Dev rise
+      (:data:`REASON_ACCEPTED_L3_INTRODUCED`);
+    - only the baseline present: the scalar an accepted row carried was
+      dropped, which rejects like a fall;
+    - both absent: exactly the pre-#58 verdict.
+
+    Raises :class:`ValueError` when no split level is comparable — with a
+    baseline row there is always at least L1.
     """
     comparable = [
         level
-        for level in LEVELS
+        for level in SPLIT_LEVELS
         if baseline.get(level) is not None and current.get(level) is not None
     ]
     if not comparable:
@@ -291,11 +418,31 @@ def evaluate_no_regret(
     any_dev_fell = any(dev_fell.values())
     any_held_out_fell = any(held_out_fell.values())
 
-    accepted = any_dev_rose and not any_dev_fell and not any_held_out_fell
+    l3_introduced = baseline_l3 is None and current_l3 is not None
+    l3_dropped = baseline_l3 is not None and current_l3 is None
+    l3_compared = baseline_l3 is not None and current_l3 is not None
+    l3_rose = l3_compared and current_l3.fraction() > baseline_l3.fraction()
+    l3_fell = l3_dropped or (l3_compared and current_l3.fraction() < baseline_l3.fraction())
+
+    accepted = (
+        (any_dev_rose or l3_introduced or l3_rose)
+        and not any_dev_fell
+        and not any_held_out_fell
+        and not l3_fell
+    )
     if accepted:
-        reason = REASON_ACCEPTED if dev_rose.get("L1") else REASON_ACCEPTED_L2
+        if dev_rose.get("L1"):
+            reason = REASON_ACCEPTED
+        elif dev_rose.get("L2"):
+            reason = REASON_ACCEPTED_L2
+        elif l3_introduced:
+            reason = REASON_ACCEPTED_L3_INTRODUCED
+        else:
+            reason = REASON_ACCEPTED_L3_ROSE
     elif any_held_out_fell:
         reason = REASON_REJECTED_HELD_OUT if any_dev_rose else REASON_REJECTED_BOTH
+    elif l3_fell:
+        reason = REASON_REJECTED_L3_FELL
     elif dev_fell.get("L1"):
         reason = REASON_REJECTED_L1_DEV
     elif l2_compared and dev_fell["L2"]:
