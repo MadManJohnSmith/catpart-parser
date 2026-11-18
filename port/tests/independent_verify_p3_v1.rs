@@ -252,9 +252,23 @@ fn verify_requirement_5_corpus_samples() {
         let doc = parse_product(&bytes).expect("parse coso");
         assert_eq!(doc.pool_form, "framed");
         assert_eq!(doc.total_instances, 7);
-        assert_eq!(doc.placed_instances, 7);
-        for inst in &doc.instances {
-            assert_eq!(inst.placement_status, PlacementStatus::Placed);
+        // The 7th record is an identity-header constraint/connection frame
+        // (P3 review, 2026-11-18): it keeps its ordinal slot but carries no
+        // placement, so coso binds 6 real transforms and Part5.1 is undecodable.
+        assert_eq!(doc.placed_instances, 6);
+        let undecodable: Vec<_> = doc
+            .instances
+            .iter()
+            .filter(|i| i.placement_status == PlacementStatus::Undecodable)
+            .collect();
+        assert_eq!(undecodable.len(), 1);
+        assert_eq!(undecodable[0].instance_name, "Part5.1");
+        assert!(undecodable[0].transform.is_none());
+        for inst in doc
+            .instances
+            .iter()
+            .filter(|i| i.placement_status == PlacementStatus::Placed)
+        {
             assert!(inst.transform.is_some());
         }
     }
