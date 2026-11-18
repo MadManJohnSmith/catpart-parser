@@ -308,6 +308,9 @@ The project is **100% done** when, in order:
    fitness report published (gh-pages); this ROADMAP with every phase
    closed or negatived; corpus frozen (the verified 2026-11-07 backup
    stands); remaining issues labelled `post-v1.0`.
+   **Shipped 2026-11-18** — tag `v1.0` at `a8048c1`, release notes
+   [`docs/releases/v1.0.md`](../releases/v1.0.md); gh-pages republished
+   from the v1.0 row with the L3 series live; #50 carries `post-v1.0`.
 
 The repo stays public and usable; no maintenance is promised. A later
 bugfix may ship as `v1.0.1` without reopening the project.
