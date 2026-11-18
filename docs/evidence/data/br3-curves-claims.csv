@@ -1,0 +1,69 @@
+claim,construct,statement,scope,observations,passes,rate,label,note
+T07_pool_count_law,TOP-07,pool groups whose walked vertex-record count equals the count field (P2g),corpus,2326,2326,1.0,established,structural validator: mismatches raise malformed-pool-group
+T07_pool_count_law,TOP-07,pool groups whose walked vertex-record count equals the count field (P2g),l2-pass,1927,1927,1.0,established,structural validator: mismatches raise malformed-pool-group
+C01_line_block_finite,CRV-01,33 32 canonical (len==2) records whose 40-B f32le block at +0x09 (9d) decodes finite (layout evidence),corpus,508138,508086,0.9999,established,block position byte-verified; skip-42 walk; denominator = walked canonical records (52 short-block rejects named)
+C01_line_block_finite,CRV-01,33 32 canonical (len==2) records whose 40-B f32le block at +0x09 (9d) decodes finite (layout evidence),l2-pass,296895,296853,0.9999,established,block position byte-verified; skip-42 walk; denominator = walked canonical records (52 short-block rejects named)
+C01_line_prep_law,CRV-01,"33 32 blocks whose floats at +0x21 (33d)..+0x29 (41d) repeat the first triple (+0x15 (21d)..+0x1D (29d)) bit-exact (G2 law, subpopulation)",corpus,508138,51002,0.1004,candidate,laws hold and fail within single stores; field semantics open
+C01_line_prep_law,CRV-01,"33 32 blocks whose floats at +0x21 (33d)..+0x29 (41d) repeat the first triple (+0x15 (21d)..+0x1D (29d)) bit-exact (G2 law, subpopulation)",l2-pass,296895,35256,0.1187,candidate,laws hold and fail within single stores; field semantics open
+C01_line_len_law,CRV-01,"33 32 blocks whose float at +0x2D (45d) equals |Q| = ||Q|| over the Q triple at +0x15 (21d)..+0x1D (29d) (rel tol 1e-6) (G2 law, subpopulation)",corpus,508138,54775,0.1078,candidate,laws hold and fail within single stores; field semantics open
+C01_line_len_law,CRV-01,"33 32 blocks whose float at +0x2D (45d) equals |Q| = ||Q|| over the Q triple at +0x15 (21d)..+0x1D (29d) (rel tol 1e-6) (G2 law, subpopulation)",l2-pass,296895,40631,0.1369,candidate,laws hold and fail within single stores; field semantics open
+C01_line_prep_shift2,CRV-01,33 32 P-rep law under the +2-byte-payload alignment (block read at +0x0B (11d)) - the alignment comparator,corpus,508138,414,0.0008,candidate,committed comparator for the alignment differential (canonical alignment wins corpus-wide)
+C01_line_prep_shift2,CRV-01,33 32 P-rep law under the +2-byte-payload alignment (block read at +0x0B (11d)) - the alignment comparator,l2-pass,296895,389,0.0013,candidate,committed comparator for the alignment differential (canonical alignment wins corpus-wide)
+C02_circle_pool_law,CRV-02,33 37 circles with some vertex-pool point on the circle (tol 5e-3),corpus,119107,117038,0.9826,candidate,"geometric cross-check; denominator = ALL 33 37 records - pool-less-store records cannot pass (binding gap, not a law failure)"
+C02_circle_pool_law,CRV-02,33 37 circles with some vertex-pool point on the circle (tol 5e-3),l2-pass,69746,68770,0.986,candidate,"geometric cross-check; denominator = ALL 33 37 records - pool-less-store records cannot pass (binding gap, not a law failure)"
+C02_circle_decode_ok,CRV-02,33 37 records decoding under the 18-B layout with finite non-zero radius,corpus,119107,119097,0.9999,established,decoder accepts; zero/non-finite rejected (synthetic negative)
+C02_circle_decode_ok,CRV-02,33 37 records decoding under the 18-B layout with finite non-zero radius,l2-pass,69746,69738,0.9999,established,decoder accepts; zero/non-finite rejected (synthetic negative)
+C03_conic_dir_law,CRV-03,33 38 direction pairs (both mid-range) with unit norm (tol 2e-3),corpus,5406,5406,1.0,established,BR3 direction law (skip-42 canonical walk)
+C03_conic_dir_law,CRV-03,33 38 direction pairs (both mid-range) with unit norm (tol 2e-3),l2-pass,156,156,1.0,established,BR3 direction law (skip-42 canonical walk)
+C03_conic_decode_ok,CRV-03,33 38 records decoding under the 30-B layout and the direction law,corpus,15768,15757,0.9993,established,"corpus rejections split by committed counters: 2 direction-law + 2 b-positivity + 7 short-payload (11 = 15,768 - 15,757)"
+C03_conic_decode_ok,CRV-03,33 38 records decoding under the 30-B layout and the direction law,l2-pass,5920,5911,0.9985,established,"corpus rejections split by committed counters: 2 direction-law + 2 b-positivity + 7 short-payload (11 = 15,768 - 15,757)"
+C03_conic_b_pos,CRV-03,33 38 conic records with b > 0,corpus,15757,15757,1.0,established,BR3 positivity law
+C03_conic_b_pos,CRV-03,33 38 conic records with b > 0,l2-pass,5911,5911,1.0,established,BR3 positivity law
+C08_midring_dir_law,CRV-08,33 33 records decoding under the direction law (mid-range unit / zero sentinel / unit pair),corpus,54828,54118,0.9871,candidate,BR3 re-read of the stage-4a p1/p2 params as an in-plane direction pair; denominator = walked canonical records (rejects named)
+C08_midring_dir_law,CRV-08,33 33 records decoding under the direction law (mid-range unit / zero sentinel / unit pair),l2-pass,38298,37844,0.9881,candidate,BR3 re-read of the stage-4a p1/p2 params as an in-plane direction pair; denominator = walked canonical records (rejects named)
+C08_midring_midrange_unit,CRV-08,33 33 mid-range direction pairs with unit norm (tol 2e-3),corpus,10696,10051,0.9397,established,"corpus-wide mid-range subset of the BR3 re-read (10,051 unit of 10,696 mid-range; the 645 non-unit pairs sit in decode_midring's 710 rejects; 5,406/5,408 is the CONIC count)"
+C08_midring_midrange_unit,CRV-08,33 33 mid-range direction pairs with unit norm (tol 2e-3),l2-pass,3088,2681,0.8682,established,"corpus-wide mid-range subset of the BR3 re-read (10,051 unit of 10,696 mid-range; the 645 non-unit pairs sit in decode_midring's 710 rejects; 5,406/5,408 is the CONIC count)"
+C36_block_read,walker,33 36 records whose post-family bytes read as 10 finite f32le (measured for the exclusion claim; NOT a block-form establishment),corpus,875398,848141,0.9689,fact,"33 36 stays out of slice: canonical len==2, no tiling/header-follow evidence for a 40-B block"
+C36_block_read,walker,33 36 records whose post-family bytes read as 10 finite f32le (measured for the exclusion claim; NOT a block-form establishment),l2-pass,527273,518132,0.9827,fact,"33 36 stays out of slice: canonical len==2, no tiling/header-follow evidence for a 40-B block"
+C01_line_walked,CRV-01,33 32 canonical records walked by the skip-42 walker (volume anchor),corpus,508138,508138,1.0,fact,"walked, not decoded; the 52 short-block rejects are the C01_line_block_finite gap"
+C01_line_walked,CRV-01,33 32 canonical records walked by the skip-42 walker (volume anchor),l2-pass,296895,296895,1.0,fact,"walked, not decoded; the 52 short-block rejects are the C01_line_block_finite gap"
+C08_midring_walked,CRV-08,33 33 canonical records walked by the skip-42 walker (volume anchor),corpus,54828,54828,1.0,fact,"walked, not decoded; the rejects are the C08_midring_dir_law gap"
+C08_midring_walked,CRV-08,33 33 canonical records walked by the skip-42 walker (volume anchor),l2-pass,38298,38298,1.0,fact,"walked, not decoded; the rejects are the C08_midring_dir_law gap"
+T07_vertex_presence,TOP-07,file carries >= 1 vertex-pool point (P1),corpus,1442,1186,0.8225,established,
+T07_vertex_presence,TOP-07,file carries >= 1 vertex-pool point (P1),l2-pass,1089,1086,0.9972,established,
+T07_census_presence,TOP-07,census-equivalent presence: pool point or declared element space [frozen: 1282/1442 corpus; l2 1.0],corpus,1442,1282,0.889,established,
+T07_census_presence,TOP-07,census-equivalent presence: pool point or declared element space [frozen: 1282/1442 corpus; l2 1.0],l2-pass,1089,1089,1.0,established,
+T06_census_presence,TOP-06,"census-equivalent presence: wrapped edge group, 01 01 byte pair or 33 32 byte pair [frozen: 1311/1442 corpus; l2 1.0]",corpus,1442,1311,0.9092,established,
+T06_census_presence,TOP-06,"census-equivalent presence: wrapped edge group, 01 01 byte pair or 33 32 byte pair [frozen: 1311/1442 corpus; l2 1.0]",l2-pass,1089,1089,1.0,established,
+C01_census_presence,CRV-01,census-equivalent presence: 33 32 byte pair or wrapped edge group [frozen: 1231/1442 corpus; l2 0.9853],corpus,1442,1231,0.8537,established,
+C01_census_presence,CRV-01,census-equivalent presence: 33 32 byte pair or wrapped edge group [frozen: 1231/1442 corpus; l2 0.9853],l2-pass,1089,1073,0.9853,established,
+C02_census_presence,CRV-02,census-equivalent presence: 33 37 byte pair [frozen: 1077/1442 corpus; l2 0.8503],corpus,1442,1077,0.7469,established,
+C02_census_presence,CRV-02,census-equivalent presence: 33 37 byte pair [frozen: 1077/1442 corpus; l2 0.8503],l2-pass,1089,926,0.8503,established,
+C03_census_presence,CRV-03,census-equivalent presence: 33 38 byte pair [frozen: 357/1442 corpus; l2 0.2874],corpus,1442,357,0.2476,established,
+C03_census_presence,CRV-03,census-equivalent presence: 33 38 byte pair [frozen: 357/1442 corpus; l2 0.2874],l2-pass,1089,313,0.2874,established,
+C07_census_presence,CRV-07,census-equivalent presence: wrapped 01 02 edge group [frozen: 996/1442 corpus; l2 0.8365],corpus,1442,996,0.6907,established,
+C07_census_presence,CRV-07,census-equivalent presence: wrapped 01 02 edge group [frozen: 996/1442 corpus; l2 0.8365],l2-pass,1089,911,0.8365,established,
+T06_edge_presence,TOP-06,"file carries an edge group, an unwrapped list or a 33 32 record [census: 1311/1442 corpus; l2 1.0]",corpus,1442,1224,0.8488,established,
+T06_edge_presence,TOP-06,"file carries an edge group, an unwrapped list or a 33 32 record [census: 1311/1442 corpus; l2 1.0]",l2-pass,1089,1069,0.9816,established,
+C01_line_presence,CRV-01,file carries a 33 32 record or an edge group [census: 1231/1442 corpus; l2 0.9853],corpus,1442,1224,0.8488,established,
+C01_line_presence,CRV-01,file carries a 33 32 record or an edge group [census: 1231/1442 corpus; l2 0.9853],l2-pass,1089,1069,0.9816,established,
+C02_circle_presence,CRV-02,file carries a 33 37 record [census: 1077/1442 corpus; l2 0.8503],corpus,1442,1048,0.7268,established,
+C02_circle_presence,CRV-02,file carries a 33 37 record [census: 1077/1442 corpus; l2 0.8503],l2-pass,1089,910,0.8356,established,
+C03_conic_presence,CRV-03,file carries a 33 38 record [census: 357/1442 corpus; l2 0.2874],corpus,1442,231,0.1602,established,
+C03_conic_presence,CRV-03,file carries a 33 38 record [census: 357/1442 corpus; l2 0.2874],l2-pass,1089,207,0.1901,established,
+C07_polyline_presence,CRV-07,file carries an 01 02 edge group [census: 996/1442 corpus; l2 0.8365],corpus,1442,996,0.6907,established,
+C07_polyline_presence,CRV-07,file carries an 01 02 edge group [census: 996/1442 corpus; l2 0.8365],l2-pass,1089,911,0.8365,established,
+C07_polyline_strips,CRV-07,file carries an n > 2 polyline strip record (CRV-07 proper),corpus,1442,366,0.2538,established,
+C07_polyline_strips,CRV-07,file carries an n > 2 polyline strip record (CRV-07 proper),l2-pass,1089,330,0.303,established,
+C08_trim_presence,CRV-08,file carries parameter-carrier curve records (33 33 direction/radius or 33 38 axes/direction),corpus,1442,969,0.672,candidate,
+C08_trim_presence,CRV-08,file carries parameter-carrier curve records (33 33 direction/radius or 33 38 axes/direction),l2-pass,1089,874,0.8026,candidate,
+C04_parabola_ceiling,CRV-04,ceiling: files carrying any 33 38 byte-pair carrier (no parabola discriminator decoded; frozen arithmetic 214+143=357),corpus,1442,357,0.2476,open (ceiling),
+C04_parabola_ceiling,CRV-04,ceiling: files carrying any 33 38 byte-pair carrier (no parabola discriminator decoded; frozen arithmetic 214+143=357),l2-pass,1089,313,0.2874,open (ceiling),
+C05_hyperbola_ceiling,CRV-05,ceiling: files carrying any 33 38 byte-pair carrier (no hyperbola discriminator decoded; frozen arithmetic 214+143=357),corpus,1442,357,0.2476,open (ceiling),
+C05_hyperbola_ceiling,CRV-05,ceiling: files carrying any 33 38 byte-pair carrier (no hyperbola discriminator decoded; frozen arithmetic 214+143=357),l2-pass,1089,313,0.2874,open (ceiling),
+T06_edge_residue_files,TOP-06,"file with wrapped 01 02 edge groups that fail to end-align under either width (the E1 residue, named)",corpus,1442,136,0.0943,named residue,
+T06_edge_residue_files,TOP-06,"file with wrapped 01 02 edge groups that fail to end-align under either width (the E1 residue, named)",l2-pass,1089,109,0.1001,named residue,
+C01_store_prep_population,CRV-01,file carries >= 4 walked 33 32 records with a full 40-B block (the per-store P-rep spread population),corpus,1442,926,0.6422,candidate,
+C01_store_prep_population,CRV-01,file carries >= 4 walked 33 32 records with a full 40-B block (the per-store P-rep spread population),l2-pass,1089,828,0.7603,candidate,
+C01_store_prep_median,CRV-01,median per-store P-rep rate over files with >= 4 walked 33 32 records with a full 40-B block (companion row C01_store_prep_population),corpus,1,1,0.6,candidate,value row: the rate column carries the median
+C01_store_prep_median,CRV-01,median per-store P-rep rate over files with >= 4 walked 33 32 records with a full 40-B block (companion row C01_store_prep_population),l2-pass,1,1,0.6042,candidate,value row: the rate column carries the median

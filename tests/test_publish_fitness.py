@@ -269,13 +269,18 @@ def test_readme_badge_reads_the_emitted_endpoint_file() -> None:
         "https://raw.githubusercontent.com/MadManJohnSmith/catpart-parser/"
         f"gh-pages/{publish.LATEST_FILENAME}"
     )
-    assert f"https://img.shields.io/endpoint?url={badge_url}" in readme
-    # The badge lives in the Status section, before the next heading.
-    status = readme.split("## Status", 1)[1].split("\n## ", 1)[0]
-    assert "img.shields.io/endpoint?url=" in status
+    badge = f"https://img.shields.io/endpoint?url={badge_url}"
+    assert badge in readme
+    # The provenance note travels with the badge: same heading-bounded
+    # section, whichever that is — so a badge moved elsewhere cannot
+    # leave a lone endpoint reference the doc no longer explains.
+    at = readme.index(badge)
+    start = readme.rfind("\n## ", 0, at)
+    end = readme.find("\n## ", at)
+    section = readme[start if start >= 0 else 0 : end if end >= 0 else len(readme)]
     # The one-line local-only doc names the script and the convention.
-    assert "scripts/publish_fitness.py" in status
-    assert "ADR-0003" in status
+    assert "scripts/publish_fitness.py" in section
+    assert "ADR-0003" in section
 
 
 # --- the site/ landing page rides along --------------------------------------
