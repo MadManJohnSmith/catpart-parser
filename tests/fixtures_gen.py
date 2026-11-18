@@ -288,6 +288,12 @@ VALID_VARIANTS = (
     "geometry-composite-law-dedup-manifold-no-fire",
     "geometry-composite-law-dedup-declined",
     "geometry-composite-law-dedup-degenerate",
+    # Primary-emit seam variants (2026-11-18, #34): a tiny fin loop
+    # over a twice-used box edge is dropped (mesh manifold) while a
+    # large one is kept and, when both appear, the store declines the
+    # seam fail-closed (pre-seam emission returned unchanged).
+    "geometry-composite-law-primary-seam-tiny",
+    "geometry-composite-law-primary-seam-declined",
 )
 CORRUPTED_VARIANTS = (
     "bad-magic",
@@ -422,6 +428,12 @@ COMPOSITE_VARIANTS = (
     "geometry-composite-law-dedup-manifold-no-fire",
     "geometry-composite-law-dedup-declined",
     "geometry-composite-law-dedup-degenerate",
+    # Primary-emit seam variants (2026-11-18, #34): a tiny fin loop
+    # over a twice-used box edge is dropped (mesh manifold) while a
+    # large one is kept and, when both appear, the store declines the
+    # seam fail-closed (pre-seam emission returned unchanged).
+    "geometry-composite-law-primary-seam-tiny",
+    "geometry-composite-law-primary-seam-declined",
 )
 
 # --- nested-store geometry (G4, #32) -----------------------------------
@@ -1459,6 +1471,36 @@ def _composite_store(variant: str) -> bytes:
                     if normal != (0.0, -1.0, 0.0)
                 )
                 extra_record = _facet_record(0x4C, (0.0, 1.0, 0.0), skip_loop_a)
+        elif variant.startswith("geometry-composite-law-primary-seam"):
+            # Primary-emit seam fixtures (2026-11-18, #34): the plain
+            # 12-triangle box plus a FIN loop over the box edge (0, 3)
+            # — the edge already has two uses (the y=10 face's
+            # 0x4a strip and the x=0 polygon), so the seam's
+            # incremental guard refuses the fin.  A 13th/14th node
+            # point sets the fin's area:
+            # - ``...-tiny``: apex (0.001, 10, 0) 0.5 mm from the edge
+            #   -> 0.05 mm² = 0.0003% of the box's 18,400 mm²: the
+            #   seam drops the sliver, the mesh is manifold (the box),
+            #   the skip is counted and named.
+            # - ``...-declined``: the tiny fin AND a large one (apex
+            #   (0, 60, -10), 500 mm² = 2.7% > 1%): the large over-use
+            #   is kept, the mesh stays not-manifold, so the fire gate
+            #   declines the seam and the pre-seam emission (box + both
+            #   fins) is returned unchanged — no surface lost for no
+            #   L2 gain; the decline and the keep are both named.
+            tiny = (0.001, 10.0, 0.0)
+            if variant == "geometry-composite-law-primary-seam-tiny":
+                points = COMPOSITE_POINTS + (tiny,)
+                extra_record = _facet_record(0x42, None, (0, 3, 12))
+            else:  # geometry-composite-law-primary-seam-declined
+                points = COMPOSITE_POINTS + (tiny, (0.0, 60.0, -10.0))
+                extra_record = _facet_record(
+                    0x42, None, (0, 3, 12)
+                ) + _facet_record(0x42, None, (0, 3, 13))
+            elements = _composite_elements(points)
+            faces = COMPOSITE_FACES
+            width = 1
+            write_count_override = None
         elif variant.startswith("geometry-composite-law-dedup"):
             # Stage-15 unordered-triangle dedup fixtures (#34,
             # 2026-11-13): the plain 12-point box (no skip slots) plus

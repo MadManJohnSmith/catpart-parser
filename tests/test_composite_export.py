@@ -55,6 +55,8 @@ COMPOSITE_VARIANTS = (
     "geometry-composite-law-dedup-manifold-no-fire",
     "geometry-composite-law-dedup-declined",
     "geometry-composite-law-dedup-degenerate",
+    "geometry-composite-law-primary-seam-tiny",
+    "geometry-composite-law-primary-seam-declined",
 )
 
 
@@ -1330,6 +1332,65 @@ def test_composite_dedup_degenerate_separate_gate(tmp_path, capsys):
     assert "degenerate-triangles-skipped" in classes
 
 
+# --- 2026-11-18: the primary-emit manifold seam (#34) --------------------
+#
+# The short records' primary loop emission was the one seam with no
+# manifold guard.  These fixtures put a FIN loop over the box edge
+# (0, 3) — already used twice — and pin both arms of the area rule plus
+# the store-level fire gate (docs/evidence/
+# 2026-11-18-primary-emit-seam.md).
+
+
+def test_composite_primary_seam_skips_a_tiny_overuse_loop(tmp_path, capsys):
+    """The tiny arm: the fin's apex is 0.5 mm from the box edge
+    (0.05 mm² = 0.0003% of the 18,400 mm² box), so the seam drops the
+    sliver, the mesh is the 12-triangle manifold box, and the skip is
+    counted and named.  Without the seam the fin's edge use tips the
+    mesh to not-manifold (13 triangles) — red."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-primary-seam-tiny"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    info = summary["composite"]
+    assert summary["triangle_count"] == 12
+    assert summary["mesh"]["manifold"] is True
+    assert info["primary_loop_skips"] == 1
+    assert "primary_loop_kept" not in info
+    assert "primary_loop_seam_declined" not in info
+    classes = _warning_classes(summary)
+    assert "primary-loop-manifold-skip" in classes
+    assert "primary-loop-manifold-kept" not in classes
+    _, faces = parse_ply(ply_path)
+    assert len(faces) == 12  # the box only
+
+
+def test_composite_primary_seam_keeps_a_large_overuse(tmp_path, capsys):
+    """The large arm + the fire gate: the store carries the tiny fin
+    AND a 500 mm² fin (2.7% of the box).  The large loop is real
+    surface and is kept; the mesh stays not-manifold, so the seam is
+    declined fail-closed and the PRE-SEAM emission (box + both fins,
+    14 triangles) is returned unchanged — no surface lost for no L2
+    gain.  Both outcomes are named."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-primary-seam-declined"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    info = summary["composite"]
+    assert summary["triangle_count"] == 14  # the pre-seam emission
+    assert summary["mesh"]["manifold"] is False
+    assert info["primary_loop_kept"] == 1
+    assert info["primary_loop_seam_declined"] == 1
+    assert "primary_loop_skips" not in info
+    classes = _warning_classes(summary)
+    assert "primary-loop-manifold-declined" in classes
+    assert "primary-loop-manifold-kept" in classes
+    assert "primary-loop-manifold-skip" not in classes
+    _, faces = parse_ply(ply_path)
+    assert len(faces) == 14
+
+
 # --- 2026-11-18: the per-loop dup-pin weld (the surface-loss fix, #34) --
 
 
@@ -1549,3 +1610,92 @@ def test_triangulate_extended_record_soup_strips_polygons() -> None:
     assert len(triangles) == 4
     assert stats["extended_triangles"] == 4
     assert stats["extended_declined"] == 1
+
+
+# --- 2026-11-18: the primary-emit seam's port parity on the corpus flips --
+#
+# The 15 not-manifold parts the seam flips (docs/evidence/
+# 2026-11-18-primary-emit-seam.md; the A/B's
+# docs/evidence/data/primary-emit-seam-ab.csv rows).  The corpus is
+# gitignored and never present in CI, so this differential is
+# corpus-gated: on a machine with the corpus it exports each part
+# through BOTH shipped seams (the Python reference and the release
+# ``fidelity-cli``) and pins parsed-summary equality plus
+# byte-identical PLY; elsewhere it skips.
+PRIMARY_SEAM_FLIPS = {
+    "13bb5c0c49616ade": 152010,
+    "2fb5b092857f70ec": 1621,
+    "44e63faa2d9abf84": 2516,
+    "4a32f59c1e637acd": 2223,
+    "4abf3eeaf892be44": 1529,
+    "612c5e7cc7291c71": 4387,
+    "6ab9e107b7f30308": 850,
+    "97a0a420923c5c67": 8641,
+    "a61588e5fe2cca5f": 2986,
+    "ba0900267e2072e1": 4071,
+    "bc235805f71fdf5a": 1621,
+    "c9fdd85256ae1eba": 17771,
+    "cd76cab52cf2fbe5": 1563,
+    "d31ea2c17d63c041": 2346,
+    "d4127e6b5cc39236": 5080,
+}
+
+
+def _corpus_part_paths(sha16s) -> dict[str, Path]:
+    import csv
+
+    root = Path(__file__).resolve().parents[1]
+    rows = {
+        r["sha256"][:16]: r
+        for r in csv.DictReader((root / "manifests" / "corpus-manifest.csv").open())
+        if r["kind"] == "part"
+    }
+    return {
+        sha: root / rows[sha]["local_path"]
+        for sha in sha16s
+        if sha in rows and (root / rows[sha]["local_path"]).exists()
+    }
+
+
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parents[1] / "corpus").exists(),
+    reason="corpus is gitignored / absent (the corpus-gated seam differential)",
+)
+def test_primary_seam_port_parity_on_the_flips(tmp_path):
+    """Python ≡ Port on the 15 primary-seam flips: parsed summaries and
+    byte-identical PLY.  Every part must be manifold at its pinned
+    triangle count."""
+    import shutil
+    import subprocess
+
+    from catpart.geometry import build_export
+
+    paths = _corpus_part_paths(PRIMARY_SEAM_FLIPS)
+    assert set(paths) == set(PRIMARY_SEAM_FLIPS), "manifest/corpus rows missing"
+    root = Path(__file__).resolve().parents[1]
+    cargo = shutil.which("cargo")
+    assert cargo is not None, "cargo is a required dev dependency (spec §7)"
+    build = subprocess.run(
+        [cargo, "build", "--release", "--locked"],
+        cwd=root / "port",
+        capture_output=True,
+        text=True,
+    )
+    assert build.returncode == 0, build.stderr
+    port_bin = root / "port" / "target" / "release" / "fidelity-cli"
+    assert port_bin.is_file()
+    for sha, path in sorted(paths.items()):
+        python_ply = tmp_path / f"{sha}-python.ply"
+        port_ply = tmp_path / f"{sha}-port.ply"
+        summary = build_export(path, python_ply)
+        assert summary["triangle_count"] == PRIMARY_SEAM_FLIPS[sha]
+        assert summary["mesh"]["manifold"] is True
+        assert summary["composite"]["primary_loop_skips"] >= 1
+        port = subprocess.run(
+            [str(port_bin), "export", str(path), str(port_ply)],
+            capture_output=True,
+            text=True,
+        )
+        assert port.returncode == 0, port.stderr
+        assert json.loads(json.dumps(summary)) == json.loads(port.stdout)
+        assert python_ply.read_bytes() == port_ply.read_bytes()

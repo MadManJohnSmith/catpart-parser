@@ -156,6 +156,15 @@ pub const EXTENDED_HEADER_MARKERS: [u8; 2] = [0x47, 0x4F];
 /// Extended-header markers carrying the 12-byte normal payload.
 pub const EXTENDED_NORMAL_MARKERS: [u8; 1] = [0x4F];
 
+/// The primary-emit seam's keep threshold (2026-11-18, #34; twin:
+/// ``PRIMARY_LOOP_AREA_REL``): a refused primary loop is dropped only
+/// when its area is at most this fraction of the store mesh's area; a
+/// larger over-use is real surface and is kept as before.  Measured on
+/// the 24 not-manifold corpus parts the refused loops split at
+/// 0.76% / 2.92%, so 1% sits in the gap (docs/evidence/
+/// 2026-11-18-primary-emit-seam.md).
+pub const PRIMARY_LOOP_AREA_REL: f64 = 1e-2;
+
 /// One extended-header facet record — the twin's
 /// ``composite.ExtendedFacetRecord``: ``01 <mk> ty b3 b4 ff``, then
 /// ``u32le n``, a 12-B normal on 0x4f, ``b3 + b4`` u8 counts, and the
@@ -360,6 +369,18 @@ pub struct CompositeInfo {
     /// uses; absent when none were declined).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extended_header_declined: Option<usize>,
+    /// Primary-emit seam (2026-11-18): the sliver loops skipped at the
+    /// primary emission (absent when none).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary_loop_skips: Option<u32>,
+    /// Primary-emit seam: candidate slivers the fire gate declined (the
+    /// store stays not-manifold, so the pre-seam emission is kept).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary_loop_seam_declined: Option<u32>,
+    /// Primary-emit seam: over-using loops kept because each is larger
+    /// than the sliver bound (real surface — never dropped).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary_loop_kept: Option<u32>,
     /// Stage-10 (relaxed stage 15) / 2026-11-18: the law name on a
     /// firing store (``e0b-dup-pin`` or ``closed-manifold-weld``).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1111,6 +1132,12 @@ struct Triangulation {
     extended_triangles: u32,
     /// The extended records the manifold-assembly gate declined.
     extended_declined: u32,
+    /// The primary-emit seam: sliver loops skipped at the primary
+    /// emission (the twin's ``primary_loop_skips``).
+    primary_loop_skips: u32,
+    /// The primary-emit seam: over-using loops kept because each is
+    /// larger than the sliver bound (the twin's ``primary_loop_kept``).
+    primary_loop_kept: u32,
     /// The per-loop dup-pin weld block.
     dup_pin: Option<DupPin>,
     /// The dropped curve-entry loops (marker, record normal, loop
@@ -1127,6 +1154,12 @@ struct EmitState {
     loops_exported: u32,
     loops_curve_entry: u32,
     dropped_loops: Vec<DroppedLoop>,
+    /// The undirected edge-use histogram of the primary loops emitted
+    /// so far (the incremental guard's state; the twin's ``edge_uses``).
+    edge_uses: HashMap<(u32, u32), u32>,
+    /// The primary-emit seam counters (the twin's stats keys).
+    primary_loop_skips: u32,
+    primary_loop_kept: u32,
 }
 
 /// The shared emission context of one :fn:`triangulate` call (the
@@ -1140,6 +1173,11 @@ struct EmitCtx<'a> {
 impl EmitCtx<'_> {
     /// Emit one loop (or one independent triangle, ``count_loop``
     /// false) — the twin's inner ``emit`` of ``_triangulate``.
+    /// ``guard`` runs the incremental manifold guard (the primary
+    /// records pass ``true``, the extended records ``false`` like the
+    /// twin's inline extended walk); ``seam_area`` arms the seam
+    /// (``Some`` = the store mesh area).
+    #[allow(clippy::too_many_arguments)]
     fn emit(
         &self,
         st: &mut EmitState,
@@ -1147,6 +1185,8 @@ impl EmitCtx<'_> {
         normal: Option<(f64, f64, f64)>,
         loop_refs: &[u32],
         count_loop: bool,
+        guard: bool,
+        seam_area: Option<f64>,
     ) {
         if loop_refs.is_empty() {
             return;
@@ -1173,6 +1213,25 @@ impl EmitCtx<'_> {
             .collect();
         let (tris, deg) = loop_triangles(kind, &idxs, self.points);
         st.degenerate += deg;
+        // The primary-loop seam (2026-11-18, #34): the same incremental
+        // manifold guard the weld and the extended family use, made
+        // fidelity-neutral by the area rule — a refused loop is dropped
+        // only when it is <= PRIMARY_LOOP_AREA_REL of the store mesh's
+        // area; a larger over-use is real surface and is kept as before,
+        // counted and named.
+        if guard {
+            let area = loop_area(&tris, self.points);
+            if !mesh_safe(&mut st.edge_uses, &tris) {
+                if let Some(reference) = seam_area
+                    && area <= PRIMARY_LOOP_AREA_REL * reference
+                {
+                    st.primary_loop_skips += 1;
+                    return;
+                }
+                st.primary_loop_kept += 1;
+                fold_edge_uses(&mut st.edge_uses, &tris);
+            }
+        }
         st.triangles.extend(tris);
     }
 }
@@ -1181,6 +1240,7 @@ fn triangulate(
     elements: &[Element],
     records: &[CompositeRecord],
     extended: &[ExtendedFacetRecord],
+    seam_area: Option<f64>,
 ) -> Triangulation {
     let mut written_rank: HashMap<usize, usize> = HashMap::new();
     let mut skips: HashSet<usize> = HashSet::new();
@@ -1211,6 +1271,8 @@ fn triangulate(
                 rec.normal,
                 &rec.refs[o..o + *c as usize],
                 true,
+                true,
+                seam_area,
             );
             o += *c as usize;
         }
@@ -1224,11 +1286,19 @@ fn triangulate(
     // dropped (never weld candidates of a declined record).
     let mut extended_triangles = 0u32;
     let mut extended_declined = 0u32;
-    let mut edge_uses = edge_uses_of(&st.triangles);
+    let mut edge_uses = st.edge_uses.clone();
     for rec in extended {
         let mut rec_st = EmitState::default();
         for j in (0..3 * rec.triangles as usize).step_by(3) {
-            ctx.emit(&mut rec_st, 0x42, rec.normal, &rec.refs[j..j + 3], false);
+            ctx.emit(
+                &mut rec_st,
+                0x42,
+                rec.normal,
+                &rec.refs[j..j + 3],
+                false,
+                false,
+                None,
+            );
         }
         let mut o = 3 * rec.triangles as usize;
         for (index, c) in rec.counts.iter().enumerate() {
@@ -1243,6 +1313,8 @@ fn triangulate(
                 rec.normal,
                 &rec.refs[o..o + *c as usize],
                 true,
+                false,
+                None,
             );
             o += *c as usize;
         }
@@ -1280,6 +1352,8 @@ fn triangulate(
         loops_curve_entry: st.loops_curve_entry,
         extended_triangles,
         extended_declined,
+        primary_loop_skips: st.primary_loop_skips,
+        primary_loop_kept: st.primary_loop_kept,
         dup_pin,
         dropped_loops: st.dropped_loops,
     }
@@ -1398,6 +1472,7 @@ fn decode_per_rep(
     groups: &[PoolGroup],
     n_missing: usize,
     n_pool: usize,
+    seam_area: Option<f64>,
 ) -> Result<CompositeDecode, ExportError> {
     let mut decoded: Vec<DecodedRep> = Vec::new();
     for node in scan_token_nodes(data, lo, hi) {
@@ -1443,6 +1518,9 @@ fn decode_per_rep(
     let mut ext_records = 0usize;
     let mut ext_triangles = 0usize;
     let mut ext_declined = 0usize;
+    // The primary-emit seam counters (per rep; summed at store level).
+    let mut primary_loop_skips = 0u32;
+    let mut primary_loop_kept = 0u32;
     let mut write_count = 0usize;
     let mut table_bytes = 0usize;
     let mut element_decl = 0usize;
@@ -1528,7 +1606,7 @@ fn decode_per_rep(
             continue;
         }
         let base = points.len();
-        let tri_res = triangulate(&d.elements, &records, &ext_k);
+        let tri_res = triangulate(&d.elements, &records, &ext_k, seam_area);
         // The per-loop dup-pin weld (2026-11-18): the rep's dropped
         // loops were evaluated independently (pinnable + battery +
         // mesh guard). The welded ones merge at the store level below
@@ -1547,6 +1625,8 @@ fn decode_per_rep(
         degenerate += tri_res.degenerate;
         loops_exported += tri_res.loops_exported;
         loops_curve_entry += tri_res.loops_curve_entry;
+        primary_loop_skips += tri_res.primary_loop_skips;
+        primary_loop_kept += tri_res.primary_loop_kept;
         // The §2.3 curve exposure: this exported rep's dropped loops'
         // pre-weld sequences (additive, outside Fidelity).
         for (_mk, _normal, loop_refs) in &tri_res.dropped_loops {
@@ -1631,6 +1711,9 @@ fn decode_per_rep(
         extended_header_declined: None,
         curve_entry_law: None,
         loops_curve_entry_exported: None,
+        primary_loop_skips: None,
+        primary_loop_seam_declined: None,
+        primary_loop_kept: None,
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
     };
@@ -1640,6 +1723,12 @@ fn decode_per_rep(
         if ext_declined > 0 {
             info.extended_header_declined = Some(ext_declined);
         }
+    }
+    if primary_loop_skips > 0 {
+        info.primary_loop_skips = Some(primary_loop_skips);
+    }
+    if primary_loop_kept > 0 {
+        info.primary_loop_kept = Some(primary_loop_kept);
     }
     if curve_entry_law > 0 {
         info.curve_entry_law = Some("e0b-dup-pin");
@@ -1694,6 +1783,45 @@ fn edge_uses_of(triangles: &[(u32, u32, u32)]) -> HashMap<(u32, u32), u32> {
         }
     }
     uses
+}
+
+/// Fold one unit's edge uses into the assembled histogram (the accept
+/// arm of :fn:`mesh_safe`; the primary seam also uses it for a kept
+/// over-use loop) — twin: ``_fold_edge_uses``.
+fn fold_edge_uses(edge_uses: &mut HashMap<(u32, u32), u32>, tris: &[(u32, u32, u32)]) {
+    for (edge, count) in edge_uses_of(tris) {
+        *edge_uses.entry(edge).or_insert(0) += count;
+    }
+}
+
+/// One triangle's area from the written points (mm²) — twin:
+/// ``_triangle_area``.
+fn triangle_area(tri: (u32, u32, u32), points: &[(f64, f64, f64)]) -> f64 {
+    let a = points[tri.0 as usize];
+    let b = points[tri.1 as usize];
+    let c = points[tri.2 as usize];
+    let (ux, uy, uz) = (b.0 - a.0, b.1 - a.1, b.2 - a.2);
+    let (vx, vy, vz) = (c.0 - a.0, c.1 - a.1, c.2 - a.2);
+    let cx = uy * vz - uz * vy;
+    let cy = uz * vx - ux * vz;
+    let cz = ux * vy - uy * vx;
+    0.5 * (cx * cx + cy * cy + cz * cz).sqrt()
+}
+
+/// A candidate loop's area (the sum over its emitted triangles) —
+/// twin: ``_loop_area``.
+fn loop_area(tris: &[(u32, u32, u32)], points: &[(f64, f64, f64)]) -> f64 {
+    tris.iter().map(|&tri| triangle_area(tri, points)).sum()
+}
+
+/// The assembled mesh's area — the primary seam's reference (the
+/// store-level mesh area, so the rule is order-independent) — twin:
+/// ``_mesh_area``.
+fn mesh_area(triangles: &[(u32, u32, u32)], points: &[(f64, f64, f64)]) -> f64 {
+    triangles
+        .iter()
+        .map(|&tri| triangle_area(tri, points))
+        .sum()
 }
 
 /// The dup-pin weld targets for one loop — ``{skip slot: written
@@ -1900,6 +2028,57 @@ fn curve_sequence(loop_refs: &[u32], elements: &[Element]) -> Vec<(f64, f64, f64
         .collect()
 }
 
+/// Decode one composite store span — the primary-emit seam's entry
+/// point (2026-11-18, #34; twin: ``decode_composite_store``).
+///
+/// The store is decoded twice: a registry pass with the seam off
+/// measures the assembled mesh's area, then the guarded pass drops only
+/// the refused primary loops whose area is at most
+/// :const:`PRIMARY_LOOP_AREA_REL` (1%) of it.  A larger over-use is real
+/// surface and is kept exactly as before (counted in
+/// ``primary_loop_kept``); the dropped slivers are counted in
+/// ``primary_loop_skips``.  The seam stands only where it RESOLVES the
+/// store's over-use: a guarded mesh that is still not manifold returns
+/// the pre-seam decode unchanged with ``primary_loop_seam_declined``
+/// naming the candidates (the dedup law's fail-closed discipline; no
+/// surface is lost for no L2 gain).
+pub fn decode_composite_store(
+    data: &[u8],
+    span: &StoreSpan,
+    groups: &[PoolGroup],
+    kinds: &[Vec<u8>],
+    allow_unrouted_elements: bool,
+) -> Result<CompositeDecode, ExportError> {
+    let baseline = decode_store_once(data, span, groups, kinds, allow_unrouted_elements, None)?;
+    let area = mesh_area(&baseline.triangles, &baseline.points);
+    let seam = decode_store_once(
+        data,
+        span,
+        groups,
+        kinds,
+        allow_unrouted_elements,
+        Some(area),
+    )?;
+    let skipped = seam.info.primary_loop_skips.unwrap_or(0);
+    if skipped > 0 && !mesh::mesh_stats(&seam.triangles).manifold {
+        // The seam fires ONLY where it resolves the store's over-use:
+        // a store whose mesh is still not manifold after the slivers
+        // are out keeps its exact pre-seam emission — no surface is
+        // lost for no L2 gain. The decline is named.
+        let mut info = baseline.info;
+        info.primary_loop_seam_declined = Some(skipped);
+        info.primary_loop_kept = seam.info.primary_loop_kept;
+        return Ok(CompositeDecode {
+            points: baseline.points,
+            triangles: baseline.triangles,
+            degenerate: baseline.degenerate,
+            info,
+            curves: baseline.curves,
+        });
+    }
+    Ok(seam)
+}
+
 /// Decode one composite store span under the identity law (stage 3d;
 /// per-rep decomposition added 2026-11-12 stage 5, #34) — the twin's
 /// ``decode_composite_store``. Returns the decoded points (the
@@ -1932,12 +2111,13 @@ fn curve_sequence(loop_refs: &[u32], elements: &[Element]) -> Vec<(f64, f64, f64
 /// walk-mismatch branch fails closed with the twin's class naming the
 /// stage-2 gap — every store the table walk handles decodes
 /// identically to the twin.
-pub fn decode_composite_store(
+fn decode_store_once(
     data: &[u8],
     span: &StoreSpan,
     groups: &[PoolGroup],
     kinds: &[Vec<u8>],
     allow_unrouted_elements: bool,
+    seam_area: Option<f64>,
 ) -> Result<CompositeDecode, ExportError> {
     let lo = span.body_lo;
     let hi = span.body_hi;
@@ -1981,7 +2161,7 @@ pub fn decode_composite_store(
             if walk_mismatch(payload, elem_decl).is_none() {
                 return Err(exc);
             }
-            match decode_raw_array_path(data, lo, hi, groups, payload, elem_decl) {
+            match decode_raw_array_path(data, lo, hi, groups, payload, elem_decl, seam_area) {
                 Ok(ok) => return Ok(ok),
                 Err(raw_exc) => {
                     let raw_detail = raw_exc.detail;
@@ -1992,7 +2172,7 @@ pub fn decode_composite_store(
                     // (the zero-block extent candidates; the flat law's
                     // counts_end-pinned start), runs before the store
                     // fails closed.
-                    match decode_mixedwrite(data, lo, hi, groups) {
+                    match decode_mixedwrite(data, lo, hi, groups, seam_area) {
                         Ok(ok) => return Ok(ok),
                         Err(reps_exc) => {
                             return Err(ExportError::new(
@@ -2020,7 +2200,7 @@ pub fn decode_composite_store(
     if missing > 0 {
         // Stage-5 per-rep decomposition (stage-4b law): try the
         // sequence-of-reps reading before failing closed.
-        return decode_per_rep(data, lo, hi, groups, missing, pool_set.len());
+        return decode_per_rep(data, lo, hi, groups, missing, pool_set.len(), seam_area);
     }
 
     let (records, n_hdrs) = parse_strip_records(data, lo, hi, elem_decl, Some(&elements));
@@ -2049,7 +2229,7 @@ pub fn decode_composite_store(
         ));
     }
 
-    let tri_res = triangulate(&elements, &records, &extended);
+    let tri_res = triangulate(&elements, &records, &extended, seam_area);
     let mut triangles = tri_res.triangles;
     let mut degenerate = tri_res.degenerate;
     let mut loops_exported = tri_res.loops_exported;
@@ -2105,6 +2285,9 @@ pub fn decode_composite_store(
         extended_header_declined: None,
         curve_entry_law: None,
         loops_curve_entry_exported: None,
+        primary_loop_skips: None,
+        primary_loop_seam_declined: None,
+        primary_loop_kept: None,
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
     };
@@ -2114,6 +2297,12 @@ pub fn decode_composite_store(
         if tri_res.extended_declined > 0 {
             info.extended_header_declined = Some(tri_res.extended_declined as usize);
         }
+    }
+    if tri_res.primary_loop_skips > 0 {
+        info.primary_loop_skips = Some(tri_res.primary_loop_skips);
+    }
+    if tri_res.primary_loop_kept > 0 {
+        info.primary_loop_kept = Some(tri_res.primary_loop_kept);
     }
     if curve_entry_law > 0 {
         info.curve_entry_law = Some("e0b-dup-pin");
@@ -2378,6 +2567,7 @@ fn decode_raw_array_path(
     groups: &[PoolGroup],
     payload: &[u8],
     elem_decl: u32,
+    seam_area: Option<f64>,
 ) -> Result<CompositeDecode, ExportError> {
     let poolv: Vec<(f64, f64, f64)> = groups
         .iter()
@@ -2410,7 +2600,7 @@ fn decode_raw_array_path(
     // The raw element space has no skip slots, so no dropped
     // curve-entry loops exist and the weld candidate is never accepted
     // here (the twin pops it on this path).
-    let tri_res = triangulate(&elements, &records, &extended);
+    let tri_res = triangulate(&elements, &records, &extended, seam_area);
     let triangles = tri_res.triangles;
     let degenerate = tri_res.degenerate;
     let loops_exported = tri_res.loops_exported;
@@ -2451,6 +2641,9 @@ fn decode_raw_array_path(
         extended_header_declined: None,
         curve_entry_law: None,
         loops_curve_entry_exported: None,
+        primary_loop_skips: None,
+        primary_loop_seam_declined: None,
+        primary_loop_kept: None,
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
     };
@@ -2461,6 +2654,12 @@ fn decode_raw_array_path(
         if ext_declined > 0 {
             info.extended_header_declined = Some(ext_declined as usize);
         }
+    }
+    if tri_res.primary_loop_skips > 0 {
+        info.primary_loop_skips = Some(tri_res.primary_loop_skips);
+    }
+    if tri_res.primary_loop_kept > 0 {
+        info.primary_loop_kept = Some(tri_res.primary_loop_kept);
     }
     // Stage-15 unordered-triangle dedup (see apply_unordered_dedup):
     // the raw path triangulates facet records like the other paths, so
@@ -2877,6 +3076,7 @@ fn decode_mixedwrite(
     lo: usize,
     hi: usize,
     groups: &[PoolGroup],
+    seam_area: Option<f64>,
 ) -> Result<CompositeDecode, ExportError> {
     let poolv: Vec<(f64, f64, f64)> = groups
         .iter()
@@ -3006,6 +3206,9 @@ fn decode_mixedwrite(
     let mut ext_records = 0usize;
     let mut ext_triangles = 0usize;
     let mut ext_declined = 0usize;
+    // The primary-emit seam counters (per rep; summed at store level).
+    let mut primary_loop_skips = 0u32;
+    let mut primary_loop_kept = 0u32;
     let mut write_count = 0usize;
     let mut table_bytes = 0usize;
     let mut element_decl = 0usize;
@@ -3053,7 +3256,7 @@ fn decode_mixedwrite(
             continue;
         }
         let base = points.len();
-        let tri_res = triangulate(&d.elements, &records, &ext_k);
+        let tri_res = triangulate(&d.elements, &records, &ext_k, seam_area);
         // The per-loop dup-pin weld (see decode_per_rep).
         if let Some(dp) = &tri_res.dup_pin {
             reps_dup_pin.push((base, dp.clone()));
@@ -3068,6 +3271,8 @@ fn decode_mixedwrite(
         degenerate += tri_res.degenerate;
         loops_exported += tri_res.loops_exported;
         loops_curve_entry += tri_res.loops_curve_entry;
+        primary_loop_skips += tri_res.primary_loop_skips;
+        primary_loop_kept += tri_res.primary_loop_kept;
         // The §2.3 curve exposure: this exported rep's dropped loops'
         // pre-weld sequences (additive, outside Fidelity).
         for (_mk, _normal, loop_refs) in &tri_res.dropped_loops {
@@ -3151,6 +3356,9 @@ fn decode_mixedwrite(
         extended_header_declined: None,
         curve_entry_law: None,
         loops_curve_entry_exported: None,
+        primary_loop_skips: None,
+        primary_loop_seam_declined: None,
+        primary_loop_kept: None,
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
     };
@@ -3160,6 +3368,12 @@ fn decode_mixedwrite(
         if ext_declined > 0 {
             info.extended_header_declined = Some(ext_declined);
         }
+    }
+    if primary_loop_skips > 0 {
+        info.primary_loop_skips = Some(primary_loop_skips);
+    }
+    if primary_loop_kept > 0 {
+        info.primary_loop_kept = Some(primary_loop_kept);
     }
     if curve_entry_law > 0 {
         info.curve_entry_law = Some("e0b-dup-pin");
@@ -3376,6 +3590,9 @@ mod tests {
             extended_header_records: None,
             extended_header_triangles: None,
             extended_header_declined: None,
+            primary_loop_skips: None,
+            primary_loop_seam_declined: None,
+            primary_loop_kept: None,
             curve_entry_law: None,
             loops_curve_entry_exported: None,
             unordered_dedup_dropped: None,
@@ -3534,6 +3751,71 @@ mod tests {
         assert!(records.is_empty());
     }
 
+    /// The primary-emit seam (2026-11-18, #34): a candidate loop over
+    /// an edge the primary mesh already uses twice is refused by the
+    /// incremental guard; the area rule then decides — a sliver
+    /// (<= 1% of the store area) is dropped, a larger over-use is real
+    /// surface and is kept exactly as before.  ``seam_area: None``
+    /// disables the seam (the registry pass), so every refused loop is
+    /// kept.
+    #[test]
+    fn primary_seam_skips_tiny_overuse_and_keeps_large() {
+        let elements: Vec<Element> = vec![
+            (0, Some((0.0, 0.0, 0.0))),
+            (0, Some((10.0, 0.0, 0.0))),
+            (0, Some((10.0, 10.0, 0.0))),
+            (0, Some((0.0, 10.0, 0.0))),
+            // 1 µm off the (1, 2) edge: a 0.005 mm² sliver
+            (0, Some((10.001, 5.0, 0.0))),
+            // 5 mm off it: 25 mm², 25% of the quad
+            (0, Some((15.0, 5.0, 0.0))),
+        ];
+        let quad = CompositeRecord {
+            offset: 0,
+            marker: 0x42,
+            normal: None,
+            counts: vec![4],
+            refs: vec![0, 1, 2, 3],
+            width: 1,
+        };
+        let tiny = CompositeRecord {
+            offset: 1,
+            marker: 0x42,
+            normal: None,
+            counts: vec![3],
+            refs: vec![1, 2, 4],
+            width: 1,
+        };
+        let large = CompositeRecord {
+            offset: 2,
+            marker: 0x42,
+            normal: None,
+            counts: vec![3],
+            refs: vec![1, 2, 5],
+            width: 1,
+        };
+        let records = vec![quad.clone(), tiny.clone(), large.clone()];
+        // The quad's two triangles are 50 mm² each; both candidates
+        // over-use its (1, 2) edge (used twice already).
+        let tri = triangulate(&elements, &records, &[], Some(100.0));
+        assert_eq!(tri.triangles.len(), 3); // quad + the large fin
+        assert_eq!(tri.primary_loop_skips, 1); // the 0.005 mm² sliver
+        assert_eq!(tri.primary_loop_kept, 1); // the 25 mm² fin
+        assert!(!mesh::mesh_stats(&tri.triangles).manifold);
+        // The seam off (the registry pass): every refused loop is kept.
+        let all = triangulate(&elements, &records, &[], None);
+        assert_eq!(all.triangles.len(), 4);
+        assert_eq!(all.primary_loop_skips, 0);
+        assert_eq!(all.primary_loop_kept, 2);
+        // A store whose only refused loops are slivers becomes
+        // manifold: drop the large record and the quad remains.
+        let sliver_only = triangulate(&elements, &[quad, tiny], &[], Some(100.0));
+        assert_eq!(sliver_only.triangles.len(), 2);
+        assert_eq!(sliver_only.primary_loop_skips, 1);
+        assert_eq!(sliver_only.primary_loop_kept, 0);
+        assert!(mesh::mesh_stats(&sliver_only.triangles).manifold);
+    }
+
     /// The extended split: soup triples first (not loops), then the
     /// first ``b3`` loops as strips and the last ``b4`` as polygons —
     /// emitted only when the assembled mesh stays manifold; a record
@@ -3563,7 +3845,7 @@ mod tests {
             end: 0,
             normal: None,
         };
-        let tri = triangulate(&elements, &[], &[rec.clone()]);
+        let tri = triangulate(&elements, &[], &[rec.clone()], None);
         // 1 soup + 1 strip (3 refs) + 2 fan triangles (4 refs)
         assert_eq!(tri.triangles.len(), 4);
         assert_eq!(tri.degenerate, 0);
@@ -3584,7 +3866,7 @@ mod tests {
             end: 1,
             normal: None,
         };
-        let tri = triangulate(&elements, &[], &[rec, overlapping]);
+        let tri = triangulate(&elements, &[], &[rec, overlapping], None);
         assert_eq!(tri.triangles.len(), 4);
         assert_eq!(tri.extended_triangles, 4);
         assert_eq!(tri.extended_declined, 1);

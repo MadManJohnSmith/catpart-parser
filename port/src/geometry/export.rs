@@ -102,6 +102,9 @@ pub const WARN_CURVE_ENTRY: &str = "curve-entry-loops-unexported";
 pub const WARN_CURVE_ENTRY_EXPORTED: &str = "curve-entry-loops-exported-dup-pin";
 /// The extended-header manifold-assembly decline (2026-11-18).
 pub const WARN_EXTENDED_DECLINED: &str = "extended-header-geometry-declined";
+pub const WARN_PRIMARY_SKIP: &str = "primary-loop-manifold-skip";
+pub const WARN_PRIMARY_DECLINED: &str = "primary-loop-manifold-declined";
+pub const WARN_PRIMARY_KEPT: &str = "primary-loop-manifold-kept";
 pub const WARN_DEDUP: &str = "duplicate-triangles-deduped";
 pub const WARN_DEDUP_DECLINED: &str = "duplicate-triangles-dedup-declined";
 
@@ -811,6 +814,53 @@ fn export_composite_store(
                  (the 2026-11-18 manifold-assembly gate, \
                  docs/evidence/2026-11-18-extended-header-family.md); \
                  the store's other geometry exports unchanged"
+            ),
+        });
+    }
+    if let Some(skipped) = info.primary_loop_skips {
+        warnings.push(Warning {
+            class: WARN_PRIMARY_SKIP.to_string(),
+            detail: format!(
+                "{skipped} primary facet \
+                 loops skipped at the emit seam: each would push an \
+                 undirected edge past two uses in the assembled mesh \
+                 and measures at most 1% of that mesh's area (a \
+                 sliver, not surface) — the 2026-11-18 primary-seam \
+                 manifold guard, \
+                 docs/evidence/2026-11-18-primary-emit-seam.md; larger \
+                 over-using loops are kept and counted under \
+                 primary-loop-manifold-kept"
+            ),
+        });
+    }
+    if let Some(declined) = info.primary_loop_seam_declined {
+        warnings.push(Warning {
+            class: WARN_PRIMARY_DECLINED.to_string(),
+            detail: format!(
+                "{declined} primary \
+                 facet loops were candidate slivers at the emit seam \
+                 (each <= 1% of the store mesh's area and over-using an \
+                 edge) but the store stays not-manifold after they are \
+                 out — a larger over-use is kept, so the seam is \
+                 declined fail-closed and the pre-seam emission is \
+                 returned unchanged (no surface is lost for no L2 \
+                 gain; owner decision, docs/evidence/\
+                 2026-11-18-primary-emit-seam.md)"
+            ),
+        });
+    }
+    if let Some(kept) = info.primary_loop_kept {
+        warnings.push(Warning {
+            class: WARN_PRIMARY_KEPT.to_string(),
+            detail: format!(
+                "{kept} primary facet \
+                 loops over-use an edge and were KEPT: each is larger \
+                 than 1% of the assembled mesh's area, so it is real \
+                 surface and the fidelity-neutral rule never drops it \
+                 — the store's mesh stays not-manifold exactly as \
+                 before (the over-use is named, not hidden; owner \
+                 decision, docs/evidence/\
+                 2026-11-18-primary-emit-seam.md)"
             ),
         });
     }

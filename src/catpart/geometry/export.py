@@ -54,6 +54,9 @@ WARN_NO_FACETS = "no-facet-records"
 WARN_CURVE_ENTRY = "curve-entry-loops-unexported"
 WARN_CURVE_ENTRY_EXPORTED = "curve-entry-loops-exported-dup-pin"
 WARN_EXTENDED_DECLINED = "extended-header-geometry-declined"
+WARN_PRIMARY_SKIP = "primary-loop-manifold-skip"
+WARN_PRIMARY_DECLINED = "primary-loop-manifold-declined"
+WARN_PRIMARY_KEPT = "primary-loop-manifold-kept"
 WARN_DEDUP = "duplicate-triangles-deduped"
 WARN_DEDUP_DECLINED = "duplicate-triangles-dedup-declined"
 
@@ -519,6 +522,50 @@ def _export_composite_store(
                 "(the 2026-11-18 manifold-assembly gate, "
                 "docs/evidence/2026-11-18-extended-header-family.md); "
                 "the store's other geometry exports unchanged",
+            }
+        )
+    if info.get("primary_loop_skips"):
+        warnings.append(
+            {
+                "class": WARN_PRIMARY_SKIP,
+                "detail": f"{info['primary_loop_skips']} primary facet "
+                "loops skipped at the emit seam: each would push an "
+                "undirected edge past two uses in the assembled mesh "
+                "and measures at most 1% of that mesh's area (a "
+                "sliver, not surface) — the 2026-11-18 primary-seam "
+                "manifold guard, "
+                "docs/evidence/2026-11-18-primary-emit-seam.md; larger "
+                "over-using loops are kept and counted under "
+                "primary-loop-manifold-kept",
+            }
+        )
+    if info.get("primary_loop_seam_declined"):
+        warnings.append(
+            {
+                "class": WARN_PRIMARY_DECLINED,
+                "detail": f"{info['primary_loop_seam_declined']} primary "
+                "facet loops were candidate slivers at the emit seam "
+                "(each <= 1% of the store mesh's area and over-using an "
+                "edge) but the store stays not-manifold after they are "
+                "out — a larger over-use is kept, so the seam is "
+                "declined fail-closed and the pre-seam emission is "
+                "returned unchanged (no surface is lost for no L2 "
+                "gain; owner decision, docs/evidence/"
+                "2026-11-18-primary-emit-seam.md)",
+            }
+        )
+    if info.get("primary_loop_kept"):
+        warnings.append(
+            {
+                "class": WARN_PRIMARY_KEPT,
+                "detail": f"{info['primary_loop_kept']} primary facet "
+                "loops over-use an edge and were KEPT: each is larger "
+                "than 1% of the assembled mesh's area, so it is real "
+                "surface and the fidelity-neutral rule never drops it "
+                "— the store's mesh stays not-manifold exactly as "
+                "before (the over-use is named, not hidden; owner "
+                "decision, docs/evidence/"
+                "2026-11-18-primary-emit-seam.md)",
             }
         )
     if info.get("unordered_dedup_dropped"):
