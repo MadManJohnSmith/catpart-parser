@@ -4,10 +4,10 @@ claim,statement,label,scope,release,observations,passes,rate,value
 0X49-03_exact_tile,candidates whose no-count ref block tiles exactly to the next facet header,fact,"composite stores, full manifest",all,270762,269905,0.996837,
 0X49-04_in_element_space,candidates whose u16be refs resolve inside the decoded element space,fact,"composite stores, full manifest",all,270762,270270,0.998183,
 0X49-05_coplanar,in-space loops coplanar against the stored normal at PLANE_TOL (dup-pinned battery),fact,"composite stores, in-space candidates",all,270270,270270,1.000000,
-0X49-06_max_normal_deviation,max coplanarity deviation over the in-space candidates (value row),fact,"composite stores, in-space candidates",all,,,,0.001088593
-0X49-07_generic_law_parses,candidates the generic count-table law parses at all,fact,"composite stores, full manifest",all,270762,2233,0.008247,
+0X49-06_max_normal_deviation,max coplanarity deviation over the in-space candidates (value row; ty==1 subset max 8.889e-4),fact,"composite stores, in-space candidates",all,,,,0.0014805
+0X49-07_generic_law_parses,candidates the generic count-table law parses at all (seam population; exported-population measurement gives 2,236),fact,"composite stores, full manifest",all,270762,2233,0.008247,
 0X49-07b_generic_law_reproduces,"generic-law parses that reproduce the no-count shape (n,) at width 2",fact,"generic-law parses",all,2233,0,0.000000,
-0X49-08_carriers,parts carrying >= 1 in-space 0x49 record,fact,"corpus parts",all,1442,103,0.071429,
+0X49-08_carriers,parts carrying >= 1 in-space 0x49 record AND exporting (122 parts reach the seam with in-space records; 103 change the export),fact,"corpus parts",all,1442,103,0.071429,
 0X49-09_multi_triangle_records,accepted records with ty > 1 (up to ty = 86),fact,"accepted 0x49 records",all,270270,2257,0.008351,
 0X49-10_anchor_record_end,"end offset of the gopro3 anchor record at 565376 (26-byte record; value row)",fact,"byte anchor",all,,,,565402
 0X49-11_anchor_geometry,coplanarity deviation of the anchor record's three refs (value row),fact,"byte anchor",all,,,,3.298220e-08
