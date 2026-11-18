@@ -13,7 +13,7 @@
 
 import * as THREE from "./three.module.min.js";
 import init, { decode_export, decode_inspect, decode_product_structure } from "./pkg/port.js";
-import { MAX_DEGENERATE_TRIANGLES, scoreExport } from "./gate.js";
+import { CHECK_EMPTY_MESH, MAX_DEGENERATE_TRIANGLES, scoreExport } from "./gate.js";
 import { attachOrbit } from "./orbit.js";
 import { VirtualFileCatalog } from "./catalog.js";
 import { ingestFiles, isZipFile } from "./ingest.js";
@@ -393,7 +393,13 @@ async function loadFile(file) {
   } else {
     clearGate();
   }
-  els.canvas.hidden = !summary;
+  // A decode can succeed and still export no surface: the vertices-only
+  // family (G2 P7) carries a pool, zero triangles. The §3.4 gate already
+  // names that outcome empty-mesh; reporting it as "loaded" over a blank
+  // canvas would tell the user the part rendered when nothing did. Keep
+  // the counts (summary + gate panel) visible and state the failure.
+  const emptyMesh = summary !== null && summary.triangle_count === 0;
+  els.canvas.hidden = !summary || emptyMesh;
   if (exportError) {
     viewerState.error = {
       error_class: exportError.error_class || null,
@@ -404,6 +410,17 @@ async function loadFile(file) {
       viewerState.error.detail,
     );
     setStatus(`${file.name}: decode failed`);
+    viewerState.status = "failed";
+  } else if (emptyMesh) {
+    const reason =
+      `${CHECK_EMPTY_MESH}: ${summary.vertex_count} vertices decoded, ` +
+      `${summary.triangle_count} triangles`;
+    viewerState.error = {
+      error_class: CHECK_EMPTY_MESH,
+      detail: `${reason} — the export carries no drawable surface`,
+    };
+    showError(viewerState.error.error_class, viewerState.error.detail);
+    setStatus(`${file.name} — ${reason}`);
     viewerState.status = "failed";
   } else {
     setStatus(
