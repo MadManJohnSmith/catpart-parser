@@ -33,7 +33,7 @@
     <div class="stats">
       <div class="stat"><div class="k">L1 clean-parse (Dev)</div><div class="v good">99.66<span class="unit">%</span></div><div class="d">1,745 / 1,751 files · held-out 73/73</div></div>
       <div class="stat"><div class="k">L2 geometry-sanity (Dev)</div><div class="v accent" id="stat-l2">…<span class="unit">%</span></div><div class="d">1,033 / 1,381 parts · bar re-adjusted 74.80%</div></div>
-      <div class="stat"><div class="k">L2 held-out</div><div class="v good">90.16<span class="unit">%</span></div><div class="d">55 / 61 unseen parts pass sanity</div></div>
+      <div class="stat"><div class="k">L2 held-out</div><div class="v good">91.80<span class="unit">%</span></div><div class="d">56 / 61 unseen parts pass sanity</div></div>
       <div class="stat"><div class="k">Phase 6 Assemblies</div><div class="v good">100<span class="unit">%</span></div><div class="d">Product pairing &amp; 3D instancing · P4 bar met</div></div>
     </div>
   </header>
@@ -46,7 +46,7 @@
     <div class="legend">
       <span><span class="sw" style="background:#38e1ff"></span>L2 dev (1,381 parts)</span>
       <span><span class="sw" style="background:#8b7bff"></span>L2 held-out (61 parts)</span>
-      <span><span class="sw" style="background:repeating-linear-gradient(90deg,#ffc857 0 6px,transparent 6px 12px)"></span>acceptance bar 80%</span>
+      <span><span class="sw" style="background:repeating-linear-gradient(90deg,#ffc857 0 6px,transparent 6px 12px)"></span>original 80% bar · re-adjusted to 74.80% at close</span>
     </div>
     <div id="chart"></div>
   </div>
@@ -86,8 +86,11 @@ catpart-inspect bracket.CATPart</pre>
     <tr><td>L2 (Phase 4)</td><td>Geometry: meshes exportable to STEP or renderable</td><td><span class="pill good">74.80% · closed</span></td></tr>
     <tr><td>Phase 5</td><td>Web Viewer: client-side .CATPart parsing in WebAssembly</td><td><span class="pill done">done</span></td></tr>
     <tr><td>Phase 6</td><td>Assemblies: .CATProduct pairing, spatial instancing &amp; UI tree</td><td><span class="pill done">done</span></td></tr>
-    <tr><td>L3 (Phase 7)</td><td>Full parametric B-rep (precise CAD solids)</td><td><span class="pill plan">planned · hardest</span></td></tr>
+    <tr><td>L3 (Phase 7)</td><td>B-rep construct coverage: topology graph + STEP export (facet subset; exact solids 0/1,442)</td><td><span class="pill good">23/23 resolved · closed</span></td></tr>
   </table>
+  <p class="section-sub" id="l3-status">L3 construct coverage 23/23 resolved — 14 decoded · 3 documented negative · 6 documented open with published ceilings · 0 candidate · 0 pending-merge.
+  Reported alongside L1/L2 as construct coverage, never as a corpus percentage.
+  Phase 7 closed 2026-11-18 · <a href="https://github.com/MadManJohnSmith/catpart-parser/blob/main/docs/evidence/2026-11-18-phase7-close.md">close note</a>.</p>
 
   <footer data-common></footer>
 
