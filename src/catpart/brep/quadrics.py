@@ -50,10 +50,12 @@ diagonal ``scale``):
 4. **sphere (SRF-04)** — a Kasa algebraic sphere fit (points only; the
    tessellation vertices lie ON the surface, so the fit is exact-form)
    with max residual ``<= TOL_SPHERE`` and ``R <= R_SCALE_MAX x scale``.
-5. **curved-unclassified** — curved patch, no law: the shared ceiling
-   population of SRF-05 torus, SRF-06 non-quadric revolution,
-   SRF-07 extrusion (when the pencil fails, e.g. revolved profiles)
-   and SRF-08 NURBS tessellation patches.
+5. **curved-unclassified** — curved patch, no law: the shared
+   unclassified population of SRF-05 torus, SRF-06 non-quadric
+   revolution, SRF-07 extrusion (when the pencil fails, e.g. revolved
+   profiles) and SRF-08 NURBS tessellation patches.  It is NOT a torus
+   population: a torus band also satisfies richer laws (see the SRF-05
+   honesty line), so SRF-05 has no class-shaped bound.
 
 Detector honesty (one line per class, echoed in the evidence note):
 
@@ -76,6 +78,22 @@ Detector honesty (one line per class, echoed in the evidence note):
   :data:`TOL_SPHERE` and the ``R <= 10 x scale`` sanity are the only
   guards).  A short torus band satisfies it (fixture-pinned), so
   sphere counts are floors too.
+- **No law isolates a torus (SRF-05), so no class is a torus
+  population.**  A torus band is consistent with two or more laws,
+  one fixture per measured escape: **cylinder** at either equator (a
+  0.05 rad band fits R 33.998 outer / 26.002 inner within
+  :data:`TOL_PATCH` — the tube is locally a cylinder there),
+  **planar** near the pole (a 0.05 rad band straddling the pole
+  spreads 0.0255, well under :data:`SPREAD_MIN`; the planar gate
+  returns first, so the `pencil-noncyl` reading this band would also
+  earn — its radius law fails — is never measured, and that class
+  stays inside the bound anyway), **cone** and **sphere** over short
+  spans, **curved-unclassified** at a wide span.  SRF-05's measured
+  upper bound is therefore the FULL classified loop total, not a
+  union of classes — every recognized loop, of any class, could be a
+  torus band, so nothing may be subtracted.  That bound covers the
+  classified population only; the loops the recognizer never saw are
+  unclassified loops above it.
 - Per-loop granularity: a writer splitting one cylinder across
   several ``ty`` loops with per-loop arcs under :data:`SPREAD_MIN`
   lands them planar — the recognized counts are FLOORS, never
@@ -416,9 +434,11 @@ def _selftest_cases():
     tolerance; extruded ellipse stays pencil-noncyl; plane stays
     planar; cone rejects when the radial law is broken).  Span edges:
     a sphere band with a ~0.1 rad meridional span lands in ``cone`` and
-    short torus bands land in ``cone`` / ``sphere`` (the SRF-05
-    ceilings' cap-raisers); a short cone band satisfies the Kasa sphere
-    fit (why cone precedence exists).
+    a short cone band satisfies the Kasa sphere fit (why cone precedence
+    exists).  Torus escapes (the SRF-05 upper-bound fixtures): one
+    fixture per class a torus band was measured to land in — cylinder
+    at either equator, planar at the pole, cone / sphere over short
+    spans, curved-unclassified at a wide span.
     """
     import struct
 
@@ -540,14 +560,47 @@ def _selftest_cases():
         _pool, _refs, f = classify_bands(bands)
         return check("torus fillet (not cone/sphere)", f.label, "curved-unclassified")
 
+    def case_torus_equator_cylinder():
+        # SRF-05 upper-bound escape: the tube is locally cylindrical at
+        # either equator, so a 0.05 rad band lands in cylinder with the
+        # ring radius (34 = R + r outer, 26 = R - r inner).
+        for name, phis, want_r in (
+            ("outer", (0.05, 0.025, 0.0), 34.0),
+            ("inner", (math.pi, math.pi - 0.025, math.pi - 0.05), 26.0),
+        ):
+            _pool, _refs, f = classify_bands(torus_bands(phis))
+            if f.label != "cylinder":
+                return f"{name} equator: label {f.label!r} != 'cylinder'"
+            if abs(f.radius - want_r) > 1e-2:
+                return f"{name} equator: radius {f.radius} != {want_r}"
+            if f.residual > f.tol:
+                return f"{name} equator: residual {f.residual} > tol {f.tol}"
+        return None
+
+    def case_torus_pole_planar():
+        # SRF-05 upper-bound escape: a band straddling the pole is
+        # nearly flat, so its normals are parallel and it reads planar
+        # — no curved reading at all.  The planar gate returns before
+        # the pencil branch, so the pencil-noncyl reading this band
+        # would also earn (kmax 0.0255 <= K_CYL, radius law fails) is
+        # never measured; that class stays inside the bound regardless.
+        bands = torus_bands((math.pi / 2 + 0.05, math.pi / 2, math.pi / 2 - 0.05))
+        _pool, _refs, f = classify_bands(bands)
+        if f.label != "planar":
+            return f"label {f.label!r} != 'planar'"
+        if f.spread >= SPREAD_MIN:
+            return f"spread {f.spread} >= {SPREAD_MIN}"
+        return None
+
     def case_torus_short_span_cone():
-        # SRF-05 cap-raiser: a short torus band lands in cone.
+        # SRF-05 upper-bound escape: a short torus band lands in cone.
         bands = torus_bands([math.pi - 0.2 * i / 2 for i in (0, 1, 2)])
         _pool, _refs, f = classify_bands(bands)
         return check("torus short span (cone)", f.label, "cone")
 
     def case_torus_short_span_sphere():
-        # SRF-05 cap-raiser: a slightly longer short band lands in sphere.
+        # SRF-05 upper-bound escape: a slightly longer short band lands
+        # in sphere.
         bands = torus_bands([math.pi - 0.3 * i / 2 for i in (0, 1, 2)])
         _pool, _refs, f = classify_bands(bands)
         return check("torus short span (sphere)", f.label, "sphere")
@@ -611,6 +664,8 @@ def _selftest_cases():
         ("sphere_short_span_cone", case_sphere_short_span_cone),
         ("cone_short_span_spherelike", case_cone_short_span_spherelike),
         ("torus_fillet", case_torus_fillet),
+        ("torus_equator_cylinder", case_torus_equator_cylinder),
+        ("torus_pole_planar", case_torus_pole_planar),
         ("torus_short_span_cone", case_torus_short_span_cone),
         ("torus_short_span_sphere", case_torus_short_span_sphere),
         ("extruded_ellipse", case_extruded_ellipse),

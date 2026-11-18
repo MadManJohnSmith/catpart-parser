@@ -32,8 +32,11 @@ the main checkout when absent here); run with the worktree venv:
 prefixes (any length; the documented anchor form is 16 hex chars)
 prefix-match the manifest digests, and the run aborts non-zero when the
 selection is empty (never writing a zeroed claims file).  A subset run
-writes a subset claims file, so it refuses to write into the committed
-data dir — pass ``--out-dir`` pointing outside the tree:
+never writes into a committed ``docs/evidence/data`` directory — the
+guard is path-shaped, so it covers this worktree's, the main
+checkout's and any other tree's copy (pass ``--out-dir`` elsewhere) —
+and every row it does write carries a SUBSET RUN marker in its note
+(the census tie-out rows stay full-corpus by construction):
 
   .venv/bin/python -I scripts/triage/decode_brep_quadrics.py \
     --include-sha16 369fc90b25b4977d --out-dir /tmp/br4-anchor
@@ -53,6 +56,11 @@ L2_STAGE15 = ROOT / "docs" / "evidence" / "data" / "stage15-identity-export-file
 OUT_DIR = ROOT / "docs" / "evidence" / "data"
 CENSUS_FILES = ROOT / "docs" / "evidence" / "data" / "brep-census-files.csv"
 MAIN_CHECKOUT = Path("/home/alan/Documents/Repos/catpart-parser")
+# A committed claims directory, path-shaped: the same suffix identifies
+# this worktree's copy, the main checkout's and any other tree's, so a
+# subset run cannot land on a committed CSV by pointing --out-dir at a
+# different checkout.
+COMMITTED_DATA_SUFFIX = ("docs", "evidence", "data")
 
 sys.path.insert(0, str(ROOT / "src"))
 
@@ -373,7 +381,7 @@ def census_tieout_claims(l2_by_sha, claims):
             "label": "fact",
             "note": (
                 f"L2-pass: {cgm_l2}/{n_l2} = {round(cgm_l2 / n_l2, 6) if n_l2 else 0} "
-                "— the ceiling every per-class quadric claim must tie out against"
+                "— the upper bound every per-class quadric claim must tie out against"
             ),
         }
     )
@@ -396,7 +404,6 @@ def main():
         sys.exit(1 if failures else 0)
 
     out_dir = Path(args.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
 
     l2_by_sha = {}
     shipped_by_sha = {}
@@ -430,11 +437,14 @@ def main():
                 file=sys.stderr,
             )
             sys.exit(2)
-        if out_dir.resolve() == OUT_DIR.resolve():
+        if out_dir.resolve().parts[-3:] == COMMITTED_DATA_SUFFIX:
             ap.error(
-                "--include-sha16 is a subset mode: pass --out-dir outside the tree "
-                "so the committed claims CSV is not overwritten by a subset"
+                "--include-sha16 is a subset mode: --out-dir must not resolve into a "
+                "committed docs/evidence/data directory (this checkout's or any other "
+                "tree's) — a subset must never overwrite a committed claims CSV"
             )
+
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     files_rows = []
     agg = {
@@ -609,29 +619,35 @@ def main():
                 unit_note,
             )
 
-    # SRF-05 ceiling (a torus band is NOT confined to
-    # curved-unclassified: over a short span it satisfies the cone or
-    # the sphere law — fixtures torus_short_span_cone/_sphere), so the
-    # torus ceiling is the row sum of those three classes.
-    ceiling_labels = ("cone", "sphere", "curved_unclassified")
-    ceiling_patches = sum(
-        scope_counts[prefix][lab]
-        for prefix in ("poolonly", "composite")
-        for lab in ceiling_labels
+    # SRF-05 upper bound: NO class is a torus population.  A torus band
+    # is consistent with >= 2 laws — cylinder at either equator
+    # (torus_equator_cylinder), cone or sphere over a short span
+    # (torus_short_span_cone/_sphere), planar near the pole
+    # (torus_pole_planar) — so every recognized loop of any class could
+    # be a torus band and nothing can be subtracted.  The bound is the
+    # whole classified total; it covers the CLASSIFIED population only.
+    classified_total = sum(
+        scope_counts[prefix][lab] for prefix in ("poolonly", "composite") for lab in LABELS
     )
     add_claim(
-        "SRF-05_ceiling_patches",
+        "SRF-05_upper_bound_classified_patches",
         "SRF-05",
-        "torus ceiling: every torus must present as a cone, sphere or "
-        "curved-unclassified strip loop",
+        "torus upper bound: the full classified strip-loop total — a torus band "
+        "is consistent with >= 2 laws (cylinder at either equator, cone or sphere "
+        "over a short span, planar near the pole), so no class is a torus "
+        "population and none can be subtracted",
         "located stores",
-        ceiling_patches,
-        ceiling_patches,
-        "ceiling (row-derived sum)",
-        "= the cone + sphere + curved_unclassified volume rows summed over both "
-        "scopes; a short-span torus band satisfies the cone or sphere law, so both "
-        "classes are cap-raisers (fixtures torus_short_span_cone / "
-        "torus_short_span_sphere)",
+        classified_total,
+        classified_total,
+        "upper bound (row-derived sum)",
+        "= every *_patches_*_volume row summed over both scopes (planar, "
+        "degenerate, cylinder, sphere, cone, pencil_noncyl, curved_unclassified); "
+        "fixtures pin the measured escapes: torus_equator_cylinder (cylinder, "
+        "R 33.998 / 26.002), torus_pole_planar, torus_short_span_cone, "
+        "torus_short_span_sphere, torus_fillet.  Bounds the CLASSIFIED population "
+        "only: composite_loops_excluded_share (90,451 loops) and the undecoded "
+        "stores of scope_composite_decode are above it, so it is not a corpus "
+        "ceiling",
     )
     for pop_name, suffix, pred in (
         ("full corpus", "", lambda r: True),
@@ -644,19 +660,20 @@ def main():
             if any(
                 r.get(f"{scope}_patches_{lab}", 0) > 0
                 for scope in ("poolonly", "composite")
-                for lab in ceiling_labels
+                for lab in LABELS
             )
         )
         add_claim(
-            f"SRF-05_ceiling_allscopes_presence{suffix}",
+            f"SRF-05_upper_bound_allscopes_presence{suffix}",
             "SRF-05",
-            "distinct files with >= 1 cone, sphere or curved-unclassified strip loop "
-            "(the torus ceiling population)",
+            "distinct files with >= 1 classified strip loop on either scope "
+            "(the torus upper-bound population: any classified loop could be a "
+            "torus band)",
             pop_name,
             len(pop),
             hits,
             "fact",
-            "row-derived union of the three all-scopes presence rows",
+            "row-derived union over the seven classified classes",
         )
 
     # Carrier layout families (BR4 note section 2.1): 0x42 carries no
@@ -711,8 +728,8 @@ def main():
         "+0x09 (9d) on 0x42 (+0x15 (21d) on the normal-bearing markers)",
     )
 
-    # Composite loop accounting: the excluded loops are the cap-raisers of
-    # every composite ceiling (they are loops the recognizer never saw).
+    # Composite loop accounting: the excluded loops sit above every
+    # composite bound (they are loops the recognizer never saw).
     comp_files = [r for r in files_rows if r.get("store_decoded") == "composite-decoded"]
     skip_total = sum(int(r["composite_loops_skipref"]) for r in comp_files)
     oob_total = sum(int(r["composite_loops_oob"]) for r in comp_files)
@@ -729,8 +746,8 @@ def main():
         skip_total,
         skip_total,
         "volume anchor",
-        f"files {skip_files}/{len(comp_files)}; never guessed — a cap-raiser of every "
-        "composite ceiling jointly with the oob row",
+        f"files {skip_files}/{len(comp_files)}; never guessed — above every "
+        "composite bound jointly with the oob row",
     )
     add_claim(
         "composite_loops_oob_volume",
@@ -741,7 +758,7 @@ def main():
         oob_total,
         oob_total,
         "volume anchor",
-        f"files {oob_files}/{len(comp_files)}; a cap-raiser of every composite ceiling "
+        f"files {oob_files}/{len(comp_files)}; above every composite bound "
         "jointly with the skipref row",
     )
     add_claim(
@@ -821,8 +838,8 @@ def main():
     add_claim(
         "BR4_selftest",
         "detector honesty",
-        "synthetic fixtures + negatives (cylinder/cone/sphere/torus/ellipse/plane "
-        "and the cone-sphere span edge) pass",
+        "synthetic fixtures + negatives (cylinder/cone/sphere/torus escapes/"
+        "ellipse/plane and the cone-sphere span edge) pass",
         "selftest",
         n_checks,
         n_checks - len(failures),
@@ -841,6 +858,19 @@ def main():
             w.writeheader()
             w.writerows(files_rows)
         print(f"Wrote {files_path} ({len(files_rows)} rows)")
+
+    # A subset run's rows must never read as full-corpus measurements:
+    # the per-part rows cover the selected parts while the census
+    # tie-out rows are computed from the whole census CSV, so the marker
+    # states both.
+    if args.include_sha16:
+        marker = (
+            f" SUBSET RUN (--include-sha16 {args.include_sha16}): {len(parts)}/"
+            f"{n_manifest} manifest parts; per-part rows cover the subset, the "
+            "census tie-out rows stay full-corpus"
+        )
+        for row in claims:
+            row["note"] = f"{row['note']}{marker}"
 
     claims_path = out_dir / "br4-quadrics-claims.csv"
     with claims_path.open("w", newline="") as f:

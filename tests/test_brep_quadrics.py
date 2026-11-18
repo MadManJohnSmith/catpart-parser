@@ -41,6 +41,18 @@ def zig(ring_a, ring_b):
     return out
 
 
+def torus_bands(phis, n=16):
+    """Bands of the R 30 / r 4 torus at tube angles ``phis`` (SRF-05 fixtures)."""
+    thetas = [2 * math.pi * i / n for i in range(n)]
+    bands = []
+    for phi in phis:
+        rho = 30 + 4 * math.cos(phi)
+        bands.append(
+            [(rho * math.cos(th), rho * math.sin(th), 4 * math.sin(phi)) for th in thetas]
+        )
+    return bands
+
+
 def classify(seq_points, pool):
     refs = [pool.index(p) for p in seq_points]
     return quadrics.classify_strip_patch(refs, pool)
@@ -119,15 +131,7 @@ def test_torus_fillet_negative_not_cone_not_sphere():
     # The SRF-03/SRF-05 edge: a torus-fillet band's tube profile is
     # quadratic in h (quad gate) and its best-fit sphere misses the
     # tight Kasa tolerance -> curved-unclassified, never cone/sphere.
-    phis = [math.pi - t for t in (0.9, 0.6, 0.3)]
-    thetas = [2 * math.pi * i / 16 for i in range(16)]
-    bands = []
-    for phi in phis:
-        band = []
-        for th in thetas:
-            rho = 30 + 4 * math.cos(phi)
-            band.append((rho * math.cos(th), rho * math.sin(th), 4 * math.sin(phi)))
-        bands.append(band)
+    bands = torus_bands([math.pi - t for t in (0.9, 0.6, 0.3)])
     pool = sum(bands, [])
     fit = classify(zig(bands[0], bands[1]) + zig(bands[1], bands[2]), pool)
     assert fit.label == "curved-unclassified"
@@ -184,23 +188,37 @@ def test_cone_short_span_satisfies_sphere_law():
     assert res <= quadrics.TOL_SPHERE * scale
 
 
-def test_torus_short_span_cap_raisers():
-    # SRF-05 ceiling: a short torus band is NOT confined to
-    # curved-unclassified — it lands in cone (0.2 rad span) or sphere
-    # (0.3 rad span), so every torus ceiling must include those classes.
-    def torus_bands(phis, n=16):
-        thetas = [2 * math.pi * i / n for i in range(n)]
-        bands = []
-        for phi in phis:
-            rho = 30 + 4 * math.cos(phi)
-            bands.append(
-                [
-                    (rho * math.cos(th), rho * math.sin(th), 4 * math.sin(phi))
-                    for th in thetas
-                ]
-            )
-        return bands
+def test_torus_equator_lands_cylinder():
+    # SRF-05 has no class-shaped bound: at either equator the tube is
+    # locally a cylinder, so a 0.05 rad torus band reads as a cylinder
+    # with the ring radius (34 = R + r outer, 26 = R - r inner).  The
+    # torus escapes the cone/sphere/curved-unclassified classes here.
+    for phis, want_r in (
+        ((0.05, 0.025, 0.0), 34.0),
+        ((math.pi, math.pi - 0.025, math.pi - 0.05), 26.0),
+    ):
+        bands = torus_bands(phis)
+        pool = sum(bands, [])
+        fit = classify(zig(bands[0], bands[1]) + zig(bands[1], bands[2]), pool)
+        assert fit.label == "cylinder"
+        assert abs(fit.radius - want_r) <= 1e-2
+        assert fit.residual <= fit.tol
 
+
+def test_torus_pole_band_lands_planar():
+    # SRF-05 escape: a band straddling the pole is nearly flat, so its
+    # normals are parallel and it never reaches a curved law.
+    bands = torus_bands((math.pi / 2 + 0.05, math.pi / 2, math.pi / 2 - 0.05))
+    pool = sum(bands, [])
+    fit = classify(zig(bands[0], bands[1]) + zig(bands[1], bands[2]), pool)
+    assert fit.label == "planar"
+    assert fit.spread < quadrics.SPREAD_MIN
+
+
+def test_torus_short_span_lands_cone_then_sphere():
+    # SRF-05 escape: a short torus band is not confined to
+    # curved-unclassified — it lands in cone (0.2 rad span) or sphere
+    # (0.3 rad span), so no class can be subtracted from the bound.
     for span, want in ((0.2, "cone"), (0.3, "sphere")):
         bands = torus_bands([math.pi - span * i / 2 for i in (0, 1, 2)])
         pool = sum(bands, [])
