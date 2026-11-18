@@ -985,14 +985,12 @@ def test_composite_e0b_single_loop_exports_pinned(tmp_path, capsys):
     assert sorted(faces) == [(1, 0, 6), (1, 6, 2)]
 
 
-def test_composite_e0b_nonplanar_loop_exports_under_relaxed_law(tmp_path, capsys):
-    """The 3dff4d93 shape, re-scoped to the stage-15 relaxation (the
-    owner-authorized overturn of the stage-10 U4 conservative rule,
-    handoff cont. 23, 2026-11-13): one coplanar + one NONPLANAR dropped
-    loop on an empty-primary-mesh store — the battery criterion is
-    REMOVED and both loops export under the dup pin (the weld, no new
-    vertices).  Restoring the battery (the retired stage-10 gate) keeps
-    this store conservative at 0 triangles — red."""
+def test_composite_e0b_nonplanar_loop_stays_out(tmp_path, capsys):
+    """The battery is NOT weakened (fix 3, 2026-11-18): one coplanar +
+    one NONPLANAR dropped loop on an empty-primary-mesh store — the
+    coplanar loop welds, the nonplanar one is refused and stays
+    counted as unexported.  Dropping the battery would also emit its
+    fan (4 triangles) — red."""
     code, captured, ply_path = run_export(
         tmp_path, capsys, "geometry-composite-law-e0b-nonplanar"
     )
@@ -1000,33 +998,29 @@ def test_composite_e0b_nonplanar_loop_exports_under_relaxed_law(tmp_path, capsys
     summary = json.loads(captured.out)
     validate(summary, load_schema("export-summary-v1"))
     info = summary["composite"]
-    assert info["loops_curve_entry"] == 0  # nothing stays dropped
-    assert info["loops_curve_entry_exported"] == 2
-    assert info["loops_exported"] == 2
+    assert info["loops_curve_entry"] == 1  # the refused loop stays named
+    assert info["loops_curve_entry_exported"] == 1
+    assert info["loops_exported"] == 1
     assert info["curve_entry_law"] == "e0b-dup-pin"
     assert summary["vertex_count"] == 12  # the weld adds no vertices
-    assert summary["triangle_count"] == 4
+    assert summary["triangle_count"] == 2
     assert summary["degenerate_triangle_count"] == 0
     assert summary["mesh"]["manifold"] is True
     classes = _warning_classes(summary)
-    assert "curve-entry-loops-unexported" not in classes
+    assert "curve-entry-loops-unexported" in classes
     assert "curve-entry-loops-exported-dup-pin" in classes
-    # the pinned fans, in written ranks: skip 2 -> element 1 (P1),
-    # skip 6 -> element 5 (P4); the NONPLANAR loop's fan emits
-    # (4,3,9),(4,9,1) — the corpus's 3dff4d93 analog exports its pins
-    # too (its own mesh's over-edge is content this fixture does not
-    # carry; the relaxed-not-manifold fixture below pins that outcome).
+    # only the coplanar fan, in written ranks: skip 2 -> element 1 (P1)
     _, faces = parse_ply(ply_path)
-    assert sorted(faces) == [(1, 0, 6), (1, 6, 2), (4, 3, 9), (4, 9, 1)]
+    assert sorted(faces) == [(1, 0, 6), (1, 6, 2)]
 
 
-def test_composite_e0b_normal_less_loop_exports_under_relaxed_law(tmp_path, capsys):
-    """The 08f2eccb mixed-coverage shape, re-scoped to the stage-15
-    relaxation: one coplanar loop + one on a NORMAL-LESS 0x42 strip —
-    normal-less dropped loops export under the dup pin (the stage-14
+def test_composite_e0b_normal_less_loop_exports(tmp_path, capsys):
+    """The 08f2eccb mixed-coverage shape under the per-loop law: one
+    coplanar loop + one on a NORMAL-LESS 0x42 strip — the normal-less
+    record has no plane to test, so the loop welds (the stage-14
     measurement: the 25/26 corpus pinned meshes are exactly the
-    normal-less family).  Restoring the stage-10 coverage requirement
-    keeps this store conservative at 0 triangles — red."""
+    normal-less family).  Requiring a stored normal keeps this store
+    conservative at 0 triangles — red."""
     code, captured, ply_path = run_export(
         tmp_path, capsys, "geometry-composite-law-e0b-normal-less"
     )
@@ -1048,65 +1042,65 @@ def test_composite_e0b_normal_less_loop_exports_under_relaxed_law(tmp_path, caps
     assert sorted(faces) == [(1, 0, 6), (1, 6, 2), (4, 3, 9), (5, 9, 3)]
 
 
-def test_composite_e0b_relaxed_not_manifold_stays_failed(tmp_path, capsys):
-    """The relaxation's corpus exception analog (the 3dff4d93 GATE
-    outcome): three pinned fans whose pinned triangles over-use edge
-    (rank 1, rank 6) three times — the relaxed law fires (the store's
-    primary triangulation is empty, every referenced skip slot
-    pinnable) and the loops EXPORT, but the assembled mesh stays
-    NOT-MANIFOLD: the decode does not veto on mesh invariants, the L2
-    gate owns the failed check (the corpus: 3dff4d93 exports under the
-    relaxed law and stays failed — declared in the stage-15 A/B).
-    Restoring the battery keeps this store conservative at 0 triangles
-    — red (its second fan is nonplanar against the stored normal)."""
+def test_composite_e0b_nonplanar_fans_refused_mesh_manifold(tmp_path, capsys):
+    """The no-manifold regression pin (fix 3, 2026-11-18): three
+    skip-bearing 0x4C fans, one coplanar and two NONPLANAR under the
+    dup pin (the stage-15 fixture's (2,12,8)/(2,13,8) fans).  The
+    per-loop battery exports ONLY the coplanar fan; the two refused
+    loops never reach the mesh, which stays manifold at 2 triangles.
+    Dropping the battery (the old stage-15 relaxation) emits all three
+    fans, over-using edge (rank 1, rank 6) three times and leaving the
+    mesh NOT-MANIFOLD — red on both the triangle count and the
+    manifold verdict."""
     code, captured, ply_path = run_export(
         tmp_path, capsys, "geometry-composite-law-e0b-relaxed-not-manifold"
     )
     assert code == 0, captured.err
     summary = json.loads(captured.out)
     info = summary["composite"]
-    assert info["loops_curve_entry"] == 0
-    assert info["loops_curve_entry_exported"] == 3
+    assert info["loops_curve_entry"] == 2  # the two bad loops stay named
+    assert info["loops_curve_entry_exported"] == 1
     assert info["curve_entry_law"] == "e0b-dup-pin"
-    assert summary["triangle_count"] == 4
+    assert summary["triangle_count"] == 2
     assert summary["degenerate_triangle_count"] == 0
-    # the over-use survives the export: edge (1,6) used 3x by the three
-    # distinct pinned fans (1,6,2), (1,9,6), (1,10,6)
-    assert summary["mesh"]["manifold"] is False
-    assert summary["mesh"]["closed"] is False
+    assert summary["mesh"]["manifold"] is True
     classes = _warning_classes(summary)
-    assert "curve-entry-loops-unexported" not in classes
+    assert "curve-entry-loops-unexported" in classes
     assert "curve-entry-loops-exported-dup-pin" in classes
     _, faces = parse_ply(ply_path)
-    assert sorted(faces) == [(1, 0, 6), (1, 6, 2), (1, 9, 6), (1, 10, 6)]
+    assert sorted(faces) == [(1, 0, 6), (1, 6, 2)]
 
 
-def test_composite_e0b_nonempty_stays_conservative(tmp_path, capsys):
-    """The 471-passing-stores pin (the conservative gate's DOWNSIDE
-    direction): the box exports its 12 triangles AND carries a
-    battery-supported dropped loop — the store's mesh is not empty, so
-    the law must NOT fire (a fire could flip a passing store's L2
-    state).  Removing the empty-mesh condition adds the pinned
-    triangles here (12 -> 14) — red."""
+def test_composite_e0b_nonempty_primary_mesh_welds(tmp_path, capsys):
+    """The surface-loss fix's core pin (fix 1, 2026-11-18): the box
+    exports its 12 triangles AND carries a battery-supported dropped
+    loop — the store's primary mesh is NOT empty, and the weld still
+    fires for that loop (12 -> 14 triangles).  The old empty-mesh
+    precondition kept the box at 12 and left the loop unexported — red
+    (this is exactly labios/main's shape: 4,261 primary triangles
+    hiding 10 droppable loops).  The synthetic fan re-covers a box
+    face, so this fixture's assembled mesh is not-manifold; the corpus
+    case's is (pinned by the labios test below)."""
     code, captured, ply_path = run_export(
         tmp_path, capsys, "geometry-composite-law-e0b-nonempty"
     )
     assert code == 0, captured.err
     summary = json.loads(captured.out)
     info = summary["composite"]
-    assert summary["triangle_count"] == 12  # NOT 14
-    assert summary["mesh"]["closed"] is True
-    assert info["loops_curve_entry"] == 1
-    assert "curve_entry_law" not in info
-    assert "curve-entry-loops-unexported" in _warning_classes(summary)
+    assert summary["triangle_count"] == 14  # 12 box + the 2 welded
+    assert info["loops_curve_entry"] == 0
+    assert info["loops_curve_entry_exported"] == 1
+    assert info["curve_entry_law"] == "e0b-dup-pin"
+    assert "curve-entry-loops-unexported" not in _warning_classes(summary)
+    assert "curve-entry-loops-exported-dup-pin" in _warning_classes(summary)
 
 
-def test_composite_e0b_multi_rep_store_gate(tmp_path, capsys):
-    """The per-rep paths' store-level gate: rep 0 exports its box, rep 1
-    carries a battery-supported dropped loop on an empty rep — the
-    store's merged mesh is not empty, so no rep fires (a per-rep gate
-    would add rep 1's pinned triangles to an otherwise-passing store —
-    red)."""
+def test_composite_e0b_multi_rep_welds_with_nonempty_store(tmp_path, capsys):
+    """The per-rep paths weld per loop too (2026-11-18): rep 0 exports
+    its box, rep 1 carries a battery-supported dropped loop — the
+    store's merged mesh is not empty and rep 1's loop still welds
+    (12 -> 14 triangles).  The old store-level empty-mesh gate kept the
+    store at 12 and left rep 1's loop unexported — red."""
     code, captured, ply_path = run_export(
         tmp_path, capsys, "geometry-composite-law-e0b-multi-rep-conservative"
     )
@@ -1116,24 +1110,23 @@ def test_composite_e0b_multi_rep_store_gate(tmp_path, capsys):
     assert info["stage"] == "identity-per-rep"
     assert info["reps_decoded"] == 2
     assert info["reps_exported"] == 2
-    assert summary["triangle_count"] == 12  # NOT 14
-    assert summary["mesh"]["closed"] is True
-    assert info["loops_curve_entry"] == 1
-    assert "curve_entry_law" not in info
-    assert "curve-entry-loops-unexported" in _warning_classes(summary)
+    assert summary["triangle_count"] == 14  # 12 box + rep 1's welded 2
+    assert summary["mesh"]["manifold"] is True
+    assert info["loops_curve_entry"] == 0
+    assert info["loops_curve_entry_exported"] == 1
+    assert info["curve_entry_law"] == "e0b-dup-pin"
+    assert "curve-entry-loops-unexported" not in _warning_classes(summary)
+    assert "curve-entry-loops-exported-dup-pin" in _warning_classes(summary)
 
 
-def test_composite_e0b_multi_rep_unpinnable_veto(tmp_path, capsys):
-    """The store-level gate's None-candidate veto (stage-10 review F1),
-    re-scoped to the stage-15 relaxation: BOTH reps' primary
-    triangulations are empty — rep 0 carries an UNPINNABLE dropped loop
-    (its skip slot is rep 0's ELEMENT 0: no preceding written element
-    to weld to — the relaxed law's remaining reject arm; the retired
-    normal-less veto was the overturned stage-10 behavior), rep 1 a
-    pinnable dropped loop — so the WHOLE store stays conservative.
-    Dropping the None candidate on the floor fired rep 1's pins here
-    and zeroed the curve-entry counters while rep 0's loop stayed
-    unexported — red."""
+def test_composite_e0b_multi_rep_unpinnable_rep_does_not_veto(tmp_path, capsys):
+    """The per-loop law removes the store-level veto (2026-11-18):
+    BOTH reps' primary triangulations are empty — rep 0 carries an
+    UNPINNABLE dropped loop (its skip slot is rep 0's ELEMENT 0: no
+    preceding written element to weld to), rep 1 a pinnable one.  Rep
+    1's loop welds; rep 0's stays dropped and counted.  The old
+    store-level None-candidate veto kept the whole store at 0 triangles
+    and zeroed the exported counter — red."""
     code, captured, ply_path = run_export(
         tmp_path, capsys,
         "geometry-composite-law-e0b-multi-rep-unsupported-veto",
@@ -1145,10 +1138,13 @@ def test_composite_e0b_multi_rep_unpinnable_veto(tmp_path, capsys):
     assert info["reps_decoded"] == 2
     assert info["reps_exported"] == 2
     assert summary["vertex_count"] == 24
-    assert summary["triangle_count"] == 0  # the veto holds
-    assert info["loops_curve_entry"] == 2  # NOT zeroed: both unexported
-    assert "curve_entry_law" not in info
-    assert "curve-entry-loops-unexported" in _warning_classes(summary)
+    assert summary["triangle_count"] == 2  # only rep 1's welded fan
+    assert info["loops_curve_entry"] == 1  # rep 0's unpinnable loop
+    assert info["loops_curve_entry_exported"] == 1
+    assert info["curve_entry_law"] == "e0b-dup-pin"
+    classes = _warning_classes(summary)
+    assert "curve-entry-loops-unexported" in classes
+    assert "curve-entry-loops-exported-dup-pin" in classes
 
 
 def test_composite_e0b_multi_rep_relaxed_fires(tmp_path, capsys):
@@ -1308,3 +1304,72 @@ def test_composite_dedup_degenerate_separate_gate(tmp_path, capsys):
     classes = _warning_classes(summary)
     assert "duplicate-triangles-deduped" in classes
     assert "degenerate-triangles-skipped" in classes
+
+
+# --- 2026-11-18: the per-loop dup-pin weld (the surface-loss fix, #34) --
+
+
+#: The real-corpus regression case for the per-loop weld. The corpus is
+#: gitignored and never present in CI (fixtures_gen's docstring), so the
+#: test is corpus-gated: on a machine with the corpus it pins the
+#: measured before/after numbers, elsewhere it skips.
+LABIOS_MAIN = (
+    Path(__file__).resolve().parents[1]
+    / "corpus/Apoloo13/ASE_III/diseño_3d/labios/main.CATPart"
+)
+
+
+def _ply_area(vertices, faces) -> float:
+    """Total surface area of a triangle-indexed PLY."""
+
+    def _tri_area(p, q, r):
+        ux, uy, uz = q[0] - p[0], q[1] - p[1], q[2] - p[2]
+        vx, vy, vz = r[0] - p[0], r[1] - p[1], r[2] - p[2]
+        cx = uy * vz - uz * vy
+        cy = uz * vx - ux * vz
+        cz = ux * vy - uy * vx
+        return 0.5 * math.sqrt(cx * cx + cy * cy + cz * cz)
+
+    total = 0.0
+    for a, b, c in faces:
+        total += _tri_area(vertices[a], vertices[b], vertices[c])
+    return total
+
+
+@pytest.mark.skipif(
+    not LABIOS_MAIN.exists(),
+    reason="corpus is gitignored / absent (the corpus-gated regression case)",
+)
+def test_labios_main_welds_panels_on_nonempty_primary_mesh(tmp_path, capsys):
+    """The bug's real case (fix 1 + fix 2 measured on the corpus):
+
+    BEFORE this fix the store's primary mesh was non-empty (4,261
+    triangles), the dup-weld's ``if not triangles and dropped``
+    precondition never fired, and 13 skip-bearing loops stayed
+    unexported: 2,299.09 mm².  The 10 battery-supported loops (three
+    envelope panels at x=-22.7 and y=±12.4 — 599.04 + 2 x 1,163.52
+    mm² — plus six smaller ones) all measure <= 1.4e-6 against their
+    record normals; the 3 width-misparsed loops measure 2e-2..8 and
+    stay out.
+
+    AFTER fix 1 alone: 4,457 triangles / 5,396.79 mm².
+    AFTER fix 1 + the gap-edge width battery (fix 2): 4,464 triangles /
+    5,410.18 mm² (96.6% of the ~5,600 mm² envelope), manifold.
+
+    The test pins the 1+2 numbers and the zero-non-manifold outcome."""
+    from catpart.cli import main_export
+
+    code = main_export([str(LABIOS_MAIN), "-o", str(tmp_path / "labios.ply")])
+    captured = capsys.readouterr()
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    validate(summary, load_schema("export-summary-v1"))
+    info = summary["composite"]
+    assert summary["triangle_count"] == 4464
+    assert summary["vertex_count"] == 4813
+    assert summary["mesh"]["manifold"] is True
+    assert info["loops_curve_entry"] == 0
+    assert info["loops_curve_entry_exported"] == 10
+    assert info["curve_entry_law"] == "e0b-dup-pin"
+    vertices, faces = parse_ply(tmp_path / "labios.ply")
+    assert abs(_ply_area(vertices, faces) - 5410.18) < 0.05

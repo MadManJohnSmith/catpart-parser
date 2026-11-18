@@ -794,56 +794,49 @@ def _geometry_box_edges_lex() -> tuple[tuple[int, int], ...]:
 # - geometry-composite-law-e0b-single-loop  the one-dropped-loop
 #                                        positive (the 4ad53b87 shape).
 # - geometry-composite-law-e0b-nonplanar one coplanar + one NONPLANAR
-#                                        dropped loop (3dff4d93): the
-#                                        stage-15 RELAXED law exports
-#                                        both (the battery criterion
-#                                        is removed; the retired
-#                                        stage-10 battery kept this
-#                                        conservative — the re-scoped
-#                                        test pins the fire).
+#                                        dropped loop: under the per-loop
+#                                        law (2026-11-18) only the
+#                                        coplanar loop welds; the
+#                                        nonplanar one stays dropped.
 # - geometry-composite-law-e0b-normal-less  one coplanar + one on a
 #                                        normal-less 0x42 strip
-#                                        (08f2eccb): the stage-15
-#                                        RELAXED law exports both
-#                                        (the 25/26 corpus pinned
-#                                        meshes are the normal-less
-#                                        family).
-# - geometry-composite-law-e0b-relaxed-not-manifold  stage-15: three
-#                                        pinned fans whose pinned
-#                                        triangles over-use one edge
-#                                        3x — the law fires and the
-#                                        mesh stays NOT-MANIFOLD (the
-#                                        3dff4d93 gate outcome: the
-#                                        decode does not veto, the L2
-#                                        gate owns the check).
+#                                        (08f2eccb): both weld (a
+#                                        normal-less record has no plane
+#                                        to test; the 25/26 corpus
+#                                        pinned meshes are the
+#                                        normal-less family).
+# - geometry-composite-law-e0b-relaxed-not-manifold  three skip-bearing
+#                                        fans, one coplanar and two
+#                                        NONPLANAR under the pin: only
+#                                        the coplanar fan welds, the mesh
+#                                        stays manifold at 2 triangles
+#                                        (the no-manifold-regression pin:
+#                                        the naive gate removal emits all
+#                                        three and over-uses edge (1,6)).
 # - geometry-composite-law-e0b-nonempty  the box exports AND carries a
-#                                        pinnable dropped loop: not
-#                                        empty-mesh -> the store-
-#                                        level conservative gate
-#                                        holds (471-passing; the E0
-#                                        scope survives the stage-15
-#                                        relaxation).
+#                                        battery-supported dropped loop:
+#                                        the per-loop weld fires on the
+#                                        non-empty primary mesh
+#                                        (12 -> 14 triangles; the fixture
+#                                        fan re-covers a box face, so its
+#                                        mesh is not-manifold by fixture
+#                                        construction).
 # - geometry-composite-law-e0b-multi-rep-conservative  rep 1 carries a
-#                                        pinnable dropped loop, rep 0
-#                                        exports its box: no rep-
-#                                        level fire (store-level
-#                                        gate).
-# - geometry-composite-law-e0b-multi-rep-relaxed  stage-15: BOTH reps
-#                                        carry NORMAL-LESS dropped
-#                                        loops, both empty -> the
-#                                        relaxed law fires at the
-#                                        store level, both reps' pins
-#                                        export (the overturned
-#                                        stage-10 veto shape).
+#                                        battery-supported dropped loop,
+#                                        rep 0 exports its box: rep 1's
+#                                        loop still welds (12 -> 14; the
+#                                        per-rep paths weld per loop too).
+# - geometry-composite-law-e0b-multi-rep-relaxed  BOTH reps carry
+#                                        NORMAL-LESS dropped loops, both
+#                                        empty -> both reps' pins export.
 # - geometry-composite-law-e0b-multi-rep-unsupported-veto  BOTH reps
 #                                        empty: rep 0 carries an
 #                                        UNPINNABLE dropped loop
 #                                        (skip slot = rep 0's element
-#                                        0), rep 1 a pinnable one —
-#                                        one unpinnable rep vetoes
-#                                        the store fire (review F1;
-#                                        the relaxed law's remaining
-#                                        reject arm).
+#                                        0), rep 1 a pinnable one — rep
+#                                        1 still welds; rep 0's loop
+#                                        stays dropped and counted (no
+#                                        store-level veto).
 # - geometry-composite-law-e0b-unpinnable  the dropped loop's skip
 #                                        slot is ELEMENT 0: no
 #                                        preceding written element
@@ -1374,39 +1367,28 @@ def _composite_store(variant: str) -> bytes:
                 # 4ae0392d shape).
                 extra_record = _facet_record(0x4C, (0.0, 1.0, 0.0), skip_loop_a)
             elif variant == "geometry-composite-law-e0b-nonplanar":
-                # one coplanar + one NONPLANAR dropped loop (the
-                # 3dff4d93 shape): the stage-15 RELAXED law exports both
-                # (the battery criterion is removed, owner-authorized
-                # 2026-11-13) — the pinned fans emit and the store's
-                # gate outcome is the mesh's own business.  Under the
-                # retired stage-10 battery this store stayed
-                # conservative: the re-scoped test pins the fire.
+                # one coplanar + one NONPLANAR dropped loop: under the
+                # per-loop law (2026-11-18) only the coplanar loop
+                # welds; the nonplanar one stays dropped and counted.
                 extra_record = _facet_record(
                     0x4C, (0.0, 1.0, 0.0), skip_loop_a
                 ) + _e0b_record(0x4C, (0.0, 1.0, 0.0), (skip_loop_bad,))
             elif variant == "geometry-composite-law-e0b-normal-less":
                 # one coplanar loop + one on a NORMAL-LESS 0x42 strip
-                # (the 08f2eccb mixed-coverage shape): the stage-15
-                # RELAXED law exports both (25/26 corpus pinned meshes
-                # are exactly the normal-less family).  Under the
-                # retired stage-10 battery this store stayed
-                # conservative: the re-scoped test pins the fire.
+                # (the 08f2eccb mixed-coverage shape): both weld (a
+                # normal-less record has no plane to test; 25/26 corpus
+                # pinned meshes are exactly the normal-less family).
                 extra_record = _facet_record(
                     0x4C, (0.0, 1.0, 0.0), skip_loop_a
                 ) + _facet_record(0x42, None, skip_loop_b)
             elif variant == "geometry-composite-law-e0b-relaxed-not-manifold":
-                # the stage-15 relaxation's corpus exception analog (the
-                # 3dff4d93 gate outcome): three pinned 0x4C fans whose
-                # pinned triangles OVER-USE edge (rank 1, rank 6) three
-                # times — the law fires (empty primary mesh, all skip
-                # slots pinnable), the loops export, and the mesh stays
-                # NOT-MANIFOLD: the decode does not veto, the L2 gate
-                # owns the failed check (the corpus: 3dff4d93 exports
-                # under the relaxed law and stays failed, declared).
-                # Under the retired stage-10 battery this store stayed
-                # conservative (the second fan is nonplanar against the
-                # stored normal): the test pins the fire AND the
-                # not-manifold verdict.
+                # the no-manifold-regression pin (fix 3, 2026-11-18):
+                # three skip-bearing 0x4C fans, one coplanar and two
+                # NONPLANAR under the pin.  The per-loop battery welds
+                # only the coplanar fan; the two refused loops never
+                # reach the mesh, which stays manifold at 2 triangles.
+                # Dropping the battery emits all three and over-uses
+                # edge (rank 1, rank 6) three times -> not-manifold.
                 extra_record = _e0b_record(
                     0x4C,
                     (0.0, 1.0, 0.0),
@@ -1423,12 +1405,14 @@ def _composite_store(variant: str) -> bytes:
                 )
             else:  # geometry-composite-law-e0b-nonempty
                 # the box exports its 12 triangles AND carries a
-                # pinnable dropped loop: the primary mesh is NOT empty
-                # -> the store-level conservative gate holds (the
-                # 471-passing stores' shape; the E0 scope survives the
-                # stage-15 relaxation).  The box's faces are written
-                # over WRITTEN indices — remapped through the skip
-                # layout (the curve-entries variant's _elem walk).
+                # battery-supported dropped loop: the per-loop weld
+                # fires on the NON-empty primary mesh (12 -> 14
+                # triangles).  This is labios/main's shape in
+                # miniature; the fixture's fan re-covers a box face, so
+                # its assembled mesh is not-manifold by construction.
+                # The box's faces are written over WRITTEN indices —
+                # remapped through the skip layout (the curve-entries
+                # variant's _elem walk).
                 def _elem(r: int) -> int:
                     e = r
                     for s in skip_slots:
