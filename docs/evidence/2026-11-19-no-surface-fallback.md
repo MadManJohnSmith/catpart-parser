@@ -5,6 +5,8 @@
 **Target**: the 120 parts of the 128-row grid-meshing census that open as nothing (`docs/evidence/2026-11-19-grid-meshing.md`): 115 carry no triangulable point grid and 5 have a grid candidate that no gate admits. Today the viewer shows a classified failure over all of them.
 **Method**: shipped module `src/catpart/geometry/display.py`, export wiring in `src/catpart/geometry/export.py` (`_display_fallback`), Rust port `port/src/geometry/display.rs`; the WASM boundary's additive `points` / `curveSegments` typed arrays; probe `scripts/triage/probe_no_surface_fallback.py`; corpus-free tests `tests/test_no_surface_fallback.py` (11) + the port's `display.rs` unit tests (4) + the boundary test (`port/tests/wasm.rs`); claims `docs/evidence/data/no-surface-fallback-claims.csv` (`DF-01`..`DF-06`) and per-part `docs/evidence/data/no-surface-fallback-parts.csv` (120 rows); viewer acceptance cases (point cloud + curve segments) in `scripts/viewer_acceptance.py`. Read-only over the corpus.
 
+**Later update (same day)**: the display route was extended with the bag-rep count-framed f32 arrays (`bagrep-f32-points`), so the same 120-row population now shows **106** displays with **26,993** points (the 8,319 added points ride on 29 of its rows), and the manifest-wide open rate rises from 95.19% to 96.17%. The route, the gates and the parity are recorded in [2026-11-19-bagrep-display.md](2026-11-19-bagrep-display.md); the historical figures above stay as the measurement of the pre-extension seam.
+
 ---
 
 ## 1. Executive summary

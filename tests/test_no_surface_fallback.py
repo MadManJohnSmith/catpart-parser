@@ -53,6 +53,18 @@ def part(records: bytes) -> bytes:
     )
 
 
+def bagrep_part(records: bytes) -> bytes:
+    """A full container whose payload carries ``records`` in a CGMGeom block.
+
+    The count-framed f32 arrays live in the geometry containers the
+    missing-store census named; CGMGeom is the one the plate anchor uses.
+    """
+    block = fixtures_gen.storage_property_block(b"CGMGeom", b"CATContainer")
+    return fixtures_gen.build_catpart(
+        header_dword=0x0000_0100, payload=block + records, pad_before_table=0x600
+    )
+
+
 def run(*points) -> bytes:
     """One ``e5 0d`` record carrying the f64le triples of a point run."""
     payload = b"".join(struct.pack("<3d", *point) for point in points)
@@ -73,6 +85,14 @@ def filler() -> bytes:
         + struct.pack("<H", 0x0018)
         + struct.pack("<I", 0)
         + struct.pack("<I", 100)
+    )
+
+
+def bagrep_array(*points) -> bytes:
+    """One count-framed f32 point array (the bag-rep payload family)."""
+    floats = [value for point in points for value in point]
+    return struct.pack("<I", len(floats)) + b"".join(
+        struct.pack("<f", value) for value in floats
     )
 
 
@@ -177,6 +197,98 @@ def test_display_points_are_f32_and_indices_are_pairs() -> None:
     assert scan.segments == ()
     # A bare approach is not connectivity: three points, zero segments.
     assert scan.label == "no surface — showing 3 points, 0 curve segments"
+
+
+def test_bagrep_f32_array_opens_as_points_and_never_triangles() -> None:
+    # The R-BAG-P lever: a u32le float count in front of f32 triples in
+    # the part's geometry container.  The array is decoded as points —
+    # the note measured no face list and no implicit strip, so zero
+    # segments and zero triangles.
+    data = bagrep_part(
+        bagrep_array(
+            (1.0, 2.0, 3.0),
+            (4.0, 5.0, 6.0),
+            (7.0, 8.0, 9.0),
+        )
+    )
+    scan = display.scan_part(data)
+    assert scan.bagrep_regions == 1
+    assert scan.bagrep_arrays == 1
+    assert scan.bagrep_floats == 9
+    assert scan.bagrep_points == 3
+    assert scan.bagrep_skipped == 0
+    assert scan.sources == (display.SOURCE_BAGREP,)
+    assert scan.points == ((1.0, 2.0, 3.0), (4.0, 5.0, 6.0), (7.0, 8.0, 9.0))
+    assert scan.segments == ()
+
+
+def test_bagrep_array_reaches_the_export_block(tmp_path: Path) -> None:
+    path = tmp_path / "bagrep.CATPart"
+    path.write_bytes(
+        bagrep_part(
+            bagrep_array(
+                (1.0, 2.0, 3.0),
+                (4.0, 5.0, 6.0),
+                (7.0, 8.0, 9.0),
+            )
+        )
+    )
+    out = tmp_path / "bagrep.ply"
+    summary = build_export(path, out)
+    validate(summary, load_schema("export-summary-v1"))
+    block = summary["no_surface_display"]
+    assert summary["triangle_count"] == 0
+    assert block["sources"] == ["bagrep-f32-points"]
+    assert block["bagrep_arrays"] == 1
+    assert block["bagrep_floats"] == 9
+    assert block["bagrep_points"] == 3
+    assert block["bagrep_skipped"] == 0
+    assert block["point_count"] == 3
+    assert block["curve_segment_count"] == 0
+    assert block["label"] == "no surface — showing 3 points, 0 curve segments"
+    assert block["points"] == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
+    assert block["curve_segments"] == []
+    # The empty PLY stays the surface contract.
+    assert b"element vertex 0\n" in out.read_bytes()
+
+
+def test_bagrep_array_gates_are_fail_closed(tmp_path: Path) -> None:
+    # A count-framed block whose clean run does NOT end (a clean f32
+    # follows the declared block) is a byte pattern, not an array; a
+    # declared count that is not a multiple of three is not a point
+    # array.  Neither contributes a point.
+    not_ending = bagrep_array(
+        (1.0, 2.0, 3.0), (4.0, 5.0, 6.0), (7.0, 8.0, 9.0)
+    ) + b"".join(struct.pack("<f", float(value)) for value in range(10, 22))
+    not_divisible = struct.pack("<I", 10) + b"".join(
+        struct.pack("<f", value) for value in range(1, 11)
+    )
+    data = bagrep_part(not_ending + not_divisible)
+    scan = display.scan_part(data)
+    assert scan.bagrep_arrays == 0
+    assert scan.points == ()
+
+    # The 100 m display envelope is applied per point: a clean array of
+    # out-of-envelope coordinates frames (pool scale allows 1e6) but
+    # displays nothing and keeps the pre-display classification.
+    path = tmp_path / "envelope.CATPart"
+    path.write_bytes(
+        bagrep_part(
+            bagrep_array(
+                (1.0e6, 2.0e5, 3.0e5),
+                (1.0e6, 2.0e5, 3.0e5),
+                (1.0e6, 2.0e5, 3.0e5),
+            )
+        )
+    )
+    scan = display.scan_part(path.read_bytes())
+    assert scan.bagrep_arrays == 1
+    assert scan.bagrep_points == 0
+    assert scan.bagrep_skipped == 3
+    assert not scan.has_carriers
+    with pytest.raises(ExportError) as excinfo:
+        build_export(path, tmp_path / "envelope.ply")
+    assert excinfo.value.error_class == "missing-geometry-store"
 
 
 def test_run_points_are_never_joined_without_a_curve_law() -> None:
@@ -342,6 +454,65 @@ def _targets() -> list[str]:
         ]
 
 
+#: The 14 formerly-BLANK rows the bag-rep f32 arrays open (the four
+#: other formerly-BLANK rows with an array are the a5-priority parts that
+#: stay closed; the other 51 carry no array at all).
+BAGREP_OPENED = {
+    "084841b3a2068a72",
+    "18a5e736be72bf2d",
+    "2e1684b0e0461b11",
+    "314092359a7c42b0",
+    "3b9452edecb4f777",
+    "4c361f3c5f63d9df",
+    "95636572111e8b7a",
+    "b00e31c89c8b5791",
+    "b0e07338249a0067",
+    "c2598108ba61b0df",
+    "c2d1ecc6dca46685",
+    "d6aa6e71a25e9dd8",
+    "dc7e292322cf3435",
+    "eaf6890653df8d33",
+}
+#: The four a5-priority rows that carry an array but stay
+#: ``no-evaluable-surface`` (the display route is not consulted).
+BAGREP_A5_BLOCKED = {
+    "58ed8b2875b2734a",
+    "6c6a2e9f3d5f5303",
+    "8e8500b1c0627bcb",
+    "b4fd22e357f83410",
+}
+OPEN_RATE = Path(__file__).resolve().parents[1] / "docs/evidence/data/open-rate-files.csv"
+
+
+@pytest.mark.skipif(
+    not OPEN_RATE.exists(),
+    reason="open-rate census is absent (the corpus-gated case)",
+)
+def test_bagrep_arrays_open_the_missing_store_rows() -> None:
+    """The bag-rep f32 arrays open 14 of the 69 BLANK rows (2026-11-19).
+
+    ``docs/evidence/data/open-rate-files.csv`` is the re-run open-rate
+    probe over the manifest: 55 rows stay BLANK, 14 formerly-BLANK rows
+    now DISPLAY because their geometry containers carry a count-framed
+    f32 array, and the four a5-priority rows that also carry one keep
+    their ``no-evaluable-surface`` classification (the display route is
+    not consulted — a surface decode gap is never masked by points).
+    """
+    import csv
+
+    with OPEN_RATE.open(newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    by_sha = {row["sha16"]: row for row in rows}
+    blank = {row["sha16"] for row in rows if row["open kind"] == "BLANK"}
+    assert len(blank) == 55, sorted(blank)
+    for sha in BAGREP_OPENED:
+        row = by_sha[sha]
+        assert row["open kind"] == "DISPLAY", (sha, row)
+        assert int(row["points"]) > 0, (sha, row)
+    assert BAGREP_A5_BLOCKED <= blank
+    assert BAGREP_OPENED.isdisjoint(blank)
+
+
 @pytest.mark.skipif(
     not GRID_PARTS.exists() or not CORPUS_MANIFEST.exists(),
     reason="corpus census is gitignored / absent (the corpus-gated case)",
@@ -349,11 +520,14 @@ def _targets() -> list[str]:
 def test_corpus_population_renders_the_decoded_carriers(tmp_path: Path) -> None:
     """The measured population (docs/evidence/2026-11-19-no-surface-fallback.md).
 
-    Of the 120 no-facet parts that open as nothing today, 104 render with
-    the display fallback (18,674 points, 188 law-pinned segments on 31
-    parts, zero triangles) and the other 16 carry no displayable carrier:
-    they keep their ``undecoded-variant`` class.  The counts are pinned
-    part by part in ``docs/evidence/data/no-surface-fallback-parts.csv``.
+    Of the 120 no-facet parts that open as nothing today, 106 render with
+    the display fallback (26,993 points, 188 law-pinned segments on 31
+    parts, zero triangles) and the other 14 carry no displayable carrier:
+    they keep their ``undecoded-variant`` class.  The bag-rep
+    count-framed f32 arrays add 8,319 points on 29 parts (including the
+    two rows that now open: ``3b9452edecb4f777`` and
+    ``d6aa6e71a25e9dd8``); the counts are pinned part by part in
+    ``docs/evidence/data/no-surface-fallback-parts.csv``.
     """
     root = Path(__file__).resolve().parents[1]
     manifest = _manifest()
@@ -383,9 +557,9 @@ def test_corpus_population_renders_the_decoded_carriers(tmp_path: Path) -> None:
         if sha == PINNED_PART:
             pinned = block
 
-    assert classes == {"display": 104, "undecoded-variant": 16}, classes
+    assert classes == {"display": 106, "undecoded-variant": 14}, classes
     assert totals == {
-        "points": 18674,
+        "points": 26993,
         "curve_segments": 188,
         "parts_with_segments": 31,
         "triangles": 0,

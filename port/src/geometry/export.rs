@@ -228,6 +228,12 @@ pub struct NoSurfaceDisplay {
     pub curve_points: usize,
     pub line_records: usize,
     pub families: BTreeMap<String, usize>,
+    pub sources: Vec<String>,
+    pub bagrep_regions: usize,
+    pub bagrep_arrays: usize,
+    pub bagrep_floats: usize,
+    pub bagrep_points: usize,
+    pub bagrep_skipped: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grid_shaped: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -677,13 +683,18 @@ fn display_fallback(
         detail: format!(
             "no surface decoded: {} decoded carrier points, {} law-pinned \
              curve segments — the 3-divisible f64 point runs, the store pool \
-             when it exists, and the 33 3X record centers; a segment only \
-             where the 33 32 [P][Q][P]+|Q| laws hold. This is a faithful \
-             display of the decoded carriers, not a surface reconstruction: \
-             no triangle is emitted, no point is welded and no connectivity \
-             is inferred (docs/evidence/2026-11-19-no-surface-fallback.md)",
+             when it exists, the 33 3X record centers, and the bag-rep \
+             count-framed f32 arrays ({} points in {} array(s), source \
+             bagrep-f32-points); a segment only where the 33 32 [P][Q][P]+|Q| \
+             laws hold. This is a faithful display of the decoded carriers, \
+             not a surface reconstruction: no triangle is emitted, no point \
+             is welded and no connectivity is inferred \
+             (docs/evidence/2026-11-19-no-surface-fallback.md, \
+             docs/evidence/2026-11-19-bagrep.md)",
             scan.points.len(),
             scan.segments.len(),
+            scan.bagrep_points,
+            scan.bagrep_arrays,
         ),
     });
     if grid_scan.has_candidates() && grid_scan.refused > 0 {
@@ -722,6 +733,12 @@ fn display_fallback(
         curve_points: scan.curve_points,
         line_records: scan.line_records,
         families: scan.families.clone(),
+        sources: scan.sources(),
+        bagrep_regions: scan.bagrep_regions,
+        bagrep_arrays: scan.bagrep_arrays,
+        bagrep_floats: scan.bagrep_floats,
+        bagrep_points: scan.bagrep_points,
+        bagrep_skipped: scan.bagrep_skipped,
         grid_shaped: grid_scan.has_candidates().then_some(grid_scan.shaped),
         grid_refusals: grid_scan
             .has_candidates()

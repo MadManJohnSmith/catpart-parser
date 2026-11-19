@@ -27,6 +27,14 @@ never a surface reconstruction:
   ``33 38``) expose a center and a radius but **no orientation**, so they
   contribute their decoded center as a point and never a guessed circle
   or conic polyline;
+- the bag-rep payload's **count-framed f32 point arrays** (source label
+  ``bagrep-f32-points``) contribute their declared triples as points.
+  This is the R-BAG-P lever of ``docs/evidence/2026-11-19-bagrep.md``:
+  a ``u32le V`` (``V % 3 == 0``, a plausible float count) followed by
+  ``V`` clean f32 at one 4-byte frame, ending where the clean run ends.
+  The arrays carry coordinates only — no facet record, no triple index
+  list, no implicit strip — so they are never connected (the note's
+  measured negative for the mesh lever);
 - no triangle is ever emitted, no point is welded and no two points are
   joined unless a curve law carries the pair.  The summary block says
   ``surface = false`` and the warning class is ``no-surface-display``.
@@ -34,8 +42,11 @@ never a surface reconstruction:
 Fail-closed rules: a malformed record (short payload, non-finite or
 out-of-envelope field, failed direction/length law) contributes nothing
 and is counted as skipped; a run whose count is not a multiple of three
-contributes nothing; a part with no displayable carrier keeps its
-pre-display classification unchanged (the caller re-raises it).
+contributes nothing; a framed array must pass every gate of the
+count-first measurement (declared count, all-clean block, block ends
+where the clean run ends, non-zero share, no fill run) or contributes
+nothing; a part with no displayable carrier keeps its pre-display
+classification unchanged (the caller re-raises it).
 
 The numerical contract matches the export's: plain f64 arithmetic in a
 fixed expression order, and the one ``f64 -> f32`` narrowing is the same
@@ -47,12 +58,40 @@ from __future__ import annotations
 import dataclasses
 import math
 import struct
+from array import array
+from itertools import accumulate
 
-from catpart.geometry import grid
+from catpart.geometry import grid, store
 from catpart.geometry.errors import ExportError
 
 #: The display arrays carry f32 coordinates (the viewer's precision).
 F32 = struct.Struct("<f")
+U32 = struct.Struct("<I")
+
+#: The bag-rep payload containers the count-framed arrays live in
+#: (the ``probe_bagrep`` payload family; the arrays are written inside
+#: these blocks, not in the ``CATPrtCont`` stream the grid path walks).
+BAGREP_PAYLOAD_BLOCKS = (
+    "CATStdCont",
+    "CATSeeBodyCont",
+    "CATBRepModeContainer",
+    "CGMGeom",
+    "CATCGRCont",
+)
+#: Count-first framing bounds from the bag-rep measurement.
+BAGREP_MAX_FLOATS = 3_000_000
+#: Largest payload region the count-first scan walks.  The scan builds
+#: clean-f32 prefix sums over the region; on the corpus's 227 MB parts
+#: that is not tractable, and every measured array lives in a small
+#: payload region (the 69 BLANK rows' largest is 553,832 B).  A larger
+#: region is skipped fail-closed (it contributes nothing).
+BAGREP_MAX_REGION = 4 * 1024 * 1024
+BAGREP_MIN_NONZERO = 0.5
+BAGREP_MAX_CONST_RUN = 64
+#: The clean-f32 window the framing test uses (the probe's pool-scale
+#: bound); the stricter display envelope is applied per point after.
+BAGREP_VALUE_FLOOR = 1e-6
+BAGREP_VALUE_CEIL = 1e6
 
 #: The curve-record families whose decoded payload is displayable at all.
 FAMILY_LINE = 0x32
@@ -62,6 +101,8 @@ FAMILY_CONIC = 0x38
 
 #: The summary block's honesty labels.
 KIND = "decoded-carriers"
+#: The added source label for the bag-rep count-framed f32 arrays.
+SOURCE_BAGREP = "bagrep-f32-points"
 #: ``surface = false``: this is not a surface render, by construction.
 SURFACE = False
 
@@ -81,12 +122,27 @@ class DisplayScan:
     curve_points: int
     line_records: int
     families: tuple[tuple[int, int], ...]
+    bagrep_regions: int
+    bagrep_arrays: int
+    bagrep_floats: int
+    bagrep_points: int
+    bagrep_skipped: int
     points: tuple[tuple[float, float, float], ...]
     segments: tuple[tuple[int, int], ...]
 
     @property
     def has_carriers(self) -> bool:
         return bool(self.points)
+
+    @property
+    def sources(self) -> tuple[str, ...]:
+        """The non-empty source labels behind the displayed points."""
+        names = []
+        if self.pool_points or self.run_points or self.curve_points:
+            names.append(KIND)
+        if self.bagrep_points:
+            names.append(SOURCE_BAGREP)
+        return tuple(names)
 
     @property
     def label(self) -> str:
@@ -127,6 +183,147 @@ def _regions(data, spans) -> list[tuple[int, int]]:
     return sorted(regions)
 
 
+def _bagrep_regions(data) -> list[tuple[int, int]]:
+    """The bag-rep payload containers' ``(start, end)``, in byte order.
+
+    The count-framed f32 arrays are written inside the geometry containers
+    the missing-store census named (``probe_bagrep``'s payload family), not
+    in the ``CATPrtCont`` stream.  Duplicates are collapsed.
+    """
+    size = len(data)
+    outer = int.from_bytes(data[8:12], "big") if size >= 12 else 0
+    blocks = store.valid_blocks(data)
+    regions = {
+        (blk, store.probe_region(data, blk, blocks, outer))
+        for blk, name in blocks
+        if name in BAGREP_PAYLOAD_BLOCKS
+    }
+    return sorted(
+        (lo, hi) for lo, hi in regions if hi - lo <= BAGREP_MAX_REGION
+    )
+
+
+def _bagrep_clean(value: float) -> bool:
+    """The count-first measurement's clean-f32 test (pool scale)."""
+    return math.isfinite(value) and (
+        value == 0.0
+        or BAGREP_VALUE_FLOOR <= abs(value) <= BAGREP_VALUE_CEIL
+    )
+
+
+class _BagrepClean:
+    """Clean-f32 prefix sums per 4-byte frame (the probe's ``Clean``).
+
+    A candidate count is tested against a multi-hundred-KB region, so the
+    all-clean window and the clean-run-end test are prefix differences
+    instead of O(count) scans; only the arrays that pass them are walked
+    for the non-zero share and the fill-run gate.
+    """
+
+    def __init__(self, data, lo: int, hi: int) -> None:
+        self.lo = lo
+        self.sum = []
+        view = memoryview(data)
+        for shift in range(4):
+            count = (hi - lo - shift) // 4
+            if count <= 0:
+                self.sum.append(array("I", [0]))
+                continue
+            words = view[lo + shift : lo + shift + 4 * count].cast("f")
+            flags = (1 if _bagrep_clean(value) else 0 for value in words)
+            self.sum.append(array("I", accumulate(flags, initial=0)))
+
+    def all_clean(self, start: int, count: int) -> bool:
+        relative = start - self.lo
+        shift = relative % 4
+        index = (relative - shift) // 4
+        prefix = self.sum[shift]
+        return (
+            index + count < len(prefix)
+            and prefix[index + count] - prefix[index] == count
+        )
+
+    def clean_at(self, start: int) -> bool:
+        relative = start - self.lo
+        shift = relative % 4
+        index = (relative - shift) // 4
+        prefix = self.sum[shift]
+        return index + 1 < len(prefix) and prefix[index + 1] - prefix[index] == 1
+
+
+def _bagrep_nonzero(data, start: int, count: int) -> float:
+    nonzero = 0
+    for index in range(count):
+        if struct.unpack_from("<f", data, start + 4 * index)[0] != 0.0:
+            nonzero += 1
+    return nonzero / count
+
+
+def _bagrep_max_const_run(data, start: int, count: int) -> int:
+    longest = run = 1
+    previous = struct.unpack_from("<f", data, start)[0]
+    for index in range(1, count):
+        value = struct.unpack_from("<f", data, start + 4 * index)[0]
+        if value == previous:
+            run += 1
+            if run > longest:
+                longest = run
+        else:
+            run = 1
+            previous = value
+    return longest
+
+
+def _bagrep_arrays(
+    data, lo: int, hi: int, clean: _BagrepClean | None = None
+) -> list[tuple[int, int]]:
+    """The count-framed f32 arrays in ``[lo, hi)`` as ``(start, floats)``.
+
+    The same four gates as the bag-rep measurement: a plausible declared
+    count (``V % 3 == 0``), ``V`` clean f32 at one 4-byte frame, the block
+    ending where the clean run ends (the test that separates a declared
+    array from a byte pattern), a non-zero share and no fill run.  Arrays
+    contained in a longer one are dropped.
+    """
+    if clean is None:
+        clean = _BagrepClean(data, lo, hi)
+    found: list[tuple[int, int]] = []
+    seen: set[tuple[int, int]] = set()
+    for offset in range(lo, hi - 4):
+        if data[offset + 3]:
+            continue
+        count = U32.unpack_from(data, offset)[0]
+        if count < 9 or count > BAGREP_MAX_FLOATS or count % 3:
+            continue
+        for delta in range(17):
+            start = offset + 4 + delta
+            if start + 4 * count > hi:
+                break
+            if not clean.all_clean(start, count):
+                continue
+            if start + 4 * count + 4 <= hi and clean.clean_at(start + 4 * count):
+                continue
+            if _bagrep_nonzero(data, start, count) < BAGREP_MIN_NONZERO:
+                continue
+            if _bagrep_max_const_run(data, start, count) > BAGREP_MAX_CONST_RUN:
+                continue
+            key = (start, count)
+            if key not in seen:
+                seen.add(key)
+                found.append(key)
+            break
+    found.sort(key=lambda item: (item[0], -item[1]))
+    keep: list[tuple[int, int]] = []
+    for item in found:
+        if any(
+            kept[0] <= item[0] and kept[0] + 4 * kept[1] >= item[0] + 4 * item[1]
+            for kept in keep
+        ):
+            continue
+        keep.append(item)
+    return keep
+
+
 def _append_point(points, point) -> int | None:
     """Append one decoded point (f32-rounded) and return its index."""
     rounded = (_f32(point[0]), _f32(point[1]), _f32(point[2]))
@@ -165,6 +362,22 @@ def scan_part(data, spans=(), pool_points=()) -> DisplayScan:
         for point in run:
             if _append_point(points, point) is not None:
                 run_points += 1
+
+    bagrep_regions = _bagrep_regions(data)
+    bagrep_arrays = 0
+    bagrep_floats = 0
+    bagrep_points = 0
+    bagrep_skipped = 0
+    for lo, hi in bagrep_regions:
+        for start, count in _bagrep_arrays(data, lo, hi):
+            bagrep_arrays += 1
+            bagrep_floats += count
+            for index in range(count // 3):
+                point = struct.unpack_from("<3f", data, start + 12 * index)
+                if _append_point(points, point) is not None:
+                    bagrep_points += 1
+                else:
+                    bagrep_skipped += 1
 
     records: dict[int, object] = {}
     for lo, hi in regions:
@@ -217,6 +430,11 @@ def scan_part(data, spans=(), pool_points=()) -> DisplayScan:
         curve_points=curve_points,
         line_records=line_records,
         families=tuple(sorted(family_census.items())),
+        bagrep_regions=len(bagrep_regions),
+        bagrep_arrays=bagrep_arrays,
+        bagrep_floats=bagrep_floats,
+        bagrep_points=bagrep_points,
+        bagrep_skipped=bagrep_skipped,
         points=tuple(points),
         segments=tuple(segments),
     )

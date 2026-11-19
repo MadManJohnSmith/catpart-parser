@@ -500,12 +500,15 @@ def _display_fallback(data, original, previous, spans, grid_scan) -> tuple[dict,
             "detail": f"no surface decoded: {len(scan.points)} decoded "
             f"carrier points, {len(scan.segments)} law-pinned curve "
             "segments — the 3-divisible f64 point runs, the store pool "
-            "when it exists, and the 33 3X record centers; a segment only "
-            "where the 33 32 [P][Q][P]+|Q| laws hold. This is a faithful "
-            "display of the decoded carriers, not a surface "
-            "reconstruction: no triangle is emitted, no point is welded "
-            "and no connectivity is inferred "
-            "(docs/evidence/2026-11-19-no-surface-fallback.md)",
+            "when it exists, the 33 3X record centers, and the bag-rep "
+            f"count-framed f32 arrays ({scan.bagrep_points} points in "
+            f"{scan.bagrep_arrays} array(s), source bagrep-f32-points); a "
+            "segment only where the 33 32 [P][Q][P]+|Q| laws hold. This "
+            "is a faithful display of the decoded carriers, not a "
+            "surface reconstruction: no triangle is emitted, no point is "
+            "welded and no connectivity is inferred "
+            "(docs/evidence/2026-11-19-no-surface-fallback.md, "
+            "docs/evidence/2026-11-19-bagrep.md)",
         }
     )
     if grid_scan.has_candidates and grid_scan.refused:
@@ -542,6 +545,15 @@ def _display_fallback(data, original, previous, spans, grid_scan) -> tuple[dict,
         "families": {
             f"33 {family:02x}": count for family, count in scan.families
         },
+        # The non-empty carrier sources behind the points; the bag-rep
+        # arrays are coordinates only (no face list — R-BAG's measured
+        # negative for the mesh lever, docs/evidence/2026-11-19-bagrep.md).
+        "sources": list(scan.sources),
+        "bagrep_regions": scan.bagrep_regions,
+        "bagrep_arrays": scan.bagrep_arrays,
+        "bagrep_floats": scan.bagrep_floats,
+        "bagrep_points": scan.bagrep_points,
+        "bagrep_skipped": scan.bagrep_skipped,
     }
     if grid_scan.has_candidates:
         display_block["grid_shaped"] = grid_scan.shaped

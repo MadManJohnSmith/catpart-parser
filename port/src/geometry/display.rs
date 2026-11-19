@@ -26,13 +26,18 @@
 //! - the circle / mid-ring / conic families expose a center and a radius
 //!   but no orientation, so they contribute their center as a point and
 //!   never a guessed polyline;
+//! - the bag-rep payload's count-framed f32 point arrays (source label
+//!   ``bagrep-f32-points``) contribute their declared triples as points
+//!   (``docs/evidence/2026-11-19-bagrep.md``: coordinates only, no face
+//!   list and no implicit strip, so they are never connected);
 //! - no triangle, no weld, no inferred join.  The summary block says
 //!   ``surface = false`` and the warning class is ``no-surface-display``.
 //!
 //! Fail-closed: a malformed record (short payload, non-finite or
 //! out-of-envelope field, failed direction/length law) contributes
-//! nothing and is counted as skipped; a part with no displayable carrier
-//! keeps its pre-display classification.
+//! nothing and is counted as skipped; a framed array must pass every
+//! gate of the count-first measurement or contributes nothing; a part
+//! with no displayable carrier keeps its pre-display classification.
 //!
 //! Numeric contract (spec §2.2): f64 decode arithmetic in the twin's
 //! expression order; the single ``f64 -> f32`` narrowing is the viewer
@@ -42,11 +47,33 @@
 
 use std::collections::BTreeMap;
 
-use super::grid;
+use super::{grid, store};
 
 /// The summary block's honesty labels (the twin's ``KIND``/``SURFACE``).
 pub const KIND: &str = "decoded-carriers";
+/// The added source label for the bag-rep count-framed f32 arrays.
+pub const SOURCE_BAGREP: &str = "bagrep-f32-points";
 pub const SURFACE: bool = false;
+
+/// The bag-rep payload containers the count-framed arrays live in.
+const BAGREP_PAYLOAD_BLOCKS: [&str; 5] = [
+    "CATStdCont",
+    "CATSeeBodyCont",
+    "CATBRepModeContainer",
+    "CGMGeom",
+    "CATCGRCont",
+];
+/// Count-first framing bounds (the bag-rep measurement).
+const BAGREP_MAX_FLOATS: usize = 3_000_000;
+/// Largest payload region the count-first scan walks (the twin's
+/// ``BAGREP_MAX_REGION``): larger regions are skipped fail-closed.
+const BAGREP_MAX_REGION: usize = 4 * 1024 * 1024;
+const BAGREP_MIN_NONZERO: f64 = 0.5;
+const BAGREP_MAX_CONST_RUN: usize = 64;
+/// The clean-f32 window the framing test uses; the display envelope is
+/// applied per point afterwards.
+const BAGREP_VALUE_FLOOR: f64 = 1e-6;
+const BAGREP_VALUE_CEIL: f64 = 1e6;
 
 pub const FAMILY_LINE: u8 = 0x32;
 pub const FAMILY_MIDRING: u8 = 0x33;
@@ -91,6 +118,11 @@ pub struct DisplayScan {
     pub curve_points: usize,
     pub line_records: usize,
     pub families: BTreeMap<String, usize>,
+    pub bagrep_regions: usize,
+    pub bagrep_arrays: usize,
+    pub bagrep_floats: usize,
+    pub bagrep_points: usize,
+    pub bagrep_skipped: usize,
     pub points: Vec<(f64, f64, f64)>,
     pub segments: Vec<(u32, u32)>,
 }
@@ -98,6 +130,19 @@ pub struct DisplayScan {
 impl DisplayScan {
     pub fn has_carriers(&self) -> bool {
         !self.points.is_empty()
+    }
+
+    /// The non-empty source labels behind the displayed points (the
+    /// twin's ``sources``).
+    pub fn sources(&self) -> Vec<String> {
+        let mut names = Vec::new();
+        if self.pool_points > 0 || self.run_points > 0 || self.curve_points > 0 {
+            names.push(KIND.to_string());
+        }
+        if self.bagrep_points > 0 {
+            names.push(SOURCE_BAGREP.to_string());
+        }
+        names
     }
 
     /// The visible, never-a-surface label (the twin's ``label_for``).
@@ -131,6 +176,169 @@ fn region_list(data: &[u8], spans: &[(usize, usize)]) -> Vec<(usize, usize)> {
     regions.sort_unstable();
     regions.dedup();
     regions
+}
+
+/// The bag-rep payload containers' ``(start, end)``, in byte order (the
+/// twin's ``_bagrep_regions``).
+fn bagrep_regions(data: &[u8]) -> Vec<(usize, usize)> {
+    let size = data.len();
+    let outer = if size >= 12 {
+        u32::from_be_bytes([data[8], data[9], data[10], data[11]]) as usize
+    } else {
+        0
+    };
+    let blocks = store::valid_blocks(data);
+    let mut regions: Vec<(usize, usize)> = blocks
+        .iter()
+        .filter(|(_, name)| BAGREP_PAYLOAD_BLOCKS.contains(&name.as_str()))
+        .map(|(blk, _)| (*blk, store::probe_region(*blk, &blocks, outer, size)))
+        .filter(|(lo, hi)| hi - lo <= BAGREP_MAX_REGION)
+        .collect();
+    regions.sort_unstable();
+    regions.dedup();
+    regions
+}
+
+/// The count-first measurement's clean-f32 test (pool scale).
+fn bagrep_clean(value: f64) -> bool {
+    value.is_finite()
+        && (value == 0.0 || (BAGREP_VALUE_FLOOR <= value.abs() && value.abs() <= BAGREP_VALUE_CEIL))
+}
+
+fn bagrep_f32(data: &[u8], off: usize) -> f64 {
+    f32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]]) as f64
+}
+
+/// Clean-f32 prefix sums per 4-byte frame (the twin's ``_BagrepClean``).
+///
+/// A candidate count is tested against a multi-hundred-KB region, so the
+/// all-clean window and the clean-run-end test are prefix differences
+/// instead of O(count) scans.
+struct BagrepClean {
+    lo: usize,
+    sums: [Vec<u32>; 4],
+}
+
+impl BagrepClean {
+    fn new(data: &[u8], lo: usize, hi: usize) -> Self {
+        let mut sums: [Vec<u32>; 4] = [Vec::new(), Vec::new(), Vec::new(), Vec::new()];
+        for (shift, prefix) in sums.iter_mut().enumerate() {
+            let count = (hi - lo).saturating_sub(shift).div_euclid(4);
+            prefix.reserve(count + 1);
+            prefix.push(0);
+            let mut total = 0u32;
+            for index in 0..count {
+                if bagrep_clean(bagrep_f32(data, lo + shift + 4 * index)) {
+                    total += 1;
+                }
+                prefix.push(total);
+            }
+        }
+        Self { lo, sums }
+    }
+
+    fn all_clean(&self, start: usize, count: usize) -> bool {
+        let relative = start - self.lo;
+        let shift = relative % 4;
+        let index = (relative - shift) / 4;
+        let prefix = &self.sums[shift];
+        index + count < prefix.len() && prefix[index + count] - prefix[index] == count as u32
+    }
+
+    fn clean_at(&self, start: usize) -> bool {
+        let relative = start - self.lo;
+        let shift = relative % 4;
+        let index = (relative - shift) / 4;
+        let prefix = &self.sums[shift];
+        index + 1 < prefix.len() && prefix[index + 1] - prefix[index] == 1
+    }
+}
+
+fn bagrep_nonzero(data: &[u8], start: usize, count: usize) -> f64 {
+    let mut nonzero = 0usize;
+    for index in 0..count {
+        if bagrep_f32(data, start + 4 * index) != 0.0 {
+            nonzero += 1;
+        }
+    }
+    nonzero as f64 / count as f64
+}
+
+fn bagrep_max_const_run(data: &[u8], start: usize, count: usize) -> usize {
+    let mut longest = 1usize;
+    let mut run = 1usize;
+    let mut previous = bagrep_f32(data, start);
+    for index in 1..count {
+        let value = bagrep_f32(data, start + 4 * index);
+        if value == previous {
+            run += 1;
+            if run > longest {
+                longest = run;
+            }
+        } else {
+            run = 1;
+            previous = value;
+        }
+    }
+    longest
+}
+
+/// The count-framed f32 arrays in ``[lo, hi)`` as ``(start, floats)``
+/// (the twin's ``_bagrep_arrays``).
+fn bagrep_arrays(data: &[u8], lo: usize, hi: usize) -> Vec<(usize, usize)> {
+    let clean = BagrepClean::new(data, lo, hi);
+    let mut found: Vec<(usize, usize)> = Vec::new();
+    let mut seen: Vec<(usize, usize)> = Vec::new();
+    let mut offset = lo;
+    while offset + 4 < hi {
+        if data[offset + 3] == 0 {
+            let count = u32::from_le_bytes([
+                data[offset],
+                data[offset + 1],
+                data[offset + 2],
+                data[offset + 3],
+            ]) as usize;
+            #[allow(clippy::manual_range_contains, clippy::manual_is_multiple_of)]
+            if count >= 9 && count <= BAGREP_MAX_FLOATS && count % 3 == 0 {
+                for delta in 0..17 {
+                    let start = offset + 4 + delta;
+                    if start + 4 * count > hi {
+                        break;
+                    }
+                    if !clean.all_clean(start, count) {
+                        continue;
+                    }
+                    if clean.clean_at(start + 4 * count) {
+                        continue;
+                    }
+                    if bagrep_nonzero(data, start, count) < BAGREP_MIN_NONZERO {
+                        continue;
+                    }
+                    if bagrep_max_const_run(data, start, count) > BAGREP_MAX_CONST_RUN {
+                        continue;
+                    }
+                    let key = (start, count);
+                    if !seen.contains(&key) {
+                        seen.push(key);
+                        found.push(key);
+                    }
+                    break;
+                }
+            }
+        }
+        offset += 1;
+    }
+    found.sort_by(|a, b| a.0.cmp(&b.0).then(b.1.cmp(&a.1)));
+    let mut keep: Vec<(usize, usize)> = Vec::new();
+    for item in found {
+        let contained = keep.iter().any(|kept: &(usize, usize)| {
+            kept.0 <= item.0 && kept.0 + 4 * kept.1 >= item.0 + 4 * item.1
+        });
+        if !contained {
+            keep.push(item);
+        }
+    }
+    keep
 }
 
 fn append_point(points: &mut Vec<(f64, f64, f64)>, point: (f64, f64, f64)) -> Option<u32> {
@@ -171,6 +379,31 @@ pub fn scan_part(
         for point in &run.points {
             if append_point(&mut points, *point).is_some() {
                 run_points += 1;
+            }
+        }
+    }
+
+    let bagrep_spans = bagrep_regions(data);
+    let mut bagrep_array_count = 0usize;
+    let mut bagrep_floats = 0usize;
+    let mut bagrep_points = 0usize;
+    let mut bagrep_skipped = 0usize;
+    for (lo, hi) in &bagrep_spans {
+        for (start, count) in bagrep_arrays(data, *lo, *hi) {
+            bagrep_array_count += 1;
+            bagrep_floats += count;
+            for index in 0..(count / 3) {
+                let off = start + 12 * index;
+                let point = (
+                    bagrep_f32(data, off),
+                    bagrep_f32(data, off + 4),
+                    bagrep_f32(data, off + 8),
+                );
+                if append_point(&mut points, point).is_some() {
+                    bagrep_points += 1;
+                } else {
+                    bagrep_skipped += 1;
+                }
             }
         }
     }
@@ -229,6 +462,11 @@ pub fn scan_part(
         curve_points,
         line_records,
         families,
+        bagrep_regions: bagrep_spans.len(),
+        bagrep_arrays: bagrep_array_count,
+        bagrep_floats,
+        bagrep_points,
+        bagrep_skipped,
         points,
         segments,
     }
@@ -479,6 +717,55 @@ mod tests {
         let mut points = Vec::new();
         assert_eq!(line_segment(&data, &records[0], &mut points), None);
         assert!(points.is_empty(), "no point is emitted for a refused law");
+    }
+
+    /// One count-framed f32 array: ``u32le count`` + the floats.
+    fn bagrep_array(floats: &[f32]) -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&(floats.len() as u32).to_le_bytes());
+        for value in floats {
+            data.extend_from_slice(&value.to_le_bytes());
+        }
+        data
+    }
+
+    #[test]
+    fn a_count_framed_f32_array_frames_as_points() {
+        let data = bagrep_array(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]);
+        let arrays = bagrep_arrays(&data, 0, data.len());
+        assert_eq!(arrays, vec![(4, 9)]);
+        // The triples are the points; the array carries no connectivity.
+        let points: Vec<(f64, f64, f64)> = (0..3)
+            .map(|index| {
+                let off = 4 + 12 * index;
+                (
+                    bagrep_f32(&data, off),
+                    bagrep_f32(&data, off + 4),
+                    bagrep_f32(&data, off + 8),
+                )
+            })
+            .collect();
+        assert_eq!(
+            points,
+            vec![(1.0, 2.0, 3.0), (4.0, 5.0, 6.0), (7.0, 8.0, 9.0)]
+        );
+    }
+
+    #[test]
+    fn a_count_framed_block_that_does_not_end_frames_nothing() {
+        // The declared 9-float block is followed by more clean f32: the
+        // count-first framing rejects it (a byte pattern, not an array).
+        let mut data = bagrep_array(&(1..=9).map(|value| value as f32).collect::<Vec<f32>>());
+        for value in 10..=21 {
+            data.extend_from_slice(&(value as f32).to_le_bytes());
+        }
+        assert!(bagrep_arrays(&data, 0, data.len()).is_empty());
+    }
+
+    #[test]
+    fn a_count_that_is_not_a_multiple_of_three_frames_nothing() {
+        let data = bagrep_array(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]);
+        assert!(bagrep_arrays(&data, 0, data.len()).is_empty());
     }
 
     #[test]
