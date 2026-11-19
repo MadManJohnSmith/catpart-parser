@@ -97,6 +97,91 @@ def frame(blob: bytes) -> bytes:
     )
 
 
+def patch_head_bytes(
+    knots_u: tuple[float, ...] = (0.0, 50.0),
+    knots_v: tuple[float, ...] = (0.0, 16.0),
+    degree_v: int = 2,
+    rational: bool = False,
+) -> bytes:
+    """The subtype-4 head: no u mode, a stored v degree, a rational flag."""
+    return (
+        struct.pack("<II", surface.HEAD_TAG, len(knots_u))
+        + bytes([surface.SUBTYPE_PATCH])
+        + f64(*knots_u)
+        + bytes([surface.LANE_TAG])
+        + struct.pack("<II", degree_v, len(knots_v))
+        + bytes([surface.SUBTYPE_PATCH])
+        + f64(*knots_v)
+        + bytes([0x01, 0x01 if rational else 0x00, 0x00])
+    )
+
+
+def patch_payload(rational: bool = False, bad_weight: bool = False) -> bytes:
+    n_u, degree_v, n_v = 2, 2, 2
+    poles_u = 3 * n_u
+    poles_v = (degree_v + 1) + 3 * (n_v - 2)
+    poles = b"".join(
+        f64(10.0 * i, 8.0 * j, 0.02 * i * i)
+        for i in range(poles_u)
+        for j in range(poles_v)
+    )
+    if not rational:
+        return patch_head_bytes(rational=False) + poles + bytes(152)
+    weights = b"".join(
+        f64(0.0 if bad_weight and i == 0 else 1.0)
+        for i in range(poles_u)
+        for _ in range(poles_v)
+    )
+    return patch_head_bytes(rational=True) + poles + weights + bytes(152)
+
+
+def patch_part(rational: bool = False, bad_weight: bool = False) -> bytes:
+    block = fixtures_gen.storage_property_block(b"CATPrtCont", b"CATContainer")
+    return block + b"\x00" * 64 + frame(patch_payload(rational, bad_weight))
+
+
+# --------------------------------------------------------------- patch
+
+
+@pytest.mark.parametrize("rational", [False, True])
+def test_patch_head_pins_the_v_degree_and_the_pole_law(rational: bool) -> None:
+    blob = patch_payload(rational)
+    head = surface.parse_surface_head(blob, 0, len(blob))
+    assert head is not None
+    assert head.subtype == surface.SUBTYPE_PATCH
+    assert (head.n_u, head.n_v) == (2, 2)
+    assert (head.degree_u, head.degree_v) == (5, 2)
+    assert (head.poles_u, head.poles_v) == (6, 3)
+    assert head.points == 18
+    assert head.rational is rational
+    assert head.bytes_per_pole == (32 if rational else 24)
+    assert head.tail == 152
+    poles, weights = surface.pole_data(blob, head)
+    assert surface.plausible_net(poles)
+    assert surface.plausible_weights(weights)
+    assert surface.assess(head, poles, weights).evaluable
+    assert surface.tessellate(head, poles, weights) is not None
+
+
+def test_patch_with_a_non_positive_weight_is_not_decoded() -> None:
+    blob = patch_payload(rational=True, bad_weight=True)
+    head = surface.parse_surface_head(blob, 0, len(blob))
+    assert head is not None
+    _poles, weights = surface.pole_data(blob, head)
+    assert not surface.plausible_weights(weights)
+    scan = surface.scan_part(patch_part(rational=True, bad_weight=True))
+    assert (scan.candidates, scan.decoded, scan.tessellated) == (1, 0, 0)
+
+
+def test_patch_part_exports_a_mesh(tmp_path: Path) -> None:
+    path = tmp_path / "patch.CATPart"
+    path.write_bytes(patch_part())
+    summary = build_export(path, tmp_path / "patch.ply")
+    assert summary["triangle_count"] > 0
+    assert summary["surface_tessellation"]["tessellated"] == 1
+    assert summary["surface_tessellation"]["frames"] == 1
+
+
 # --------------------------------------------------------------- head
 
 
@@ -252,6 +337,19 @@ def test_scan_part_censuses_the_synthetic_record() -> None:
     assert stats.manifold
 
 
+@pytest.mark.parametrize(
+    "variant", ["geometry-surface-patch", "geometry-surface-patch-rational"]
+)
+def test_scan_part_censuses_the_patch_variants(variant: str) -> None:
+    region = surface.scan_part(_part(variant))
+    assert region.candidates == 1
+    assert region.decoded == 1
+    assert region.evaluable == 1
+    assert region.tessellated == 1
+    assert region.refused == 0
+    assert region.has_mesh
+
+
 def test_part_without_surface_frames_has_no_mesh() -> None:
     region = surface.scan_part(_part("geometry"))
     assert region.candidates == 0
@@ -277,6 +375,19 @@ def test_export_falls_back_to_the_surface_mesh(tmp_path: Path) -> None:
     assert summary["mesh"]["manifold"] is True
     assert summary["mesh"]["closed"] is False
     assert out.read_bytes().startswith(b"ply\nformat binary_little_endian 1.0\n")
+
+
+@pytest.mark.parametrize(
+    "variant", ["geometry-surface-patch", "geometry-surface-patch-rational"]
+)
+def test_patch_variant_exports_a_mesh(tmp_path: Path, variant: str) -> None:
+    path = tmp_path / f"{variant}.CATPart"
+    path.write_bytes(_part(variant))
+    summary = build_export(path, tmp_path / f"{variant}.ply")
+    assert summary["triangle_count"] > 0
+    assert summary["surface_tessellation"]["frames"] == 1
+    assert summary["surface_tessellation"]["tessellated"] == 1
+    assert summary["mesh"]["manifold"] is True
 
 
 def test_facet_store_keeps_its_existing_path(tmp_path: Path) -> None:

@@ -1,3 +1,11 @@
+> **Superseded in part (2026-11-19, later the same day).** The subtype-4 patch grammar
+> (`docs/evidence/2026-11-19-join-order-probe.md`) decodes the 20 plane frames of
+> `80aad8d8` and opens five more manifest parts. The two-lane figures below stand as the
+> measurement of that grammar; for `80aad8d8` the current shipped counters are **66**
+> evaluable surfaces and **68,464** triangles (not 46/68,304), and the manifest open rate
+> is **1,372/1,436 = 95.54%** (not 95.19%). See the newer note for the patch law, the
+> five parts and the open-rate rows.
+
 # Evidence: the `a5 03 34` surfaces as meshes — census, tessellation, export (2026-11-19)
 
 **Date**: 2026-11-19

@@ -2,17 +2,20 @@
 
 This is the shipped half of ``docs/evidence/2026-11-19-surface-head.md``
 (the payload grammar) joined to
-``docs/evidence/2026-11-19-surface-tessellation.md`` (the mesh).  The
-triage probe stays the analysis tool; nothing here depends on
-``scripts/``.
+``docs/evidence/2026-11-19-surface-tessellation.md`` (the mesh) and
+``docs/evidence/2026-11-19-join-order-probe.md`` (the second subtype).
 
-The record is a self-delimiting degree-5, C2, non-rational tensor-product
-B-spline surface.  Each lane block names ``n`` distinct knots; the pole
-net that follows is exactly ``3*n_u`` by ``3*n_v`` triples, and the only
-constant ``(degree, interior multiplicity)`` pair that maps a lane of
-``n`` knots to ``3*n`` poles is ``(5, 3)``.  The knot vector is therefore
-``[u0]*6 + interior*3 + [un]*6`` (length ``3n + 6``), and the grid begins
-exactly after the head (``30 + 8*(n_u + n_v)`` bytes).
+Two head grammars share the marker.  The **two-lane** record (subtype 0)
+is a self-delimiting degree-5, C2, non-rational tensor-product B-spline:
+each lane block names ``n`` distinct knots, the pole net is exactly
+``3*n_u`` by ``3*n_v`` triples, and the only constant
+``(degree, interior multiplicity)`` pair that maps a lane of ``n`` knots
+to ``3*n`` poles is ``(5, 3)``.  The **patch** record (subtype 4) carries
+the u lane without a mode field, then the v direction's own degree and
+lane.  Its grid is ``3*n_u`` by ``(degree_v + 1) + 3*(n_v - 2)``, and a
+closing middle byte selects a 32-byte rational layout (coordinates then
+weights) or the 24-byte non-rational one.  Both grammars close on the
+measured 152/154-byte tail; the grid is predicted, never searched for.
 
 The tessellator subdivides each knot span by a bounded adaptive tensor
 grid: cells whose centre departs from the bilinear cell by more than
@@ -40,28 +43,38 @@ from catpart.geometry import mesh, store
 SURFACE_MARKER = b"\xa5\x03\x34"
 #: Class byte of the consolidated freeform surface record.
 SURFACE_CLASS = 0x34
+#: The two decoded payload subtypes: the two-lane surface and the patch.
+SUBTYPE_TWO_LANE = 0
+SUBTYPE_PATCH = 4
 #: Record tag at the head of each lane block and at the second lane.
 HEAD_TAG = 5
 #: Second-lane tag byte after the u lane.
 LANE_TAG = 1
-#: Closing bytes after the v lane.
+#: Closing bytes after the v lane (two-lane) and the measured middle flags.
 CLOSING = b"\x01\x00\x00"
+CLOSING_RATIONAL = 0x01
 #: A lane length is a distinct-knot count: small, and never zero.
 MIN_LANE = 2
 MAX_LANE = 256
 #: The two measured surface payload tails (the bulk probe's closure law).
 SURFACE_TAILS = (152, 154)
 
-#: Degree and interior multiplicity the count law derives from the grid.
+#: Degree and interior multiplicity of the two-lane grammar (both
+#: directions) and of the patch grammar's u direction.
 DEGREE = 5
 MULTIPLICITY = 3
-POLES_PER_LANE = 3
+#: Largest v degree a patch head may declare (corpus range: 1..5).
+MAX_PATCH_DEGREE = 16
 
-#: Plausible model coordinate magnitude (mm), the bulk probe's net band.
-NET_FLOOR = 1e-3
+#: Plausible model coordinate magnitude (mm): the bulk probe's upper band.
+#: There is no lower floor — a pole may legitimately sit at 0 or 1e-16.
 NET_CEIL = 1e6
-#: A coordinate outside a 100 m envelope is not a part coordinate.
-MODEL_SCALE = 1e5
+#: A coordinate outside a 100 m envelope is not a two-lane part coordinate.
+#: A patch is admitted to a 1 km envelope: the merged-allocation frames the
+#: surface-head note measured sit at ~993 m and are still refused by the
+#: chord-length and fold checks, while a coherent 211 m patch is real.
+MODEL_SCALE_TWO_LANE = 1e5
+MODEL_SCALE_PATCH = 1e6
 #: ``u knot span / pole-polygon arc length`` band for a chord-length lane.
 ARC_RATIO_BAND = (0.5, 2.0)
 #: Parameter-lattice steps used by the evaluable battery.
@@ -85,7 +98,13 @@ DEGENERATE_AREA_FRACTION = 1e-12
 
 @dataclasses.dataclass(frozen=True)
 class SurfaceHead:
-    """The decoded head of one surface payload; ``grid`` is predicted."""
+    """The decoded head of one surface payload; ``grid`` is predicted.
+
+    ``degree_v`` is the patch grammar's stored v degree and 5 for the
+    two-lane grammar; ``rational`` selects the 32-byte coordinate-then-
+    weights layout.  Both grammars are clamped with interior multiplicity
+    3, so ``poles = (degree + 1) + 3*(n - 2)`` per direction.
+    """
 
     start: int
     end: int
@@ -96,6 +115,10 @@ class SurfaceHead:
     mode_u: int
     mode_v: int
     grid: int
+    subtype: int = SUBTYPE_TWO_LANE
+    degree_u: int = DEGREE
+    degree_v: int = DEGREE
+    rational: bool = False
 
     @property
     def head_bytes(self) -> int:
@@ -103,29 +126,44 @@ class SurfaceHead:
 
     @property
     def poles_u(self) -> int:
-        return POLES_PER_LANE * self.n_u
+        return (self.degree_u + 1) + MULTIPLICITY * (self.n_u - 2)
 
     @property
     def poles_v(self) -> int:
-        return POLES_PER_LANE * self.n_v
+        return (self.degree_v + 1) + MULTIPLICITY * (self.n_v - 2)
 
     @property
     def points(self) -> int:
         return self.poles_u * self.poles_v
 
     @property
+    def bytes_per_pole(self) -> int:
+        return 32 if self.rational else 24
+
+    @property
+    def net_bytes(self) -> int:
+        return self.bytes_per_pole * self.points
+
+    @property
     def tail(self) -> int:
-        return self.end - (self.grid + 24 * self.points)
+        return self.end - (self.grid + self.net_bytes)
+
+    @property
+    def scale_limit(self) -> float:
+        return (
+            MODEL_SCALE_PATCH if self.subtype == SUBTYPE_PATCH else MODEL_SCALE_TWO_LANE
+        )
 
     @property
     def knots(self) -> tuple[tuple[float, ...], tuple[float, ...]]:
-        return knot_vector(self.knots_u), knot_vector(self.knots_v)
+        return (
+            knot_vector(self.knots_u, self.degree_u),
+            knot_vector(self.knots_v, self.degree_v),
+        )
 
     @property
     def lanes_monotone(self) -> bool:
-        return _strictly_increasing(self.knots_u) and _strictly_increasing(
-            self.knots_v
-        )
+        return _strictly_increasing(self.knots_u) and _strictly_increasing(self.knots_v)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -138,10 +176,11 @@ class SurfaceAssessment:
     folds: int
     arc_ratio: float
     bbox: tuple[float, float, float, float, float, float]
+    scale_ok: bool = True
 
     @property
     def plausible_scale(self) -> bool:
-        return max(abs(c) for c in self.bbox) <= MODEL_SCALE
+        return self.scale_ok
 
     @property
     def arc_coherent(self) -> bool:
@@ -263,8 +302,16 @@ def parse_surface_head(data, payload: int, end: int) -> SurfaceHead | None:
 
     The grid offset is *predicted* by the head, never searched for: the
     tag, both lane lengths, both strictly increasing lanes, the closing
-    bytes and a measured 152/154-byte tail must all agree.
+    bytes and a measured 152/154-byte tail must all agree.  The subtype
+    byte at ``+8`` selects the grammar.
     """
+    if payload + 9 > end:
+        return None
+    subtype = _u8(data, payload + 8)
+    if subtype == SUBTYPE_PATCH:
+        return parse_patch_head(data, payload, end)
+    if subtype != SUBTYPE_TWO_LANE:
+        return None
     if payload + 13 > end:
         return None
     if _u32le(data, payload) != HEAD_TAG:
@@ -317,14 +364,94 @@ def parse_surface_head(data, payload: int, end: int) -> SurfaceHead | None:
     return head
 
 
-def knot_vector(distinct) -> tuple[float, ...]:
-    """Clamped degree-5 knots with multiplicity-3 interior values."""
+def parse_patch_head(data, payload: int, end: int) -> SurfaceHead | None:
+    """Decode the subtype-4 patch head (``docs/evidence/2026-11-19-join-order-probe.md``).
+
+    ::
+
+        +0    u32 5                 record tag
+        +4    u32 n_u               u distinct-knot count
+        +8    u8  4                 subtype
+        +9    f64 knots_u[n_u]      strictly increasing (no mode field)
+              u8  1                 lane tag
+              u32 degree_v          the v direction's degree (1..5 measured)
+              u32 n_v               v distinct-knot count
+              u8  4                 subtype
+              f64 knots_v[n_v]      strictly increasing
+              u8  rational          1 = coordinates then weights
+              u8  x                  closing byte (measured 0)
+              u8  0                  closing byte
+
+    The u direction is degree 5 / multiplicity 3 exactly as in the
+    two-lane grammar, so ``poles_u = 3*n_u``.  The v direction is clamped
+    at the stored degree, so ``poles_v = (degree_v + 1) + 3*(n_v - 2)``.
+    The closing middle byte selects the 32-byte rational layout; the
+    frame must still close on a measured tail.
+    """
+    if payload + 22 > end:
+        return None
+    if _u32le(data, payload) != HEAD_TAG:
+        return None
+    n_u = _u32le(data, payload + 4)
+    if not MIN_LANE <= n_u <= MAX_LANE:
+        return None
+    lane_u = payload + 9
+    if lane_u + 8 * n_u + 14 > end:
+        return None
+    knots_u = tuple(_f64le(data, lane_u + 8 * i) for i in range(n_u))
+    if not _strictly_increasing(knots_u):
+        return None
+    second = lane_u + 8 * n_u
+    if _u8(data, second) != LANE_TAG:
+        return None
+    degree_v = _u32le(data, second + 1)
+    if not 1 <= degree_v <= MAX_PATCH_DEGREE:
+        return None
+    n_v = _u32le(data, second + 5)
+    if not MIN_LANE <= n_v <= MAX_LANE:
+        return None
+    if _u8(data, second + 9) != SUBTYPE_PATCH:
+        return None
+    lane_v = second + 10
+    if lane_v + 8 * n_v + len(CLOSING) > end:
+        return None
+    knots_v = tuple(_f64le(data, lane_v + 8 * i) for i in range(n_v))
+    if not _strictly_increasing(knots_v):
+        return None
+    close = lane_v + 8 * n_v
+    closing = bytes(data[close : close + len(CLOSING)])
+    if closing[0] != 0x01 or closing[2] != 0x00 or closing[1] not in (0x00, 0x01):
+        return None
+    head = SurfaceHead(
+        start=payload,
+        end=end,
+        n_u=n_u,
+        n_v=n_v,
+        knots_u=knots_u,
+        knots_v=knots_v,
+        mode_u=0,
+        mode_v=degree_v,
+        grid=close + len(CLOSING),
+        subtype=SUBTYPE_PATCH,
+        degree_u=DEGREE,
+        degree_v=degree_v,
+        rational=closing[1] == CLOSING_RATIONAL,
+    )
+    if head.poles_u < 2 or head.poles_v < 2:
+        return None
+    if head.tail not in SURFACE_TAILS:
+        return None
+    return head
+
+
+def knot_vector(distinct, degree: int = DEGREE) -> tuple[float, ...]:
+    """Clamped degree-``degree`` knots with multiplicity-3 interior values."""
     if len(distinct) < 2:
         raise ValueError("a knot lane needs at least two distinct values")
-    out = [distinct[0]] * (DEGREE + 1)
+    out = [distinct[0]] * (degree + 1)
     for value in distinct[1:-1]:
         out.extend([value] * MULTIPLICITY)
-    out.extend([distinct[-1]] * (DEGREE + 1))
+    out.extend([distinct[-1]] * (degree + 1))
     return tuple(out)
 
 
@@ -363,38 +490,84 @@ def evaluate(
     knots_v,
     u: float,
     v: float,
+    degree_u: int = DEGREE,
+    degree_v: int = DEGREE,
+    weights=None,
 ) -> tuple[float, float, float]:
-    """Evaluate the tensor-product surface at ``(u, v)``."""
+    """Evaluate the tensor-product surface at ``(u, v)``.
+
+    ``weights`` is ``None`` for a non-rational patch and a parallel matrix
+    for a rational one; the rational sum is divided by the total weight,
+    which is what makes the corner poles reproduce exactly either way.
+    """
     nu = len(poles)
     nv = len(poles[0])
-    bu = basis_values(u, knots_u, DEGREE, nu)
-    bv = basis_values(v, knots_v, DEGREE, nv)
+    bu = basis_values(u, knots_u, degree_u, nu)
+    bv = basis_values(v, knots_v, degree_v, nv)
+    if weights is None:
+        out = [0.0, 0.0, 0.0]
+        for i, wi in enumerate(bu):
+            if wi == 0.0:
+                continue
+            row = poles[i]
+            for j, wj in enumerate(bv):
+                weight = wi * wj
+                if weight == 0.0:
+                    continue
+                point = row[j]
+                out[0] += weight * point[0]
+                out[1] += weight * point[1]
+                out[2] += weight * point[2]
+        return (out[0], out[1], out[2])
     out = [0.0, 0.0, 0.0]
+    total = 0.0
     for i, wi in enumerate(bu):
         if wi == 0.0:
             continue
         row = poles[i]
+        wrow = weights[i]
         for j, wj in enumerate(bv):
             weight = wi * wj
             if weight == 0.0:
                 continue
+            value = weight * wrow[j]
             point = row[j]
-            out[0] += weight * point[0]
-            out[1] += weight * point[1]
-            out[2] += weight * point[2]
-    return (out[0], out[1], out[2])
+            out[0] += value * point[0]
+            out[1] += value * point[1]
+            out[2] += value * point[2]
+            total += value
+    if total == 0.0:
+        raise ZeroDivisionError("rational surface weight sum vanished")
+    return (out[0] / total, out[1] / total, out[2] / total)
 
 
-def pole_net(data, head: SurfaceHead) -> list[list[tuple[float, float, float]]]:
-    """The ``3*n_u x 3*n_v`` pole matrix the head predicts, row-major."""
+def pole_data(data, head: SurfaceHead):
+    """The pole matrix and (for rational heads) its parallel weight matrix.
+
+    Coordinates are row-major, ``poles_u`` rows of ``poles_v`` triples; a
+    rational record appends the ``points`` weights after the coordinates.
+    """
     nv = head.poles_v
-    return [
+    poles = [
         [
             struct.unpack_from("<3d", data, head.grid + 24 * (i * nv + j))
             for j in range(nv)
         ]
         for i in range(head.poles_u)
     ]
+    if not head.rational:
+        return poles, None
+    base = head.grid + 24 * head.points
+    weights = [
+        [_f64le(data, base + 8 * (i * nv + j)) for j in range(nv)]
+        for i in range(head.poles_u)
+    ]
+    return poles, weights
+
+
+def pole_net(data, head: SurfaceHead) -> list[list[tuple[float, float, float]]]:
+    """The ``poles_u x poles_v`` coordinate matrix the head predicts."""
+    return pole_data(data, head)[0]
 
 
 def _bbox(points) -> tuple[float, float, float, float, float, float]:
@@ -408,19 +581,32 @@ def _bbox(points) -> tuple[float, float, float, float, float, float]:
     )
 
 
+def _distance(a, b) -> float:
+    """Euclidean distance, verbatim ``sqrt(dx^2 + dy^2 + dz^2)``.
+
+    ``math.dist`` uses CPython's overflow-safe scaling and can differ in the
+    last bit from the port's expression; the PLY tolerance is derived from
+    this value, so the two implementations must share the plain form.
+    """
+    dx = a[0] - b[0]
+    dy = a[1] - b[1]
+    dz = a[2] - b[2]
+    return math.sqrt(dx * dx + dy * dy + dz * dz)
+
+
 def _diagonal(box) -> float:
-    return math.dist((box[0], box[2], box[4]), (box[1], box[3], box[5]))
+    return _distance((box[0], box[2], box[4]), (box[1], box[3], box[5]))
 
 
 def _pole_arc_polyline(poles, lo: int, hi: int) -> float:
     nv = len(poles[0])
     return sum(
-        sum(math.dist(poles[r][j], poles[r + 1][j]) for j in range(nv)) / nv
+        sum(_distance(poles[r][j], poles[r + 1][j]) for j in range(nv)) / nv
         for r in range(lo, hi)
     )
 
 
-def assess(head: SurfaceHead, poles) -> SurfaceAssessment:
+def assess(head: SurfaceHead, poles, weights=None) -> SurfaceAssessment:
     """Run the evaluable battery (the surface-head note's four checks)."""
     knots_u, knots_v = head.knots
     u0, u1 = head.knots_u[0], head.knots_u[-1]
@@ -429,19 +615,30 @@ def assess(head: SurfaceHead, poles) -> SurfaceAssessment:
     us = [u0 + (u1 - u0) * a / steps for a in range(steps + 1)]
     vs = [v0 + (v1 - v0) * b / steps for b in range(steps + 1)]
     grid = [
-        [evaluate(poles, knots_u, knots_v, u, v) for v in vs] for u in us
+        [
+            evaluate(
+                poles,
+                knots_u,
+                knots_v,
+                u,
+                v,
+                head.degree_u,
+                head.degree_v,
+                weights,
+            )
+            for v in vs
+        ]
+        for u in us
     ]
     box = _bbox([p for row in poles for p in row])
     diagonal = _diagonal(box) or 1.0
     corners = (
-        math.dist(grid[0][0], poles[0][0]),
-        math.dist(grid[-1][-1], poles[-1][-1]),
-        math.dist(grid[0][-1], poles[0][-1]),
-        math.dist(grid[-1][0], poles[-1][0]),
+        _distance(grid[0][0], poles[0][0]),
+        _distance(grid[-1][-1], poles[-1][-1]),
+        _distance(grid[0][-1], poles[0][-1]),
+        _distance(grid[-1][0], poles[-1][0]),
     )
-    finite = all(
-        math.isfinite(c) for row in grid for point in row for c in point
-    )
+    finite = all(math.isfinite(c) for row in grid for point in row for c in point)
     violations = sum(
         1
         for row in grid
@@ -467,9 +664,7 @@ def assess(head: SurfaceHead, poles) -> SurfaceAssessment:
     for (a, b), normal in normals.items():
         for neighbour in ((a, b + 1), (a + 1, b)):
             other = normals.get(neighbour)
-            if other is not None and sum(
-                normal[k] * other[k] for k in range(3)
-            ) < 0:
+            if other is not None and sum(normal[k] * other[k] for k in range(3)) < 0:
                 folds += 1
     arc = _pole_arc_polyline(poles, 0, len(poles) - 1)
     arc_ratio = (u1 - u0) / arc if arc > 0 else 0.0
@@ -480,25 +675,31 @@ def assess(head: SurfaceHead, poles) -> SurfaceAssessment:
         folds=folds,
         arc_ratio=arc_ratio,
         bbox=box,
+        scale_ok=max(abs(c) for c in box) <= head.scale_limit,
     )
 
 
 def _plausible(value: float) -> bool:
-    """The bulk decoder's model-coordinate band (zero is legitimate)."""
-    return math.isfinite(value) and (
-        value == 0.0 or NET_FLOOR <= abs(value) <= NET_CEIL
-    )
+    """A finite model coordinate inside the bulk probe's 1 km band.
+
+    There is no lower floor: a pole legitimately sits at ``0`` or ``1e-16``
+    where the patch crosses its own coordinate plane.  The upper band is
+    what rejects a predicted grid landing on non-numeric bytes (the
+    two-lane note's four coincidences decode to ~1e307).
+    """
+    return math.isfinite(value) and abs(value) <= NET_CEIL
 
 
 def plausible_net(poles) -> bool:
-    """Every pole is a finite model coordinate (the tail-closed gate).
-
-    A head can parse over a payload whose predicted grid lands on
-    non-numeric bytes; the bulk decoder rejects those records because
-    its f64 run is not a point net.  Keeping that gate here reproduces
-    the measured tail-closed population (63 head-decodable of 83).
-    """
+    """Every pole is a finite model coordinate (the tail-closed gate)."""
     return all(_plausible(c) for row in poles for point in row for c in point)
+
+
+def plausible_weights(weights) -> bool:
+    """A rational net's weights are finite and strictly positive."""
+    if weights is None:
+        return True
+    return all(math.isfinite(value) and value > 0.0 for row in weights for value in row)
 
 
 def _sample_axis(distinct, counts):
@@ -536,6 +737,7 @@ def _area2(a, b, c) -> float:
 def tessellate(
     head: SurfaceHead,
     poles,
+    weights=None,
     tolerance_factor: float = TOLERANCE_FRACTION,
 ) -> TessellatedPatch | None:
     """Tessellate one evaluable surface; ``None`` when no sane mesh exists.
@@ -560,7 +762,20 @@ def tessellate(
         if len(us) * len(vs) > MAX_GRID_POINTS:
             break
         grid = [
-            [evaluate(poles, knots_u, knots_v, u, v) for v in vs] for u in us
+            [
+                evaluate(
+                    poles,
+                    knots_u,
+                    knots_v,
+                    u,
+                    v,
+                    head.degree_u,
+                    head.degree_v,
+                    weights,
+                )
+                for v in vs
+            ]
+            for u in us
         ]
         best = (us, vs, grid)
         errors_u = [0.0] * len(counts_u)
@@ -580,8 +795,11 @@ def tessellate(
                     knots_v,
                     (us[i] + us[i + 1]) / 2.0,
                     (vs[j] + vs[j + 1]) / 2.0,
+                    head.degree_u,
+                    head.degree_v,
+                    weights,
                 )
-                deviation = math.dist(centre, middle)
+                deviation = _distance(centre, middle)
                 if deviation > errors_u[span_u[i]]:
                     errors_u[span_u[i]] = deviation
                 if deviation > errors_v[span_v[j]]:
@@ -652,16 +870,16 @@ def scan_part(data, tolerance_factor: float = TOLERANCE_FRACTION) -> SurfaceScan
         head = parse_surface_head(data, payload, end)
         if head is None:
             continue
-        poles = pole_net(data, head)
-        if not plausible_net(poles):
+        poles, weights = pole_data(data, head)
+        if not plausible_net(poles) or not plausible_weights(weights):
             continue
         decoded += 1
         points += head.points
-        if not assess(head, poles).evaluable:
+        if not assess(head, poles, weights).evaluable:
             refused += 1
             continue
         evaluable += 1
-        patch = tessellate(head, poles, tolerance_factor)
+        patch = tessellate(head, poles, weights, tolerance_factor)
         if patch is None:
             refused += 1
             continue
@@ -670,9 +888,7 @@ def scan_part(data, tolerance_factor: float = TOLERANCE_FRACTION) -> SurfaceScan
             manifold_patches += 1
         base = len(vertices)
         vertices.extend(patch.vertices)
-        triangles.extend(
-            (a + base, b + base, c + base) for a, b, c in patch.triangles
-        )
+        triangles.extend((a + base, b + base, c + base) for a, b, c in patch.triangles)
         tolerances.append(patch.tolerance)
         degenerate += patch.degenerate
     return SurfaceScan(

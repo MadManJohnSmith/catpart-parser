@@ -1,0 +1,25 @@
+claim,scope,observations,passes,rate,label,detail
+JO-01,58ed8b2875b2734a,395,395,1.0000,fact,frames=395 heads=395 subtypes={4: 395} unparsed=0 refused=1 prefix=no-prefix-allocation
+JO-02,58ed8b2875b2734a,0,0,,fact,no content-prefix allocation (bulk measure_region prefix=None); the allocation<->frame join law has no input on this part
+JO-03,58ed8b2875b2734a,394,394,1.0000,fact,"orders: row={True: 394, 'weights': 1} col={False: 369, 'weights': 1, True: 25} span={False: 390, True: 4, 'weights': 1}"
+JO-04,58ed8b2875b2734a,394,394,,fact,row-major battery: folds=0 corner_max=2.69e-16 arc_in_band=394/394 scale_ok=394/394
+JO-01,6c6a2e9f3d5f5303,639,639,1.0000,fact,frames=639 heads=639 subtypes={4: 639} unparsed=0 refused=3 prefix=no-prefix-allocation
+JO-02,6c6a2e9f3d5f5303,0,0,,fact,no content-prefix allocation (bulk measure_region prefix=None); the allocation<->frame join law has no input on this part
+JO-03,6c6a2e9f3d5f5303,636,636,1.0000,fact,"orders: row={True: 636, 'weights': 1} col={False: 611, 'weights': 1, True: 25} span={False: 632, True: 4, 'weights': 1}"
+JO-04,6c6a2e9f3d5f5303,636,636,,fact,row-major battery: folds=0 corner_max=2.69e-16 arc_in_band=636/636 scale_ok=636/636
+JO-01,8e8500b1c0627bcb,350,350,1.0000,fact,frames=350 heads=350 subtypes={4: 350} unparsed=0 refused=1 prefix=no-prefix-allocation
+JO-02,8e8500b1c0627bcb,0,0,,fact,no content-prefix allocation (bulk measure_region prefix=None); the allocation<->frame join law has no input on this part
+JO-03,8e8500b1c0627bcb,349,349,1.0000,fact,"orders: row={True: 349} col={False: 349} span={False: 339, True: 10}"
+JO-04,8e8500b1c0627bcb,349,349,,fact,row-major battery: folds=0 corner_max=2.68e-16 arc_in_band=349/349 scale_ok=349/349
+JO-01,b4fd22e357f83410,10,10,1.0000,fact,frames=10 heads=10 subtypes={4: 10} unparsed=0 refused=0 prefix=no-prefix-allocation
+JO-02,b4fd22e357f83410,0,0,,fact,no content-prefix allocation (bulk measure_region prefix=None); the allocation<->frame join law has no input on this part
+JO-03,b4fd22e357f83410,10,10,1.0000,fact,orders: row={True: 10} col={False: 10} span={False: 10}
+JO-04,b4fd22e357f83410,10,10,,fact,row-major battery: folds=0 corner_max=0.00e+00 arc_in_band=10/10 scale_ok=10/10
+JO-01,d523721f99b2dec9,2,2,1.0000,fact,frames=2 heads=2 subtypes={4: 2} unparsed=0 refused=0 prefix=no-prefix-allocation
+JO-02,d523721f99b2dec9,0,0,,fact,no content-prefix allocation (bulk measure_region prefix=None); the allocation<->frame join law has no input on this part
+JO-03,d523721f99b2dec9,2,2,1.0000,fact,orders: row={True: 2} col={False: 2} span={False: 2}
+JO-04,d523721f99b2dec9,2,2,,fact,row-major battery: folds=0 corner_max=2.05e-15 arc_in_band=2/2 scale_ok=2/2
+JO-05,population:parts:5,1396,1396,1.0000,fact,"the BLANK population carries 1396 marker frames, 1396 with a decodable head; subtypes={4: 1396}; unparsed=0"
+JO-06,population:orders:row,1391,1391,1.0000,fact,"layout wins: row=1391/1391 col=50/1391 span=18/1391 over 4179 scored layouts (a layout counts when the battery is usable: corner<=1e-9, folds=0, hull=0, model scale, arc in [0.5,2])"
+JO-07,population:frames,1391,1391,1.0000,fact,"decoded head law: grid = poles_u x poles_v from the stored lanes (patch: 3*n_u x ((degree_v+1)+3*(n_v-2))); row-major usable=1391/1391 folds=0 corner_max=2.05e-15 arc_range=(0.945,1.053)"
+JO-08,population:join,5,0,0.0000,fact,parts with a content-prefix allocation: none — the join law is not the blocker for the rest

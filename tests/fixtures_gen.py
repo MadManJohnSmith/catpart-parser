@@ -210,6 +210,12 @@ VALID_VARIANTS = (
     # with one a5 03 34 degree-5 C2 surface record and no facet store —
     # the export path tessellates it (surface-head/tessellation notes).
     "geometry-surface-bspline",
+    # Subtype-4 patch grammar (2026-11-19): a CATPrtCont block with one
+    # a5 03 34 patch record — u degree 5, a stored v degree, optional
+    # rational weights — and no facet store; the export path tessellates
+    # it (join-order probe note).
+    "geometry-surface-patch",
+    "geometry-surface-patch-rational",
     # Structured point-grid fallback (2026-11-19): a CATPrtCont block
     # with a chained ``e5 0d`` run whose record payload carries a
     # row-major 4x5 f64 point net and no facet store and no a5 frame —
@@ -392,6 +398,8 @@ GEOMETRY_VARIANTS = (
     "geometry-degenerate-cross",
     "geometry-second-store-exports",
     "geometry-surface-bspline",
+    "geometry-surface-patch",
+    "geometry-surface-patch-rational",
     "geometry-point-grid",
     "geometry-no-surface-points",
     "geometry-no-surface-curves",
@@ -2472,6 +2480,41 @@ def _surface_bspline_payload(degenerate: bool = False) -> bytes:
     return block + b"\x00" * 64 + frame
 
 
+def _surface_patch_payload(rational: bool = False) -> bytes:
+    """A CATPrtCont block carrying one subtype-4 patch record.
+
+    ``n_u = n_v = 2``, ``degree_v = 2``, so ``poles = 6 x 3``.  The u
+    knots are chord-length (the net sweeps 50 mm across 5 spans) and the
+    v lane spans the 16 mm column sweep.  The rational twin appends one
+    weight per pole after the coordinates.  Both close on the measured
+    152-byte tail; the block is the surface fixture's block with the
+    patch frame in place of the two-lane one.
+    """
+    knots_u = (0.0, 50.0)
+    knots_v = (0.0, 16.0)
+    degree_v = 2
+    head = struct.pack("<II", 5, len(knots_u)) + bytes([4])
+    head += b"".join(struct.pack("<d", value) for value in knots_u)
+    head += b"\x01"
+    head += struct.pack("<II", degree_v, len(knots_v)) + bytes([4])
+    head += b"".join(struct.pack("<d", value) for value in knots_v)
+    head += bytes([0x01, 0x01 if rational else 0x00, 0x00])
+    poles_u = 3 * len(knots_u)
+    poles_v = (degree_v + 1) + 3 * (len(knots_v) - 2)
+    poles = b"".join(
+        struct.pack("<3d", 10.0 * i, 8.0 * j, 0.02 * i * i)
+        for i in range(poles_u)
+        for j in range(poles_v)
+    )
+    weights = b"".join(
+        struct.pack("<d", 1.0) for _ in range(poles_u * poles_v)
+    ) if rational else b""
+    payload = head + poles + weights + bytes(152)
+    frame = b"\xa5\x03\x34" + struct.pack("<I", len(payload)) + b"\x0f" + payload
+    block = storage_property_block(b"CATPrtCont", b"CATContainer")
+    return block + b"\x00" * 64 + frame
+
+
 def _point_grid_points(rows: int = 4, stalled: bool = False):
     """A row-major net: rows advance x/z, columns advance y."""
     points = []
@@ -2597,6 +2640,10 @@ def _geometry_payload(variant: str) -> bytes:
     (the next_block_store family)."""
     if variant == "geometry-surface-bspline":
         return _surface_bspline_payload()
+    if variant == "geometry-surface-patch":
+        return _surface_patch_payload()
+    if variant == "geometry-surface-patch-rational":
+        return _surface_patch_payload(rational=True)
     if variant == "geometry-surface-no-evaluable":
         return _surface_bspline_payload(degenerate=True)
     if variant == "geometry-point-grid":

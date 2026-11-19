@@ -1,3 +1,8 @@
+> **Superseded in part (2026-11-19, later the same day).** The "plane subtype" (`SH-09`)
+> is the subtype-4 patch grammar, now decoded: `docs/evidence/2026-11-19-join-order-probe.md`.
+> Its grid is `3*n_u x ((degree_v+1)+3*(n_v-2))`, with a rational flag; the 20 plane
+> frames of `80aad8d8` evaluate and tessellate. The two-lane laws in this note stand.
+
 # Evidence: the `a5 03 34` surface head — knot lanes and the degree-5 pole net (2026-11-19)
 
 **Date**: 2026-11-19
