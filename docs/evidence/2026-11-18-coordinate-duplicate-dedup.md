@@ -1,9 +1,10 @@
 # Composite exporter: coordinate-identity duplicate-triangle dedup (#34)
 
 Date: 2026-11-18
-Base: `de6fd39` (main)
+Base: `ac70db8` (main; the salvage branch forked at `de6fd39`)
 Status: **implemented (Python + Rust, port-parity verified), full-corpus
-A/B clean (0 pass→fail, 0 manifold regressions, 0 surface changes).**
+A/B clean (0 pass→fail, 0 manifold regressions, 0 surface changes),
+gate green.**
 
 Claims: `docs/evidence/data/br6-coord-dedup-claims.csv`
 A/B data: `docs/evidence/data/coord-duplicate-dedup-ab.csv` (one row per
@@ -35,8 +36,9 @@ declining here:
 | double-listed area | 4,124.153053 mm² = 25.81% |
 
 The 67 index duplicates are the same-rep re-listing the law was written
-for; removing them alone leaves **125 over-edges** (the law's measured
-decline). The other 451 copies are invisible to an index key: the
+for; removing them alone (2,266 → 2,199 triangles) still leaves
+**138 over-edges** — the index law's measured decline. The other 451
+copies are invisible to an index key: the
 per-rep decomposition keeps each rep's element space disjoint by
 construction, so a rep that re-lists an earlier rep's facet writes
 *different* indices for it.
@@ -51,9 +53,11 @@ Per index space (the exported reps):
 | 3 | 386 | 746 | 7,737.1896 | 451 of them re-list space 0 |
 
 Rep 0's 27 curve-entry loops weld into 933 triangles (the stage-10
-dup-pin law). **451 of those welded triangles are coordinate-identical
-to a triangle rep 3 lists** — independent evidence that the weld
-reconstructs the real surface, and that rep 3 is the re-listing.
+dup-pin law). **329 of those welded triangles — plus 55 of rep 0's
+primary triangles — are coordinate-identical to a triangle rep 3
+lists** (384 facets, 451 re-listed copies: 317 facets twice, 67 three
+times). Independent evidence that the weld reconstructs the real
+surface, and that rep 3 is the re-listing.
 
 ## 2. The law: COORDINATE identity, area-preserving by construction
 
@@ -106,14 +110,14 @@ key = tuple(sorted((points[i] for i in tri)))   # was: tuple(sorted(tri))
 | over-edges | 212 | 0 |
 | boundary edges | 895 | 1,077 (open shell, legitimate) |
 | listed area mm² | 15,976.412271 | 11,852.259218 |
-| unique-facet area mm² | 11,852.259219 | 11,852.259219 |
+| unique-facet area mm² | 11,852.259218 | 11,852.259218 |
 | L2 | fail `not-manifold` | **pass** |
 | dedup outcome | declined 67 | dropped 451 |
 
 The listed area falls by exactly the double-listed 4,124.153053 mm²;
 the geometric surface is unchanged (the unique-facet area moves only in
 the 12th decimal: 11,852.25921825685 → 11,852.259218256844, i.e.
-3.3e-11 mm², f64 summation order). After the drop the listed area *is*
+6e-12 mm², f64 summation order). After the drop the listed area *is*
 the unique-facet area — one copy of every facet. Warnings:
 `duplicate-triangles-deduped` replaces
 `duplicate-triangles-dedup-declined`; `primary-loop-manifold-declined`
@@ -159,9 +163,12 @@ Dedup outcomes over the corpus after the change (5 parts):
   collapsed, the twin's float equality; rank via
   `partition_point` on the space offsets; same fire gate), and
   `decode_composite_store` applies it once to the chosen emission. On
-  `545707b9`, `b912cbef` and the new fixture, Python and
-  `fidelity-cli export` produce **parsed-equal summaries and
-  byte-identical PLY** (`test_coordinate_dedup_case_and_port_parity`).
+  `545707b9` and `b912cbef`, Python and `fidelity-cli export` produce
+  **parsed-equal summaries and byte-identical PLY**
+  (`test_coordinate_dedup_case_and_port_parity`); the new fixture is
+  compared by the Fidelity harness's stage-3 composite export matrix.
+  The shipped `port/pkg` / `site/viewer/pkg` wasm is byte-identical to
+  a fresh `wasm-pack build` of this source (sha256 `97bf10a2…`).
 - **Fixture** `geometry-composite-law-dedup-coord-relist`
   (`tests/fixtures_gen.py`): rep 1 re-lists rep 0's box at the same
   coordinates (its own pool group and element space, no index triple

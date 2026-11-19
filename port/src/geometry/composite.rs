@@ -3846,16 +3846,25 @@ mod tests {
         // Same list, one index space (no offsets): the list-order copy
         // wins, so the fin's edge keeps three uses and the dedup
         // DECLINES (fail-closed — the emitted list is kept verbatim).
-        let mut info2 = CompositeInfo {
-            unordered_dedup_dropped: None,
-            ..info
-        };
+        let mut info2 = info.clone();
         info2.unordered_dedup_dropped = None;
+        info2.unordered_dedup_declined = None;
         let tris2 = vec![(3u32, 4u32, 5u32), (3, 6, 4), (3, 7, 4), (0, 1, 2)];
         let kept2 = apply_unordered_dedup(tris2, &mut info2, &pts, &[]);
         assert_eq!(info2.unordered_dedup_dropped, None);
         assert_eq!(info2.unordered_dedup_declined, Some(1));
         assert_eq!(kept2.len(), 4);
+        // A manifold two-sided sheet is never touched, even though its
+        // two triangles are coordinate twins (the zero-regression
+        // direction: the fire gate's pre-condition is not-manifold).
+        let mut info3 = info.clone();
+        info3.unordered_dedup_dropped = None;
+        info3.unordered_dedup_declined = None;
+        let sheet = vec![(0u32, 1u32, 2u32), (3, 5, 4)];
+        let kept3 = apply_unordered_dedup(sheet, &mut info3, &pts, &[0, 3]);
+        assert_eq!(kept3, vec![(0, 1, 2), (3, 5, 4)]);
+        assert_eq!(info3.unordered_dedup_dropped, None);
+        assert_eq!(info3.unordered_dedup_declined, None);
     }
 
     /// The §2.3 curve exposure: a dropped loop's pre-weld sequence is

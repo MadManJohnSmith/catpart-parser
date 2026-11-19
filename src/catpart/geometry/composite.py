@@ -1375,7 +1375,6 @@ def decode_composite_store(
     unsupported and is not implemented.
 
     Stage-15 unordered-triangle dedup law (2026-11-13, #34; the
-    Stage-15 unordered-triangle dedup law (2026-11-13, #34; the
     stage-14 review F1 family, owner-authorized; COORDINATE identity
     added 2026-11-18): a store whose ASSEMBLED MESH (the emission it
     actually exports, after the primary seam's decision) is NOT
