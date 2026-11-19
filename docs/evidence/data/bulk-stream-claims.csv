@@ -1,0 +1,31 @@
+claim,scope,observations,passes,rate,label,detail
+BS-01,80aad8d8,1,1,,fact,"CATPrtCont abs=[1565029, 3707055) bytes=2142026 content_start=1565869 (block+840)"
+BS-02,80aad8d8,3,1,1.0000,fact,metadata table block+644 total_size=196 count=3 ends block+840 names=\x03CATPropertySets\x00;\x03CATStorageProperty\x00;Cont_50f58d0d_1ae0_63f47193_33d25\x00
+BS-03,80aad8d8,756,1,,fact,"content prefix allocation at abs=1565869 (block+840): points=756 rows=36 cols=21 axis=x spread=0.0001 monotone=1 mean_closure=2347.526 aabb=(4230.600,8946.979,-1067.150,1312.302,-174.813,1113.647)"
+BS-04,80aad8d8,26248,8,0.9203,fact,frame walk: clusters=8 records=26248 framed=1970597 content=2141186 residue=170589 coverage=0.9203
+BS-19,80aad8d8,0,1,7.27,fact,entropy bits/byte over 4 KiB windows: min=3.32 median=7.27 max=7.61 windows>7.9=0; framed_mean=6.99 gap_mean=7.06
+BS-18,80aad8d8,2110270,1,0.9856,fact,accounted = frames 1970597 + f64 allocations 139673 = 2110270 of content 2141186 (0.9856); left out: text allocation(s) and the footer
+BS-05,80aad8d8,9,7,0.7778,fact,"residue gaps=18144,18772,26136,22397,858,40392,12974,2018,28898; f64-covered=7"
+BS-06,80aad8d8,66,46,0.6970,fact,a5 03 34 marker frames=70 tail-closed grids=66 pole_points=41820
+BS-07,80aad8d8,66,1,,fact,"pole point counts=756,12,12,12,12,12,756,819,819,819,756,432 min=12 median=819 max=1683"
+BS-08,80aad8d8,1,1,,fact,"first surface frame abs=1584389 (block+19360) payload abs=1584397 grid abs=1584579 grid block+19550 tail=152 payload_len=18478; points=756 rows=36 cols=21 axis=x spread=0.0001 monotone=1 mean_closure=2347.526 aabb=(4230.600,8946.979,-1067.150,1312.302,-174.813,1113.647)"
+BS-09,80aad8d8,756,1,,fact,prefix grid vs first surface grid: surface abs=1584579 identical=1
+BS-01,d7ed0772,1,1,,fact,"CATPrtCont abs=[372003, 1754228) bytes=1382225 content_start=372843 (block+840)"
+BS-02,d7ed0772,3,1,1.0000,fact,metadata table block+644 total_size=196 count=3 ends block+840 names=\x03CATPropertySets\x00;\x03CATStorageProperty\x00;Cont_50f58d0d_1ae0_63f46929_32051\x00
+BS-03,d7ed0772,2268,0,,fact,"content prefix allocation at abs=372843 (block+840): points=2268 rows=108 cols=21 axis=x spread=0.0093 monotone=0 mean_closure=131394.147 aabb=(-993043.173,403004.998,-279082.861,982609.574,-363635.823,337933.463)"
+BS-04,d7ed0772,2959,7,0.9115,fact,frame walk: clusters=7 records=2959 framed=1259155 content=1381385 residue=122230 coverage=0.9115
+BS-19,d7ed0772,0,1,7.42,fact,entropy bits/byte over 4 KiB windows: min=4.36 median=7.42 max=7.64 windows>7.9=0; framed_mean=7.56 gap_mean=7.23
+BS-18,d7ed0772,1348695,1,0.9763,fact,accounted = frames 1259155 + f64 allocations 89540 = 1348695 of content 1381385 (0.9763); left out: text allocation(s) and the footer
+BS-05,d7ed0772,8,4,0.5000,fact,"residue gaps=58904,66,10368,19232,8424,6132,5272,13832; f64-covered=4"
+BS-06,d7ed0772,17,15,0.8824,fact,a5 03 34 marker frames=36 tail-closed grids=17 pole_points=18468
+BS-07,d7ed0772,17,1,,fact,"pole point counts=1089,1089,1089,1008,1008,1089,1089,1089,1089,1089,1008,1440 min=756 median=1089 max=1683"
+BS-08,d7ed0772,1,1,,fact,"first surface frame abs=471420 (block+99417) payload abs=471428 grid abs=471634 grid block+99631 tail=154 payload_len=26496; points=1089 rows=33 cols=33 axis=x spread=0.0060 monotone=1 mean_closure=438.652 aabb=(4880.132,9948.901,604.284,1349.125,12.172,356.575)"
+BS-09,d7ed0772,2268,0,,fact,prefix grid vs first surface grid: no surface grid with the same point count
+BS-10,population:128,128,128,1.0000,fact,bulk bytes=10950647 content=10861978 metadata tables=128/128
+BS-11,population:128,67564,33,0.4312,fact,clusters=33 records=67564 framed=4683142 content=10861978 coverage=0.4312 accounted=4912355 mean_entropy=4.50 files_with_window_above_7.9=0 accounted_rate=0.4523 files_with_no_frame=109
+BS-12,population:128,83,83,1.0000,fact,a5 03 34 marker frames=106 tail-closed grids=83 files=2 pole_points=60288
+BS-13,population:128,6,4282,,fact,"content-prefix nets in 6/128 regions, points=4282"
+BS-14,population:128,160,11,0.0688,fact,residue gaps=160 f64-covered=11 residue_bytes=6178836
+BS-15,control:3,3,0,0.0000,fact,facet carriers: bytes=48953 framed=0 records=0 surfaces=0 points=0
+BS-16,population:128,128,19,0.1484,fact,content dialect by head: E5=103 f64-net=4 object-stream=19 other=2
+BS-17,population:object-stream:19,67564,19,0.9393,fact,object-stream dialect only: files=19 content=4985817 framed=4683142 residue=302675 coverage=0.9393 accounted=4912355 surfaces=83 pole_points=60288
