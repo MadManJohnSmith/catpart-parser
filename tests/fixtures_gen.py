@@ -1772,14 +1772,16 @@ def _unrouted_elementspace_store(variant: str) -> bytes:
 def _composite_multi_rep_store(variant: str) -> bytes:
     """A two-rep composite store (stage-4b per-rep law, #34).
 
-    Rep k = (the k-th ``01 06`` pool group, the k-th token-bearing list
-    node, the facet records in that node's territory).  Rep 0 is the
-    12-point box; rep 1 the same box translated +200 in x with its own
-    pool group and its own node — each pool re-lists verbatim in
-    exactly its own rep's region (the body-order diagonal).  The
-    stage-3d single-rep reading fails the absorption gate here (the
-    pool concatenates BOTH groups, rep 0's region re-lists only its
-    own); the per-rep reading exports both reps' geometry merged.
+    Rep k = (the token-bearing list node, that node's records, the
+    ``01 06`` pool group whose wrapper FOLLOWS the node) — the measured
+    corpus order (2026-11-18, #50 B3: 154/154 absorbing pairs have the
+    pool after their node; 0/24 have it before).  Rep 0 is the 12-point
+    box; rep 1 the same box translated +200 in x with its own pool
+    group and its own node — each pool re-lists verbatim in exactly its
+    own rep's region.  The stage-3d single-rep reading fails the
+    absorption gate here (the pool concatenates BOTH groups, rep 0's
+    region re-lists only its own); the per-rep reading exports both
+    reps' geometry merged.
 
     ``geometry-composite-law-multi-rep-partial`` adds a 9th vertex to
     rep 1's pool group that no region re-lists: rep 1 stays unexported
@@ -1851,33 +1853,39 @@ def _composite_multi_rep_store(variant: str) -> bytes:
         elements1 = _composite_elements(pts1)
         rep1_records = COMPOSITE_FACES
     body_parts = [
+        b"\x04\x04\xfd\xff" + _composite_node_payload(elements0),
+    ]
+    for marker, normal, refs in rep0_records:
+        body_parts.append(_facet_record(marker, normal, refs, width=1))
+    body_parts.append(
         NESTED_FULL_WRAP
         + NESTED_POOL_SUBKIND
         + bytes([len(pool0)])
         + b"".join(
             NESTED_VREC + struct.pack("<fff", *v) for v in pool0
-        ),
+        )
+    )
+    body_parts.append(b"\x04\x04\xfd\xff" + _composite_node_payload(elements1))
+    for marker, normal, refs in rep1_records:
+        body_parts.append(_facet_record(marker, normal, refs, width=1))
+    body_parts.append(
         NESTED_FULL_WRAP
         + NESTED_POOL_SUBKIND
         + bytes([len(pool1)])
         + b"".join(
             NESTED_VREC + struct.pack("<fff", *v) for v in pool1
-        ),
-        # the edge group: the box's 12 edges over rep 0's element
-        # indices (decorative; edge tables do not triangulate)
+        )
+    )
+    # the edge group: the box's 12 edges over rep 0's element indices
+    # (decorative; edge tables do not triangulate)
+    body_parts.append(
         NESTED_FULL_WRAP
         + NESTED_EDGE_SUBKIND
         + bytes([12])
         + b"".join(
             b"\x02\x02" + struct.pack(">BB", a, b) for a, b in COMPOSITE_EDGES
-        ),
-        b"\x04\x04\xfd\xff" + _composite_node_payload(elements0),
-    ]
-    for marker, normal, refs in rep0_records:
-        body_parts.append(_facet_record(marker, normal, refs, width=1))
-    body_parts.append(b"\x04\x04\xfd\xff" + _composite_node_payload(elements1))
-    for marker, normal, refs in rep1_records:
-        body_parts.append(_facet_record(marker, normal, refs, width=1))
+        )
+    )
     body = b"".join(body_parts)
 
     catalog_len = NESTED_CATALOG_LEN
@@ -2024,23 +2032,27 @@ def _composite_raw_store(variant: str) -> bytes:
                 nz = NEAR_ZERO_A if i % 2 == 0 else NEAR_ZERO_B
                 points[i] = (x, nz, z)
     node_payload = _composite_raw_node_payload(points, escape=escape)
-    body_parts = [
+    # Node-first, pool-after (the measured order, 2026-11-18 #50 B3:
+    # the pool wrapper follows its rep's list node).  The records sit in
+    # the node's territory, the pool/edges decoratively behind them — the
+    # shape the per-rep pairing reads.
+    body_parts = [b"\x04\x04\xfd\xff" + node_payload]
+    for marker, normal, refs in COMPOSITE_FACES:
+        body_parts.append(_facet_record(marker, normal, refs, width=1))
+    body_parts.append(
         NESTED_FULL_WRAP
         + NESTED_POOL_SUBKIND
         + bytes([len(pool_walk)])
-        + b"".join(
-            NESTED_VREC + struct.pack("<fff", *v) for v in pool_walk
-        ),
+        + b"".join(NESTED_VREC + struct.pack("<fff", *v) for v in pool_walk)
+    )
+    body_parts.append(
         NESTED_FULL_WRAP
         + NESTED_EDGE_SUBKIND
         + bytes([12])
         + b"".join(
             b"\x02\x02" + struct.pack(">BB", a, b) for a, b in COMPOSITE_EDGES
-        ),
-        b"\x04\x04\xfd\xff" + node_payload,
-    ]
-    for marker, normal, refs in COMPOSITE_FACES:
-        body_parts.append(_facet_record(marker, normal, refs, width=1))
+        )
+    )
     body = b"".join(body_parts)
 
     catalog_len = NESTED_CATALOG_LEN
@@ -2080,32 +2092,36 @@ def _composite_mixedwrite_multi_rep_store(variant: str) -> bytes:
     pool1 = tuple((x + 200.0, y, z) for x, y, z in COMPOSITE_POOL_WALK)
     if variant == "geometry-composite-law-mixedwrite-multi-rep-subnode":
         pool1 = pool1 + ((999.5, 10.0, 0.0),)
-    body_parts = [
+    body_parts = [b"\x04\x04\xfd\xff" + _composite_raw_node_payload(pts0)]
+    for marker, normal, refs in COMPOSITE_FACES:
+        body_parts.append(_facet_record(marker, normal, refs, width=1))
+    body_parts.append(
         NESTED_FULL_WRAP
         + NESTED_POOL_SUBKIND
         + bytes([len(pool0)])
         + b"".join(
             NESTED_VREC + struct.pack("<fff", *v) for v in pool0
-        ),
+        )
+    )
+    body_parts.append(b"\x04\x04\xfd\xff" + _composite_raw_node_payload(pts1))
+    for marker, normal, refs in COMPOSITE_FACES:
+        body_parts.append(_facet_record(marker, normal, refs, width=1))
+    body_parts.append(
         NESTED_FULL_WRAP
         + NESTED_POOL_SUBKIND
         + bytes([len(pool1)])
         + b"".join(
             NESTED_VREC + struct.pack("<fff", *v) for v in pool1
-        ),
+        )
+    )
+    body_parts.append(
         NESTED_FULL_WRAP
         + NESTED_EDGE_SUBKIND
         + bytes([12])
         + b"".join(
             b"\x02\x02" + struct.pack(">BB", a, b) for a, b in COMPOSITE_EDGES
-        ),
-        b"\x04\x04\xfd\xff" + _composite_raw_node_payload(pts0),
-    ]
-    for marker, normal, refs in COMPOSITE_FACES:
-        body_parts.append(_facet_record(marker, normal, refs, width=1))
-    body_parts.append(b"\x04\x04\xfd\xff" + _composite_raw_node_payload(pts1))
-    for marker, normal, refs in COMPOSITE_FACES:
-        body_parts.append(_facet_record(marker, normal, refs, width=1))
+        )
+    )
     body = b"".join(body_parts)
 
     catalog_len = NESTED_CATALOG_LEN
@@ -2150,23 +2166,26 @@ def _composite_table_overshoot_store() -> bytes:
     corner_points = tuple(points[i] for i in corner_idx)
     elements = _composite_elements(points)
     node_payload = _composite_node_payload(elements)
-    body_parts = [
+    body_parts = [b"\x04\x04\xfd\xff" + node_payload]
+    for marker, normal, refs in COMPOSITE_FACES:
+        body_parts.append(_facet_record(marker, normal, refs, width=1))
+    # Node-first, pool-after (the measured order, 2026-11-18 #50 B3).
+    body_parts.append(
         NESTED_FULL_WRAP
         + NESTED_POOL_SUBKIND
         + bytes([len(corner_points)])
         + b"".join(
             NESTED_VREC + struct.pack("<fff", *v) for v in corner_points
-        ),
+        )
+    )
+    body_parts.append(
         NESTED_FULL_WRAP
         + NESTED_EDGE_SUBKIND
         + bytes([12])
         + b"".join(
             b"\x02\x02" + struct.pack(">BB", a, b) for a, b in COMPOSITE_EDGES
-        ),
-        b"\x04\x04\xfd\xff" + node_payload,
-    ]
-    for marker, normal, refs in COMPOSITE_FACES:
-        body_parts.append(_facet_record(marker, normal, refs, width=1))
+        )
+    )
     body = b"".join(body_parts)
 
     catalog_len = NESTED_CATALOG_LEN
