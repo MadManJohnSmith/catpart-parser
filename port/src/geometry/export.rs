@@ -735,10 +735,13 @@ fn unrouted_element_space(
 /// assembled mesh manifold) exports and surfaces as
 /// ``curve-entry-loops-exported-dup-pin``; refused loops stay counted
 /// as unexported. A not-manifold
-/// assembled mesh whose duplicate unordered index triples resolve it
-/// drops the later copies (``duplicate-triangles-deduped``; the
-/// stage-15 law, review F1 family) — a store whose duplicates do not
-/// resolve the over-use keeps its emitted triangles and surfaces
+/// assembled mesh whose duplicate unordered triples — the same three
+/// vertex POSITIONS, whether a same-rep re-listing or a later rep
+/// re-listing an earlier rep's facet across the disjoint element
+/// spaces (2026-11-18) — resolve it drops the later copies
+/// (``duplicate-triangles-deduped``; the stage-15 law, review F1
+/// family) — a store whose duplicates do not resolve the over-use
+/// keeps its emitted triangles and surfaces
 /// ``duplicate-triangles-dedup-declined`` (stage 3).
 fn export_composite_store(
     data: &[u8],
@@ -758,6 +761,9 @@ fn export_composite_store(
         // (additive, NOT part of the Fidelity definition — §3.2). It
         // travels on ExportOutcome for the boundary only.
         curves,
+        // The dedup's internal keeper rank, already consumed by the
+        // decode entry: never part of the export surface.
+        space_offsets: _,
     } = composite::decode_composite_store(data, span, groups, kinds, allow_unrouted_elements)?;
     let stats = mesh::mesh_stats(&triangles);
     let mut warnings: Vec<Warning> = Vec::new();
@@ -870,13 +876,17 @@ fn export_composite_store(
             detail: format!(
                 "{dropped} duplicate \
                  triangles dropped under the unordered-triangle dedup \
-                 law (#34, stage-15 2026-11-13, review F1 family): the \
-                 same three element indices re-written from a second \
-                 record/loop (opposite winding — the writer re-listed \
-                 the facet; territory overlap 0); the emitted mesh was \
-                 not-manifold and the deduplicated mesh is manifold, \
-                 so the later copies dropped (first occurrence's \
-                 winding kept; degenerate skips untouched)"
+                 law (#34, stage-15 2026-11-13, review F1 family; \
+                 COORDINATE identity 2026-11-18): the same three vertex \
+                 POSITIONS re-written from a second record/loop or by a \
+                 later rep re-listing an earlier rep's facet (opposite \
+                 winding or a disjoint index space — the writer \
+                 re-listed the facet; territory overlap 0); the emitted \
+                 mesh was not-manifold and the deduplicated mesh is \
+                 manifold, so the later copies dropped (the earliest \
+                 emission unit's copy kept; the drop is area-preserving \
+                 by construction — identical coordinates, identical \
+                 area; degenerate skips untouched)"
             ),
         });
     }
