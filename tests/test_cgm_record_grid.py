@@ -90,6 +90,32 @@ def test_idrun_terminator_is_required() -> None:
     assert probe._idrun(bytes(blob), 0, len(blob), 32) is None
 
 
+def test_id_range_guard_refuses_a_u16_count_over_payload_bytes() -> None:
+    """A shifted u16 count that lands on a chance ``00 00`` is not a record.
+
+    The frame is otherwise valid (count + terminator agree), so only the
+    id-range value law refuses it; without that law the bytes would be
+    framed as one record of "ids" that are payload.
+    """
+    blob = (
+        bytes([1, 0, 4, 0])
+        + u32le(9)
+        + bytes([0])
+        + u16le(3)
+        + u32le(0x20000001, 0x10000002, 0x40000003)
+        + b"\x00\x00"
+    )
+    assert len(blob) == 25
+    assert probe.parse_record(blob, 0, len(blob)) is not None
+    assert probe.parse_record(blob, 0, len(blob), probe.BR5_MAX_ID) is None
+
+
+def test_id_range_guard_keeps_a_legitimate_u16_record() -> None:
+    blob = idrun(9, 11, [3, 4, 5], width=16)
+    rec = probe.parse_record(blob, 0, len(blob), probe.BR5_MAX_ID)
+    assert rec is not None and rec.ids == (3, 4, 5)
+
+
 @pytest.mark.parametrize("flag", [0, 1, 2])
 def test_companion_length_law(flag: int) -> None:
     blob = companion(
@@ -182,3 +208,103 @@ def test_framed_scan_covers_only_the_record_bodies() -> None:
     assert tiling.residue == len(junk)
     framed = probe.framed_scan(data, tiling)
     assert framed.f64_guarded == 0
+
+
+def test_numeric_scan_retains_the_guarded_triples_for_accounting() -> None:
+    coords = f64le(12.5, -3.25, 7.0)
+    scan = probe.numeric_scan(coords, 0, len(coords))
+    assert scan.f64_guarded == len(scan.f64_values) == 1
+    assert scan.f64_values == ((12.5, -3.25, 7.0),)
+
+
+def test_residue_cadence_measures_the_refused_stream() -> None:
+    preamble = bytes(4)
+    record = idrun(2, 1, [1, 2])
+    junk = b"\x01\x00\x04\x00" + bytes(34) + b"\x01\x00\x04\x00" + bytes(34)
+    data = part(preamble, record, record, junk)
+    tiling = probe.walk(data, 0, len(data))
+    assert not tiling.exact
+    markers, top = probe.residue_cadence(data, tiling)
+    assert markers == 2
+    assert top[0] == (38, 1)
+
+
+def test_split_facet_carriers_follows_strip_records(tmp_path: Path) -> None:
+    census = tmp_path / "census.csv"
+    census.write_text(
+        "sha256,family,strip_records\n"
+        "aaaa,no-pool,0\n"
+        "bbbb,no-pool,\n"
+        "cccc,no-pool,8\n"
+        "dddd,stdcont,16\n",
+        encoding="utf-8",
+    )
+    rows = probe._census_rows(census, "no-pool")
+    primary, carriers = probe.split_facet_carriers(rows)
+    assert primary == ["aaaa", "bbbb"]
+    assert carriers == ["cccc"]
+
+
+def _measurement(**overrides) -> dict:
+    base = {
+        "sha16": "00000000",
+        "bytes": 100,
+        "preamble": 10,
+        "framed": 40,
+        "residue": 50,
+        "exact": False,
+        "coverage": 0.4,
+        "records": 2,
+        "f64_raw": 0,
+        "f64_guarded": 0,
+        "f32_raw": 0,
+        "f32_guarded": 0,
+        "knot_runs": 0,
+        "weight_runs": 0,
+        "f32_region_values": (),
+        "framed_f64_raw": 0,
+        "framed_f64_guarded": 0,
+        "framed_f32_raw": 0,
+        "framed_f32_guarded": 0,
+        "framed_knot_runs": 0,
+        "framed_weight_runs": 0,
+        "f32_framed_values": (),
+    }
+    base.update(overrides)
+    return base
+
+
+def test_population_claims_separate_the_128_from_the_control() -> None:
+    primary = [_measurement(), _measurement(sha16="11111111", bytes=200, residue=100)]
+    carriers = [_measurement(sha16="cccccccc", bytes=50, framed=0, residue=50, records=0)]
+    rows = {row[0]: row for row in probe.per_file_claims(primary, carriers, primary, carriers)}
+    assert rows["CG-08"][1] == "population:2"
+    assert rows["CG-08b"][1] == "population:3"
+    assert "bytes=300" in rows["CG-08"][6]
+    assert "bytes=350" in rows["CG-08b"][6]
+    assert rows["CG-08c"][1] == "population:1"
+    assert "residue=150" in rows["CG-08"][6]
+    assert rows["CG-08d"][1] == "population:2:unguarded"
+    assert rows["CG-08e"][1] == "population:3:unguarded"
+
+
+def test_footprint_row_prices_what_the_guard_refuses() -> None:
+    guarded = [_measurement(framed=40), _measurement(sha16="11111111", framed=0, records=0)]
+    upper = [_measurement(framed=120), _measurement(sha16="11111111", framed=80, records=1)]
+    footprint = {
+        "files": 2,
+        "swallowed": 160,
+        "by_family": {"idrun16": 1, "idrun32": 1},
+        "longest": 80,
+        "exact_guarded": 0,
+        "exact_unguarded": 1,
+        "nogrid_guarded": 1,
+        "nogrid_unguarded": 0,
+    }
+    row = probe._footprint_row(guarded, upper, footprint)
+    assert row[0] == "CG-16"
+    assert "framed_delta=160" in row[6]
+    assert "swallowed=160" in row[6]
+    assert "idrun16=1 idrun32=1" in row[6]
+    assert "nogrid guarded=1 unguarded=0" in row[6]
+
