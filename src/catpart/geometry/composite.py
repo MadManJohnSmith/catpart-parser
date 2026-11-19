@@ -219,6 +219,7 @@ node.  There is no guessing.
 
 from __future__ import annotations
 
+import bisect
 import dataclasses
 import math
 import struct
@@ -1195,6 +1196,32 @@ def _triangulate(elements, records, extended=(), seam_area=None):
 # mesh counts the extra use, and the corpus stores' over-edges resolve
 # when the later copy is dropped.
 #
+# The identity is COORDINATE identity (2026-11-18, #34): two triangles
+# are the same facet when their three VERTEX POSITIONS are identical as
+# an unordered triple.  An index triple is only a same-rep spelling —
+# the per-rep decomposition keeps each rep's element space disjoint, so
+# a rep that re-lists an earlier rep's facet necessarily writes
+# DIFFERENT indices for it, and an index-keyed pass cannot see that
+# copy at all (545707b9: 67 index duplicates in one rep plus 451
+# coordinate duplicates re-listed by a later rep — the index pass
+# declines, 212 over-edges stay; docs/evidence/
+# 2026-11-18-coordinate-duplicate-dedup.md).  Coordinate identity is
+# also what makes the drop AREA-PRESERVING by construction: the area of
+# a triangle is a pure function of its three vertex positions, so a
+# dropped copy can never remove surface the kept copy does not already
+# carry (the same three points, one copy).
+#
+# The keeper is the copy from the EARLIEST emission unit: the rep-space
+# rank of its first vertex (``space_offsets`` — ties by list order).  A
+# rep's welded loops (stage-10 dup-pin) carry that rep's point base, so
+# they belong to that rep's unit even though they are appended after
+# every rep's primary loops; the earlier rep's listing therefore always
+# wins over a later rep's re-listing.  Emission ORDER alone is not the
+# rule: the welded triangles are appended last, so ordering by position
+# would hand a re-listed facet to the later rep and leave the earlier
+# rep's mesh split (545707b9 measures exactly that: position-order
+# keeps 329 of the later rep's copies and the mesh stays not-manifold).
+#
 # Fail-closed fire gate (the law applies ONLY where it resolves the
 # store's over-use — the stage-14 measured yield is 8 dev full-gate
 # flips + b912cbef's fail-class change): the emitted mesh must be NOT
@@ -1206,10 +1233,22 @@ def _triangulate(elements, records, extended=(), seam_area=None):
 # Degenerate triangles never enter the list (skipped at emission and
 # counted separately — b912cbef's 3 pre-existing skips are a SEPARATE
 # gate check); a repeated-index triple is never deduped regardless.
+# ``space_offsets`` empty means one index space (the single-rep paths):
+# every copy ranks equal and list order decides.
 
 
-def _apply_unordered_dedup(triangles, info):
+def _apply_unordered_dedup(triangles, info, points=None, space_offsets=()):
     """The unordered-triangle dedup at one store's assembled mesh.
+
+    Two triangles are the same facet when their vertex COORDINATES are
+    identical as an unordered triple (``points`` is the store's written
+    point list, the coordinates the triangles index); the later
+    emission unit's copy is dropped, so an earlier rep's listing keeps
+    the facet and a later rep that re-lists it loses the copy.  The
+    drop is area-preserving by construction: identical coordinates mean
+    identical triangle area, and exactly one copy of the facet survives.
+    With ``points=None`` the index triple is the key (the same headline
+    behavior inside one index space).
 
     Returns the triangle list to export — unchanged unless the law
     fires — and records the outcome on ``info``:
@@ -1221,19 +1260,29 @@ def _apply_unordered_dedup(triangles, info):
     """
     if len(triangles) < 2 or mesh.mesh_stats(list(triangles)).manifold:
         return triangles
-    seen: set[tuple[int, int, int]] = set()
-    kept = []
-    dropped = 0
-    for tri in triangles:
+    starts = tuple(space_offsets)
+    keyed: list[tuple | None] = []
+    best: dict[tuple, tuple[int, int]] = {}
+    for pos, tri in enumerate(triangles):
         if tri[0] == tri[1] or tri[1] == tri[2] or tri[0] == tri[2]:
-            kept.append(tri)  # degenerate-shaped: never deduped
+            keyed.append(None)  # degenerate-shaped: never deduped
             continue
-        key = tuple(sorted(tri))
-        if key in seen:
-            dropped += 1  # the later copy: first occurrence's winding wins
-            continue
-        seen.add(key)
-        kept.append(tri)
+        if points is None:
+            key = tuple(sorted(tri))
+        else:
+            key = tuple(sorted((points[i] for i in tri)))
+        rank = bisect.bisect_right(starts, min(tri)) - 1 if starts else 0
+        keyed.append(key)
+        incumbent = best.get(key)
+        if incumbent is None or (rank, pos) < incumbent:
+            best[key] = (rank, pos)
+    keep = {pos for _rank, pos in best.values()}
+    kept = [
+        tri
+        for pos, tri in enumerate(triangles)
+        if keyed[pos] is None or pos in keep
+    ]
+    dropped = len(triangles) - len(kept)
     if not dropped:
         return triangles
     if mesh.mesh_stats(kept).manifold:
@@ -1326,15 +1375,26 @@ def decode_composite_store(
     unsupported and is not implemented.
 
     Stage-15 unordered-triangle dedup law (2026-11-13, #34; the
-    stage-14 review F1 family, owner-authorized): on every exported
-    path, a store whose assembled mesh is NOT manifold and whose
-    triangle list carries duplicate UNORDERED index triples (the same
-    facet re-written from a second record/loop, opposite winding) drops
-    the later copies when — and only when — the deduplicated list is
-    manifold (:func:`_apply_unordered_dedup`; a store whose duplicates
-    do not resolve the over-use keeps its exact emitted triangles with
-    the declined dedup named).  The raw-array path carries the same
-    gate (it triangulates records); measured corpus incidence 0.
+    Stage-15 unordered-triangle dedup law (2026-11-13, #34; the
+    stage-14 review F1 family, owner-authorized; COORDINATE identity
+    added 2026-11-18): a store whose ASSEMBLED MESH (the emission it
+    actually exports, after the primary seam's decision) is NOT
+    manifold and whose triangle list carries duplicate UNORDERED
+    triples drops the later copies when — and only when — the
+    deduplicated list is manifold (:func:`_apply_unordered_dedup`; a
+    store whose duplicates do not resolve the over-use keeps its exact
+    emitted triangles with the declined dedup named).  A duplicate is
+    the same three vertex POSITIONS (a facet the writer re-listed from
+    a second record/loop with opposite winding, or that a later rep
+    re-listed in its own disjoint element space); an index triple alone
+    only proves the same-rep case.  The drop is area-preserving by
+    construction — identical coordinates mean identical triangle area,
+    and exactly one copy of the facet survives.  The law runs once, at
+    the entry (``decode_composite_store``), on every path — the mesh
+    the store exports is the one the fire gate must see, and running it
+    after the seam keeps the seam's committed surface trade untouched.
+    The raw-array path carries the same gate (it triangulates records);
+    measured corpus incidence 0.
 
     Primary-emit seam (2026-11-18, #34; docs/evidence/
     2026-11-18-primary-emit-seam.md): the short records' primary loops
@@ -1364,6 +1424,7 @@ def decode_composite_store(
             allow_unrouted_elements=allow_unrouted_elements,
             _seam_area=None,
         )
+        base_offsets = info.pop("_space_offsets", ())
         area = _mesh_area(triangles, points)
         seam_points, seam_triangles, seam_degenerate, seam_info = (
             decode_composite_store(
@@ -1375,6 +1436,7 @@ def decode_composite_store(
                 _seam_area=area,
             )
         )
+        seam_offsets = seam_info.pop("_space_offsets", ())
         skipped = seam_info.get("primary_loop_skips", 0)
         if skipped and not mesh.mesh_stats(list(seam_triangles)).manifold:
             # The seam fires ONLY where it resolves the store's over-use
@@ -1385,8 +1447,24 @@ def decode_composite_store(
             info["primary_loop_seam_declined"] = skipped
             if seam_info.get("primary_loop_kept"):
                 info["primary_loop_kept"] = seam_info["primary_loop_kept"]
-            return points, triangles, degenerate, info
-        return seam_points, seam_triangles, seam_degenerate, seam_info
+            offsets = base_offsets
+        else:
+            points, triangles, degenerate, info = (
+                seam_points,
+                seam_triangles,
+                seam_degenerate,
+                seam_info,
+            )
+            offsets = seam_offsets
+        # Stage-15 unordered-triangle dedup (see _apply_unordered_dedup):
+        # applied to the mesh the store ACTUALLY exports (the seam's
+        # decision above is unchanged, so its committed surface trade
+        # stands) — fires only on a not-manifold assembled mesh whose
+        # duplicate unordered triples (COORDINATE identity across the
+        # store's disjoint index spaces) resolve it, so a passing
+        # store's mesh is never touched.
+        triangles = _apply_unordered_dedup(triangles, info, points, offsets)
+        return points, triangles, degenerate, info
     seam_area = _seam_area
     lo, hi = span.body_lo, span.body_hi
     if not allow_unrouted_elements and not any(
@@ -1529,11 +1607,11 @@ def decode_composite_store(
     if curve_entry_law:
         info["curve_entry_law"] = "e0b-dup-pin"
         info["loops_curve_entry_exported"] = curve_entry_law
-    # Stage-15 unordered-triangle dedup (see _apply_unordered_dedup):
-    # fires only on a not-manifold assembled mesh whose duplicate
-    # unordered triples resolve it — a passing store's mesh is never
-    # touched.
-    triangles = _apply_unordered_dedup(triangles, info)
+    # The index spaces this emission indexes (one, on this path): the
+    # stage-15 dedup's keeper rule needs them at the assembled mesh
+    # (:func:`decode_composite_store` pops the key and applies the law
+    # there — the mesh the store actually exports).
+    info["_space_offsets"] = (0,)
     return points, triangles, degenerate, info
 
 
@@ -1656,6 +1734,7 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
     ext_declined = 0
     reps_unexported = []
     reps_dup_pin = []
+    space_offsets = []
     for k, d in enumerate(decoded):
         node_bytes += len(d["payload"])
         if k >= len(groups):
@@ -1710,6 +1789,7 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
             )
             continue
         base = len(points)
+        space_offsets.append(base)
         tri_k, deg_k, stats_k = _triangulate(
             d["elements"], records, extended=ext_k, seam_area=seam_area
         )
@@ -1790,11 +1870,13 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
     if curve_entry_law:
         info["curve_entry_law"] = "e0b-dup-pin"
         info["loops_curve_entry_exported"] = curve_entry_law
-    # Stage-15 unordered-triangle dedup (see _apply_unordered_dedup):
-    # the store-level gate — the reps' element spaces are disjoint, so
-    # same-rep duplicates are the only possible matches, and a passing
-    # store's mesh is never touched.
-    triangles = _apply_unordered_dedup(triangles, info)
+    # The disjoint per-rep index spaces, in emission order: the
+    # stage-15 dedup's keeper rule (the earliest unit wins) needs them
+    # at the assembled mesh, where a rep's re-listing of an earlier
+    # rep's facet is visible by COORDINATE identity
+    # (:func:`decode_composite_store` pops the key and applies the law
+    # to the mesh the store actually exports).
+    info["_space_offsets"] = tuple(space_offsets)
     return points, triangles, degenerate, info
 
 
@@ -2035,11 +2117,8 @@ def _decode_raw_array(data, lo, hi, groups, payload, elem_decl, seam_area=None):
         info["extended_header_triangles"] = ext_triangles
         if ext_declined:
             info["extended_header_declined"] = ext_declined
-    # Stage-15 unordered-triangle dedup (see _apply_unordered_dedup):
-    # the raw path triangulates facet records like the other paths, so
-    # the same duplicated-writer-content mechanism is in scope (measured
-    # corpus incidence 0 — no identity-raw-array row is not-manifold).
-    triangles = _apply_unordered_dedup(triangles, info)
+    # One index space on this path (see the single-region note above).
+    info["_space_offsets"] = (0,)
     return points, triangles, degenerate, info
 
 
@@ -2408,6 +2487,7 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
     ext_declined = 0
     reps_unexported = []
     reps_dup_pin = []
+    space_offsets = []
     for k, d in enumerate(decoded):
         node_bytes += len(d["payload"])
         if k >= len(groups):
@@ -2437,6 +2517,7 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
             )
             continue
         base = len(points)
+        space_offsets.append(base)
         tri_k, deg_k, stats_k = _triangulate(
             d["elements"], records, extended=ext_k, seam_area=seam_area
         )
@@ -2509,9 +2590,9 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
     if curve_entry_law:
         info["curve_entry_law"] = "e0b-dup-pin"
         info["loops_curve_entry_exported"] = curve_entry_law
-    # Stage-15 unordered-triangle dedup (see _apply_unordered_dedup):
-    # the store-level gate, as in _decode_per_rep.
-    triangles = _apply_unordered_dedup(triangles, info)
+    # The disjoint per-rep index spaces, in emission order (see the
+    # _decode_per_rep note above).
+    info["_space_offsets"] = tuple(space_offsets)
     return points, triangles, degenerate, info
 
 

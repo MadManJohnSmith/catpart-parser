@@ -226,6 +226,7 @@ COMPOSITE_EXPORT_STAGES: dict[int, tuple[str, ...]] = {
         "geometry-composite-law-dedup-manifold-no-fire",
         "geometry-composite-law-dedup-declined",
         "geometry-composite-law-dedup-degenerate",
+        "geometry-composite-law-dedup-coord-relist",
         "geometry-composite-law-primary-seam-tiny",
         "geometry-composite-law-primary-seam-declined",
     ),

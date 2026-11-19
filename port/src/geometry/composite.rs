@@ -422,6 +422,13 @@ pub struct CompositeDecode {
     /// exported rep on the per-rep paths). NEVER serialized into the
     /// summary or the PLY — the harness must not see it (§3.2).
     pub curves: Vec<Vec<(f64, f64, f64)>>,
+    /// The emission units' point offsets, ascending (one element on the
+    /// single-space paths): the stage-15 dedup's keeper rule ranks a
+    /// copy by the unit that emitted it, and a rep's welded loops carry
+    /// that rep's point base, so a later rep's re-listing never
+    /// displaces the earlier rep's surface. Internal — never
+    /// serialized (the twin's private ``_space_offsets``).
+    pub space_offsets: Vec<usize>,
 }
 
 /// The twin's ``_f32`` (composite.py:222): the ONE widening point —
@@ -1602,6 +1609,7 @@ fn decode_per_rep(
     let mut reps_unexported: Vec<String> = Vec::new();
     let mut reps_dup_pin: Vec<(usize, DupPin)> = Vec::new();
     let mut curves: Vec<Vec<(f64, f64, f64)>> = Vec::new();
+    let mut space_offsets: Vec<usize> = Vec::new();
     for (k, d) in decoded.iter().enumerate() {
         node_bytes += d.payload_len;
         if k >= groups.len() {
@@ -1679,6 +1687,7 @@ fn decode_per_rep(
             continue;
         }
         let base = points.len();
+        space_offsets.push(base);
         let tri_res = triangulate(&d.elements, &records, &ext_k, seam_area);
         // The per-loop dup-pin weld (2026-11-18): the rep's dropped
         // loops were evaluated independently (pinnable + battery +
@@ -1807,17 +1816,18 @@ fn decode_per_rep(
         info.curve_entry_law = Some("e0b-dup-pin");
         info.loops_curve_entry_exported = Some(curve_entry_law);
     }
-    // Stage-15 unordered-triangle dedup (see apply_unordered_dedup):
-    // the store-level gate — the reps' element spaces are disjoint, so
-    // same-rep duplicates are the only possible matches, and a passing
-    // store's mesh is never touched.
-    let triangles = apply_unordered_dedup(triangles, &mut info);
+    // The disjoint per-rep index spaces, in emission order: the
+    // stage-15 dedup's keeper rule (the earliest unit wins) needs them
+    // at the assembled mesh, where a rep's re-listing of an earlier
+    // rep's facet is visible by COORDINATE identity (the entry point
+    // applies the law to the mesh the store actually exports).
     Ok(CompositeDecode {
         points,
         triangles,
         degenerate,
         info,
         curves,
+        space_offsets,
     })
 }
 
@@ -2009,7 +2019,8 @@ fn e0b_dup_pin(
 
 /// The unordered-triangle dedup at one store's assembled mesh — the
 /// twin's ``_apply_unordered_dedup`` (stage 15, 2026-11-13, #34; the
-/// stage-14 review F1 family, owner-authorized).
+/// stage-14 review F1 family, owner-authorized; COORDINATE identity
+/// across the disjoint per-rep element spaces added 2026-11-18, #34).
 ///
 /// The mechanism (review F1, byte-verified): the same three ELEMENT
 /// indices emitted twice — from two different records 13-42 B apart in
@@ -2020,6 +2031,25 @@ fn e0b_dup_pin(
 /// TOGETHER — each shared edge is used once per copy — but every edge
 /// shared with the surrounding mesh counts the extra use, and the
 /// corpus stores' over-edges resolve when the later copy is dropped.
+///
+/// The identity is COORDINATE identity (2026-11-18): two triangles are
+/// the same facet when their three VERTEX POSITIONS are identical as an
+/// unordered triple. An index triple is only a same-rep spelling — the
+/// per-rep decomposition keeps each rep's element space disjoint, so a
+/// rep that re-lists an earlier rep's facet necessarily writes
+/// DIFFERENT indices for it (545707b9: 67 index duplicates in one rep
+/// plus 451 coordinate duplicates re-listed by a later rep). Coordinate
+/// identity is also what makes the drop AREA-PRESERVING by
+/// construction: a triangle's area is a pure function of its three
+/// vertex positions, so a dropped copy can never remove surface the
+/// kept copy does not already carry.
+///
+/// The keeper is the copy from the EARLIEST emission unit: the
+/// rep-space rank of its first vertex (``space_offsets`` — ties by list
+/// order). A rep's welded loops (dup-pin) carry that rep's point base,
+/// so they belong to that rep's unit even though they are appended
+/// after every rep's primary loops; the earlier rep's listing therefore
+/// always wins over a later rep's re-listing.
 ///
 /// Fail-closed fire gate (the law applies ONLY where it resolves the
 /// store's over-use): the emitted mesh must be NOT manifold (an
@@ -2039,26 +2069,55 @@ fn e0b_dup_pin(
 fn apply_unordered_dedup(
     triangles: Vec<(u32, u32, u32)>,
     info: &mut CompositeInfo,
+    points: &[(f64, f64, f64)],
+    space_offsets: &[usize],
 ) -> Vec<(u32, u32, u32)> {
+    /// One triangle's canonical coordinate key: its three vertex keys,
+    /// sorted (the twin's ``tuple(sorted(points[i] for i in tri))``).
+    type CoordKey = [(u64, u64, u64); 3];
     if triangles.len() < 2 || mesh::mesh_stats(&triangles).manifold {
         return triangles;
     }
-    let mut seen: HashSet<[u32; 3]> = HashSet::new();
-    let mut kept: Vec<(u32, u32, u32)> = Vec::new();
-    let mut dropped = 0u32;
-    for tri in &triangles {
+    // Coordinate keys (``vkey``: exact f64 bits, -0.0 collapsed to
+    // 0.0, the twin's float equality), canonicalized by sorting the
+    // three vertex keys.
+    let mut keyed: Vec<Option<CoordKey>> = Vec::with_capacity(triangles.len());
+    // Best (space rank, position) per coordinate key.
+    let mut best: HashMap<CoordKey, (usize, usize)> = HashMap::new();
+    for (pos, tri) in triangles.iter().enumerate() {
         if tri.0 == tri.1 || tri.1 == tri.2 || tri.0 == tri.2 {
-            kept.push(*tri); // degenerate-shaped: never deduped
+            keyed.push(None); // degenerate-shaped: never deduped
             continue;
         }
-        let mut key = [tri.0, tri.1, tri.2];
+        let rank = match space_offsets {
+            [] => 0usize,
+            offsets => {
+                let first = tri.0.min(tri.1).min(tri.2) as usize;
+                offsets.partition_point(|&start| start <= first) - 1
+            }
+        };
+        let mut key = [
+            vkey(points[tri.0 as usize]),
+            vkey(points[tri.1 as usize]),
+            vkey(points[tri.2 as usize]),
+        ];
         key.sort_unstable();
-        if !seen.insert(key) {
-            dropped += 1; // the later copy: first occurrence's winding wins
-            continue;
+        keyed.push(Some(key));
+        match best.get(&key) {
+            Some(existing) if *existing <= (rank, pos) => {}
+            _ => {
+                best.insert(key, (rank, pos));
+            }
         }
-        kept.push(*tri);
     }
+    let keep: HashSet<usize> = best.values().map(|&(_rank, pos)| pos).collect();
+    let kept: Vec<(u32, u32, u32)> = triangles
+        .iter()
+        .enumerate()
+        .filter(|(pos, _tri)| keyed[*pos].is_none() || keep.contains(pos))
+        .map(|(_pos, tri)| *tri)
+        .collect();
+    let dropped = (triangles.len() - kept.len()) as u32;
     if dropped == 0 {
         return triangles;
     }
@@ -2133,7 +2192,7 @@ pub fn decode_composite_store(
         Some(area),
     )?;
     let skipped = seam.info.primary_loop_skips.unwrap_or(0);
-    if skipped > 0 && !mesh::mesh_stats(&seam.triangles).manifold {
+    let mut chosen = if skipped > 0 && !mesh::mesh_stats(&seam.triangles).manifold {
         // The seam fires ONLY where it resolves the store's over-use:
         // a store whose mesh is still not manifold after the slivers
         // are out keeps its exact pre-seam emission — no surface is
@@ -2141,15 +2200,31 @@ pub fn decode_composite_store(
         let mut info = baseline.info;
         info.primary_loop_seam_declined = Some(skipped);
         info.primary_loop_kept = seam.info.primary_loop_kept;
-        return Ok(CompositeDecode {
+        CompositeDecode {
             points: baseline.points,
             triangles: baseline.triangles,
             degenerate: baseline.degenerate,
             info,
             curves: baseline.curves,
-        });
-    }
-    Ok(seam)
+            space_offsets: baseline.space_offsets,
+        }
+    } else {
+        seam
+    };
+    // Stage-15 unordered-triangle dedup (see apply_unordered_dedup):
+    // applied to the mesh the store ACTUALLY exports (the seam's
+    // decision above is unchanged, so its committed surface trade
+    // stands) — fires only on a not-manifold assembled mesh whose
+    // duplicate unordered triples (COORDINATE identity across the
+    // store's disjoint index spaces) resolve it, so a passing store's
+    // mesh is never touched.
+    chosen.triangles = apply_unordered_dedup(
+        chosen.triangles,
+        &mut chosen.info,
+        &chosen.points,
+        &chosen.space_offsets,
+    );
+    Ok(chosen)
 }
 
 /// Decode one composite store span under the identity law (stage 3d;
@@ -2381,11 +2456,8 @@ fn decode_store_once(
         info.curve_entry_law = Some("e0b-dup-pin");
         info.loops_curve_entry_exported = Some(curve_entry_law);
     }
-    // Stage-15 unordered-triangle dedup (see apply_unordered_dedup):
-    // fires only on a not-manifold assembled mesh whose duplicate
-    // unordered triples resolve it — a passing store's mesh is never
-    // touched.
-    let triangles = apply_unordered_dedup(triangles, &mut info);
+    // One index space on this path: the entry point's stage-15 dedup
+    // ranks every copy equal and falls back to emission order.
     // The §2.3 curve exposure: the dropped loops' pre-weld sequences
     // (additive, outside Fidelity — see the boundary note).
     let curves: Vec<Vec<(f64, f64, f64)>> = tri_res
@@ -2399,6 +2471,7 @@ fn decode_store_once(
         degenerate,
         info,
         curves,
+        space_offsets: vec![0],
     })
 }
 
@@ -2734,12 +2807,7 @@ fn decode_raw_array_path(
     if tri_res.primary_loop_kept > 0 {
         info.primary_loop_kept = Some(tri_res.primary_loop_kept);
     }
-    // Stage-15 unordered-triangle dedup (see apply_unordered_dedup):
-    // the raw path triangulates facet records like the other paths, so
-    // the same duplicated-writer-content mechanism is in scope
-    // (measured corpus incidence 0 — no identity-raw-array row is
-    // not-manifold).
-    let triangles = apply_unordered_dedup(triangles, &mut info);
+    // One index space on this path (see the single-region note above).
     // The §2.3 curve exposure: the raw element space has NO skip
     // slots, so no dropped curve-entry loops exist and the artifact is
     // empty (measured corpus incidence 0).
@@ -2749,6 +2817,7 @@ fn decode_raw_array_path(
         degenerate,
         info,
         curves: Vec::new(),
+        space_offsets: vec![0],
     })
 }
 
@@ -3290,6 +3359,7 @@ fn decode_mixedwrite(
     let mut reps_unexported: Vec<String> = Vec::new();
     let mut reps_dup_pin: Vec<(usize, DupPin)> = Vec::new();
     let mut curves: Vec<Vec<(f64, f64, f64)>> = Vec::new();
+    let mut space_offsets: Vec<usize> = Vec::new();
     for (k, m) in decoded.iter().enumerate() {
         let d = &m.rep;
         node_bytes += d.payload_len;
@@ -3329,6 +3399,7 @@ fn decode_mixedwrite(
             continue;
         }
         let base = points.len();
+        space_offsets.push(base);
         let tri_res = triangulate(&d.elements, &records, &ext_k, seam_area);
         // The per-loop dup-pin weld (see decode_per_rep).
         if let Some(dp) = &tri_res.dup_pin {
@@ -3452,15 +3523,15 @@ fn decode_mixedwrite(
         info.curve_entry_law = Some("e0b-dup-pin");
         info.loops_curve_entry_exported = Some(curve_entry_law);
     }
-    // Stage-15 unordered-triangle dedup (see apply_unordered_dedup):
-    // the store-level gate, as in decode_per_rep.
-    let triangles = apply_unordered_dedup(triangles, &mut info);
+    // The disjoint per-rep index spaces, in emission order (see the
+    // decode_per_rep note above).
     Ok(CompositeDecode {
         points,
         triangles,
         degenerate,
         info,
         curves,
+        space_offsets,
     })
 }
 
@@ -3671,8 +3742,15 @@ mod tests {
             unordered_dedup_dropped: None,
             unordered_dedup_declined: None,
         };
+        let pts: Vec<(f64, f64, f64)> = vec![
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+            (0.0, 0.0, 1.0),
+            (1.0, 1.0, 0.0),
+        ];
         let tris = vec![(0u32, 1u32, 2u32), (2, 1, 0), (0, 1, 3)];
-        let kept = apply_unordered_dedup(tris, &mut info);
+        let kept = apply_unordered_dedup(tris, &mut info, &pts, &[]);
         assert_eq!(kept, vec![(0, 1, 2), (0, 1, 3)]);
         assert_eq!(info.unordered_dedup_dropped, Some(1));
         assert_eq!(info.unordered_dedup_declined, None);
@@ -3682,7 +3760,7 @@ mod tests {
         info2.unordered_dedup_dropped = None;
         info2.unordered_dedup_declined = None;
         let tris2 = vec![(0u32, 1u32, 2u32), (2, 1, 0), (0, 1, 3), (1, 0, 4)];
-        let kept2 = apply_unordered_dedup(tris2, &mut info2);
+        let kept2 = apply_unordered_dedup(tris2, &mut info2, &pts, &[]);
         assert_eq!(kept2, vec![(0, 1, 2), (2, 1, 0), (0, 1, 3), (1, 0, 4)]);
         assert_eq!(info2.unordered_dedup_dropped, None);
         assert_eq!(info2.unordered_dedup_declined, Some(1));
@@ -3691,15 +3769,93 @@ mod tests {
         let mut info3 = info.clone();
         info3.unordered_dedup_dropped = None;
         let sheet = vec![(0u32, 1u32, 2u32), (2, 1, 0)];
-        let kept3 = apply_unordered_dedup(sheet, &mut info3);
+        let kept3 = apply_unordered_dedup(sheet, &mut info3, &pts, &[]);
         assert_eq!(kept3, vec![(0, 1, 2), (2, 1, 0)]);
         assert_eq!(info3.unordered_dedup_dropped, None);
         // Degenerate-shaped triples are never deduped.
         let mut info4 = info.clone();
         info4.unordered_dedup_dropped = None;
         let degenerate = vec![(0u32, 0u32, 1u32), (0, 0, 1)];
-        let kept4 = apply_unordered_dedup(degenerate, &mut info4);
+        let kept4 = apply_unordered_dedup(degenerate, &mut info4, &pts, &[]);
         assert_eq!(kept4, vec![(0, 0, 1), (0, 0, 1)]);
+    }
+
+    /// The coordinate-identity arm (2026-11-18): two per-rep element
+    /// spaces whose written coordinates coincide. The later space's
+    /// re-listed triangle is a coordinate duplicate (never an index
+    /// duplicate — the spaces are disjoint), and the EARLIER space's
+    /// copy wins even when it sits LATER in the emission list (its
+    /// welded loops are appended last, so list order is not the rule).
+    /// Dropping the copy is area-preserving: the two triangles are the
+    /// same three points.
+    #[test]
+    fn unordered_dedup_matches_coordinates_across_disjoint_spaces() {
+        let mut info = CompositeInfo {
+            stage: "identity-per-rep",
+            element_decl: 8,
+            node_points: 8,
+            curve_entries: 0,
+            write_count: None,
+            table_bytes: None,
+            facet_candidates: 0,
+            facet_records: 0,
+            skipped_markers: BTreeMap::new(),
+            node_bytes: 0,
+            reps_decoded: None,
+            reps_exported: None,
+            reps_unexported: None,
+            rep_reasons: None,
+            rep_laws: None,
+            raw_start: None,
+            raw_nice_rate: None,
+            raw_x_asc_rate: None,
+            raw_trail_bytes: None,
+            raw_count3: None,
+            loops_exported: 0,
+            loops_curve_entry: 0,
+            extended_header_records: None,
+            extended_header_triangles: None,
+            extended_header_declined: None,
+            primary_loop_skips: None,
+            primary_loop_seam_declined: None,
+            primary_loop_kept: None,
+            curve_entry_law: None,
+            loops_curve_entry_exported: None,
+            unordered_dedup_dropped: None,
+            unordered_dedup_declined: None,
+        };
+        // Space 0 = points 0..3, space 1 = points 3..8 (joint at 3).
+        // Points 3..6 carry exactly the coordinates of points 0..2.
+        let pts: Vec<(f64, f64, f64)> = vec![
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+            (0.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (0.0, 1.0, 0.0),
+            (1.0, 1.0, 0.0),
+            (2.0, 0.0, 0.0),
+        ];
+        // Space 1's re-listing (3,4,5) is first in the list; the fin
+        // triangles (3,6,4) and (3,7,4) push the edge {3,4} to three
+        // uses. Space 0's copy (0,1,2) comes LAST (the weld position).
+        let tris = vec![(3u32, 4u32, 5u32), (3, 6, 4), (3, 7, 4), (0, 1, 2)];
+        let kept = apply_unordered_dedup(tris, &mut info, &pts, &[0, 3]);
+        assert_eq!(kept, vec![(3, 6, 4), (3, 7, 4), (0, 1, 2)]);
+        assert_eq!(info.unordered_dedup_dropped, Some(1));
+        // Same list, one index space (no offsets): the list-order copy
+        // wins, so the fin's edge keeps three uses and the dedup
+        // DECLINES (fail-closed — the emitted list is kept verbatim).
+        let mut info2 = CompositeInfo {
+            unordered_dedup_dropped: None,
+            ..info
+        };
+        info2.unordered_dedup_dropped = None;
+        let tris2 = vec![(3u32, 4u32, 5u32), (3, 6, 4), (3, 7, 4), (0, 1, 2)];
+        let kept2 = apply_unordered_dedup(tris2, &mut info2, &pts, &[]);
+        assert_eq!(info2.unordered_dedup_dropped, None);
+        assert_eq!(info2.unordered_dedup_declined, Some(1));
+        assert_eq!(kept2.len(), 4);
     }
 
     /// The §2.3 curve exposure: a dropped loop's pre-weld sequence is
