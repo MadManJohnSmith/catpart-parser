@@ -1,0 +1,15 @@
+sha16,path,split,stage,edge,degree,faces,writer_loops,writer_records,kinds,distinct_coord_triples,normal_dot_min,normal_dot_max,incident_area_mm2
+26504a08b641ad7a,model/Guntle.ver5.CATPart,dev,identity-table-walk,"(5,6)",4,4,4,3,0x42,4,-0.8584,0.9983,43.848
+341bd488e61d6061,diseño_3d/frente/frente_&_UPPER_teeth.CATPart,dev,identity-per-rep,"(21613,21614)",15,15,1,1,0x4a,15,-0.9994,1.0,247.066
+341bd488e61d6061,diseño_3d/frente/frente_&_UPPER_teeth.CATPart,dev,identity-per-rep,"(21614,21615)",15,15,1,1,0x4a,15,-0.9986,1.0,224.866
+341bd488e61d6061,diseño_3d/frente/frente_&_UPPER_teeth.CATPart,dev,identity-per-rep,"(21614,21802)",4,4,1,1,0x4a,4,-0.9988,0.9621,421.25
+341bd488e61d6061,diseño_3d/frente/frente_&_UPPER_teeth.CATPart,dev,identity-per-rep,"(21615,21616)",3,3,2,2,0x49/0x4a,3,0.6167,0.9588,1.681
+5689954c867a0f70,02_MakingRessources/_CAO/_standard/M3x16_CHC.CATPart,dev,identity-table-walk,"(17,18)",3,3,2,2,0x42,3,0.3519,0.9397,2.622
+5a982112b4f5edc1,02_MakingRessources/_CAO/_standard/M4x10_Poelier.CATPart,dev,identity-per-rep,"(3,7)",10,10,10,10,0x42/0x4a,10,-0.949,1.0,68.653
+5a982112b4f5edc1,02_MakingRessources/_CAO/_standard/M4x10_Poelier.CATPart,dev,identity-per-rep,"(3,6)",5,5,5,5,0x42,5,0.5583,0.9997,47.479
+5a982112b4f5edc1,02_MakingRessources/_CAO/_standard/M4x10_Poelier.CATPart,dev,identity-per-rep,"(3,5)",4,4,4,4,0x42,4,0.8259,0.9989,27.789
+cd88ae9d4d51a439,02_MakingRessources/_CAO/SYSTEM/TouchRows_Wires.CATPart,dev,identity-per-rep,"(7,54)",4,4,2,1,0x42,4,-0.9237,0.4305,16115.35
+cd88ae9d4d51a439,02_MakingRessources/_CAO/SYSTEM/TouchRows_Wires.CATPart,dev,identity-per-rep,"(1,7)",3,3,3,1,0x42,3,0.0119,0.9959,1575.393
+cd88ae9d4d51a439,02_MakingRessources/_CAO/SYSTEM/TouchRows_Wires.CATPart,dev,identity-per-rep,"(6,7)",3,3,2,2,0x42,3,-0.9911,0.0,104.09
+e8d9a35806f5fcf7,02_MakingRessources/_CAO/SYSTEM/LedStrips_5V_final.CATPart,dev,identity-per-rep,"(27,28)",5,5,5,5,0x42,5,0.9528,0.9989,246.561
+e8d9a35806f5fcf7,02_MakingRessources/_CAO/SYSTEM/LedStrips_5V_final.CATPart,dev,identity-per-rep,"(28,58)",3,3,2,2,0x42,3,-0.9998,0.862,27685.348
