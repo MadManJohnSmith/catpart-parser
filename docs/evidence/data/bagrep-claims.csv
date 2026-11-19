@@ -1,0 +1,17 @@
+claim,statement,label,scope,release,observations,passes,rate,value
+BR-01_population,every CATIA missing-store row of the report is probed (119 parts + 2 container-less binaries; the 4 non-CATIA rows are out of scope),fact,121 rows,unknown,121,121,1.000000,bag-rep-named 17; point-array 63; topology-only 25; feature-only 16
+BR-02_class_records,the payload carries class records framed by a u32le name length equal to the class name length,fact,121 rows,unknown,155,155,1.000000,CAT3DBagRep 123; CATSurfacicRep 32; rows 13; forms small 78 t 45 surfacic 32
+BR-03_small_record_form,every CAT3DBagRep record is 62 B and tiles the next record start,fact,123 records,unknown,123,123,1.000000,post bytes 00 00 00 00 00 K; K in 00 04 05 30
+BR-04_node_tags,the node tags are 04 fd ff and the T-form 04 ff ff ff ff ff 01,fact,121 rows,unknown,148,148,1.000000,04fdff 103 in 11 rows; T-form 45 in 10 rows
+BR-05_no_facet_records,no payload region carries a facet or strip record under the pinned grammar,fact,121 rows,all,121,0,0.000000,payload headers 0; whole-file byte-pattern hits 24 in 11 rows; exact tiles 0
+BR-06_index_lists,an in-bounds reference list that reaches its own point space exists in 3 rows,fact,121 rows,all,121,3,0.024793,u16be only; 51 refs; 6 refs; 9 refs; all read as pairs or a fan
+BR-07_no_triple_list,no row carries a triple index list over its own point space,fact,121 rows,all,121,0,0.000000,
+BR-08_declared_point_arrays,declared f32 coordinate arrays (count-first framing) exist in 29 rows,fact,121 rows,unknown,41,41,1.000000,41 arrays; 8373 f32; largest 1587 f32
+BR-09_array_point_budget,the whole payload population holds 8373 f32 (2791 points under the 3-float convention) and no array exceeds 1587 f32,fact,121 rows,unknown,41,41,1.000000,max 1587 f32 = 529 points (Ehi_BundleSegment3_2); next 266 228 187 187 166 125 118 118
+BR-09b_variable_element_shape,the declared count is a float count and the element write shape varies inside one array,fact,CAAScrew.CATSurfacicRep,unknown,1,1,1.000000,198 f32; 2- or 1-coordinate groups terminated by 0.0 20.0; same shapes as the composite 2-bit table
+BR-10_subrecord_stream,the patch sub-record stream 30 04 04 ff ff ff d2 d2 50|51 is present outside the class-record rows too,fact,121 rows,unknown,631,631,1.000000,631 sub-records in 43 rows; 79065 u16be words < 1024; max 768
+BR-11_subrecord_not_bounded,the patch stream's words are not bounded by the enclosing record's declared point space,fact,Plate.CATSurfacicRep,unknown,1,1,1.000000,118 declared points; words < 1024 reach 768
+BR-12_census_run_is_artifact,the census's 21846-point run is a repeated 0.5 word read as f32 triples,fact,AnalysisMechfeat,unknown,1,1,1.000000,run start 93957 bytes 3e8e5604/3f000000; framed array in that file 21 points at 355857
+BR-13_no_strip_law,the largest arrays are not two interleaved rings under a strip or fan law,fact,121 rows,unknown,3,3,1.000000,Screw 76 pts step 17.91 vs partner 28.11; Plate 118 step 48.49 vs 122.69; Bundle_Segment2 266 step 69.11 vs 266.48
+BR-14_list_token_no_pool,the list-node token ff ff 02 00 01 is present but there is no pool group to index,fact,121 rows,unknown,35,0,0.000000,tokens 35 in 9 rows; pool groups 0 (census MS-05)
+BR-15_verdict_points_only,the bag-rep payload is a point carrier; no row yields a surface,fact,121 rows,unknown,121,0,0.000000,open rate 0/103 payload-bearing parts
