@@ -1,0 +1,24 @@
+claim,scope,observations,passes,rate,label,detail
+SH-01,80aad8d8,66,46,0.6970,fact,tail-closed a5 03 34 frames=66 decoded head=46 plane subtype=20 pole_points=41580
+SH-02,80aad8d8,46,46,1.0000,fact,"head grammar: first payload abs=1584397 (block+19368) n_u=12 n_v=7 mode=(2,2) head=182B grid abs=1584579 (block+19550) poles=36x21 tail=152"
+SH-03,80aad8d8,46,46,1.0000,fact,both lanes strictly increasing on 46/46 decoded heads (940 lanes total)
+SH-04,80aad8d8,46,46,1.0000,fact,evaluation: corners exact max_residual=3.58e-16 finite=46 hull_clean=46 no_fold=46 tightness_max=0.1101
+SH-05,80aad8d8,46,46,1.0000,fact,head-predicted grid offset equals the value-scan grid offset on 46/46 decoded frames (the head is self-delimiting)
+SH-06,80aad8d8,46,46,1.0000,fact,"chord-length check: u knot span / pole-polygon arc length in [0.5,2.0] on 46/46; ratios=1.001,1.001,0.991,0.991,0.991,1.001,0.999,0.991"
+SH-07,80aad8d8,46,46,1.0000,fact,grid shape agreement: the value scan's own factorisation equals (3n_u x 3n_v) on 46/46 (independent confirmation of the pole counts)
+SH-08,80aad8d8,1,1,,fact,"first surface bbox=(4230.600,8946.979,-1067.150,1312.302,-174.813,1113.647) degrees=(5,5) multiplicity=3 tightness=0.1101"
+SH-09,80aad8d8,20,0,0.0000,fact,"plane subtype (12 triples, subtype byte 4, mode 0): first abs=1605981 payload abs=1605989 (block+40960) payload_len=494"
+SH-01,d7ed0772,17,17,1.0000,fact,tail-closed a5 03 34 frames=17 decoded head=17 plane subtype=0 pole_points=18468
+SH-02,d7ed0772,17,17,1.0000,fact,"head grammar: first payload abs=471428 (block+99425) n_u=11 n_v=11 mode=(4,3) head=206B grid abs=471634 (block+99631) poles=33x33 tail=154"
+SH-03,d7ed0772,17,17,1.0000,fact,both lanes strictly increasing on 17/17 decoded heads (382 lanes total)
+SH-04,d7ed0772,17,14,0.8235,fact,evaluation: corners exact max_residual=8.19e-16 finite=17 hull_clean=17 no_fold=14 tightness_max=0.4798
+SH-05,d7ed0772,17,17,1.0000,fact,head-predicted grid offset equals the value-scan grid offset on 17/17 decoded frames (the head is self-delimiting)
+SH-06,d7ed0772,17,14,0.8235,fact,"chord-length check: u knot span / pole-polygon arc length in [0.5,2.0] on 14/17; ratios=1.000,1.000,1.000,0.993,0.001,1.000,1.000,1.000"
+SH-07,d7ed0772,17,14,0.8235,fact,"grid shape agreement: the value scan's own factorisation equals (3n_u x 3n_v) on 14/17; differs at abs=669430 scan=84x12,abs=1271468 scan=121x9,abs=1416850 scan=96x15"
+SH-08,d7ed0772,1,1,,fact,"first surface bbox=(4880.132,9948.901,604.284,1349.125,12.172,356.575) degrees=(5,5) multiplicity=3 tightness=0.0707"
+SH-10,population:frames:83,83,63,0.7590,fact,two-lane heads=63 plane subtype=20 unparsed=0 pole_points=60048
+SH-11,population:frames,63,63,1.0000,fact,"shape multiplicity (7 shapes): 8x6=2 11x11=25 12x7=13 13x7=15 16x7=5 16x10=1 17x11=2; modes=(2,2):30 (3,2):5 (3,4):1 (4,3):25 (4,4):2"
+SH-12,population:frames,32,1,,fact,degree/multiplicity census over 63 frames in 7 shapes: d5/m3=63/63; only d5/m3 fits every frame; coincident seam poles rows=0 cols=0 on 63 frames (a C-1 reading would need them all)
+SH-13,population:frames,63,63,1.0000,fact,"grid law: 9*n_u*n_v == stored triples on 63/63 two-lane frames; points=60048 tails={152: 36, 154: 27}"
+SH-14,population:frames,63,60,0.9524,fact,evaluated surfaces=60/63 usable=60/63 corners_exact=63 finite=63 hull_clean=63 no_fold=60 scale_ok=61 tightness_median=0.0939
+SH-15,population:frames,3,0,0.0000,fact,"frames that decode but do not evaluate: n=(16,7) mode=(3,2) folds=214 scale=993043 arc_ratio=0.000937; n=(11,11) mode=(4,3) folds=100 scale=993043 arc_ratio=0.000897; n=(16,10) mode=(3,4) folds=59 scale=9529 arc_ratio=63.7 (all in ['d7ed0772'])"
