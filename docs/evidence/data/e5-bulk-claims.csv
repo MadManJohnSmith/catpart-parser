@@ -1,0 +1,34 @@
+claim,scope,observations,passes,rate,label,detail
+E5-01,00198dd9,1,1,1.0000,fact,"CATPrtCont abs=[9271, 15561) bytes=6290 content_start=9942 (block+671) header=01 total=5488 name='V5R11-TCX:XP' end=block+692 tail=4 content_bytes=5619 header_gap=131"
+E5-02,00198dd9,143,1,0.9569,fact,"e5 0d walk: clusters=1 records=143 framed=5377 content=5619 residue=242 coverage=0.9569 close_rate=0.9930 tail=204 gaps=38@9942,204@15357"
+E5-03,00198dd9,0,0,,fact,f64 triple arrays=0 points=0 grids=0 row_runs=0
+E5-05,00198dd9,3518,288,0.0819,fact,"payload bytes: total=3518 f64=288 f32=0 index=188 text=0 opaque=3042; longest f32 run=30 floats (varied run=0, +/-10.9097 words=120)"
+E5-06,00198dd9,3,1,,fact,"flags: 03=130 13=10 83=3; classes=13 top=0x000e:32,0x01fe:20,0x000d:20,0x01ff:16,0x00c0:16,0x0096:12,0x01f4:7,0x0064:4"
+E5-07,00198dd9,143,1,,fact,container before run abs=9967 (block+696) declared_span=5377 actual=5377 records=143
+E5-01,07d3c70b,1,0,0.0000,fact,"CATPrtCont abs=[28575, 621739) bytes=593164 content_start=29224 (block+649) header=none content_bytes=592515 header_gap=0"
+E5-02,07d3c70b,4985,3,0.9991,fact,"e5 0d walk: clusters=3 records=4985 framed=591984 content=592515 residue=531 coverage=0.9991 close_rate=0.9994 tail=207 gaps=232@291301,92@553725,207@621532"
+E5-03,07d3c70b,147,9,0.0612,fact,f64 triple arrays=147 points=4310 grids=9 row_runs=84
+E5-04,07d3c70b,288,1,,fact,"largest validated net: record abs=353385 (block+324810) class=0x00e7 id=469 payload abs=353398 payload_off=187 grid abs=353585 (block+325010) points=288 rows=24 cols=12 spread=0.000011 monotone=0 aabb=(-13.994,13.994,15.237,20.287,-23.640,-16.557)"
+E5-05,07d3c70b,527179,250592,0.4753,fact,"payload bytes: total=527179 f64=250592 f32=2804 index=27184 text=913 opaque=245686; longest f32 run=30 floats (varied run=19, +/-10.9097 words=699)"
+E5-06,07d3c70b,3,0,,fact,"flags: 03=4967 13=15 83=3; classes=29 top=0x000e:1149,0x0096:736,0x01ff:579,0x01fe:386,0x000d:386,0x00a0:346,0x00c1:334,0x0209:209"
+E5-07,07d3c70b,2124,0,,fact,container before run abs=291520 (block+262945) declared_span=592252 actual=262192 records=2124
+E5-01,0f0ff88b,1,0,0.0000,fact,"CATPrtCont abs=[25369, 558516) bytes=533147 content_start=26097 (block+728) header=none content_bytes=532419 header_gap=0"
+E5-02,0f0ff88b,3211,4,0.9985,fact,"e5 0d walk: clusters=4 records=3211 framed=531606 content=532419 residue=813 coverage=0.9985 close_rate=0.9988 tail=207 gaps=20@26097,464@157126,45@288937,77@419512,207@558309"
+E5-03,0f0ff88b,80,22,0.2750,fact,f64 triple arrays=80 points=10427 grids=22 row_runs=40
+E5-04,0f0ff88b,441,1,,fact,"largest validated net: record abs=45549 (block+20180) class=0x00e7 id=591 payload abs=45562 payload_off=211 grid abs=45773 (block+20404) points=441 rows=21 cols=21 spread=0.000202 monotone=1 aabb=(-5.500,29.197,12.794,61.492,-2.092,15.227)"
+E5-05,0f0ff88b,489863,307200,0.6271,fact,"payload bytes: total=489863 f64=307200 f32=2564 index=16816 text=604 opaque=162679; longest f32 run=31 floats (varied run=29, +/-10.9097 words=366)"
+E5-06,0f0ff88b,3,0,,fact,"flags: 03=3195 13=13 83=3; classes=26 top=0x000e:735,0x0096:513,0x01ff:368,0x00c0:257,0x000d:237,0x01fe:237,0x00a0:172,0x0200:139"
+E5-10,population:108,71609,108,0.9867,fact,E5 regions=108/108 content=5875872 framed=5797734 residue=78138 coverage=0.9867 records=71609 clusters=125 clusters_per_region=1.16 families_of_the_split=128
+E5-11,population:108,101,101,1.0000,fact,writer header at content start: 101/108 regions; content_bytes-total==131 on 101/101; header total_size range=3703..149946
+E5-12,population:108,125,106,0.8080,fact,container-declared runs: 106/125 clusters preceded by a 06 container; span==actual on 101
+E5-13,population:108,71609,6,,fact,flags: 03=63613 13=4254 43=3035 83=601 53=76 c3=30
+E5-14,population:108,71609,100,0.9259,fact,record ids monotone in 100/108 regions; close_rate=0.9983 (records whose end lands on the next e5 0d marker)
+E5-15,population:108,4866817,2450217,0.5035,fact,payload bytes total=4866817 f64=2180072 f32=43784 index=214284 text=12077 opaque=2416600 shaped_rate=0.5035
+E5-16,population:108,1029,98,0.0952,fact,f64 triple arrays=1029 array_bytes=1256352 grids=98 row_runs=665 regions_with_arrays=64
+E5-17,population:108,0,55,0.0000,fact,"f32 coordinate arrays: f32 triple grids=0; longest plausible f32 run=55 floats (zeros allowed, so a ±1e6 limit box renders as one); median of region maxima=30; (+/-10.9097) 4-byte words=23311"
+E5-18,population:108,232,200,0.8621,fact,"gaps between record runs=232 bytes=78138; <=256 B=200; largest=1256,2270,7855,8888,17644"
+E5-21,population:108,98,24,0.0952,fact,grid shapes(rows x cols): 18x18:40 60x5:6 24x18:5 6x6:4 36x5:4 44x5:4 32x5:4 108x3:3 24x5:3 20x5:3
+E5-22,population:108,12,101,0.9352,fact,"writer names: '  V5R12-HCN:052003':48;'  V5R13-HCN:112003':9;'  V5R19-JMA:112007':8;'  V5R18-FDN:102006':8;'V5 BetaVersion - Not a commercial Product - Volatile':6;'  V5R15-HCN:102004':6;'V5R11-TCX:XP':5;'  V5R17-JMC:052006':3; record payload length: region min 2, medians 28, region max 19859"
+E5-23,population:108,98,51,0.5204,candidate,"grid row law candidate: 3 * u32le(payload+13) == rows on 51/98 validated grids (rows>=3, cols>=3) whose payload opens with 0x80; not a header field the format states about itself"
+E5-19,population:108,7,7,0.9872,fact,content head: bare=3 prefix=4 writer=101; regions without a content-start writer header: head=bare prefix=0 bytes=592515 framed=591984 records=4985;head=bare prefix=20 bytes=532419 framed=531606 records=3211;head=prefix prefix=17644 bytes=659648 framed=641165 records=4820;head=prefix prefix=7855 bytes=237226 framed=226400 records=1280;head=prefix prefix=8888 bytes=601713 framed=592418 records=4893;head=prefix prefix=690 bytes=136297 framed=134687 records=1382;head=bare prefix=8 bytes=531439 framed=530705 records=3181
+E5-20,population:108,108,101,0.9352,fact,"regions carrying e5 0d records=108; head=writer 101 (the bulk probe's E5 head class), head=prefix 4 (bulk probe: f64-net head), head=bare 3; content of all law-bearing regions=5875872 B"
