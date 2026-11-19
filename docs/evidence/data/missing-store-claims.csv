@@ -1,0 +1,29 @@
+claim,statement,label,scope,release,observations,passes,rate,value
+MS-01_report_rows,report rows failing missing-geometry-store,fact,report 20261119T035609Z-7dc3ea,,,,,125; 119 part; 6 unknown
+MS-02_population_is_caa_doc,all 119 parts are dev split unknown-version files from B31CAADoc/CAA_PrjSrc,fact,119 parts,unknown,119,119,1.000000,B31CAADoc 114; CAA_PrjSrc 5
+MS-03_no_second_v5,no report row carries a V5_CFV2 occurrence beyond offset 0,fact,125 rows,all,125,125,1.000000,max_v5_per_file=1
+MS-04_single_v5_at_zero,every CATIA row carries exactly one V5_CFV2 at offset 0,fact,121 CATIA rows,all,121,121,1.000000,
+MS-05_no_pool_groups,no report row carries a 10 24 04 ff ff 00 00 00 + 01 06 pool group,fact,125 rows,all,125,0,0.000000,pool_groups=0
+MS-06_wrapper_without_pool,the 8-byte wrapper suite occurs 33 times in 13 files and never with the 01 06 sub-kind,fact,125 rows,all,,,,33; 13; 0
+MS-07_vertex_record_hits,only 4 single 05 08 01 byte-pattern hits occur and no vertex-record run,fact,125 rows,all,,,,4; 0 runs
+MS-08_shipped_locator_zero,store.locate_store over every block of every report row locates 0 spans,fact,125 rows,all,125,0,0.000000,
+MS-09_lsn_spans,L-SN (self-named-tail document catalog) validates 33 spans in 33 files and all 33 are document catalogs,fact,125 rows,all,,,,33 spans; 33 files; 33 doc catalogs
+MS-10_lsn_pools,0 of the 33 L-SN span bodies (before or after the catalog) contains a pool group,fact,33 spans,all,33,0,0.000000,
+MS-11_low_tails,L-OW (offset-0 outer wrapper) validates its tail on 121 of 121 CATIA rows,fact,121 CATIA rows,all,121,121,1.000000,5 shipped; 116 trimmed
+MS-12_low_pools,0 of the 121 L-OW outer bodies (64..dword8) contains a pool group,fact,121 CATIA rows,all,121,0,0.000000,
+MS-13_locator_yield,files of the 119 that any store-locator law would make exportable,fact,119 parts,all,119,0,0.000000,
+MS-14_geometry_classes,parts by measured carrier: point-array 61 / topology-only 25 / bag-rep-named 17 / feature-only 16,fact,119 parts,all,,,,61; 25; 17; 16
+MS-15_bag_tokens,bag-rep class tokens occur 198 times in 17 parts,fact,119 parts,all,,,,198; 17
+MS-16_point_run_loci,longest point runs start in CATSeeBodyCont 61 / CATBRepModeContainer 14 / CGMGeom 14 / CATStdCont 11 / CATCGRCont 2,fact,119 parts,all,,,,61; 14; 14; 11; 2
+MS-17_no_seebody,parts declaring no CATSeeBodyCont,fact,119 parts,all,,,,3; CAAPriPocket CAA-Rod-Part fou
+MS-18_non_catia_rows,report rows whose bytes are not a CATIA document,fact,125 rows,all,,,,4; 35 B 40 B 528 B text + 224643 B HTML
+MS-19_containerless_rows,CATIA binaries with no container-name table (kind=unknown) and a point-array payload,fact,125 rows,all,,,,2; 10 and 9 blocks
+MS-20_header_families,parts by header generation: dual-catalog 32 / ff8 87,fact,119 parts,unknown,,,,32; 87
+MS-21_no_malformed_store,parts raising malformed-store-header,fact,119 parts,all,119,0,0.000000,
+MS-22_declared_containers,declared container inventory: CGMGeom 119 / CATSeeBodyCont 116 / CATCGRCont 103 / CATBRepModeContainer 48 / CATStdCont 28 / CATXDocLinkCont 0,fact,119 parts,all,,,,119; 116; 103; 48; 28; 0
+MS-23_stdcont_is_document_storage,CATStdCont regions carry a CATOctetArray document payload (catalogManager/camera spec in 10) and 1 in-block document catalog; none carries a store,fact,28 parts,all,28,28,1.000000,
+MS-24_feature_only_extent,feature-only parts have a 0-919 B CATSeeBodyCont except CAAPriPad (31231 B 62% zero bytes 1 triple),fact,16 parts,all,,,,15; 1
+MS-25_version_not_cause,unknown-version parts that pass L2 and carry a nested store (the class is not version-driven),fact,corpus parts,unknown,38,38,1.000000,
+MS-26_stability,missing-geometry-store rows in the last six accepted reports,fact,reports 2026-11-13..2026-11-19,all,,,,125 each; L2 dev 1033 -> 1084
+MS-27_node_marker,parts carrying at least one 04 04 fd ff node marker (1-49 per file all inside payload regions),fact,119 parts,all,,,,101; 25 without a point run
+MS-28_marker_totals,marker totals over the 125 rows: V5_CFV2 121 / CB0001 154 / CB__END 154,fact,125 rows,all,,,,121; 154; 154
