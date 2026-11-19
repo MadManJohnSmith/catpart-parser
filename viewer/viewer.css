@@ -53,6 +53,24 @@
 
 .statusline { margin-top: 10px; font-size: 13.5px; }
 
+/* The no-surface display fallback's visible label: the part is drawn from
+   its decoded carriers (points / law-pinned segments), never as a surface. */
+.display-label {
+  margin-top: 10px;
+  border: 1px solid var(--warn, #f59e0b);
+  border-radius: 10px;
+  background: rgba(245, 158, 11, .10);
+  padding: 10px 14px;
+  font-size: 13.5px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+}
+.display-label[hidden] { display: none; }
+.display-label-text { font-family: var(--mono); color: var(--warn, #f59e0b); font-weight: 600; }
+.display-label-note { color: var(--ink-dim); font-size: 12.5px; }
+
 .controls {
   display: flex;
   align-items: center;

@@ -100,6 +100,14 @@ function __wbg_get_imports() {
             const ret = new Float32Array(getArrayF32FromWasm0(arg0, arg1));
             return ret;
         },
+        __wbg_new_with_length_00818aa0a226a550: function(arg0) {
+            const ret = new Uint32Array(arg0 >>> 0);
+            return ret;
+        },
+        __wbg_new_with_length_5c0c9043ebd9ec32: function(arg0) {
+            const ret = new Float32Array(arg0 >>> 0);
+            return ret;
+        },
         __wbg_push_c9f4893fc209f768: function(arg0, arg1) {
             const ret = arg0.push(arg1);
             return ret;
