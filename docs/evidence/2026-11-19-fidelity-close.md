@@ -21,7 +21,7 @@
 | **Viewer honesty** | a 0-triangle decode fails with a named reason instead of a blank "loaded" canvas | `viewer.js`, `test_viewer_empty_mesh.py` |
 | **Fidelity harness** | area, pool use, boundary edges and screenshots per file; the proxy is explicitly not ground truth | `2026-11-18-viewer-fidelity-audit.md` |
 
-**Fitness**: L2 Dev **74.80% → 79.15%** (1,093/1,381), held-out **56/61 → 57/61**, L1 flat, L3 23/23. Accepted rows `20261118T232016Z-64b2a1`, `20261119T022504Z-a9bda9` and `20261119T035609Z-7dc3ea`; published to gh-pages.
+**Fitness**: L2 Dev **74.80% → 79.51%** (1,098/1,381), held-out **56/61 → 57/61**, L1 flat, L3 23/23. Accepted rows `20261118T232016Z-64b2a1`, `20261119T022504Z-a9bda9` and `20261119T035609Z-7dc3ea`; published to gh-pages.
 
 ## 2. What remains — documented negatives
 
