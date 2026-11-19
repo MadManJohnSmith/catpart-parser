@@ -19,6 +19,7 @@ pub mod composite;
 pub mod errors;
 pub mod export;
 pub mod facets;
+pub mod grid;
 pub mod mesh;
 pub mod ply;
 pub mod pool;

@@ -44,6 +44,14 @@
 //!   frames but none passes the exact B-spline evaluable battery, or
 //!   none yields a sane tessellation (docs/evidence/2026-11-19-
 //!   surface-head.md section 5, 2026-11-19-surface-tessellation.md).
+//! - ``untriangulable-grid``: the part carries at least one structured
+//!   point-grid candidate (an ``e5 0d`` record payload or the
+//!   content-prefix f64 allocation with a ``rows x cols`` reading,
+//!   ``rows, cols >= 3``) but none passes the triangulation gates —
+//!   stalled steps, zero-area cells, a non-manifold cell complex, or
+//!   the prefix dialect's non-monotone/non-uniform stations.  The grid
+//!   connectivity is an inference, never a decoded surface
+//!   (docs/evidence/2026-11-19-grid-meshing.md).
 //! - ``unreadable-file`` / ``io-error``: input path cannot be read,
 //!   output cannot be written (OSError).
 //!
@@ -71,6 +79,7 @@ pub const MALFORMED_STORE_HEADER: &str = "malformed-store-header";
 pub const MALFORMED_POOL_GROUP: &str = "malformed-pool-group";
 pub const MALFORMED_POOL_VERTEX: &str = "malformed-pool-vertex";
 pub const NO_EVALUABLE_SURFACE: &str = "no-evaluable-surface";
+pub const UNTRIANGULABLE_GRID: &str = "untriangulable-grid";
 pub const UNREADABLE_FILE: &str = "unreadable-file";
 pub const IO_ERROR: &str = "io-error";
 
@@ -128,6 +137,7 @@ mod tests {
         assert_eq!(MALFORMED_POOL_GROUP, "malformed-pool-group");
         assert_eq!(MALFORMED_POOL_VERTEX, "malformed-pool-vertex");
         assert_eq!(NO_EVALUABLE_SURFACE, "no-evaluable-surface");
+        assert_eq!(UNTRIANGULABLE_GRID, "untriangulable-grid");
         assert_eq!(UNREADABLE_FILE, "unreadable-file");
         assert_eq!(IO_ERROR, "io-error");
     }

@@ -14,6 +14,10 @@ decode models one level per module:
 - :mod:`catpart.geometry.surface` — the exact ``a5 03 34`` degree-5
   B-spline surface evaluator and adaptive tessellator used when a part
   carries no facet records (docs/evidence/2026-11-19-surface-tessellation.md),
+- :mod:`catpart.geometry.grid` — the structured point-grid (E5 / f64-net
+  dialect) triangulator used only when a part carries neither facets nor
+  an a5 frame; its connectivity is an explicit **candidate** inference
+  (docs/evidence/2026-11-19-grid-meshing.md),
 - :mod:`catpart.geometry.export` — the ``catpart-export`` orchestration
   and its classified failure surface (:class:`ExportError`).
 

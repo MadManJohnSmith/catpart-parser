@@ -33,6 +33,17 @@ convention of kebab-case classes plus evidence-citing detail):
   yields a sane tessellation (docs/evidence/2026-11-19-surface-head.md
   section 5, 2026-11-19-surface-tessellation.md). A vertices-only or
   empty mesh is never reported as a surface export.
+- ``untriangulable-grid``: the part carries at least one structured
+  point-grid candidate (a ``rows x cols`` reading of an ``e5 0d`` record
+  payload or of the content-prefix f64 allocation, ``rows, cols >= 3``)
+  but none passes the triangulation gates — a stalled station/column
+  step, a zero-area cell, a non-manifold cell complex, or (prefix
+  dialect only) non-monotone / non-uniform stations.  The grid is an
+  inferred connectivity, never a decoded surface, and an empty or
+  partial mesh is never reported as one (docs/evidence/
+  2026-11-19-grid-meshing.md).  A part with no ``>=3x3`` grid candidate
+  keeps its pre-grid classification (``missing-geometry-store`` /
+  ``undecoded-variant`` / ...).
 - ``unreadable-file`` / ``io-error``: input path cannot be read, output
   cannot be written (OSError).
 """

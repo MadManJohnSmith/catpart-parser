@@ -41,7 +41,7 @@ from __future__ import annotations
 import mmap
 
 from catpart.geometry.errors import ExportError
-from catpart.geometry import facets, mesh, pool, ply, store, surface
+from catpart.geometry import facets, grid, mesh, pool, ply, store, surface
 from catpart.geometry import composite
 
 EXPORT_SCHEMA_VERSION = 1
@@ -60,6 +60,8 @@ WARN_PRIMARY_KEPT = "primary-loop-manifold-kept"
 WARN_DEDUP = "duplicate-triangles-deduped"
 WARN_DEDUP_DECLINED = "duplicate-triangles-dedup-declined"
 WARN_SURFACE_TESSELLATED = "bspline-surface-tessellated"
+WARN_GRID_MESHED = "point-grid-meshed"
+WARN_GRID_REFUSED = "grid-candidates-refused"
 
 
 def build_export(path, out_path) -> dict:
@@ -98,9 +100,14 @@ def _export_data(data) -> tuple[dict, list, list]:
     zero facet triangles (the G2 P7 vertices-only family), a part whose
     ``CATPrtCont`` region carries ``a5 03 34`` surface frames is decoded
     with :mod:`catpart.geometry.surface` and exported as a tessellated
-    B-spline mesh.  A part with surface frames and no tessellatable
-    surface raises the named ``no-evaluable-surface`` class; a part with
-    no surface frames re-raises the store path's original classification.
+    B-spline mesh; a part with no surface frame falls to the structured
+    point-grid route (:mod:`catpart.geometry.grid`, **candidate**
+    connectivity).  A part with surface frames and no tessellatable
+    surface raises the named ``no-evaluable-surface`` class, a part with
+    grid candidates and no triangulable grid the named
+    ``untriangulable-grid`` class; a part with neither re-raises the
+    store path's original classification.  Priority is facets > a5
+    surface > grid.
     """
     try:
         summary, vertices, triangles = _export_store_data(data)
@@ -243,17 +250,17 @@ def _surface_fallback(
     """The exact-surface route for a part with no facet triangles.
 
     ``previous`` is the store path's vertices-only success (G2 P7); it is
-    returned unchanged when the part carries no ``a5 03 34`` frame at
-    all, so the pre-surface classifications and outputs stay identical.
-    When surface frames exist but none evaluates, the named
-    ``no-evaluable-surface`` failure is raised — an empty mesh is never
-    passed off as a success.
+    returned unchanged when the part carries no ``a5 03 34`` frame and no
+    structured point grid, so the pre-surface classifications and outputs
+    stay identical.  A part with surface frames but none evaluating keeps
+    the named ``no-evaluable-surface`` failure (the a5 path has priority
+    over the grid inference); a part with no surface frames falls through
+    to :func:`_grid_fallback`.  An empty mesh is never passed off as a
+    success.
     """
     result = surface.scan_part(data)
     if result.candidates == 0:
-        if previous is not None:
-            return previous
-        raise original
+        return _grid_fallback(data, original, previous)
     if not result.has_mesh:
         raise ExportError(
             "no-evaluable-surface",
@@ -338,6 +345,126 @@ def _surface_fallback(
             "tolerance_fraction": surface.TOLERANCE_FRACTION,
             "tolerance_min": min(result.tolerances),
             "tolerance_max": max(result.tolerances),
+        },
+    }
+    _self_check(summary)
+    return summary, vertices, triangles
+
+
+def _grid_fallback(
+    data,
+    original: ExportError | None,
+    previous: tuple[dict, list, list] | None,
+) -> tuple[dict, list, list]:
+    """The structured-point-grid route for a part with no facets and no a5 frame.
+
+    This is an **inference**: the carrier bytes pin a ``rows x cols``
+    point net, and the mesh is two triangles per cell with a consistent
+    winding from the station order — connectivity is *candidate*, never
+    a decoded surface (the summary says so, the warning says so).  A
+    part whose only point runs have no ``>=3x3`` shape keeps the store
+    path's original classification; a part with grid candidates and no
+    triangulable grid raises the named ``untriangulable-grid`` failure.
+    """
+    result = grid.scan_part(data)
+    if not result.has_mesh:
+        if result.has_candidates:
+            refusals = ", ".join(
+                f"{reason}={count}" for reason, count in result.refusals
+            )
+            raise ExportError(
+                "untriangulable-grid",
+                f"{result.carriers} 3-divisible point run(s), "
+                f"{result.shaped} with a >=3x3 grid reading, "
+                f"{result.refused} refused "
+                f"({refusals or 'none'}): no structured point grid "
+                "triangulated — the grid connectivity is an inference "
+                "(candidate two triangles per cell, no surface decode) and "
+                "a partial or empty mesh is never reported "
+                "(docs/evidence/2026-11-19-grid-meshing.md)",
+            )
+        if previous is not None:
+            return previous
+        raise original
+    vertices = list(result.vertices)
+    triangles = list(result.triangles)
+    stats = mesh.mesh_stats(triangles)
+    warnings = [
+        {
+            "class": WARN_GRID_MESHED,
+            "detail": f"{result.meshed} structured point grid(s) triangulated "
+            f"from {result.shaped} candidate(s) on "
+            f"{result.station_rows} station rows x {result.columns} sample "
+            "columns in total, two triangles per cell with a consistent "
+            "winding from the station order: connectivity is an INFERENCE "
+            "(candidate), not a decoded surface — the carriers are "
+            "row-major f64 point nets, not NURBS heads "
+            "(docs/evidence/2026-11-19-grid-meshing.md)",
+        }
+    ]
+    if result.refused:
+        refusals = ", ".join(
+            f"{reason}={count}" for reason, count in result.refusals
+        )
+        warnings.append(
+            {
+                "class": WARN_GRID_REFUSED,
+                "detail": f"{result.refused} grid candidate(s) refused "
+                f"({refusals}); their bytes were not emitted",
+            }
+        )
+    if stats.boundary_edges:
+        warnings.append(
+            {
+                "class": WARN_OPEN_SHELL,
+                "detail": f"{stats.boundary_edges} boundary edges: every "
+                "grid sheet is an open sheet by nature, and grids are "
+                "concatenated with disjoint index spaces (no topology "
+                "join is attempted)",
+            }
+        )
+    unused = len(vertices) - mesh.used_vertex_count(triangles, len(vertices))
+    if unused:
+        warnings.append(
+            {
+                "class": WARN_UNUSED_VERTICES,
+                "detail": f"{unused} of {len(vertices)} grid vertices are "
+                "not referenced by any exported triangle",
+            }
+        )
+    bbox_min, bbox_max = mesh.bounding_box(vertices)
+    summary = {
+        "schema_version": EXPORT_SCHEMA_VERSION,
+        "vertex_count": len(vertices),
+        "triangle_count": len(triangles),
+        "bounding_box": {"min": bbox_min, "max": bbox_max},
+        "warnings": warnings,
+        "store_ordinal": 0,
+        "origin_kind": store.ORIGIN_KIND_BLOCK,
+        "pool_group_count": 0,
+        "facet_candidate_count": 0,
+        "facet_record_count": 0,
+        "degenerate_triangle_count": 0,
+        "mesh": {
+            "edge_count": stats.edge_count,
+            "manifold": stats.manifold,
+            "closed": stats.closed,
+            "oriented": stats.oriented,
+            "boundary_edge_count": stats.boundary_edges,
+        },
+        "grid_meshing": {
+            "block": result.block,
+            "carriers": result.carriers,
+            "shaped": result.shaped,
+            "meshed": result.meshed,
+            "refused": result.refused,
+            "refusals": dict(result.refusals),
+            "duplicate_grids": result.duplicate_grids,
+            "station_rows": result.station_rows,
+            "columns": result.columns,
+            "station_monotone": result.monotone_grids,
+            "points": result.points,
+            "connectivity": grid.CONNECTIVITY,
         },
     }
     _self_check(summary)

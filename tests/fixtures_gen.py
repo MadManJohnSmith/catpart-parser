@@ -210,6 +210,12 @@ VALID_VARIANTS = (
     # with one a5 03 34 degree-5 C2 surface record and no facet store —
     # the export path tessellates it (surface-head/tessellation notes).
     "geometry-surface-bspline",
+    # Structured point-grid fallback (2026-11-19): a CATPrtCont block
+    # with a chained ``e5 0d`` run whose record payload carries a
+    # row-major 4x5 f64 point net and no facet store and no a5 frame —
+    # the export path triangulates it (candidate connectivity, the
+    # grid-meshing note).
+    "geometry-point-grid",
     # Composite-law variants (G6 stage 2c/3d, #34): the identity law
     # decodes both forms; slanted quads, curve-entry loops and the
     # u16be no-repeat rule are the law's shapes.
@@ -323,6 +329,11 @@ CORRUPTED_VARIANTS = (
     # passes the evaluable battery -> the named no-evaluable-surface
     # class, never an empty mesh.
     "geometry-surface-no-evaluable",
+    # Structured point-grid fail-closed (2026-11-19): the grid candidate
+    # is present (5x5) but its last station row stalls, so no grid
+    # triangulates -> the named untriangulable-grid class, never a
+    # partial mesh.
+    "geometry-point-grid-stalled",
     # Stage-3a fail-closed negatives (#34): recovered-then-failing,
     # probe-matches-nothing, and neither-tail-family-recovers.
     "geometry-seebody-composite",
@@ -371,6 +382,7 @@ GEOMETRY_VARIANTS = (
     "geometry-degenerate-cross",
     "geometry-second-store-exports",
     "geometry-surface-bspline",
+    "geometry-point-grid",
     "geometry-seebody-store",
     "geometry-xdoclink-store",
     "geometry-overshoot-tail",
@@ -386,6 +398,7 @@ GEOMETRY_VARIANTS = (
     "geometry-out-of-range-refs",
     "geometry-truncated-pool",
     "geometry-surface-no-evaluable",
+    "geometry-point-grid-stalled",
     "geometry-seebody-composite",
     "geometry-seebody-empty",
     "geometry-overshoot-bad-tail",
@@ -2447,6 +2460,55 @@ def _surface_bspline_payload(degenerate: bool = False) -> bytes:
     return block + b"\x00" * 64 + frame
 
 
+def _point_grid_points(rows: int = 4, stalled: bool = False):
+    """A row-major net: rows advance x/z, columns advance y."""
+    points = []
+    for i in range(rows):
+        source = i - 1 if stalled and i == rows - 1 else i
+        for j in range(5):
+            points.append((10.0 * source, 8.0 * j, 2.0 * source))
+    return points
+
+
+def _grid_record(points, cls: int = 0x00E7) -> bytes:
+    payload = b"".join(struct.pack("<3d", *point) for point in points)
+    return (
+        b"\xe5\x0d"
+        + b"\x03"
+        + struct.pack("<H", cls)
+        + struct.pack("<I", len(payload))
+        + struct.pack("<I", 100)
+        + payload
+    )
+
+
+def _point_grid_payload(stalled: bool = False) -> bytes:
+    """A CATPrtCont block carrying one chained ``e5 0d`` grid run.
+
+    The meshable grid is a row-major 4x5 net: each station row is
+    constant in x/z and advances y across the five sample columns, so
+    the committed shape law reads ``rows=4, cols=5`` and the
+    triangulation is two cells per quad.  The valid fixture also carries
+    a 5x5 net whose last station row repeats, so one grid meshes and one
+    is refused by the stall gate (the ``grid-candidates-refused``
+    warning path); the stalled twin carries only the stalled net, which
+    is the named ``untriangulable-grid`` fixture.  Every run chains at
+    least three records (the committed record law admits three), the
+    grid record's class is ``0x00e7`` — the class the corpus' 98 grids
+    use — and the filler records carry four bytes so they can never
+    render as a point run.
+    """
+    grids = [_point_grid_points(stalled=True)] if stalled else [
+        _point_grid_points(4),
+        _point_grid_points(5, stalled=True),
+    ]
+    records = [_grid_record(points) for points in grids]
+    records.append(_grid_record(b"", cls=0x0018))
+    records.append(_grid_record(b"", cls=0x0018))
+    block = storage_property_block(b"CATPrtCont", b"CATContainer")
+    return block + b"\x00" * 64 + b"".join(records)
+
+
 def _geometry_payload(variant: str) -> bytes:
     """The storage blocks + property preambles + nested store(s).
 
@@ -2461,6 +2523,10 @@ def _geometry_payload(variant: str) -> bytes:
         return _surface_bspline_payload()
     if variant == "geometry-surface-no-evaluable":
         return _surface_bspline_payload(degenerate=True)
+    if variant == "geometry-point-grid":
+        return _point_grid_payload()
+    if variant == "geometry-point-grid-stalled":
+        return _point_grid_payload(stalled=True)
     if variant in ("geometry-seebody-store", "geometry-seebody-composite"):
         return _nested_store_block(b"CATSeeBodyCont", _geometry_store(variant))
     if variant == "geometry-seebody-empty":

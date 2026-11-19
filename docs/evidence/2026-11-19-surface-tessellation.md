@@ -1,7 +1,7 @@
 # Evidence: the `a5 03 34` surfaces as meshes — census, tessellation, export (2026-11-19)
 
 **Date**: 2026-11-19
-**Status**: COMPLETE for the exact B-spline family (60/60 evaluable surfaces tessellate); **closed** for the 126 no-facet parts that carry no `a5 03 34` frame (their E5/f64-net dialects remain point nets)
+**Status**: COMPLETE for the exact B-spline family (60/60 evaluable surfaces tessellate); **closed** for the 126 no-facet parts that carry no `a5 03 34` frame under this route — the later grid route (`docs/evidence/2026-11-19-grid-meshing.md`) opens 6 of those 126 as **candidate** meshes and names the rest
 **Target**: the next step named by `docs/evidence/2026-11-19-surface-head.md` §6/§9: the head is a degree-5 C2 non-rational B-spline — turn it into a mesh and open the 128 no-facet parts.
 **Method**: shipped evaluator/tessellator `src/catpart/geometry/surface.py`, export wiring in `src/catpart/geometry/export.py`, Rust port `port/src/geometry/surface.rs`; probe `scripts/triage/probe_surface_tessellation.py`; corpus-free tests `tests/test_surface_tessellation.py` (18) and the port's `surface.rs` unit tests (5); claims `docs/evidence/data/surface-tessellation-claims.csv` (`ST-01`..`ST-05`) and per-part `docs/evidence/data/surface-tessellation-parts.csv` (128 rows). Read-only over the corpus.
 
@@ -125,7 +125,7 @@ The fixture also joins the Fidelity export matrix at seeds 0 and 7, so `tests/te
 
 ## 6. What stays closed
 
-- **126/128 parts** carry no `a5 03 34` marker: no exact B-spline surface exists in them under the pinned grammar. The E5 dialect's 98 rectangular grids (`docs/evidence/2026-11-19-e5-dialect.md`) are still **point nets** — their payload has no degree/knot reading, so they are not silently promoted to surfaces.
+- **126/128 parts** carry no `a5 03 34` marker: no exact B-spline surface exists in them under the pinned grammar. The E5 dialect's 98 rectangular grids (`docs/evidence/2026-11-19-e5-dialect.md`) stay **point nets** here — their payload has no degree/knot reading, so they are not silently promoted to surfaces. The grid route (`docs/evidence/2026-11-19-grid-meshing.md`) later triangulates 55 of the 101 grid candidates into **candidate** meshes (6/126 parts open) without calling them decoded surfaces.
 - **3 surfaces** in `d7ed0772` decode but do not evaluate (the head note's named blockers: two ~1 km merged allocations and one non-station-constant ordering). They remain refused.
 - **No topology joins.** Two surfaces that meet in the CAD model are exported as independent patches; their shared boundary is two coincident boundary edges, not one welded edge. The mesh is a collection of sheets, not a watertight solid.
 - **No ground truth.** The validation is geometric (finite, hull-bounded, chord tolerance, manifold), not a comparison against a CAD kernel.

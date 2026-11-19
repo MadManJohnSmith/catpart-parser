@@ -34,7 +34,9 @@ fitness classification convention (kebab-case classes, evidence-citing
 detail): ``missing-geometry-store``, ``undecoded-variant``,
 ``malformed-store-header`` / ``malformed-pool-group`` /
 ``malformed-pool-vertex``, ``no-evaluable-surface`` (the exact-surface
-fallback: ``a5 03 34`` frames present but no surface tessellates), plus
+fallback: ``a5 03 34`` frames present but no surface tessellates),
+``untriangulable-grid`` (the structured-point-grid fallback: ``>=3x3``
+grid candidates present but none triangulates), plus
 ``unreadable-file`` / ``io-error`` for path-level failures; usage errors
 exit 2.
 """
