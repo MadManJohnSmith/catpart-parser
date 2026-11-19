@@ -1495,6 +1495,34 @@ fn scan_token_nodes(data: &[u8], lo: usize, hi: usize) -> Vec<TokenNode> {
     nodes
 }
 
+/// Pair each pool group with its rep node — the twin's
+/// ``_rep_node_positions`` (2026-11-18, #50 B3). The measured corpus
+/// law: the pool wrapper FOLLOWS its rep's list node, so the rep node
+/// is the last token-bearing list node before the group's wrapper
+/// (2,175 groups across 1,036 composite stores, all with a preceding
+/// node; the preceding node absorbs 2,149, and the first node after
+/// the wrapper absorbs only 2 of 1,186 — both times the preceding node
+/// absorbs too, so "after" is never the reading). A node already
+/// claimed by an earlier group cannot re-list a second pool: the later
+/// group gets ``None`` (ambiguous → fail-closed).
+fn rep_node_positions(nodes: &[TokenNode], groups: &[PoolGroup]) -> Vec<Option<usize>> {
+    let order: Vec<usize> = nodes.iter().map(|n| n.pos).collect();
+    let mut claimed: HashSet<usize> = HashSet::new();
+    let mut positions = Vec::with_capacity(groups.len());
+    for g in groups {
+        let node = order.iter().rev().find(|&&p| p < g.offset).copied();
+        let node = match node {
+            Some(n) if !claimed.contains(&n) => {
+                claimed.insert(n);
+                Some(n)
+            }
+            _ => None,
+        };
+        positions.push(node);
+    }
+    positions
+}
+
 /// Noise-aware re-listing test — the twin's ``_tol_match``: some
 /// written point matches ``v`` within :const:`NOISE_REL` per
 /// coordinate; returns the best (smallest) relative delta, or
@@ -1535,10 +1563,61 @@ struct DecodedRep {
     table_bytes: usize,
 }
 
+/// One rep node's reading — the twin's ``_decode_rep_node`` record
+/// (2026-11-18, #50 B3).
+struct RepNodeReading {
+    elements: Vec<Element>,
+    pts: Vec<(f64, f64, f64)>,
+    /// End of the point region, relative to the payload start (the
+    /// record territory opens here).
+    region_end_rel: usize,
+    write_count: u32,
+    table_bytes: usize,
+}
+
+/// One rep node under the per-rep law ladder — the twin's
+/// ``_decode_rep_node`` (2026-11-18, #50 B3): the committed table
+/// layout first, then the stage-8 law set (extent table, raw, flat)
+/// with the rep's OWN pool group as the flat law's absorption
+/// reference. ``None`` when no law decodes the node.
+fn decode_rep_node(
+    payload: &[u8],
+    element_count: u32,
+    poolv: &[(f64, f64, f64)],
+) -> Option<RepNodeReading> {
+    if let Ok((elements, info)) = decode_region(payload, element_count) {
+        let pts: Vec<(f64, f64, f64)> = elements.iter().filter_map(|e| e.1).collect();
+        return Some(RepNodeReading {
+            elements,
+            pts,
+            region_end_rel: info.walk_end,
+            write_count: info.write_count,
+            table_bytes: info.table_bytes,
+        });
+    }
+    let counts_end = token_counts_end(payload)?;
+    let nd = decode_node_mixedwrite(payload, element_count, counts_end, poolv);
+    let law = nd.law?;
+    #[allow(clippy::manual_div_ceil)]
+    let table_bytes = if law == "table" {
+        (element_count as usize + 3) / 4
+    } else {
+        0
+    };
+    Some(RepNodeReading {
+        elements: nd.elements,
+        pts: nd.pts,
+        region_end_rel: nd.region_end_rel,
+        write_count: nd.write_count as u32,
+        table_bytes,
+    })
+}
+
 /// The sequence-of-reps reading (stage-4b per-rep law, stage-5
 /// integration) — the twin's ``_decode_per_rep``. Rep k = (pool group
-/// k, the k-th walk-exact token node, that node's record territory
-/// ``[region_end_k, node_{k+1})``); the k-th pool re-lists verbatim
+/// k, the token node immediately preceding that group, that node's
+/// record territory ``[region_end_k, next token node)``); the k-th
+/// pool re-lists verbatim
 /// (or within :const:`NOISE_REL`) in the k-th rep's region. A rep
 /// exports only when its pool absorbs and its gated references
 /// resolve in-bounds against its OWN element count; failing reps stay
@@ -1554,25 +1633,42 @@ fn decode_per_rep(
     n_pool: usize,
     seam_area: Option<f64>,
 ) -> Result<CompositeDecode, ExportError> {
-    let mut decoded: Vec<DecodedRep> = Vec::new();
-    for node in scan_token_nodes(data, lo, hi) {
+    let nodes = scan_token_nodes(data, lo, hi);
+    let rep_nodes = rep_node_positions(&nodes, groups);
+    // A paired node's flat law is gated on its OWN group's vertices;
+    // an unpaired node decodes against no pool.
+    let mut pool_by_node: HashMap<usize, usize> = HashMap::new();
+    for (gi, node) in rep_nodes.iter().enumerate() {
+        if let Some(n) = node {
+            pool_by_node.entry(*n).or_insert(gi);
+        }
+    }
+    let mut decoded: HashMap<usize, DecodedRep> = HashMap::new();
+    let mut node_failures: Vec<String> = Vec::new();
+    for node in &nodes {
         let payload = &data[node.plo..node.phi];
-        // walk-exact failure: the rep has no decoded region
-        let Ok((elements, info)) = decode_region(payload, node.elem) else {
+        let poolv: &[(f64, f64, f64)] = match pool_by_node.get(&node.pos) {
+            Some(&gi) => &groups[gi].vertices,
+            None => &[],
+        };
+        let Some(reading) = decode_rep_node(payload, node.elem, poolv) else {
+            node_failures.push(format!("node@{}: undecoded", node.pos));
             continue;
         };
-        let pts: Vec<(f64, f64, f64)> = elements.iter().filter_map(|e| e.1).collect();
-        decoded.push(DecodedRep {
-            pos: node.pos,
-            payload_len: node.phi - node.plo,
-            elem: node.elem,
-            elements,
-            pts,
-            // absolute end of the point region (the territory start)
-            region_end: node.pos + 4 + info.walk_end,
-            write_count: info.write_count,
-            table_bytes: info.table_bytes,
-        });
+        decoded.insert(
+            node.pos,
+            DecodedRep {
+                pos: node.pos,
+                payload_len: node.phi - node.plo,
+                elem: node.elem,
+                elements: reading.elements,
+                pts: reading.pts,
+                // absolute end of the point region (the territory start)
+                region_end: node.pos + 4 + reading.region_end_rel,
+                write_count: reading.write_count,
+                table_bytes: reading.table_bytes,
+            },
+        );
     }
     if decoded.is_empty() {
         return Err(ExportError::new(
@@ -1581,10 +1677,17 @@ fn decode_per_rep(
                 "node list does not re-list the pool: {n_missing} of \
                  {n_pool} pool vertices absent from the decoded point \
                  region (unabsorbed variant; the per-rep decomposition \
-                 finds no walk-exact rep region either)"
+                 decodes no rep node under the table, extent, raw or \
+                 flat law either: {})",
+                if node_failures.is_empty() {
+                    "no nodes".to_string()
+                } else {
+                    node_failures[..node_failures.len().min(2)].join("; ")
+                }
             ),
         ));
     }
+    let positions: Vec<usize> = nodes.iter().map(|n| n.pos).collect();
     let mut points: Vec<(f64, f64, f64)> = Vec::new();
     let mut triangles: Vec<(u32, u32, u32)> = Vec::new();
     let mut degenerate = 0u32;
@@ -1605,28 +1708,32 @@ fn decode_per_rep(
     let mut table_bytes = 0usize;
     let mut element_decl = 0usize;
     let mut curve_entries = 0usize;
-    let mut node_bytes = 0usize;
+    let node_bytes: usize = decoded.values().map(|d| d.payload_len).sum();
     let mut reps_unexported: Vec<String> = Vec::new();
     let mut reps_dup_pin: Vec<(usize, DupPin)> = Vec::new();
     let mut curves: Vec<Vec<(f64, f64, f64)>> = Vec::new();
     let mut space_offsets: Vec<usize> = Vec::new();
-    for (k, d) in decoded.iter().enumerate() {
-        node_bytes += d.payload_len;
-        if k >= groups.len() {
-            // stage-5 review O2 hardening: a walk-exact rep beyond the
-            // pool groups has no pool to re-list — per-rep absorption
-            // is unestablished, so it stays unexported (fail-closed;
-            // measured 0/152 on the corpus A/B).
+    let mut reps_decoded = 0usize;
+    let mut reps_exported = 0usize;
+    for (k, group) in groups.iter().enumerate() {
+        let Some(node_pos) = rep_nodes[k] else {
             reps_unexported.push(format!(
-                "rep {k}: no pool group to re-list ({} pool \
-                 groups for {} walk-exact reps; per-rep \
-                 absorption unestablished)",
-                groups.len(),
-                decoded.len()
+                "rep {k}: no token node precedes pool group {k} \
+                 (the group's rep node is missing or ambiguous; per-rep \
+                 absorption not established)"
             ));
             continue;
-        }
-        let gv = &groups[k].vertices;
+        };
+        let Some(d) = decoded.get(&node_pos) else {
+            reps_unexported.push(format!(
+                "rep {k}: the token node at {node_pos} has no region under \
+                 the committed table layout or the stage-8 extent/raw/\
+                 flat laws (its pool group stays unexported)"
+            ));
+            continue;
+        };
+        reps_decoded += 1;
+        let gv = &group.vertices;
         // distinct pool vertices (the twin's set(gv); -0.0/0.0 one
         // element, per :fn:`vkey`)
         let mut seen: HashSet<(u64, u64, u64)> = HashSet::new();
@@ -1661,11 +1768,12 @@ fn decode_per_rep(
             ));
             continue;
         }
-        let nxt = if k + 1 < decoded.len() {
-            decoded[k + 1].pos
-        } else {
-            hi
-        };
+        let nxt = positions
+            .iter()
+            .copied()
+            .filter(|&p| p > d.pos)
+            .min()
+            .unwrap_or(hi);
         let (records, n_hdrs) =
             parse_strip_records(data, d.region_end, nxt, d.elem, Some(&d.elements));
         let (ext_k, ext_cands) = parse_extended_facet_records(data, d.region_end, nxt, d.elem);
@@ -1723,6 +1831,7 @@ fn decode_per_rep(
         table_bytes += d.table_bytes;
         element_decl += d.elem as usize;
         curve_entries += d.elements.len() - d.pts.len();
+        reps_exported += 1;
         for rec in &records {
             if !EXPORTED_SHORT_MARKERS.contains(&rec.marker) {
                 *skipped_markers.entry(rec.marker).or_insert(0) += 1;
@@ -1776,8 +1885,8 @@ fn decode_per_rep(
         facet_records,
         skipped_markers,
         node_bytes,
-        reps_decoded: Some(decoded.len()),
-        reps_exported: Some(decoded.len() - reps_unexported.len()),
+        reps_decoded: Some(reps_decoded),
+        reps_exported: Some(reps_exported),
         reps_unexported: Some(reps_unexported.len()),
         rep_reasons: Some(reps_unexported),
         rep_laws: None,
@@ -3193,12 +3302,11 @@ struct MixedRep {
 /// with the stage-8 locator/predicate laws per node
 /// (:fn:`decode_node_mixedwrite`).
 ///
-/// Rep k = (pool group k, the k-th law-decoded token node in body
-/// order — the diagonal, measured on the census population: all 81
-/// region-absorbable stores pair diagonally with exact f32 —, that
-/// node's record territory ``[region_end_k, next decoded node)``).
+/// Rep k = (pool group k, the token node immediately preceding that
+/// group's wrapper — the measured order, 2026-11-18 #50 B3 —, that
+/// node's record territory ``[region_end_k, next token node)``).
 /// The store exports only when EVERY pool vertex is absorbed by its
-/// diagonal rep's region (exact f32, then the stage-4b noise
+/// paired rep's region (exact f32, then the stage-4b noise
 /// tolerance capped at 10,000-vertex pools): vertices no region
 /// re-lists are the sub-node record route's residue — their element
 /// slots are unpinned, the store stays fail-closed for export (the
@@ -3208,8 +3316,8 @@ struct MixedRep {
 /// triangulation; merged meshes concatenate the exported reps'
 /// written points. A rep whose gated references leave its own
 /// element space stays unexported with the reason named (stage-5
-/// per-rep fail-closed); reps beyond the pool groups have no pool to
-/// re-list and stay unexported (stage-5 O2).
+/// per-rep fail-closed); a group whose rep node is missing or was
+/// already claimed by an earlier group stays unexported too.
 ///
 /// Raises ``undecoded-variant`` with the specific gap when no node
 /// decodes, absorption is not established, or no rep exports.
@@ -3227,7 +3335,18 @@ fn decode_mixedwrite(
     let pool_set: HashSet<(u64, u64, u64)> = poolv.iter().copied().map(vkey).collect();
     let nodes = scan_token_nodes(data, lo, hi);
     let n_nodes = nodes.len();
-    let mut decoded: Vec<MixedRep> = Vec::new();
+    // The rep pairing (2026-11-18, #50 B3; see decode_per_rep): group
+    // k pairs with the token node immediately preceding its wrapper.
+    // The flat law's absorption gate uses that group's vertices only —
+    // a multi-rep store's whole pool cannot re-list in one region.
+    let rep_nodes = rep_node_positions(&nodes, groups);
+    let mut pool_by_node: HashMap<usize, usize> = HashMap::new();
+    for (gi, node) in rep_nodes.iter().enumerate() {
+        if let Some(n) = node {
+            pool_by_node.entry(*n).or_insert(gi);
+        }
+    }
+    let mut decoded: HashMap<usize, MixedRep> = HashMap::new();
     let mut law_counts = RepLaws {
         table: 0,
         raw: 0,
@@ -3240,7 +3359,11 @@ fn decode_mixedwrite(
             // unreachable behind scan_token_nodes
             continue;
         };
-        let nd = decode_node_mixedwrite(payload, node.elem, counts_end, &poolv);
+        let poolv_node: &[(f64, f64, f64)] = match pool_by_node.get(&node.pos) {
+            Some(&gi) => &groups[gi].vertices,
+            None => &[],
+        };
+        let nd = decode_node_mixedwrite(payload, node.elem, counts_end, poolv_node);
         let Some(law) = nd.law else {
             node_failures.push(if nd.failure.is_empty() {
                 format!("node@{}: undecoded", node.pos)
@@ -3254,20 +3377,23 @@ fn decode_mixedwrite(
             "raw" => law_counts.raw += 1,
             _ => law_counts.flat += 1,
         }
-        decoded.push(MixedRep {
-            rep: DecodedRep {
-                pos: node.pos,
-                payload_len: node.phi - node.plo,
-                elem: node.elem,
-                elements: nd.elements,
-                pts: nd.pts,
-                // absolute end of the point region (the territory start)
-                region_end: node.pos + 4 + nd.region_end_rel,
-                write_count: nd.write_count as u32,
-                table_bytes: 0,
+        decoded.insert(
+            node.pos,
+            MixedRep {
+                rep: DecodedRep {
+                    pos: node.pos,
+                    payload_len: node.phi - node.plo,
+                    elem: node.elem,
+                    elements: nd.elements,
+                    pts: nd.pts,
+                    // absolute end of the point region (the territory start)
+                    region_end: node.pos + 4 + nd.region_end_rel,
+                    write_count: nd.write_count as u32,
+                    table_bytes: 0,
+                },
+                law,
             },
-            law,
-        });
+        );
     }
     if decoded.is_empty() {
         return Err(ExportError::new(
@@ -3286,13 +3412,13 @@ fn decode_mixedwrite(
         ));
     }
     // Store-level absorption precondition: every pool vertex in its
-    // diagonal rep's region (exact f32, then the stage-4b noise
+    // PAIRED rep's region (exact f32, then the stage-4b noise
     // tolerance; the census measured exact f32 on all 81). Vertices no
     // region re-lists are the sub-node record route's residue — their
     // element slots are unpinned, the store stays fail-closed (named).
     let mut uncovered = 0usize;
     for (k, g) in groups.iter().enumerate() {
-        let rep = decoded.get(k).map(|m| &m.rep);
+        let rep = rep_nodes[k].and_then(|n| decoded.get(&n)).map(|m| &m.rep);
         let mut seen: HashSet<(u64, u64, u64)> = HashSet::new();
         let mut distinct_vals: Vec<(f64, f64, f64)> = Vec::new();
         for &v in &g.vertices {
@@ -3355,29 +3481,40 @@ fn decode_mixedwrite(
     let mut table_bytes = 0usize;
     let mut element_decl = 0usize;
     let mut curve_entries = 0usize;
-    let mut node_bytes = 0usize;
     let mut reps_unexported: Vec<String> = Vec::new();
     let mut reps_dup_pin: Vec<(usize, DupPin)> = Vec::new();
     let mut curves: Vec<Vec<(f64, f64, f64)>> = Vec::new();
     let mut space_offsets: Vec<usize> = Vec::new();
-    for (k, m) in decoded.iter().enumerate() {
-        let d = &m.rep;
-        node_bytes += d.payload_len;
-        if k >= groups.len() {
+    let node_bytes: usize = decoded.values().map(|m| m.rep.payload_len).sum();
+    let positions: Vec<usize> = nodes.iter().map(|n| n.pos).collect();
+    let mut reps_decoded = 0usize;
+    let mut reps_exported = 0usize;
+    for (k, node_pos) in rep_nodes.iter().copied().enumerate() {
+        let Some(node_pos) = node_pos else {
             reps_unexported.push(format!(
-                "rep {k}: no pool group to re-list ({} pool \
-                 groups for {} law-decoded reps; per-rep \
-                 absorption unestablished)",
-                groups.len(),
-                decoded.len()
+                "rep {k}: the pool group's rep node (missing) has no \
+                 law-decoded region (per-rep absorption unestablished)"
             ));
             continue;
-        }
-        let nxt = if k + 1 < decoded.len() {
-            decoded[k + 1].rep.pos
-        } else {
-            hi
         };
+        let Some(m) = decoded.get(&node_pos) else {
+            reps_unexported.push(format!(
+                "rep {k}: the pool group's rep node at {node_pos} has no \
+                 law-decoded region (per-rep absorption unestablished)"
+            ));
+            continue;
+        };
+        reps_decoded += 1;
+        let d = &m.rep;
+        // A rep's territory ends at the NEXT TOKEN NODE (decoded or
+        // not), so an undecoded node's records are never attributed to
+        // its predecessor.
+        let nxt = positions
+            .iter()
+            .copied()
+            .filter(|&p| p > d.pos)
+            .min()
+            .unwrap_or(hi);
         let (records, n_hdrs) =
             parse_strip_records(data, d.region_end, nxt, d.elem, Some(&d.elements));
         let (ext_k, ext_cands) = parse_extended_facet_records(data, d.region_end, nxt, d.elem);
@@ -3436,6 +3573,7 @@ fn decode_mixedwrite(
         }
         element_decl += d.elem as usize;
         curve_entries += d.elements.len() - d.pts.len();
+        reps_exported += 1;
         for rec in &records {
             if !EXPORTED_SHORT_MARKERS.contains(&rec.marker) {
                 *skipped_markers.entry(rec.marker).or_insert(0) += 1;
@@ -3483,8 +3621,8 @@ fn decode_mixedwrite(
         facet_records,
         skipped_markers,
         node_bytes,
-        reps_decoded: Some(decoded.len()),
-        reps_exported: Some(decoded.len() - reps_unexported.len()),
+        reps_decoded: Some(reps_decoded),
+        reps_exported: Some(reps_exported),
         reps_unexported: Some(reps_unexported.len()),
         rep_reasons: Some(reps_unexported),
         rep_laws: Some(law_counts),

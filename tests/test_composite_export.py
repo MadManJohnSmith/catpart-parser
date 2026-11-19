@@ -1793,14 +1793,22 @@ def test_primary_seam_port_parity_on_the_flips(tmp_path):
 
 # --- 2026-11-18: the coordinate-identity dedup arm (#34) -----------------
 #
-# 545707b9 (Test_trappe) is the one artifact-dominant not-manifold case:
-# 4 reps, 67 index duplicates inside rep 3 plus 451 coordinate
-# duplicates rep 3 re-lists from the earlier rep's welded loops.  The
-# index pass declines (removing 67 leaves 125 over-edges); the
-# coordinate pass drops all 451 and the store is manifold with the same
-# surface (docs/evidence/2026-11-18-coordinate-duplicate-dedup.md).
+# 545707b9 (Test_trappe) was the one artifact-dominant not-manifold case
+# before the B3 rep-node pairing (2026-11-19): 4 reps exported, 67 index
+# duplicates inside rep 3 plus 451 coordinate duplicates rep 3 re-lists
+# from the earlier rep's welded loops; the index pass declined (removing
+# 67 leaves 125 over-edges) and the coordinate pass dropped all 451.
+#
+# With B3 the store exports its own 5 reps: the mis-attributed records
+# belong to the node that now decodes, the assembled mesh is manifold on
+# its own, and the dedup's fire gate (a NOT-manifold assembled mesh)
+# never engages — no dedup outcome at all.  Measured on 2026-11-19
+# (docs/evidence/2026-11-19-b3-pairing.md §3): 2,266 triangles,
+# 16,063.010778 mm², 5/5 reps, no dedup key.  The dedup law itself is
+# unchanged and stays pinned by the fixture arm
+# (test_composite_dedup_coordinate_relist_across_reps).
 
-DEDUP_COORD_CASE = {"545707b9871a535c": 1815}
+DEDUP_COORD_CASE = {"545707b9871a535c": 2266}
 # The zero-regression direction on the same seam: a store the primary
 # seam resolves keeps its exact committed geometry (the dedup never sees
 # a passing assembled mesh).
@@ -1825,11 +1833,11 @@ def _triangle_area(vertices, tri):
     reason="corpus is gitignored / absent (the corpus-gated dedup differential)",
 )
 def test_coordinate_dedup_case_and_port_parity(tmp_path):
-    """Python ≡ Port on the coordinate-dedup case: 545707b9 becomes
-    manifold at 1815 triangles with 451 copies dropped and NO surface
-    lost (the exported area equals the unique-facet area to f64
-    summation order), and b912cbef keeps its committed 31,203-triangle
-    emission with no dedup outcome at all."""
+    """Python ≡ Port on the coordinate-dedup case store after B3: 545707b9
+    keeps its 5 its own reps and stays manifold at 2,266 triangles with
+    the coordinate dedup's fire gate never engaging (no dedup outcome),
+    and b912cbef keeps its committed 31,203-triangle emission with no
+    dedup outcome at all."""
     import shutil
     import subprocess
 
@@ -1858,22 +1866,37 @@ def test_coordinate_dedup_case_and_port_parity(tmp_path):
         assert summary["mesh"]["manifold"] is True
         vertices, faces = parse_ply(python_ply)
         if sha in DEDUP_COORD_CASE:
-            assert summary["composite"]["unordered_dedup_dropped"] == 451
-            assert "unordered_dedup_declined" not in summary["composite"]
+            composite = summary["composite"]
+            # B3 exports the store's own reps: the assembled mesh is
+            # manifold without the dedup, so its fire gate (not-manifold)
+            # never engages and no duplicate resolution is claimed.
+            assert composite["reps_decoded"] == 5
+            assert composite["reps_exported"] == 5
+            assert "unordered_dedup_dropped" not in composite
+            assert "unordered_dedup_declined" not in composite
             listed = 0.0
+            seen_facets = set()
             unique = 0.0
-            seen = set()
+            copies = 0
             for face in faces:
                 area = _triangle_area(vertices, face)
                 listed += area
-                key = tuple(sorted(vertices[i] for i in face))
-                if key not in seen:
-                    seen.add(key)
-                    unique += area
-            # The 451 dropped triangles are the same three points as a
-            # kept copy: the listed area IS the unique-facet area.
-            assert math.isclose(listed, unique, rel_tol=1e-12)
-            assert math.isclose(listed, 11852.259218, rel_tol=1e-9)
+                key = tuple(
+                    sorted(
+                        tuple(round(c, 6) for c in vertices[i]) for i in face
+                    )
+                )
+                if key in seen_facets:
+                    copies += 1
+                    continue
+                seen_facets.add(key)
+                unique += area
+            assert math.isclose(listed, 16063.010778, rel_tol=1e-9)
+            # B3 exports the store's own reps: 384 facets are coincident
+            # copies with identical winding, so the listed area counts
+            # them twice while the unique surface does not.
+            assert copies == 384
+            assert math.isclose(unique, 12151.12, rel_tol=1e-4)
         else:
             assert "unordered_dedup_dropped" not in summary["composite"]
             assert "unordered_dedup_declined" not in summary["composite"]

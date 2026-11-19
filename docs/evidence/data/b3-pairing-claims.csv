@@ -1,0 +1,4 @@
+sha256,path,baseline_class,stage,rep_laws,pool_groups,reps_exported,vertex_count,triangle_count,manifold,port_summary_parity,port_ply_byte_parity
+416d14fd09a8c68d797508c38a57f220c5d790ac26b862b05ebb2c6fa8b8be6b,sample/CAAAdvancedTopologicalOpe.edu/FunctionTests/InputData/TolerantSweepDev0.CATPart,undecoded-variant,identity-mixedwrite-reps,flat=2,2,2,117,24,true,true,true
+434d4bb4b3ce97a3ff5e7051cddd74d41d4632c76e475a9e3191bde03dfb9f1b,sample/CAAAdvancedTopologicalOpe.edu/FunctionTests/InputData/TolerantSweepDev1.CATPart,undecoded-variant,identity-mixedwrite-reps,flat=2,2,2,118,32,true,true,true
+4902c6507a31ba16854226348204fa6015fe41f4647654dab9f318497f6e71d7,sample/CAAGSMInterfaces.edu/Data.d/CAAGsiStartVolumeForBoolean.CATPart,undecoded-variant,identity-per-rep,table=8,8,8,4352,554,true,true,true
