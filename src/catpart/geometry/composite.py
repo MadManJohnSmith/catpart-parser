@@ -371,6 +371,28 @@ def decode_region(payload: bytes, element_count: int):
             "decode under the table law",
         )
     slots = table_slots(payload, table_start, table_len, element_count)
+    # The one-word arithmetic shortfall (2026-11-18, #50 B2): on the
+    # TolerantSweepDev0 twins the writer's P1g count is ONE word short
+    # of the 2-bit table's own budget — ``sum(shapes) - write_count ==
+    # 1`` — and the extra word is physically present in the payload
+    # (the last shape-2 write; the following bytes are the trailing
+    # region).  The law is fail-closed and exact: it fires ONLY on that
+    # arithmetic relation, the extended region must fit, and the walk,
+    # the finite-coordinate predicate and the refs gate are unchanged.
+    # Measured incidence: exactly 2 of 1,824 corpus parts (the twins),
+    # 0 elsewhere (docs/evidence/2026-11-18-b2-b3-variant-parts.md).
+    declared_write_count = write_count
+    shortfall = 0
+    if sum(SHAPES[v] for v in slots) == write_count + 1:
+        shortfall = 1
+        write_count += 1
+        if region_start + 4 * write_count > len(payload):
+            raise ExportError(
+                "undecoded-variant",
+                f"declared write count {declared_write_count} is one word "
+                f"short of the table's {write_count}-word budget, but the "
+                "extended region overruns the payload",
+            )
     region_end = region_start + 4 * write_count
     pos = region_start
     x = y = z = 0.0  # the initial LCP state is the origin (P1i subsumed)
@@ -420,6 +442,9 @@ def decode_region(payload: bytes, element_count: int):
         "region_bytes": 4 * write_count,
         "walk_end": pos,
     }
+    if shortfall:
+        info["declared_write_count"] = declared_write_count
+        info["write_count_shortfall"] = shortfall
     return elements, info
 
 
@@ -1600,35 +1625,83 @@ def _scan_token_nodes(data, lo: int, hi: int):
     return nodes
 
 
+def _rep_node_positions(scanned, groups):
+    """Pair each pool group with its rep node (2026-11-18, #50 B3).
+
+    The measured corpus law (168 multi-rep stores; 154/154 absorbing
+    pairs): the pool wrapper FOLLOWS its rep's list node — the rep node
+    is the last token-bearing list node before the group's wrapper.
+    The first node after the group absorbs it 0/24 times, so the
+    fallback is never the reading.  A node already claimed by an
+    earlier group cannot re-list a second pool: the later group gets
+    ``None`` (ambiguous → fail-closed).  Pre-rep token nodes (the
+    assembly/scene-graph nodes a recovered container can carry before
+    the rep sequence) are simply not the last node before any group.
+    """
+    positions = []
+    claimed = set()
+    order = [pos for pos, _p, _c1, _c2 in scanned]
+    for g in groups:
+        before = [pos for pos in order if pos < g.offset]
+        node = before[-1] if before else None
+        if node is None:
+            # No node precedes the wrapper: the pool-first layout (the
+            # committed fixture shape and any corpus store that opens
+            # with its pool).  The first following token node is the
+            # only candidate; absorption still has to hold, so a wrong
+            # candidate stays fail-closed.
+            after = [pos for pos in order if pos > g.offset]
+            node = after[0] if after else None
+        if node in claimed:
+            node = None
+        if node is not None:
+            claimed.add(node)
+        positions.append(node)
+    return positions
+
+
 def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
     """The sequence-of-reps reading (stage-4b per-rep law, stage-5
-    integration).  Rep k = (pool group k, the k-th walk-exact token
-    node, that node's record territory ``[region_end_k, node_{k+1})``);
-    the k-th pool re-lists verbatim (or within :data:`NOISE_REL`) in
-    the k-th rep's region.  A rep exports only when its pool absorbs
-    and its gated references resolve in-bounds against its OWN element
-    count; failing reps stay unexported with the reason named.  When
-    no rep exports, raises the stage-3d ``unabsorbed`` classification
-    with the per-rep residue named (fail-closed, no guessing)."""
-    decoded = []
-    for npos, payload, c1, _c2 in _scan_token_nodes(data, lo, hi):
+    integration; pairing/territory corrected 2026-11-18, #50 B3).
+
+    Rep k = (pool group k, the token node immediately preceding that
+    group, that node's record territory ``[region_end_k, next token
+    node)``); the k-th pool re-lists verbatim (or within
+    :data:`NOISE_REL`) in the k-th rep's region.  A rep exports only
+    when its pool absorbs and its gated references resolve in-bounds
+    against its OWN element count; failing reps stay unexported with the
+    reason named.  When no rep exports, raises the stage-3d
+    ``unabsorbed`` classification with the per-rep residue named
+    (fail-closed, no guessing).
+
+    The pairing is by the GROUP's position, not by the decoded index
+    (:func:`_rep_node_positions`): a rep whose region does not decode
+    used to drop out of the decoded list and shift every later rep onto
+    the wrong pool group, while its records were swallowed by the
+    previous rep's territory (CAAGsiStartVolumeForBoolean: rep 2's
+    0x42 references 42..83 are in rep 2's own 84-element space, but the
+    shifted pairing read them against rep 0's 66).  The territory now
+    ends at the next TOKEN NODE (decoded or not), so an undecodable
+    rep's records are never attributed to its predecessor.
+    """
+    scanned = _scan_token_nodes(data, lo, hi)
+    decoded: dict[int, dict] = {}
+    for npos, payload, c1, _c2 in scanned:
         try:
             elements, info = decode_region(payload, c1)
         except ExportError:
             continue  # walk-exact failure: the rep has no decoded region
-        decoded.append(
-            {
-                "pos": npos,
-                "payload": payload,
-                "elem": c1,
-                "elements": elements,
-                "pts": [pt for _v, pt in elements if pt is not None],
-                # absolute end of the point region (the territory start)
-                "region_end": npos + 4 + info["walk_end"],
-                "write_count": info["write_count"],
-                "table_bytes": info["table_bytes"],
-            }
-        )
+        decoded[npos] = {
+            "pos": npos,
+            "payload": payload,
+            "elem": c1,
+            "elements": elements,
+            "pts": [pt for _v, pt in elements if pt is not None],
+            # absolute end of the point region (the territory start)
+            "region_end": npos + 4 + info["walk_end"],
+            "write_count": info["write_count"],
+            "table_bytes": info["table_bytes"],
+        }
     if not decoded:
         raise ExportError(
             "undecoded-variant",
@@ -1637,6 +1710,8 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
             "region (unabsorbed variant; the per-rep decomposition "
             "finds no walk-exact rep region either)",
         )
+    rep_nodes = _rep_node_positions(scanned, groups)
+    scanned_positions = [npos for npos, _p, _c1, _c2 in scanned]
     points: list = []
     triangles: list = []
     degenerate = 0
@@ -1648,7 +1723,7 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
     table_bytes = 0
     element_decl = 0
     curve_entries = 0
-    node_bytes = 0
+    node_bytes = sum(len(d["payload"]) for d in decoded.values())
     # N1 (2026-11-18 review): the per-rep path exports the extended
     # family too, so its summary must name it like the single-rep path.
     ext_records = 0
@@ -1656,20 +1731,26 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
     ext_declined = 0
     reps_unexported = []
     reps_dup_pin = []
-    for k, d in enumerate(decoded):
-        node_bytes += len(d["payload"])
-        if k >= len(groups):
-            # stage-5 review O2 hardening: a walk-exact rep beyond the
-            # pool groups has no pool to re-list — per-rep absorption
-            # is unestablished, so it stays unexported (fail-closed;
-            # measured 0/152 on the corpus A/B).
+    reps_decoded = 0
+    reps_exported = 0
+    for k, (group, node) in enumerate(zip(groups, rep_nodes)):
+        if node is None:
             reps_unexported.append(
-                f"rep {k}: no pool group to re-list ({len(groups)} pool "
-                f"groups for {len(decoded)} walk-exact reps; per-rep "
-                "absorption unestablished)"
+                f"rep {k}: no token node precedes pool group {k} "
+                "(the group's rep node is missing or ambiguous; per-rep "
+                "absorption not established)"
             )
             continue
-        gv = groups[k].vertices
+        d = decoded.get(node)
+        if d is None:
+            reps_unexported.append(
+                f"rep {k}: the token node at {node} has no walk-exact "
+                "decoded region (its pool group stays unexported; the "
+                "region law does not decode the rep)"
+            )
+            continue
+        reps_decoded += 1
+        gv = group.vertices
         distinct = set(gv)
         pts_set = set(d["pts"])
         unmatched = [v for v in distinct if v not in pts_set]
@@ -1690,7 +1771,8 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
                 "established)"
             )
             continue
-        nxt = decoded[k + 1]["pos"] if k + 1 < len(decoded) else hi
+        nxt_candidates = [p for p in scanned_positions if p > d["pos"]]
+        nxt = min(nxt_candidates) if nxt_candidates else hi
         records, n_hdrs = parse_strip_records(
             data, d["region_end"], nxt, d["elem"], elements=d["elements"]
         )
@@ -1740,6 +1822,7 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
         table_bytes += d["table_bytes"]
         element_decl += d["elem"]
         curve_entries += len(d["elements"]) - len(d["pts"])
+        reps_exported += 1
         for _o, mk, _n, _c, _refs, _w in records:
             if mk not in EXPORTED_SHORT_MARKERS:
                 skipped_markers[mk] = skipped_markers.get(mk, 0) + 1
@@ -1776,8 +1859,8 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
         "facet_records": facet_records,
         "skipped_markers": skipped_markers,
         "node_bytes": node_bytes,
-        "reps_decoded": len(decoded),
-        "reps_exported": len(decoded) - len(reps_unexported),
+        "reps_decoded": reps_decoded,
+        "reps_exported": reps_exported,
         "reps_unexported": len(reps_unexported),
         "rep_reasons": reps_unexported,
         **loop_stats,
@@ -2321,7 +2404,7 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
     poolv = [v for g in groups for v in g.vertices]
     pool_set = set(poolv)
     nodes = _scan_token_nodes(data, lo, hi)
-    decoded = []
+    decoded: dict[int, dict] = {}
     law_counts = {"table": 0, "raw": 0, "flat": 0}
     node_failures = []
     for npos, payload, c1, _c2 in nodes:
@@ -2335,19 +2418,17 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
             node_failures.append(f"node@{npos}: {failure}" if failure else f"node@{npos}: undecoded")
             continue
         law_counts[law] += 1
-        decoded.append(
-            {
-                "pos": npos,
-                "payload": payload,
-                "elem": c1,
-                "law": law,
-                "elements": elements,
-                "pts": pts,
-                # absolute end of the point region (the territory start)
-                "region_end": npos + 4 + region_end_rel,
-                "write_count": wc,
-            }
-        )
+        decoded[npos] = {
+            "pos": npos,
+            "payload": payload,
+            "elem": c1,
+            "law": law,
+            "elements": elements,
+            "pts": pts,
+            # absolute end of the point region (the territory start)
+            "region_end": npos + 4 + region_end_rel,
+            "write_count": wc,
+        }
     if not decoded:
         raise ExportError(
             "undecoded-variant",
@@ -2356,14 +2437,20 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
             f"window (table/raw/flat laws; "
             f"{'first: ' + node_failures[0] if node_failures else 'no token nodes'})",
         )
+    # The rep pairing (2026-11-18, #50 B3; see _decode_per_rep): group
+    # k pairs with the token node immediately preceding its wrapper, and
+    # a rep's territory ends at the next token node (decoded or not).
+    rep_nodes = _rep_node_positions(nodes, groups)
+    scanned_positions = [npos for npos, _p, _c1, _c2 in nodes]
     # Store-level absorption precondition: every pool vertex in its
-    # diagonal rep's region (exact f32, then the stage-4b noise
-    # tolerance; the census measured exact f32 on all 81).  Vertices no
-    # region re-lists are the sub-node record route's residue — their
-    # element slots are unpinned, the store stays fail-closed (named).
+    # rep's region (exact f32, then the stage-4b noise tolerance; the
+    # census measured exact f32 on all 81).  Vertices no region
+    # re-lists are the sub-node record route's residue — their element
+    # slots are unpinned, the store stays fail-closed (named).
     uncovered = 0
     for k, g in enumerate(groups):
-        rep = decoded[k] if k < len(decoded) else None
+        node = rep_nodes[k]
+        rep = decoded.get(node) if node is not None else None
         distinct = set(g.vertices)
         if rep is None:
             uncovered += len(distinct)
@@ -2400,7 +2487,7 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
     table_bytes = 0
     element_decl = 0
     curve_entries = 0
-    node_bytes = 0
+    node_bytes = sum(len(d["payload"]) for d in decoded.values())
     # N1 (2026-11-18 review): the per-rep path exports the extended
     # family too, so its summary must name it like the single-rep path.
     ext_records = 0
@@ -2408,16 +2495,21 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
     ext_declined = 0
     reps_unexported = []
     reps_dup_pin = []
-    for k, d in enumerate(decoded):
-        node_bytes += len(d["payload"])
-        if k >= len(groups):
+    reps_decoded = 0
+    reps_exported = 0
+    for k, group in enumerate(groups):
+        node = rep_nodes[k]
+        d = decoded.get(node) if node is not None else None
+        if d is None:
             reps_unexported.append(
-                f"rep {k}: no pool group to re-list ({len(groups)} pool "
-                f"groups for {len(decoded)} law-decoded reps; per-rep "
-                "absorption unestablished)"
+                f"rep {k}: the pool group's rep node "
+                f"({'missing' if node is None else f'at {node}'}) has no "
+                "law-decoded region (per-rep absorption unestablished)"
             )
             continue
-        nxt = decoded[k + 1]["pos"] if k + 1 < len(decoded) else hi
+        reps_decoded += 1
+        nxt_candidates = [p for p in scanned_positions if p > d["pos"]]
+        nxt = min(nxt_candidates) if nxt_candidates else hi
         records, n_hdrs = parse_strip_records(
             data, d["region_end"], nxt, d["elem"], elements=d["elements"]
         )
@@ -2464,6 +2556,7 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
             table_bytes += (d["elem"] + 3) // 4
         element_decl += d["elem"]
         curve_entries += len(d["elements"]) - len(d["pts"])
+        reps_exported += 1
         for _o, mk, _n, _c, _refs, _w in records:
             if mk not in EXPORTED_SHORT_MARKERS:
                 skipped_markers[mk] = skipped_markers.get(mk, 0) + 1
@@ -2494,8 +2587,8 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
         "facet_records": facet_records,
         "skipped_markers": skipped_markers,
         "node_bytes": node_bytes,
-        "reps_decoded": len(decoded),
-        "reps_exported": len(decoded) - len(reps_unexported),
+        "reps_decoded": reps_decoded,
+        "reps_exported": reps_exported,
         "reps_unexported": len(reps_unexported),
         "rep_reasons": reps_unexported,
         "rep_laws": law_counts,
