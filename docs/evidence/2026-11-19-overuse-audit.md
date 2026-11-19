@@ -324,7 +324,7 @@ asked for, and one correction:
 - **Degenerate-triangles (2).** The close-out says "3 zero-cross slivers
   … (0.0096 % of the mesh)". That figure is b912cbef only (3 / 31,203 =
   0.0096 %); the row's population is **36 skipped triangles in 2 stores**:
-  33 zero-cross on 13bb5c0c (33 / 152,010 = 0.0217 %) and 3
+  33 zero-cross on 13bb5c0c (33 / 152,010 = 0.000217, i.e. 0.0217 % of its triangles) and 3
   repeated-coord on b912cbef. Both meshes are manifold, so the reopen
   criterion (a relative degenerate cap) is a gate-policy decision, not a
   decode fix — and this audit reports the writer sources it needs.
