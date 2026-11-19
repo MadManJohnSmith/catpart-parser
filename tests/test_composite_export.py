@@ -1875,9 +1875,28 @@ def test_coordinate_dedup_case_and_port_parity(tmp_path):
             assert "unordered_dedup_dropped" not in composite
             assert "unordered_dedup_declined" not in composite
             listed = 0.0
+            seen_facets = set()
+            unique = 0.0
+            copies = 0
             for face in faces:
-                listed += _triangle_area(vertices, face)
+                area = _triangle_area(vertices, face)
+                listed += area
+                key = tuple(
+                    sorted(
+                        tuple(round(c, 6) for c in vertices[i]) for i in face
+                    )
+                )
+                if key in seen_facets:
+                    copies += 1
+                    continue
+                seen_facets.add(key)
+                unique += area
             assert math.isclose(listed, 16063.010778, rel_tol=1e-9)
+            # B3 exports the store's own reps: 384 facets are coincident
+            # copies with identical winding, so the listed area counts
+            # them twice while the unique surface does not.
+            assert copies == 384
+            assert math.isclose(unique, 12151.12, rel_tol=1e-4)
         else:
             assert "unordered_dedup_dropped" not in summary["composite"]
             assert "unordered_dedup_declined" not in summary["composite"]
