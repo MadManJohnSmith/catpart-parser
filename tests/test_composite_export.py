@@ -55,6 +55,7 @@ COMPOSITE_VARIANTS = (
     "geometry-composite-law-dedup-manifold-no-fire",
     "geometry-composite-law-dedup-declined",
     "geometry-composite-law-dedup-degenerate",
+    "geometry-composite-law-dedup-coord-relist",
     "geometry-composite-law-primary-seam-tiny",
     "geometry-composite-law-primary-seam-declined",
 )
@@ -1332,6 +1333,95 @@ def test_composite_dedup_degenerate_separate_gate(tmp_path, capsys):
     assert "degenerate-triangles-skipped" in classes
 
 
+def test_composite_dedup_coordinate_relist_across_reps(tmp_path, capsys):
+    """The coordinate arm (2026-11-18): rep 1 re-lists rep 0's 12-point
+    box at the SAME coordinates in its own element space — not one
+    index triple matches, so the index pass sees no duplicate — and
+    adds one 2000 mm² fin loop over box edge (0, 3), which rep 1's own
+    two box faces already use: the store is not-manifold.  The
+    coordinate dedup drops rep 1's 12 re-listed copies (the earlier
+    emission unit wins) and keeps the fin: 13 triangles, manifold,
+    and the fin's surface (10.9% of the store, so the primary seam
+    keeps it and declines) survives.  Without the coordinate arm the
+    store stays not-manifold — red."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-dedup-coord-relist"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    validate(summary, load_schema("export-summary-v1"))
+    info = summary["composite"]
+    assert info["unordered_dedup_dropped"] == 12
+    assert "unordered_dedup_declined" not in info
+    assert info["reps_exported"] == 2
+    assert summary["triangle_count"] == 13
+    assert summary["mesh"]["manifold"] is True
+    classes = _warning_classes(summary)
+    assert "duplicate-triangles-deduped" in classes
+    assert "primary-loop-manifold-skip" not in classes
+    assert "primary-loop-manifold-kept" in classes
+    # The surface is the box (18,400 mm²) plus the fin (2,000 mm²): the
+    # dropped copies are the same three points as the kept ones, so no
+    # area is lost.
+    vertices, faces = parse_ply(ply_path)
+    assert len(faces) == 13
+
+    def _area(tri):
+        a, b, c = (vertices[i] for i in tri)
+        ux, uy, uz = (b[k] - a[k] for k in range(3))
+        vx, vy, vz = (c[k] - a[k] for k in range(3))
+        cx, cy, cz = (
+            uy * vz - uz * vy,
+            uz * vx - ux * vz,
+            ux * vy - uy * vx,
+        )
+        return 0.5 * math.sqrt(cx * cx + cy * cy + cz * cz)
+
+    assert math.isclose(sum(_area(f) for f in faces), 20400.0, rel_tol=1e-9)
+    # The fin's apex (0, 60, -40) is referenced by exactly one triangle.
+    apex = [i for i, v in enumerate(vertices) if v == pytest.approx((0.0, 60.0, -40.0))]
+    assert len(apex) == 1
+    assert sum(1 for f in faces if apex[0] in f) == 1
+
+
+def test_unordered_dedup_matches_coordinates_across_disjoint_spaces():
+    """The keeper rule at the seam's granularity: two per-rep element
+    spaces whose written coordinates coincide are ONE facet.  The
+    earlier space's copy wins even when it sits later in the emission
+    list (a rep's welded loops are appended last), and the drop is
+    area-preserving — the left copy is the same three points.  With one
+    declared space the list order decides, the fin's edge keeps three
+    uses and the dedup declines fail-closed."""
+    pts = [
+        (0.0, 0.0, 0.0),
+        (1.0, 0.0, 0.0),
+        (0.0, 1.0, 0.0),
+        (0.0, 0.0, 0.0),
+        (1.0, 0.0, 0.0),
+        (0.0, 1.0, 0.0),
+        (1.0, 1.0, 0.0),
+        (2.0, 0.0, 0.0),
+    ]
+    # Space 1's re-listing (3,4,5) comes FIRST; space 0's copy (0,1,2)
+    # comes LAST.  (3,6,4) and (3,7,4) push edge {3,4} to three uses.
+    tris = [(3, 4, 5), (3, 6, 4), (3, 7, 4), (0, 1, 2)]
+    info = {}
+    kept = composite._apply_unordered_dedup(tris, info, pts, (0, 3))
+    assert kept == [(3, 6, 4), (3, 7, 4), (0, 1, 2)]
+    assert info == {"unordered_dedup_dropped": 1}
+    # Same list, one index space: the list-order copy wins, the fin's
+    # edge keeps three uses, and the dedup declines (kept verbatim).
+    info = {}
+    kept = composite._apply_unordered_dedup(tris, info, pts)
+    assert kept == tris
+    assert info == {"unordered_dedup_declined": 1}
+    # A manifold mesh is never touched, even with coordinate twins.
+    info = {}
+    sheet = [(0, 1, 2), (3, 5, 4)]
+    assert composite._apply_unordered_dedup(sheet, info, pts, (0, 3)) == sheet
+    assert info == {}
+
+
 # --- 2026-11-18: the primary-emit manifold seam (#34) --------------------
 #
 # The short records' primary loop emission was the one seam with no
@@ -1699,6 +1789,105 @@ def test_primary_seam_port_parity_on_the_flips(tmp_path):
         assert port.returncode == 0, port.stderr
         assert json.loads(json.dumps(summary)) == json.loads(port.stdout)
         assert python_ply.read_bytes() == port_ply.read_bytes()
+
+
+# --- 2026-11-18: the coordinate-identity dedup arm (#34) -----------------
+#
+# 545707b9 (Test_trappe) is the one artifact-dominant not-manifold case:
+# 4 reps, 67 index duplicates inside rep 3 plus 451 coordinate
+# duplicates rep 3 re-lists from the earlier rep's welded loops.  The
+# index pass declines (removing 67 leaves 125 over-edges); the
+# coordinate pass drops all 451 and the store is manifold with the same
+# surface (docs/evidence/2026-11-18-coordinate-duplicate-dedup.md).
+
+DEDUP_COORD_CASE = {"545707b9871a535c": 1815}
+# The zero-regression direction on the same seam: a store the primary
+# seam resolves keeps its exact committed geometry (the dedup never sees
+# a passing assembled mesh).
+DEDUP_COORD_NO_REGRESSION = {"b912cbef805c541b": 31203}
+
+
+def _triangle_area(vertices, tri):
+    """One PLY triangle's area."""
+    a, b, c = (vertices[i] for i in tri)
+    ux, uy, uz = (b[k] - a[k] for k in range(3))
+    vx, vy, vz = (c[k] - a[k] for k in range(3))
+    cx, cy, cz = (
+        uy * vz - uz * vy,
+        uz * vx - ux * vz,
+        ux * vy - uy * vx,
+    )
+    return 0.5 * math.sqrt(cx * cx + cy * cy + cz * cz)
+
+
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parents[1] / "corpus").exists(),
+    reason="corpus is gitignored / absent (the corpus-gated dedup differential)",
+)
+def test_coordinate_dedup_case_and_port_parity(tmp_path):
+    """Python ≡ Port on the coordinate-dedup case: 545707b9 becomes
+    manifold at 1815 triangles with 451 copies dropped and NO surface
+    lost (the exported area equals the unique-facet area to f64
+    summation order), and b912cbef keeps its committed 31,203-triangle
+    emission with no dedup outcome at all."""
+    import shutil
+    import subprocess
+
+    from catpart.geometry import build_export
+
+    checked = {**DEDUP_COORD_CASE, **DEDUP_COORD_NO_REGRESSION}
+    paths = _corpus_part_paths(checked)
+    assert set(paths) == set(checked), "manifest/corpus rows missing"
+    root = Path(__file__).resolve().parents[1]
+    cargo = shutil.which("cargo")
+    assert cargo is not None, "cargo is a required dev dependency (spec §7)"
+    build = subprocess.run(
+        [cargo, "build", "--release", "--locked"],
+        cwd=root / "port",
+        capture_output=True,
+        text=True,
+    )
+    assert build.returncode == 0, build.stderr
+    port_bin = root / "port" / "target" / "release" / "fidelity-cli"
+    assert port_bin.is_file()
+    for sha, path in sorted(paths.items()):
+        python_ply = tmp_path / f"{sha}-python.ply"
+        port_ply = tmp_path / f"{sha}-port.ply"
+        summary = build_export(path, python_ply)
+        assert summary["triangle_count"] == checked[sha]
+        assert summary["mesh"]["manifold"] is True
+        vertices, faces = parse_ply(python_ply)
+        if sha in DEDUP_COORD_CASE:
+            assert summary["composite"]["unordered_dedup_dropped"] == 451
+            assert "unordered_dedup_declined" not in summary["composite"]
+            listed = 0.0
+            unique = 0.0
+            seen = set()
+            for face in faces:
+                area = _triangle_area(vertices, face)
+                listed += area
+                key = tuple(sorted(vertices[i] for i in face))
+                if key not in seen:
+                    seen.add(key)
+                    unique += area
+            # The 451 dropped triangles are the same three points as a
+            # kept copy: the listed area IS the unique-facet area.
+            assert math.isclose(listed, unique, rel_tol=1e-12)
+            assert math.isclose(listed, 11852.259218, rel_tol=1e-9)
+        else:
+            assert "unordered_dedup_dropped" not in summary["composite"]
+            assert "unordered_dedup_declined" not in summary["composite"]
+            assert "duplicate-triangles-deduped" not in _warning_classes(summary)
+        port = subprocess.run(
+            [str(port_bin), "export", str(path), str(port_ply)],
+            capture_output=True,
+            text=True,
+        )
+        assert port.returncode == 0, port.stderr
+        assert json.loads(json.dumps(summary)) == json.loads(port.stdout)
+        assert python_ply.read_bytes() == port_ply.read_bytes()
+
+
 # --- the 0x49 triangle-list family (2026-11-18) ---------------------------
 #
 # The composite path admitted 0x42/0x4a/0x4c while the clean path already

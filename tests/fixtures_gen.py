@@ -292,6 +292,7 @@ VALID_VARIANTS = (
     "geometry-composite-law-dedup-manifold-no-fire",
     "geometry-composite-law-dedup-declined",
     "geometry-composite-law-dedup-degenerate",
+    "geometry-composite-law-dedup-coord-relist",
     # Primary-emit seam variants (2026-11-18, #34): a tiny fin loop
     # over a twice-used box edge is dropped (mesh manifold) while a
     # large one is kept and, when both appear, the store declines the
@@ -433,6 +434,7 @@ COMPOSITE_VARIANTS = (
     "geometry-composite-law-dedup-manifold-no-fire",
     "geometry-composite-law-dedup-declined",
     "geometry-composite-law-dedup-degenerate",
+    "geometry-composite-law-dedup-coord-relist",
     # Primary-emit seam variants (2026-11-18, #34): a tiny fin loop
     # over a twice-used box edge is dropped (mesh manifold) while a
     # large one is kept and, when both appear, the store declines the
@@ -911,6 +913,19 @@ def _geometry_box_edges_lex() -> tuple[tuple[int, int], ...]:
 #                                        rides untouched -> the L2
 #                                        gate fails degenerate-
 #                                        triangles (a separate check).
+# - geometry-composite-law-dedup-coord-relist  stage-15's COORDINATE
+#                                        arm (2026-11-18): rep 1
+#                                        re-lists rep 0's box at the
+#                                        SAME coordinates in its own
+#                                        element space (no index triple
+#                                        matches) plus one 2000 mm² fin
+#                                        loop over box edge (0, 3) ->
+#                                        edge used 3x, store
+#                                        not-manifold; the coordinate
+#                                        dedup drops rep 1's 12
+#                                        re-listed copies (rep 0 wins)
+#                                        -> box + fin, manifold, the
+#                                        fin's surface kept.
 
 COMPOSITE_POOL_WALK = (
     (0.0, 10.0, 0.0),
@@ -1248,6 +1263,7 @@ def _composite_store(variant: str) -> bytes:
         "geometry-composite-law-e0b-multi-rep-conservative",
         "geometry-composite-law-e0b-multi-rep-unsupported-veto",
         "geometry-composite-law-e0b-multi-rep-relaxed",
+        "geometry-composite-law-dedup-coord-relist",
     ):
         return _composite_multi_rep_store(variant)
     if variant in (
@@ -1815,6 +1831,22 @@ def _composite_multi_rep_store(variant: str) -> bytes:
         elements1 = _composite_elements(pts1, (2, 6, 10))
         rep0_records = ((0x42, None, (0, 1, 5, 4)),)
         rep1_records = ((0x4C, (0.0, 1.0, 0.0), (2, 0, 8, 3)),)
+    elif variant == "geometry-composite-law-dedup-coord-relist":
+        # stage-15 coordinate arm (2026-11-18, #34): rep 1 re-lists
+        # rep 0's box at the SAME coordinates — its own pool group and
+        # element space, so not one index triple matches rep 0's — plus
+        # ONE large fin loop over box edge (0, 3).  Rep 1's edge (0, 3)
+        # is used 3x (two box faces + the fin), so the store is
+        # not-manifold and the index pass sees no duplicate at all.  The
+        # coordinate pass drops rep 1's 12 re-listed copies (rep 0's
+        # listing wins — the earlier emission unit) and keeps the fin:
+        # box + fin, manifold, the fin's 2000 mm² surface intact (10.9%
+        # of the store's area, so the primary seam keeps it and declines
+        # — the dedup, not the seam, resolves the store).
+        pool1 = COMPOSITE_POOL_WALK + ((0.0, 60.0, -40.0),)
+        pts1 = tuple(COMPOSITE_POINTS) + ((0.0, 60.0, -40.0),)
+        elements1 = _composite_elements(pts1)
+        rep1_records = COMPOSITE_FACES + ((0x42, None, (0, 3, 12)),)
     else:
         elements1 = _composite_elements(pts1)
         rep1_records = COMPOSITE_FACES

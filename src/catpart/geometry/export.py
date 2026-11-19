@@ -574,13 +574,17 @@ def _export_composite_store(
                 "class": WARN_DEDUP,
                 "detail": f"{info['unordered_dedup_dropped']} duplicate "
                 "triangles dropped under the unordered-triangle dedup "
-                "law (#34, stage-15 2026-11-13, review F1 family): the "
-                "same three element indices re-written from a second "
-                "record/loop (opposite winding — the writer re-listed "
-                "the facet; territory overlap 0); the emitted mesh was "
-                "not-manifold and the deduplicated mesh is manifold, "
-                "so the later copies dropped (first occurrence's "
-                "winding kept; degenerate skips untouched)",
+                "law (#34, stage-15 2026-11-13, review F1 family; "
+                "COORDINATE identity 2026-11-18): the same three vertex "
+                "POSITIONS re-written from a second record/loop or by a "
+                "later rep re-listing an earlier rep's facet (opposite "
+                "winding or a disjoint index space — the writer "
+                "re-listed the facet; territory overlap 0); the emitted "
+                "mesh was not-manifold and the deduplicated mesh is "
+                "manifold, so the later copies dropped (the earliest "
+                "emission unit's copy kept; the drop is area-preserving "
+                "by construction — identical coordinates, identical "
+                "area; degenerate skips untouched)",
             }
         )
     if info.get("unordered_dedup_declined"):
