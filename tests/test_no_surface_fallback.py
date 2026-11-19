@@ -473,13 +473,15 @@ BAGREP_OPENED = {
     "dc7e292322cf3435",
     "eaf6890653df8d33",
 }
-#: The four a5-priority rows that carry an array but stay
-#: ``no-evaluable-surface`` (the display route is not consulted).
-BAGREP_A5_BLOCKED = {
+#: The five a5-priority rows. Four of them carried a bag-rep array and
+#: stayed BLANK under the bag-rep-only run; the subtype-4 patch head now
+#: opens all five as MESH (the display route is still not consulted).
+SUBTYPE4_RECOVERED = {
     "58ed8b2875b2734a",
     "6c6a2e9f3d5f5303",
     "8e8500b1c0627bcb",
     "b4fd22e357f83410",
+    "d523721f99b2dec9",
 }
 OPEN_RATE = Path(__file__).resolve().parents[1] / "docs/evidence/data/open-rate-files.csv"
 
@@ -489,27 +491,31 @@ OPEN_RATE = Path(__file__).resolve().parents[1] / "docs/evidence/data/open-rate-
     reason="open-rate census is absent (the corpus-gated case)",
 )
 def test_bagrep_arrays_open_the_missing_store_rows() -> None:
-    """The bag-rep f32 arrays open 14 of the 69 BLANK rows (2026-11-19).
+    """The combined open-rate census after both display levers (2026-11-19).
 
-    ``docs/evidence/data/open-rate-files.csv`` is the re-run open-rate
-    probe over the manifest: 55 rows stay BLANK, 14 formerly-BLANK rows
-    now DISPLAY because their geometry containers carry a count-framed
-    f32 array, and the four a5-priority rows that also carry one keep
-    their ``no-evaluable-surface`` classification (the display route is
-    not consulted — a surface decode gap is never masked by points).
+    ``docs/evidence/data/open-rate-files.csv`` is the merged-tree probe
+    over all 1,442 manifest part rows: 56 rows stay BLANK, the 14
+    formerly-BLANK rows whose geometry containers carry a count-framed
+    f32 array are DISPLAY, and the five a5-priority rows (four of which
+    also carry an array) are MESH through the subtype-4 patch head.
     """
     import csv
 
     with OPEN_RATE.open(newline="", encoding="utf-8") as fh:
         rows = list(csv.DictReader(fh))
+    assert len(rows) == 1442, len(rows)
     by_sha = {row["sha16"]: row for row in rows}
     blank = {row["sha16"] for row in rows if row["open kind"] == "BLANK"}
-    assert len(blank) == 55, sorted(blank)
+    assert len(blank) == 56, sorted(blank)
     for sha in BAGREP_OPENED:
         row = by_sha[sha]
         assert row["open kind"] == "DISPLAY", (sha, row)
         assert int(row["points"]) > 0, (sha, row)
-    assert BAGREP_A5_BLOCKED <= blank
+    for sha in SUBTYPE4_RECOVERED:
+        row = by_sha[sha]
+        assert row["open kind"] == "MESH", (sha, row)
+        assert int(row["triangles"]) > 0, (sha, row)
+    assert SUBTYPE4_RECOVERED.isdisjoint(blank)
     assert BAGREP_OPENED.isdisjoint(blank)
 
 

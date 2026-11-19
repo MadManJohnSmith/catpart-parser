@@ -1,5 +1,10 @@
 # Evidence: the residual `a5 03 34` frames — join, order, and the subtype-4 patch head (2026-11-19)
 
+> **Combined measurement:** with the bag-rep f32 display shipped too, the merged
+> tree measures **1,386/1,442 = 96.12%** open (1,163 MESH / 223 DISPLAY / 56
+> BLANK) — [2026-11-19-open-rate.md](2026-11-19-open-rate.md). The 1,372/1,436
+> figure in §7 is this lever alone, before the 14 array rows moved to DISPLAY.
+
 **Date**: 2026-11-19
 **Status**: COMPLETE. The five BLANK `no-evaluable-surface` rows are a **second record subtype**, not the two-lane grammar and not an allocation/order failure; its head pins on every frame, the five parts evaluate and tessellate, and the manifest open rate rises from **1,367/1,436 = 95.19%** to **1,372/1,436 = 95.54%** (+5 parts, +0.35 pp).
 **Target**: the five report rows that carry `a5 03 34` marker frames but export nothing (`no-evaluable-surface`): `58ed8b28…` (PINZA_DERECHA), `6c6a2e9f…` (PINZA_IZQUIERDA), `8e8500b1…` (ENGRANAJE_SERVO), `b4fd22e3…` (CAASddCreateMember), `d523721f…` (MPU6050_Clone).

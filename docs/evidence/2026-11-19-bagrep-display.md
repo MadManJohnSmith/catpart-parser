@@ -1,5 +1,10 @@
 # Evidence: the bag-rep f32 point arrays open 14 more parts — 96.17% (2026-11-19)
 
+> **Combined measurement:** with the subtype-4 patch head shipped too, the merged
+> tree measures **1,386/1,442 = 96.12%** open (1,163 MESH / 223 DISPLAY / 56
+> BLANK) — [2026-11-19-open-rate.md](2026-11-19-open-rate.md). The 1,381/1,436
+> figure here is this lever alone, before the five a5 rows moved to MESH.
+
 **Date**: 2026-11-19
 **Status**: COMPLETE. The display fallback now decodes the bag-rep payload's **count-framed f32 point arrays** as points (`bagrep-f32-points`). **14 of the 69** BLANK rows open: **12 of the 48** missing-store rows plus **2** of the 16 `undecoded-variant` rows. The manifest open rate rises from **95.19%** to **96.17%** (1,367 -> 1,381 of 1,436). Zero triangles are emitted: the arrays are coordinates only, and the measured negative for the mesh lever stands.
 **Target**: the 69 BLANK rows of [2026-11-19-open-rate.md](2026-11-19-open-rate.md) — 48 missing store + no display carrier, 16 `undecoded-variant` with no display carrier, 5 `no-evaluable-surface`. The carrier is the R-BAG payload of [2026-11-19-bagrep.md](2026-11-19-bagrep.md): 41 declared arrays in 29 rows, count-first framing, 8,373 f32 (2,791 points by the 3-float convention), element shape varying inside one array.

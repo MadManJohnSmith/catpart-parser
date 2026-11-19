@@ -50,6 +50,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
 import math
 import mmap
 import struct
@@ -61,6 +62,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = ROOT / "manifests" / "corpus-manifest.csv"
 OPEN_RATE = ROOT / "docs" / "evidence" / "data" / "open-rate-files.csv"
+REPORTS = ROOT / "fitness" / "reports"
 OUT_CLAIMS = ROOT / "docs" / "evidence" / "data" / "join-order-claims.csv"
 
 sys.path.insert(0, str(ROOT / "scripts" / "triage"))
@@ -561,13 +563,30 @@ def manifest_paths() -> dict[str, str]:
 
 
 def blank_parts() -> list[tuple[str, str]]:
-    """The report's ``no-evaluable-surface`` BLANK rows (the five to recover)."""
+    """The report's ``no-evaluable-surface`` BLANK rows (the five to recover).
+
+    Read from the open-rate CSV first; when the artifact has been
+    regenerated after the recovery (its ``no-evaluable-surface`` rows are
+    MESH by then), fall back to the latest fitness report, which keeps
+    the class this probe targets.
+    """
     with OPEN_RATE.open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
-    return [
+    targets = [
         (row["sha16"], row["path"])
         for row in rows
         if row["open kind"] == "BLANK" and row["report class"] == "no-evaluable-surface"
+    ]
+    if targets:
+        return targets
+    report = json.loads(max(REPORTS.glob("*.json"), key=lambda p: p.name).read_text())
+    # The caller re-maps every sha through the manifest, so the second
+    # element is only a placeholder here.
+    return [
+        (entry["sha256"][:16], entry["sha256"][:16])
+        for entry in report["files"]
+        if entry.get("kind") == "part"
+        and (entry.get("l2") or {}).get("error_class") == "no-evaluable-surface"
     ]
 
 
