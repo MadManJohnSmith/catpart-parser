@@ -41,7 +41,7 @@ from __future__ import annotations
 import mmap
 
 from catpart.geometry.errors import ExportError
-from catpart.geometry import facets, mesh, pool, ply, store
+from catpart.geometry import facets, mesh, pool, ply, store, surface
 from catpart.geometry import composite
 
 EXPORT_SCHEMA_VERSION = 1
@@ -59,6 +59,7 @@ WARN_PRIMARY_DECLINED = "primary-loop-manifold-declined"
 WARN_PRIMARY_KEPT = "primary-loop-manifold-kept"
 WARN_DEDUP = "duplicate-triangles-deduped"
 WARN_DEDUP_DECLINED = "duplicate-triangles-dedup-declined"
+WARN_SURFACE_TESSELLATED = "bspline-surface-tessellated"
 
 
 def build_export(path, out_path) -> dict:
@@ -90,6 +91,27 @@ def build_export(path, out_path) -> dict:
 
 
 def _export_data(data) -> tuple[dict, list, list]:
+    """Export ``data``, preferring the nested store and falling back to surfaces.
+
+    The nested-store path is exactly ``_export_store_data`` (unchanged
+    when facets exist).  When that path raises, or when it succeeds with
+    zero facet triangles (the G2 P7 vertices-only family), a part whose
+    ``CATPrtCont`` region carries ``a5 03 34`` surface frames is decoded
+    with :mod:`catpart.geometry.surface` and exported as a tessellated
+    B-spline mesh.  A part with surface frames and no tessellatable
+    surface raises the named ``no-evaluable-surface`` class; a part with
+    no surface frames re-raises the store path's original classification.
+    """
+    try:
+        summary, vertices, triangles = _export_store_data(data)
+    except ExportError as exc:
+        return _surface_fallback(data, exc)
+    if triangles:
+        return summary, vertices, triangles
+    return _surface_fallback(data, None, (summary, vertices, triangles))
+
+
+def _export_store_data(data) -> tuple[dict, list, list]:
     """Decode ``data``'s first exportable nested store.
 
     Returns ``(summary, vertices, triangles)``. With several candidate
@@ -211,6 +233,115 @@ def _export_data(data) -> tuple[dict, list, list]:
                 "stage-3a probes exhausted)",
             )
     raise first_error  # all located stores failed classification
+
+
+def _surface_fallback(
+    data,
+    original: ExportError | None,
+    previous: tuple[dict, list, list] | None = None,
+) -> tuple[dict, list, list]:
+    """The exact-surface route for a part with no facet triangles.
+
+    ``previous`` is the store path's vertices-only success (G2 P7); it is
+    returned unchanged when the part carries no ``a5 03 34`` frame at
+    all, so the pre-surface classifications and outputs stay identical.
+    When surface frames exist but none evaluates, the named
+    ``no-evaluable-surface`` failure is raised — an empty mesh is never
+    passed off as a success.
+    """
+    result = surface.scan_part(data)
+    if result.candidates == 0:
+        if previous is not None:
+            return previous
+        raise original
+    if not result.has_mesh:
+        raise ExportError(
+            "no-evaluable-surface",
+            f"{result.candidates} a5 03 34 surface frame(s): "
+            f"{result.decoded} head-decodable, {result.evaluable} evaluable, "
+            f"{result.tessellated} tessellated, {result.refused} refused "
+            "(the exact B-spline battery: corner poles, finite samples, "
+            "pole hull, no fold, model scale, chord-length knots; "
+            "docs/evidence/2026-11-19-surface-head.md section 5) — no "
+            "surface produced a sane mesh",
+        )
+    vertices = list(result.vertices)
+    triangles = list(result.triangles)
+    stats = mesh.mesh_stats(triangles)
+    warnings = [
+        {
+            "class": WARN_SURFACE_TESSELLATED,
+            "detail": f"{result.tessellated} exact degree-5 C2 B-spline "
+            f"surface(s) tessellated from {result.evaluable} evaluable "
+            "a5 03 34 record(s) on an adaptive tensor grid (maximum chord "
+            "error 1e-3 of each pole-net bbox diagonal; "
+            "docs/evidence/2026-11-19-surface-tessellation.md)",
+        }
+    ]
+    if result.degenerate:
+        warnings.append(
+            {
+                "class": WARN_DEGENERATE,
+                "detail": f"{result.degenerate} degenerate tessellation "
+                "triangles skipped (zero area below 1e-12 of the "
+                "pole-net diagonal squared)",
+            }
+        )
+    if stats.boundary_edges:
+        warnings.append(
+            {
+                "class": WARN_OPEN_SHELL,
+                "detail": f"{stats.boundary_edges} boundary edges: every "
+                "B-spline patch is an open sheet by nature, and patches "
+                "are concatenated with disjoint index spaces (no topology "
+                "join is attempted between records)",
+            }
+        )
+    unused = len(vertices) - mesh.used_vertex_count(triangles, len(vertices))
+    if unused:
+        warnings.append(
+            {
+                "class": WARN_UNUSED_VERTICES,
+                "detail": f"{unused} of {len(vertices)} tessellation "
+                "vertices are not referenced by any exported triangle",
+            }
+        )
+    bbox_min, bbox_max = mesh.bounding_box(vertices)
+    summary = {
+        "schema_version": EXPORT_SCHEMA_VERSION,
+        "vertex_count": len(vertices),
+        "triangle_count": len(triangles),
+        "bounding_box": {"min": bbox_min, "max": bbox_max},
+        "warnings": warnings,
+        "store_ordinal": 0,
+        "origin_kind": store.ORIGIN_KIND_BLOCK,
+        "pool_group_count": 0,
+        "facet_candidate_count": 0,
+        "facet_record_count": 0,
+        "degenerate_triangle_count": result.degenerate,
+        "mesh": {
+            "edge_count": stats.edge_count,
+            "manifold": stats.manifold,
+            "closed": stats.closed,
+            "oriented": stats.oriented,
+            "boundary_edge_count": stats.boundary_edges,
+        },
+        "surface_tessellation": {
+            "block": result.block,
+            "frames": result.candidates,
+            "decoded": result.decoded,
+            "evaluable": result.evaluable,
+            "tessellated": result.tessellated,
+            "refused": result.refused,
+            "pole_points": result.points,
+            "grid_points": len(vertices),
+            "tolerance_fraction": surface.TOLERANCE_FRACTION,
+            "tolerance_min": min(result.tolerances),
+            "tolerance_max": max(result.tolerances),
+        },
+    }
+    _self_check(summary)
+    return summary, vertices, triangles
 
 
 def _recovered_error(exc: ExportError, span: store.StoreSpan, data) -> ExportError:

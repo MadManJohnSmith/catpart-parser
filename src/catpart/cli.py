@@ -33,8 +33,10 @@ failure exits 1 with one machine-readable JSON line on stderr —
 fitness classification convention (kebab-case classes, evidence-citing
 detail): ``missing-geometry-store``, ``undecoded-variant``,
 ``malformed-store-header`` / ``malformed-pool-group`` /
-``malformed-pool-vertex``, plus ``unreadable-file`` / ``io-error`` for
-path-level failures; usage errors exit 2.
+``malformed-pool-vertex``, ``no-evaluable-surface`` (the exact-surface
+fallback: ``a5 03 34`` frames present but no surface tessellates), plus
+``unreadable-file`` / ``io-error`` for path-level failures; usage errors
+exit 2.
 """
 
 from __future__ import annotations

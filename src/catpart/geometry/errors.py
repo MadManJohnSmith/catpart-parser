@@ -28,6 +28,11 @@ convention of kebab-case classes plus evidence-citing detail):
   2,326 corpus groups walk exactly, so a mismatch is broken structure).
 - ``malformed-pool-vertex``: non-finite (NaN/inf) coordinates in the
   pool (G2 claim P3 violation; 100% finite corpus-wide).
+- ``no-evaluable-surface``: the part carries ``a5 03 34`` surface
+  frames but none passes the exact B-spline evaluable battery, or none
+  yields a sane tessellation (docs/evidence/2026-11-19-surface-head.md
+  section 5, 2026-11-19-surface-tessellation.md). A vertices-only or
+  empty mesh is never reported as a surface export.
 - ``unreadable-file`` / ``io-error``: input path cannot be read, output
   cannot be written (OSError).
 """

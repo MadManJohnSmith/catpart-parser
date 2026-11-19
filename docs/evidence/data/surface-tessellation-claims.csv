@@ -1,0 +1,7 @@
+claim,scope,observations,passes,rate,label,detail
+ST-01,population:128,106,2,0.0156,fact,a5 03 34 marker frames=106 in 2/128 parts (object-stream dialect only); tail-closed=83 in 2 parts; decoded=63 in 2 parts; evaluable=60 in 2 parts — the per-part ceiling is 2/128 parts with >=1 evaluable surface
+ST-02,80aad8d832046ccb,70,46,0.6571,fact,per part: frames=70 tail_closed=66 decoded=46 evaluable=46 tessellated=46 triangles=68304 vertices=36942
+ST-02,d7ed0772bd391186,36,14,0.3889,fact,per part: frames=36 tail_closed=17 decoded=17 evaluable=14 tessellated=14 triangles=17728 vertices=9620
+ST-03,population:surfaces,60,86032,1.0000,fact,"tessellated surfaces=60/60 evaluable; triangles=86032 vertices=46562 degenerate_skipped=0 (adaptive tensor grid, max chord error 1e-3 of each pole-net bbox diagonal)"
+ST-04,population:surfaces,60,60,1.0000,fact,"mesh validation: manifold-per-patch=60/60 (patches are open sheets; closed is not required), degenerate triangles=0, every vertex finite, bboxes inside the 100 m model envelope; claim disagreements=none"
+ST-05,population:128,2,128,0.0156,fact,"open rate: parts exporting a tessellated exact-surface mesh=2/128 = 0.0156 of the no-facet population; over the 2 parts with an evaluable surface it is 1.0000 (80aad8d832046ccb, d7ed0772bd391186)"

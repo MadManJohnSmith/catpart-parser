@@ -23,3 +23,4 @@ pub mod mesh;
 pub mod ply;
 pub mod pool;
 pub mod store;
+pub mod surface;

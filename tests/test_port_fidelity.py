@@ -131,6 +131,7 @@ def test_port_fidelity_fixture_mode(tmp_path: Path) -> None:
         "malformed-store-header",
         "malformed-pool-group",
         "malformed-pool-vertex",
+        "no-evaluable-surface",
         "unreadable-file",
         "io-error",
     }

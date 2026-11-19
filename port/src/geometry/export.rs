@@ -84,9 +84,10 @@ use serde::Serialize;
 
 use super::composite::{CompositeDecode, CompositeInfo};
 use super::errors::{
-    ExportError, IO_ERROR, MISSING_GEOMETRY_STORE, UNDECODED_VARIANT, UNREADABLE_FILE,
+    ExportError, IO_ERROR, MISSING_GEOMETRY_STORE, NO_EVALUABLE_SURFACE, UNDECODED_VARIANT,
+    UNREADABLE_FILE,
 };
-use super::{composite, facets, mesh, ply, pool, store};
+use super::{composite, facets, mesh, ply, pool, store, surface};
 
 /// The summary's schema version (twin: ``EXPORT_SCHEMA_VERSION``).
 pub const EXPORT_SCHEMA_VERSION: u32 = 1;
@@ -107,6 +108,8 @@ pub const WARN_PRIMARY_DECLINED: &str = "primary-loop-manifold-declined";
 pub const WARN_PRIMARY_KEPT: &str = "primary-loop-manifold-kept";
 pub const WARN_DEDUP: &str = "duplicate-triangles-deduped";
 pub const WARN_DEDUP_DECLINED: &str = "duplicate-triangles-dedup-declined";
+/// The exact B-spline surface fallback (2026-11-19).
+pub const WARN_SURFACE_TESSELLATED: &str = "bspline-surface-tessellated";
 
 /// One ordered warning of the summary (the twin's ``{"class": ...,
 /// "detail": ...}`` dict; field order = the twin's construction).
@@ -158,6 +161,24 @@ pub struct StoreRecovery {
     pub container_name: Option<String>,
 }
 
+/// The exact-surface fallback block (the twin's
+/// ``surface_tessellation`` dict; additive, schema
+/// ``additionalProperties: true``).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SurfaceTessellation {
+    pub block: Option<usize>,
+    pub frames: usize,
+    pub decoded: usize,
+    pub evaluable: usize,
+    pub tessellated: usize,
+    pub refused: usize,
+    pub pole_points: usize,
+    pub grid_points: usize,
+    pub tolerance_fraction: f64,
+    pub tolerance_min: f64,
+    pub tolerance_max: f64,
+}
+
 /// The schema-versioned export summary (``export-summary-v1``) — the
 /// twin's summary dict; field declaration order = the twin's dict
 /// construction order (spec §2.1: even byte JSON equality stays
@@ -196,6 +217,10 @@ pub struct ExportSummary {
     /// ``additionalProperties: true``).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub composite: Option<CompositeInfo>,
+    /// The exact-surface fallback block (2026-11-19); absent on every
+    /// nested-store export and every refusal.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub surface_tessellation: Option<SurfaceTessellation>,
     /// The stage-3a/12 recovery provenance; absent on stores the
     /// shipped law located.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -255,23 +280,161 @@ pub fn build_export(path: &str, out_path: &str) -> Result<ExportSummary, ExportE
     Ok(outcome.summary)
 }
 
-/// Decode ``data``'s first exportable nested store — the twin's
+/// Export ``data``, preferring the nested store and falling back to
+/// exact B-spline surfaces — the twin's
 /// :func:`catpart.geometry.export._export_data`.
 ///
-/// Returns the (summary, vertices, triangles) triple. With several
-/// candidate blocks the first store passing G3's export gate wins;
-/// when all of them fail, the first classification is re-raised.
-///
-/// Store search (stage 3a #34): the ``CATStdCont`` regions carry the
-/// shipped law; when no ``CATStdCont`` region located a store, the
-/// ``CATXDocLinkCont`` regions (G1's next_block_store family) and then
-/// the ``CATSeeBodyCont`` regions are probed with the same law — the
-/// stage-3a locator recovery extension. Probing is fail-closed: a
-/// region probed and not matching stays as-is (``missing-geometry-
-/// store``), a region that matches names its probe on the span, and a
-/// part whose ``CATStdCont`` store located (passing or failing decode)
-/// never reaches the probes.
+/// The nested-store path is exactly :func:`export_store_data` (unchanged
+/// when facets exist).  When that path raises, or when it succeeds with
+/// zero facet triangles (the G2 P7 vertices-only family), a part whose
+/// ``CATPrtCont`` region carries ``a5 03 34`` surface frames is decoded
+/// with :mod:`super::surface` and exported as a tessellated B-spline
+/// mesh.  A part with surface frames and no tessellatable surface raises
+/// the named ``no-evaluable-surface`` class; a part with no surface
+/// frames re-raises the store path's original classification.
 pub fn export_data(data: &[u8]) -> Result<ExportOutcome, ExportError> {
+    match export_store_data(data) {
+        Ok(outcome) => {
+            if !outcome.triangles.is_empty() {
+                return Ok(outcome);
+            }
+            surface_fallback(data, None, Some(outcome))
+        }
+        Err(exc) => surface_fallback(data, Some(exc), None),
+    }
+}
+
+/// The exact-surface route for a part with no facet triangles.
+fn surface_fallback(
+    data: &[u8],
+    original: Option<ExportError>,
+    previous: Option<ExportOutcome>,
+) -> Result<ExportOutcome, ExportError> {
+    let scan = surface::scan_part(data, surface::TOLERANCE_FRACTION);
+    if scan.candidates == 0 {
+        if let Some(previous) = previous {
+            return Ok(previous);
+        }
+        return Err(original.expect("the store path raised before the fallback"));
+    }
+    if !scan.has_mesh() {
+        return Err(ExportError::new(
+            NO_EVALUABLE_SURFACE,
+            format!(
+                "{} a5 03 34 surface frame(s): {} head-decodable, {} evaluable, \
+                 {} tessellated, {} refused (the exact B-spline battery: corner \
+                 poles, finite samples, pole hull, no fold, model scale, \
+                 chord-length knots; docs/evidence/2026-11-19-surface-head.md \
+                 section 5) — no surface produced a sane mesh",
+                scan.candidates, scan.decoded, scan.evaluable, scan.tessellated, scan.refused,
+            ),
+        ));
+    }
+    let vertices = scan.vertices.clone();
+    let triangles = scan.triangles.clone();
+    let stats = mesh::mesh_stats(&triangles);
+    let mut warnings = vec![Warning {
+        class: WARN_SURFACE_TESSELLATED.to_string(),
+        detail: format!(
+            "{} exact degree-5 C2 B-spline surface(s) tessellated from {} \
+             evaluable a5 03 34 record(s) on an adaptive tensor grid (maximum \
+             chord error 1e-3 of each pole-net bbox diagonal; \
+             docs/evidence/2026-11-19-surface-tessellation.md)",
+            scan.tessellated, scan.evaluable,
+        ),
+    }];
+    if scan.degenerate > 0 {
+        warnings.push(Warning {
+            class: WARN_DEGENERATE.to_string(),
+            detail: format!(
+                "{} degenerate tessellation triangles skipped (zero area below \
+                 1e-12 of the pole-net diagonal squared)",
+                scan.degenerate,
+            ),
+        });
+    }
+    if stats.boundary_edges > 0 {
+        warnings.push(Warning {
+            class: WARN_OPEN_SHELL.to_string(),
+            detail: format!(
+                "{} boundary edges: every B-spline patch is an open sheet by \
+                 nature, and patches are concatenated with disjoint index \
+                 spaces (no topology join is attempted between records)",
+                stats.boundary_edges,
+            ),
+        });
+    }
+    let unused = vertices.len() - mesh::used_vertex_count(&triangles, vertices.len());
+    if unused > 0 {
+        warnings.push(Warning {
+            class: WARN_UNUSED_VERTICES.to_string(),
+            detail: format!(
+                "{} of {} tessellation vertices are not referenced by any \
+                 exported triangle",
+                unused,
+                vertices.len(),
+            ),
+        });
+    }
+    let (bbox_min, bbox_max) = mesh::bounding_box(&vertices)
+        .expect("the surface fallback always carries at least one triangle's vertices");
+    let summary = ExportSummary {
+        schema_version: EXPORT_SCHEMA_VERSION,
+        vertex_count: vertices.len(),
+        triangle_count: triangles.len(),
+        bounding_box: BoundingBox {
+            min: bbox_min,
+            max: bbox_max,
+        },
+        warnings,
+        store_ordinal: 0,
+        origin_kind: store::ORIGIN_KIND_BLOCK.to_string(),
+        pool_group_count: 0,
+        facet_candidate_count: 0,
+        facet_record_count: 0,
+        degenerate_triangle_count: scan.degenerate,
+        mesh: MeshBlock {
+            edge_count: stats.edge_count,
+            manifold: stats.manifold,
+            closed: stats.closed,
+            oriented: stats.oriented,
+            boundary_edge_count: stats.boundary_edges,
+        },
+        composite: None,
+        surface_tessellation: Some(SurfaceTessellation {
+            block: scan.block,
+            frames: scan.candidates,
+            decoded: scan.decoded,
+            evaluable: scan.evaluable,
+            tessellated: scan.tessellated,
+            refused: scan.refused,
+            pole_points: scan.points,
+            grid_points: vertices.len(),
+            tolerance_fraction: surface::TOLERANCE_FRACTION,
+            tolerance_min: scan
+                .tolerances
+                .iter()
+                .copied()
+                .fold(f64::INFINITY, f64::min),
+            tolerance_max: scan
+                .tolerances
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, f64::max),
+        }),
+        store_recovery: None,
+    };
+    Ok(ExportOutcome {
+        summary,
+        vertices,
+        triangles,
+        curves: Vec::new(),
+    })
+}
+
+/// Decode ``data``'s first exportable nested store — the twin's
+/// :func:`catpart.geometry.export._export_store_data`.
+pub fn export_store_data(data: &[u8]) -> Result<ExportOutcome, ExportError> {
     let size = data.len();
     let d8_outer = if size >= 12 {
         u32::from_be_bytes([data[8], data[9], data[10], data[11]]) as usize
@@ -646,6 +809,7 @@ fn export_store(
             boundary_edge_count: stats.boundary_edges,
         },
         composite: None,
+        surface_tessellation: None,
         store_recovery: None,
     };
     if span.container != store::CONTAINER_STDCONT || span.tail_law != store::TAIL_LAW_SHIPPED {
@@ -976,6 +1140,7 @@ fn export_composite_store(
             boundary_edge_count: stats.boundary_edges,
         },
         composite: Some(info),
+        surface_tessellation: None,
         store_recovery: None,
     };
     if span.container != store::CONTAINER_STDCONT || span.tail_law != store::TAIL_LAW_SHIPPED {

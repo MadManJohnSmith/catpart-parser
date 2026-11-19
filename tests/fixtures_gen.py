@@ -206,6 +206,10 @@ VALID_VARIANTS = (
     "geometry-u16be-facets",
     "geometry-degenerate-cross",
     "geometry-second-store-exports",
+    # Exact B-spline surface fallback (2026-11-19): a CATPrtCont block
+    # with one a5 03 34 degree-5 C2 surface record and no facet store —
+    # the export path tessellates it (surface-head/tessellation notes).
+    "geometry-surface-bspline",
     # Composite-law variants (G6 stage 2c/3d, #34): the identity law
     # decodes both forms; slanted quads, curve-entry loops and the
     # u16be no-repeat rule are the law's shapes.
@@ -314,6 +318,11 @@ CORRUPTED_VARIANTS = (
     "geometry-nan-coords",
     "geometry-out-of-range-refs",
     "geometry-truncated-pool",
+    # Exact B-spline surface fail-closed (2026-11-19): the a5 03 34
+    # record is present but the pole net has no arc, so no surface
+    # passes the evaluable battery -> the named no-evaluable-surface
+    # class, never an empty mesh.
+    "geometry-surface-no-evaluable",
     # Stage-3a fail-closed negatives (#34): recovered-then-failing,
     # probe-matches-nothing, and neither-tail-family-recovers.
     "geometry-seebody-composite",
@@ -361,6 +370,7 @@ GEOMETRY_VARIANTS = (
     "geometry-u16be-facets",
     "geometry-degenerate-cross",
     "geometry-second-store-exports",
+    "geometry-surface-bspline",
     "geometry-seebody-store",
     "geometry-xdoclink-store",
     "geometry-overshoot-tail",
@@ -375,6 +385,7 @@ GEOMETRY_VARIANTS = (
     "geometry-nan-coords",
     "geometry-out-of-range-refs",
     "geometry-truncated-pool",
+    "geometry-surface-no-evaluable",
     "geometry-seebody-composite",
     "geometry-seebody-empty",
     "geometry-overshoot-bad-tail",
@@ -2400,6 +2411,42 @@ def _nested_store_block(name: bytes, store_bytes: bytes | None) -> bytes:
     return block + b"\x00" * preamble + store_bytes
 
 
+def _surface_bspline_payload(degenerate: bool = False) -> bytes:
+    """A CATPrtCont block carrying one exact ``a5 03 34`` B-spline record.
+
+    Degree-5 C2, non-rational: ``n_u = 4``, ``n_v = 3`` distinct knots,
+    hence a ``12 x 9`` pole net (the ``9*n_u*n_v`` grid law) and a
+    ``30 + 8*(n_u+n_v) = 86``-byte head.  The poles sweep x by 10 mm
+    per row, y by 8 mm per column and curve gently in z, so the surface
+    is planar-ish but not flat and the tessellator refines it.  The
+    payload closes on the measured 152-byte tail.  Corpus-free bytes:
+    the twin of ``scripts/triage/probe_surface_head.py``'s hand-built
+    fixture, in a block the exporter's surface scanner can find.
+    """
+    knots_u = (0.0, 30.0, 60.0, 110.0)
+    knots_v = (0.0, 24.0, 64.0)
+    head = struct.pack("<IIBI", 5, len(knots_u), 0, 2)
+    head += b"".join(struct.pack("<d", value) for value in knots_u)
+    head += b"\x01"
+    head += struct.pack("<IIBI", 5, len(knots_v), 0, 2)
+    head += b"".join(struct.pack("<d", value) for value in knots_v)
+    head += b"\x01\x00\x00"
+    poles = b"".join(
+        struct.pack("<3d", 10.0 * i, 8.0 * j, 0.02 * i * i)
+        for i in range(12)
+        for j in range(9)
+    )
+    if degenerate:
+        # Every pole is the origin: the head still parses and the net is
+        # plausible, but the surface has no arc (knot span = 0) and is
+        # refused by the evaluable battery -> ``no-evaluable-surface``.
+        poles = bytes(24 * 12 * 9)
+    payload = head + poles + bytes(152)
+    frame = b"\xa5\x03\x34" + struct.pack("<I", len(payload)) + b"\x0f" + payload
+    block = storage_property_block(b"CATPrtCont", b"CATContainer")
+    return block + b"\x00" * 64 + frame
+
+
 def _geometry_payload(variant: str) -> bytes:
     """The storage blocks + property preambles + nested store(s).
 
@@ -2410,6 +2457,10 @@ def _geometry_payload(variant: str) -> bytes:
     no_stdcont family), ``geometry-xdoclink-store`` in a
     ``CATXDocLinkCont`` block behind a store-less ``CATStdCont`` block
     (the next_block_store family)."""
+    if variant == "geometry-surface-bspline":
+        return _surface_bspline_payload()
+    if variant == "geometry-surface-no-evaluable":
+        return _surface_bspline_payload(degenerate=True)
     if variant in ("geometry-seebody-store", "geometry-seebody-composite"):
         return _nested_store_block(b"CATSeeBodyCont", _geometry_store(variant))
     if variant == "geometry-seebody-empty":

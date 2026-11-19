@@ -1,0 +1,977 @@
+//! Exact ``a5 03 34`` B-spline surfaces: decode, evaluate, tessellate —
+//! the port of the Python reference module ``catpart.geometry.surface``
+//! (``src/catpart/geometry/surface.py``), per spec §2.1 of
+//! ``docs/specs/phase5-viewer-spec.md``.
+//!
+//! This is the shipped half of ``docs/evidence/2026-11-19-surface-head.md``
+//! (the payload grammar) joined to
+//! ``docs/evidence/2026-11-19-surface-tessellation.md`` (the mesh).
+//!
+//! The record is a self-delimiting degree-5, C2, non-rational
+//! tensor-product B-spline surface.  Each lane block names ``n``
+//! distinct knots; the pole net that follows is exactly ``3*n_u`` by
+//! ``3*n_v`` triples, and the only constant ``(degree, interior
+//! multiplicity)`` pair that maps a lane of ``n`` knots to ``3*n`` poles
+//! is ``(5, 3)``.  The knot vector is therefore
+//! ``[u0]*6 + interior*3 + [un]*6`` (length ``3n + 6``), and the grid
+//! begins exactly after the head (``30 + 8*(n_u + n_v)`` bytes).
+//!
+//! The tessellator subdivides each knot span by a bounded adaptive
+//! tensor grid: cells whose centre departs from the bilinear cell by
+//! more than ``1e-3`` of the pole-net bounding-box diagonal refine that
+//! span, up to a fixed per-span and total sample budget.  A tensor grid
+//! has no T-junctions, so every patch is a manifold sheet with boundary
+//! by construction.  Patches are concatenated into one mesh with
+//! disjoint index spaces — no topology join is attempted between
+//! records.
+//!
+//! The evaluable battery is the probe's measured one: exact corner
+//! poles, finite samples on a 21x21 lattice, containment in the pole
+//! hull, no normal fold, model scale and a chord-length-coherent knot
+//! span.
+//!
+//! Numeric contract (spec §2.2): decode module — all arithmetic in f64,
+//! verbatim expression shape and order with the Python twin (the
+//! ``suboptimal_flops`` allow is the pinned carve-out; ``mul_add``
+//! changes rounding and would break the byte-identical PLY).  See the
+//! crate docs in ``../lib.rs`` for the full policy.
+#![allow(clippy::suboptimal_flops)]
+
+use super::mesh;
+use super::store;
+
+/// Marker that seeds the surface scan (A family, flag 0x03, class 0x34).
+pub const SURFACE_MARKER: [u8; 3] = [0xa5, 0x03, 0x34];
+/// Class byte of the consolidated freeform surface record.
+pub const SURFACE_CLASS: u8 = 0x34;
+/// Record tag at the head of each lane block.
+pub const HEAD_TAG: u32 = 5;
+/// Second-lane tag byte after the u lane.
+pub const LANE_TAG: u8 = 1;
+/// Closing bytes after the v lane.
+pub const CLOSING: [u8; 3] = [0x01, 0x00, 0x00];
+/// A lane length is a distinct-knot count: small, and never zero.
+pub const MIN_LANE: u32 = 2;
+pub const MAX_LANE: u32 = 256;
+/// The two measured surface payload tails (the bulk probe's closure law).
+pub const SURFACE_TAILS: [usize; 2] = [152, 154];
+
+/// Degree and interior multiplicity the count law derives from the grid.
+pub const DEGREE: usize = 5;
+pub const MULTIPLICITY: usize = 3;
+pub const POLES_PER_LANE: usize = 3;
+
+/// Plausible model coordinate band (mm), the bulk probe's net band.
+pub const NET_FLOOR: f64 = 1e-3;
+pub const NET_CEIL: f64 = 1e6;
+/// A coordinate outside a 100 m envelope is not a part coordinate.
+pub const MODEL_SCALE: f64 = 1e5;
+/// ``u knot span / pole-polygon arc length`` band for a chord-length lane.
+pub const ARC_RATIO_BAND: (f64, f64) = (0.5, 2.0);
+/// Parameter-lattice steps used by the evaluable battery.
+pub const NORMAL_STEPS: usize = 20;
+/// Corner-pole residual bound, relative to the pole-net diagonal.
+pub const CORNER_TOL: f64 = 1e-9;
+
+/// Maximum chord error as a fraction of the pole-net bbox diagonal.
+pub const TOLERANCE_FRACTION: f64 = 1e-3;
+/// Cells per span before the first refinement round.
+pub const INITIAL_STEPS: usize = 2;
+/// Hard per-span subdivision cap.
+pub const MAX_STEPS: usize = 16;
+/// Refinement rounds before the budget stops the loop.
+pub const MAX_ROUNDS: usize = 8;
+/// Total parameter samples per patch (vertices, not triangles).
+pub const MAX_GRID_POINTS: usize = 65_536;
+/// A triangle whose area is below this fraction of diagonal^2 is degenerate.
+pub const DEGENERATE_AREA_FRACTION: f64 = 1e-12;
+
+/// One sampled tensor grid: ``(u samples, v samples, points)``.
+type Grid = (Vec<f64>, Vec<f64>, Vec<Vec<(f64, f64, f64)>>);
+
+/// The decoded head of one surface payload; ``grid`` is predicted.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SurfaceHead {
+    pub start: usize,
+    pub end: usize,
+    pub n_u: usize,
+    pub n_v: usize,
+    pub knots_u: Vec<f64>,
+    pub knots_v: Vec<f64>,
+    pub mode_u: u32,
+    pub mode_v: u32,
+    pub grid: usize,
+}
+
+impl SurfaceHead {
+    pub fn head_bytes(&self) -> usize {
+        self.grid - self.start
+    }
+    pub fn poles_u(&self) -> usize {
+        POLES_PER_LANE * self.n_u
+    }
+    pub fn poles_v(&self) -> usize {
+        POLES_PER_LANE * self.n_v
+    }
+    pub fn points(&self) -> usize {
+        self.poles_u() * self.poles_v()
+    }
+    pub fn tail(&self) -> usize {
+        self.end - (self.grid + 24 * self.points())
+    }
+    pub fn knots(&self) -> (Vec<f64>, Vec<f64>) {
+        (knot_vector(&self.knots_u), knot_vector(&self.knots_v))
+    }
+}
+
+/// The evaluable battery's measurements for one decoded surface.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SurfaceAssessment {
+    pub corner_residual: f64,
+    pub finite: bool,
+    pub hull_violations: usize,
+    pub folds: usize,
+    pub arc_ratio: f64,
+    pub bbox: [f64; 6],
+}
+
+impl SurfaceAssessment {
+    pub fn plausible_scale(&self) -> bool {
+        self.bbox.iter().all(|c| c.abs() <= MODEL_SCALE)
+    }
+    pub fn arc_coherent(&self) -> bool {
+        self.arc_ratio >= ARC_RATIO_BAND.0 && self.arc_ratio <= ARC_RATIO_BAND.1
+    }
+    pub fn evaluable(&self) -> bool {
+        self.corner_residual <= CORNER_TOL
+            && self.finite
+            && self.hull_violations == 0
+            && self.folds == 0
+            && self.plausible_scale()
+            && self.arc_coherent()
+    }
+}
+
+/// One surface's triangle sheet (indices are patch-local).
+#[derive(Debug, Clone, PartialEq)]
+pub struct TessellatedPatch {
+    pub vertices: Vec<(f64, f64, f64)>,
+    pub triangles: Vec<(u32, u32, u32)>,
+    pub degenerate: usize,
+    pub tolerance: f64,
+    pub grid_points: usize,
+    pub manifold: bool,
+    pub oriented: bool,
+}
+
+/// One part's surface census plus the merged tessellation.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SurfaceScan {
+    pub block: Option<usize>,
+    pub candidates: usize,
+    pub decoded: usize,
+    pub evaluable: usize,
+    pub tessellated: usize,
+    pub refused: usize,
+    pub manifold_patches: usize,
+    pub vertices: Vec<(f64, f64, f64)>,
+    pub triangles: Vec<(u32, u32, u32)>,
+    pub degenerate: usize,
+    pub tolerances: Vec<f64>,
+    pub points: usize,
+}
+
+impl SurfaceScan {
+    pub fn has_mesh(&self) -> bool {
+        !self.triangles.is_empty()
+    }
+}
+
+fn u32_le(data: &[u8], off: usize) -> Option<u32> {
+    let bytes = data.get(off..off + 4)?;
+    Some(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+}
+
+fn f64_le(data: &[u8], off: usize) -> Option<f64> {
+    let bytes = data.get(off..off + 8)?;
+    Some(f64::from_le_bytes([
+        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+    ]))
+}
+
+fn strictly_increasing(values: &[f64]) -> bool {
+    values.windows(2).all(|pair| pair[0] < pair[1])
+}
+
+/// ``(payload, end, class)`` of an A-family frame at ``pos``.
+fn parse_frame(data: &[u8], pos: usize, hi: usize) -> Option<(usize, usize, u8)> {
+    if pos + 8 > hi {
+        return None;
+    }
+    let family = data[pos];
+    if !(0xa5..=0xa8).contains(&family) {
+        return None;
+    }
+    if !matches!(data[pos + 1], 0x03 | 0x13 | 0x83) {
+        return None;
+    }
+    let width = (family - 0xa4) as usize;
+    let payload = pos + 7 + width;
+    let length = u32_le(data, pos + 3)? as usize;
+    let end = payload.checked_add(length)?;
+    if payload > hi || end > hi {
+        return None;
+    }
+    Some((payload, end, data[pos + 2]))
+}
+
+/// The first ``CATPrtCont`` block's ``(start, region_end)``.
+fn surface_block(data: &[u8]) -> Option<(usize, usize)> {
+    let blocks = store::valid_blocks(data);
+    let outer = if data.len() >= 12 {
+        u32::from_be_bytes([data[8], data[9], data[10], data[11]]) as usize
+    } else {
+        0
+    };
+    for (blk, name) in &blocks {
+        if name == "CATPrtCont" {
+            return Some((*blk, store::probe_region(*blk, &blocks, outer, data.len())));
+        }
+    }
+    None
+}
+
+/// Every marker-class ``a5 03 34`` frame ``(start, payload, end)``.
+pub fn candidate_frames(data: &[u8]) -> Vec<(usize, usize, usize)> {
+    let Some((lo, hi)) = surface_block(data) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut pos = lo;
+    while pos + SURFACE_MARKER.len() <= hi {
+        let Some(offset) = data[pos..hi]
+            .windows(SURFACE_MARKER.len())
+            .position(|window| window == SURFACE_MARKER)
+        else {
+            break;
+        };
+        let hit = pos + offset;
+        pos = hit + 1;
+        if hit + 8 > hi {
+            break;
+        }
+        let Some((payload, end, class)) = parse_frame(data, hit, hi) else {
+            continue;
+        };
+        if class != SURFACE_CLASS {
+            continue;
+        }
+        out.push((hit, payload, end));
+    }
+    out
+}
+
+/// Decode one payload head; ``None`` when its arithmetic does not close.
+pub fn parse_surface_head(data: &[u8], payload: usize, end: usize) -> Option<SurfaceHead> {
+    if end > data.len() || payload + 13 > end {
+        return None;
+    }
+    if u32_le(data, payload)? != HEAD_TAG {
+        return None;
+    }
+    let n_u = u32_le(data, payload + 4)?;
+    if !(MIN_LANE..=MAX_LANE).contains(&n_u) {
+        return None;
+    }
+    if data[payload + 8] != 0 {
+        return None;
+    }
+    let mode_u = u32_le(data, payload + 9)?;
+    let lane_u = payload + 13;
+    if lane_u + 8 * n_u as usize + 14 > end {
+        return None;
+    }
+    let knots_u: Vec<f64> = (0..n_u as usize)
+        .map(|i| f64_le(data, lane_u + 8 * i))
+        .collect::<Option<_>>()?;
+    if !strictly_increasing(&knots_u) {
+        return None;
+    }
+    let second = lane_u + 8 * n_u as usize;
+    if data[second] != LANE_TAG {
+        return None;
+    }
+    if u32_le(data, second + 1)? != HEAD_TAG {
+        return None;
+    }
+    let n_v = u32_le(data, second + 5)?;
+    if !(MIN_LANE..=MAX_LANE).contains(&n_v) {
+        return None;
+    }
+    if data[second + 9] != 0 {
+        return None;
+    }
+    let mode_v = u32_le(data, second + 10)?;
+    let lane_v = second + 14;
+    if lane_v + 8 * n_v as usize + CLOSING.len() > end {
+        return None;
+    }
+    let knots_v: Vec<f64> = (0..n_v as usize)
+        .map(|i| f64_le(data, lane_v + 8 * i))
+        .collect::<Option<_>>()?;
+    if !strictly_increasing(&knots_v) {
+        return None;
+    }
+    let close = lane_v + 8 * n_v as usize;
+    if data.get(close..close + CLOSING.len())? != CLOSING {
+        return None;
+    }
+    let head = SurfaceHead {
+        start: payload,
+        end,
+        n_u: n_u as usize,
+        n_v: n_v as usize,
+        knots_u,
+        knots_v,
+        mode_u,
+        mode_v,
+        grid: close + CLOSING.len(),
+    };
+    if !SURFACE_TAILS.contains(&head.tail()) {
+        return None;
+    }
+    Some(head)
+}
+
+/// Clamped degree-5 knots with multiplicity-3 interior values.
+pub fn knot_vector(distinct: &[f64]) -> Vec<f64> {
+    assert!(
+        distinct.len() >= 2,
+        "a knot lane needs at least two distinct values"
+    );
+    let mut out = vec![distinct[0]; DEGREE + 1];
+    for value in &distinct[1..distinct.len() - 1] {
+        out.extend(std::iter::repeat_n(*value, MULTIPLICITY));
+    }
+    out.extend(std::iter::repeat_n(
+        distinct[distinct.len() - 1],
+        DEGREE + 1,
+    ));
+    out
+}
+
+/// All ``count`` degree-``degree`` basis values at ``t`` (Cox-de Boor).
+pub fn basis_values(t: f64, knots: &[f64], degree: usize, count: usize) -> Vec<f64> {
+    let width = count + degree;
+    let mut current = vec![0.0; width];
+    let limit = std::cmp::min(knots.len() - 1, width);
+    let mut found = false;
+    for i in 0..limit {
+        if knots[i] <= t && t < knots[i + 1] {
+            current[i] = 1.0;
+            found = true;
+            break;
+        }
+    }
+    if !found {
+        for i in (0..limit).rev() {
+            if knots[i] < knots[i + 1] {
+                current[i] = 1.0;
+                break;
+            }
+        }
+    }
+    for p in 1..=degree {
+        let mut next = vec![0.0; width];
+        for i in 0..(width - p) {
+            let mut left = 0.0;
+            let den = knots[i + p] - knots[i];
+            if den > 0.0 {
+                left = (t - knots[i]) / den * current[i];
+            }
+            let mut right = 0.0;
+            let den = knots[i + p + 1] - knots[i + 1];
+            if den > 0.0 {
+                right = (knots[i + p + 1] - t) / den * current[i + 1];
+            }
+            next[i] = left + right;
+        }
+        current = next;
+    }
+    current.truncate(count);
+    current
+}
+
+/// Evaluate the tensor-product surface at ``(u, v)``.
+pub fn evaluate(
+    poles: &[Vec<(f64, f64, f64)>],
+    knots_u: &[f64],
+    knots_v: &[f64],
+    u: f64,
+    v: f64,
+) -> (f64, f64, f64) {
+    let nu = poles.len();
+    let nv = poles[0].len();
+    let bu = basis_values(u, knots_u, DEGREE, nu);
+    let bv = basis_values(v, knots_v, DEGREE, nv);
+    let mut out = [0.0, 0.0, 0.0];
+    for (i, &wi) in bu.iter().enumerate() {
+        if wi == 0.0 {
+            continue;
+        }
+        let row = &poles[i];
+        for (j, &wj) in bv.iter().enumerate() {
+            let weight = wi * wj;
+            if weight == 0.0 {
+                continue;
+            }
+            let point = row[j];
+            out[0] += weight * point.0;
+            out[1] += weight * point.1;
+            out[2] += weight * point.2;
+        }
+    }
+    (out[0], out[1], out[2])
+}
+
+/// The ``3*n_u x 3*n_v`` pole matrix the head predicts, row-major.
+pub fn pole_net(data: &[u8], head: &SurfaceHead) -> Vec<Vec<(f64, f64, f64)>> {
+    let nv = head.poles_v();
+    (0..head.poles_u())
+        .map(|i| {
+            (0..nv)
+                .map(|j| {
+                    let off = head.grid + 24 * (i * nv + j);
+                    (
+                        f64_le(data, off).unwrap_or(f64::NAN),
+                        f64_le(data, off + 8).unwrap_or(f64::NAN),
+                        f64_le(data, off + 16).unwrap_or(f64::NAN),
+                    )
+                })
+                .collect()
+        })
+        .collect()
+}
+
+fn bbox(points: &[(f64, f64, f64)]) -> [f64; 6] {
+    let mut box_ = [
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+    ];
+    for &(x, y, z) in points {
+        box_[0] = box_[0].min(x);
+        box_[1] = box_[1].max(x);
+        box_[2] = box_[2].min(y);
+        box_[3] = box_[3].max(y);
+        box_[4] = box_[4].min(z);
+        box_[5] = box_[5].max(z);
+    }
+    box_
+}
+
+fn distance(a: (f64, f64, f64), b: (f64, f64, f64)) -> f64 {
+    let dx = a.0 - b.0;
+    let dy = a.1 - b.1;
+    let dz = a.2 - b.2;
+    (dx * dx + dy * dy + dz * dz).sqrt()
+}
+
+fn diagonal(box_: [f64; 6]) -> f64 {
+    distance((box_[0], box_[2], box_[4]), (box_[1], box_[3], box_[5]))
+}
+
+fn pole_arc_polyline(poles: &[Vec<(f64, f64, f64)>], lo: usize, hi: usize) -> f64 {
+    let nv = poles[0].len();
+    let mut total = 0.0;
+    for r in lo..hi {
+        let mut row = 0.0;
+        for (a, b) in poles[r].iter().zip(&poles[r + 1]) {
+            row += distance(*a, *b);
+        }
+        total += row / nv as f64;
+    }
+    total
+}
+
+fn plausible(value: f64) -> bool {
+    value.is_finite() && (value == 0.0 || (NET_FLOOR..=NET_CEIL).contains(&value.abs()))
+}
+
+/// Every pole is a finite model coordinate (the tail-closed gate).
+pub fn plausible_net(poles: &[Vec<(f64, f64, f64)>]) -> bool {
+    poles.iter().all(|row| {
+        row.iter()
+            .all(|p| plausible(p.0) && plausible(p.1) && plausible(p.2))
+    })
+}
+
+/// Run the evaluable battery (the surface-head note's four checks).
+pub fn assess(head: &SurfaceHead, poles: &[Vec<(f64, f64, f64)>]) -> SurfaceAssessment {
+    let (knots_u, knots_v) = head.knots();
+    let u0 = head.knots_u[0];
+    let u1 = head.knots_u[head.knots_u.len() - 1];
+    let v0 = head.knots_v[0];
+    let v1 = head.knots_v[head.knots_v.len() - 1];
+    let steps = NORMAL_STEPS;
+    let us: Vec<f64> = (0..=steps)
+        .map(|a| u0 + (u1 - u0) * a as f64 / steps as f64)
+        .collect();
+    let vs: Vec<f64> = (0..=steps)
+        .map(|b| v0 + (v1 - v0) * b as f64 / steps as f64)
+        .collect();
+    let grid: Vec<Vec<(f64, f64, f64)>> = us
+        .iter()
+        .map(|&u| {
+            vs.iter()
+                .map(|&v| evaluate(poles, &knots_u, &knots_v, u, v))
+                .collect()
+        })
+        .collect();
+    let flat: Vec<(f64, f64, f64)> = poles.iter().flatten().copied().collect();
+    let box_ = bbox(&flat);
+    let diag = diagonal(box_);
+    let diagonal = if diag == 0.0 { 1.0 } else { diag };
+    let last_row = poles.len() - 1;
+    let last_col = poles[0].len() - 1;
+    let corners = [
+        distance(grid[0][0], poles[0][0]),
+        distance(grid[steps][steps], poles[last_row][last_col]),
+        distance(grid[0][steps], poles[0][last_col]),
+        distance(grid[steps][0], poles[last_row][0]),
+    ];
+    let mut finite = true;
+    for row in &grid {
+        for point in row {
+            if !(point.0.is_finite() && point.1.is_finite() && point.2.is_finite()) {
+                finite = false;
+            }
+        }
+    }
+    let mut violations = 0;
+    for row in &grid {
+        for point in row {
+            let point = [point.0, point.1, point.2];
+            for k in 0..3 {
+                if !(box_[2 * k] - 1e-6 <= point[k] && point[k] <= box_[2 * k + 1] + 1e-6) {
+                    violations += 1;
+                }
+            }
+        }
+    }
+    let mut normals: std::collections::HashMap<(usize, usize), (f64, f64, f64)> =
+        std::collections::HashMap::new();
+    for a in 0..steps {
+        for b in 0..steps {
+            let p00 = grid[a][b];
+            let p01 = grid[a][b + 1];
+            let p10 = grid[a + 1][b];
+            let du = [p01.0 - p00.0, p01.1 - p00.1, p01.2 - p00.2];
+            let dv = [p10.0 - p00.0, p10.1 - p00.1, p10.2 - p00.2];
+            let normal = (
+                du[1] * dv[2] - du[2] * dv[1],
+                du[2] * dv[0] - du[0] * dv[2],
+                du[0] * dv[1] - du[1] * dv[0],
+            );
+            let length = (normal.0 * normal.0 + normal.1 * normal.1 + normal.2 * normal.2).sqrt();
+            if length > 0.0 {
+                normals.insert(
+                    (a, b),
+                    (normal.0 / length, normal.1 / length, normal.2 / length),
+                );
+            }
+        }
+    }
+    let mut folds = 0;
+    for (&(a, b), normal) in &normals {
+        for neighbour in [(a, b + 1), (a + 1, b)] {
+            if let Some(other) = normals.get(&neighbour)
+                && normal.0 * other.0 + normal.1 * other.1 + normal.2 * other.2 < 0.0
+            {
+                folds += 1;
+            }
+        }
+    }
+    let arc = pole_arc_polyline(poles, 0, poles.len() - 1);
+    let arc_ratio = if arc > 0.0 { (u1 - u0) / arc } else { 0.0 };
+    SurfaceAssessment {
+        corner_residual: corners.iter().fold(0.0_f64, |m, &c| m.max(c)) / diagonal,
+        finite,
+        hull_violations: violations,
+        folds,
+        arc_ratio,
+        bbox: box_,
+    }
+}
+
+fn sample_axis(distinct: &[f64], counts: &[usize]) -> (Vec<f64>, Vec<usize>) {
+    let mut values = Vec::new();
+    let mut spans = Vec::new();
+    for (span, &count) in counts.iter().enumerate() {
+        let lo = distinct[span];
+        let hi = distinct[span + 1];
+        let step = hi - lo;
+        for k in 0..count {
+            values.push(lo + step * k as f64 / count as f64);
+            spans.push(span);
+        }
+    }
+    values.push(distinct[distinct.len() - 1]);
+    (values, spans)
+}
+
+fn refined(counts: &mut [usize], errors: &[f64], tolerance: f64) -> bool {
+    let mut changed = false;
+    for (span, &error) in errors.iter().enumerate() {
+        if error > tolerance && counts[span] < MAX_STEPS {
+            counts[span] *= 2;
+            changed = true;
+        }
+    }
+    changed
+}
+
+fn area2(a: (f64, f64, f64), b: (f64, f64, f64), c: (f64, f64, f64)) -> f64 {
+    let ux = b.0 - a.0;
+    let uy = b.1 - a.1;
+    let uz = b.2 - a.2;
+    let vx = c.0 - a.0;
+    let vy = c.1 - a.1;
+    let vz = c.2 - a.2;
+    let cx = uy * vz - uz * vy;
+    let cy = uz * vx - ux * vz;
+    let cz = ux * vy - uy * vx;
+    (cx * cx + cy * cy + cz * cz).sqrt()
+}
+
+/// Tessellate one evaluable surface; ``None`` when no sane mesh exists.
+pub fn tessellate(
+    head: &SurfaceHead,
+    poles: &[Vec<(f64, f64, f64)>],
+    tolerance_factor: f64,
+) -> Option<TessellatedPatch> {
+    let (knots_u, knots_v) = head.knots();
+    let distinct_u = &head.knots_u;
+    let distinct_v = &head.knots_v;
+    let flat: Vec<(f64, f64, f64)> = poles.iter().flatten().copied().collect();
+    let box_ = bbox(&flat);
+    let diag = diagonal(box_);
+    let diagonal = if diag == 0.0 { 1.0 } else { diag };
+    let tolerance = tolerance_factor * diagonal;
+    let mut counts_u = vec![INITIAL_STEPS; distinct_u.len() - 1];
+    let mut counts_v = vec![INITIAL_STEPS; distinct_v.len() - 1];
+    let mut best: Option<Grid> = None;
+    for _ in 0..MAX_ROUNDS {
+        let (us, span_u) = sample_axis(distinct_u, &counts_u);
+        let (vs, span_v) = sample_axis(distinct_v, &counts_v);
+        if us.len() * vs.len() > MAX_GRID_POINTS {
+            break;
+        }
+        let grid: Vec<Vec<(f64, f64, f64)>> = us
+            .iter()
+            .map(|&u| {
+                vs.iter()
+                    .map(|&v| evaluate(poles, &knots_u, &knots_v, u, v))
+                    .collect()
+            })
+            .collect();
+        best = Some((us, vs, grid));
+        let (us, vs, grid) = best.as_ref().unwrap();
+        let mut errors_u = vec![0.0; counts_u.len()];
+        let mut errors_v = vec![0.0; counts_v.len()];
+        for i in 0..us.len() - 1 {
+            for j in 0..vs.len() - 1 {
+                let p00 = grid[i][j];
+                let p10 = grid[i + 1][j];
+                let p01 = grid[i][j + 1];
+                let p11 = grid[i + 1][j + 1];
+                let middle = (
+                    (p00.0 + p10.0 + p01.0 + p11.0) / 4.0,
+                    (p00.1 + p10.1 + p01.1 + p11.1) / 4.0,
+                    (p00.2 + p10.2 + p01.2 + p11.2) / 4.0,
+                );
+                let centre = evaluate(
+                    poles,
+                    &knots_u,
+                    &knots_v,
+                    (us[i] + us[i + 1]) / 2.0,
+                    (vs[j] + vs[j + 1]) / 2.0,
+                );
+                let deviation = distance(centre, middle);
+                if deviation > errors_u[span_u[i]] {
+                    errors_u[span_u[i]] = deviation;
+                }
+                if deviation > errors_v[span_v[j]] {
+                    errors_v[span_v[j]] = deviation;
+                }
+            }
+        }
+        let changed_u = refined(&mut counts_u, &errors_u, tolerance);
+        let changed_v = refined(&mut counts_v, &errors_v, tolerance);
+        if !(changed_u || changed_v) {
+            break;
+        }
+    }
+    let (us, vs, grid) = best?;
+    let nv = vs.len();
+    let vertices: Vec<(f64, f64, f64)> = (0..us.len())
+        .flat_map(|i| (0..nv).map(move |j| (i, j)))
+        .map(|(i, j)| grid[i][j])
+        .collect();
+    let mut triangles: Vec<(u32, u32, u32)> = Vec::new();
+    let mut degenerate = 0;
+    let area_floor = DEGENERATE_AREA_FRACTION * diagonal * diagonal;
+    for i in 0..us.len() - 1 {
+        for j in 0..nv - 1 {
+            let a = i * nv + j;
+            let b = (i + 1) * nv + j;
+            let c = (i + 1) * nv + j + 1;
+            let d = i * nv + j + 1;
+            if area2(vertices[a], vertices[b], vertices[c]) > area_floor {
+                triangles.push((a as u32, b as u32, c as u32));
+            } else {
+                degenerate += 1;
+            }
+            if area2(vertices[a], vertices[c], vertices[d]) > area_floor {
+                triangles.push((a as u32, c as u32, d as u32));
+            } else {
+                degenerate += 1;
+            }
+        }
+    }
+    if triangles.is_empty() {
+        return None;
+    }
+    let stats = mesh::mesh_stats(&triangles);
+    if !stats.manifold {
+        return None;
+    }
+    Some(TessellatedPatch {
+        vertices,
+        triangles,
+        degenerate,
+        tolerance,
+        grid_points: us.len() * nv,
+        manifold: stats.manifold,
+        oriented: stats.oriented,
+    })
+}
+
+/// Census one part and merge every tessellatable surface's mesh.
+pub fn scan_part(data: &[u8], tolerance_factor: f64) -> SurfaceScan {
+    let region = surface_block(data);
+    let frames = candidate_frames(data);
+    let mut decoded = 0;
+    let mut evaluable = 0;
+    let mut tessellated = 0;
+    let mut refused = 0;
+    let mut manifold_patches = 0;
+    let mut vertices: Vec<(f64, f64, f64)> = Vec::new();
+    let mut triangles: Vec<(u32, u32, u32)> = Vec::new();
+    let mut tolerances: Vec<f64> = Vec::new();
+    let mut degenerate = 0;
+    let mut points = 0;
+    for (_, payload, end) in frames.iter().copied() {
+        let Some(head) = parse_surface_head(data, payload, end) else {
+            continue;
+        };
+        let poles = pole_net(data, &head);
+        if !plausible_net(&poles) {
+            continue;
+        }
+        decoded += 1;
+        points += head.points();
+        if !assess(&head, &poles).evaluable() {
+            refused += 1;
+            continue;
+        }
+        evaluable += 1;
+        let Some(patch) = tessellate(&head, &poles, tolerance_factor) else {
+            refused += 1;
+            continue;
+        };
+        tessellated += 1;
+        if mesh::mesh_stats(&patch.triangles).manifold {
+            manifold_patches += 1;
+        }
+        let base = vertices.len() as u32;
+        vertices.extend(patch.vertices);
+        triangles.extend(
+            patch
+                .triangles
+                .iter()
+                .map(|&(a, b, c)| (a + base, b + base, c + base)),
+        );
+        tolerances.push(patch.tolerance);
+        degenerate += patch.degenerate;
+    }
+    SurfaceScan {
+        block: region.map(|(blk, _)| blk),
+        candidates: frames.len(),
+        decoded,
+        evaluable,
+        tessellated,
+        refused,
+        manifold_patches,
+        vertices,
+        triangles,
+        degenerate,
+        tolerances,
+        points,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn push_f64(out: &mut Vec<u8>, value: f64) {
+        out.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn head_bytes() -> Vec<u8> {
+        let knots_u = [0.0, 30.0, 60.0, 110.0];
+        let knots_v = [0.0, 24.0, 64.0];
+        let mut out = Vec::new();
+        out.extend_from_slice(&HEAD_TAG.to_le_bytes());
+        out.extend_from_slice(&(knots_u.len() as u32).to_le_bytes());
+        out.push(0);
+        out.extend_from_slice(&2u32.to_le_bytes());
+        for value in knots_u {
+            push_f64(&mut out, value);
+        }
+        out.push(LANE_TAG);
+        out.extend_from_slice(&HEAD_TAG.to_le_bytes());
+        out.extend_from_slice(&(knots_v.len() as u32).to_le_bytes());
+        out.push(0);
+        out.extend_from_slice(&2u32.to_le_bytes());
+        for value in knots_v {
+            push_f64(&mut out, value);
+        }
+        out.extend_from_slice(&CLOSING);
+        out
+    }
+
+    fn payload(degenerate: bool) -> Vec<u8> {
+        let mut out = head_bytes();
+        for i in 0..12 {
+            for j in 0..9 {
+                let (x, y, z) = if degenerate {
+                    (0.0, 0.0, 0.0)
+                } else {
+                    (10.0 * i as f64, 8.0 * j as f64, 0.02 * (i * i) as f64)
+                };
+                push_f64(&mut out, x);
+                push_f64(&mut out, y);
+                push_f64(&mut out, z);
+            }
+        }
+        out.extend(std::iter::repeat_n(0u8, 152));
+        out
+    }
+
+    fn part_data(degenerate: bool) -> Vec<u8> {
+        let mut data = vec![0u8; 32];
+        data.extend_from_slice(b"\x34\x12CATStorageProperty");
+        data.extend(std::iter::repeat_n(0u8, 10));
+        data.extend_from_slice(b"CATUnicodeString");
+        data.extend_from_slice(b"\xa0\x02\x00\x00\x00\x00\x34");
+        let name = b"CATPrtCont";
+        data.push(name.len() as u8);
+        data.extend_from_slice(name);
+        data.extend(std::iter::repeat_n(0u8, 64));
+        let blob = payload(degenerate);
+        data.extend_from_slice(&SURFACE_MARKER);
+        data.extend_from_slice(&(blob.len() as u32).to_le_bytes());
+        data.push(0x0f);
+        data.extend_from_slice(&blob);
+        data
+    }
+
+    #[test]
+    fn head_predicts_the_grid_and_the_knots_are_clamped_degree_five() {
+        let blob = payload(false);
+        let head = parse_surface_head(&blob, 0, blob.len()).unwrap();
+        assert_eq!((head.n_u, head.n_v), (4, 3));
+        assert_eq!((head.poles_u(), head.poles_v()), (12, 9));
+        assert_eq!(head.points(), 108);
+        assert_eq!(head.head_bytes(), 30 + 8 * (4 + 3));
+        assert_eq!(head.grid, head.head_bytes());
+        assert_eq!(head.tail(), 152);
+        let knots = knot_vector(&head.knots_u);
+        assert_eq!(knots.len(), 3 * 4 + 6);
+        assert_eq!(&knots[..6], &[0.0; 6]);
+        assert_eq!(&knots[6..9], &[30.0; 3]);
+        assert_eq!(&knots[9..12], &[60.0; 3]);
+        assert_eq!(&knots[12..], &[110.0; 6]);
+    }
+
+    #[test]
+    fn basis_partitions_unity_and_has_the_degree_five_support() {
+        let knots = knot_vector(&[0.0, 30.0, 60.0, 110.0]);
+        for t in [0.0, 1.0, 15.0, 30.0, 45.0, 60.0, 90.0, 110.0] {
+            let values = basis_values(t, &knots, DEGREE, 12);
+            let sum: f64 = values.iter().sum();
+            assert!((sum - 1.0).abs() < 1e-12);
+            assert!(values.iter().all(|&value| value >= 0.0));
+        }
+        let active = |t: f64| {
+            basis_values(t, &knots, DEGREE, 12)
+                .iter()
+                .filter(|&&value| value > 0.0)
+                .count()
+        };
+        assert_eq!(active(45.0), 6);
+        assert_eq!(active(30.0), 3);
+        assert_eq!(active(110.0), 1);
+    }
+
+    #[test]
+    fn assessment_accepts_the_synthetic_surface_and_refuses_the_zero_arc_net() {
+        let blob = payload(false);
+        let head = parse_surface_head(&blob, 0, blob.len()).unwrap();
+        let poles = pole_net(&blob, &head);
+        assert!(plausible_net(&poles));
+        assert!(assess(&head, &poles).evaluable());
+        let zero = payload(true);
+        let head = parse_surface_head(&zero, 0, zero.len()).unwrap();
+        assert!(!assess(&head, &pole_net(&zero, &head)).evaluable());
+    }
+
+    #[test]
+    fn tessellation_is_a_manifold_open_sheet_with_no_degenerate_triangles() {
+        let blob = payload(false);
+        let head = parse_surface_head(&blob, 0, blob.len()).unwrap();
+        let patch = tessellate(&head, &pole_net(&blob, &head), TOLERANCE_FRACTION).unwrap();
+        assert!(!patch.triangles.is_empty());
+        assert_eq!(patch.degenerate, 0);
+        let stats = mesh::mesh_stats(&patch.triangles);
+        assert!(stats.manifold);
+        assert!(!stats.closed);
+        assert!(stats.boundary_edges > 0);
+        assert_eq!(patch.vertices.len(), patch.grid_points);
+        let loose = tessellate(&head, &pole_net(&blob, &head), 1e-1).unwrap();
+        assert!(loose.grid_points < patch.grid_points);
+    }
+
+    #[test]
+    fn scan_part_censuses_the_synthetic_record() {
+        let scan = scan_part(&part_data(false), TOLERANCE_FRACTION);
+        assert_eq!(scan.candidates, 1);
+        assert_eq!(scan.decoded, 1);
+        assert_eq!(scan.evaluable, 1);
+        assert_eq!(scan.tessellated, 1);
+        assert_eq!(scan.refused, 0);
+        assert_eq!(scan.manifold_patches, 1);
+        assert!(scan.has_mesh());
+        let refused = scan_part(&part_data(true), TOLERANCE_FRACTION);
+        assert_eq!(
+            (refused.decoded, refused.evaluable, refused.tessellated),
+            (1, 0, 0)
+        );
+        assert!(!refused.has_mesh());
+    }
+}

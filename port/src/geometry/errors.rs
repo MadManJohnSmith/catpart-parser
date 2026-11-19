@@ -40,6 +40,10 @@
 //!   is broken structure).
 //! - ``malformed-pool-vertex``: non-finite (NaN/inf) coordinates in the
 //!   pool (G2 claim P3 violation; 100% finite corpus-wide).
+//! - ``no-evaluable-surface``: the part carries ``a5 03 34`` surface
+//!   frames but none passes the exact B-spline evaluable battery, or
+//!   none yields a sane tessellation (docs/evidence/2026-11-19-
+//!   surface-head.md section 5, 2026-11-19-surface-tessellation.md).
 //! - ``unreadable-file`` / ``io-error``: input path cannot be read,
 //!   output cannot be written (OSError).
 //!
@@ -66,6 +70,7 @@ pub const UNDECODED_VARIANT: &str = "undecoded-variant";
 pub const MALFORMED_STORE_HEADER: &str = "malformed-store-header";
 pub const MALFORMED_POOL_GROUP: &str = "malformed-pool-group";
 pub const MALFORMED_POOL_VERTEX: &str = "malformed-pool-vertex";
+pub const NO_EVALUABLE_SURFACE: &str = "no-evaluable-surface";
 pub const UNREADABLE_FILE: &str = "unreadable-file";
 pub const IO_ERROR: &str = "io-error";
 
@@ -122,6 +127,7 @@ mod tests {
         assert_eq!(MALFORMED_STORE_HEADER, "malformed-store-header");
         assert_eq!(MALFORMED_POOL_GROUP, "malformed-pool-group");
         assert_eq!(MALFORMED_POOL_VERTEX, "malformed-pool-vertex");
+        assert_eq!(NO_EVALUABLE_SURFACE, "no-evaluable-surface");
         assert_eq!(UNREADABLE_FILE, "unreadable-file");
         assert_eq!(IO_ERROR, "io-error");
     }

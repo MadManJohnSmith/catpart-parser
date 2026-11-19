@@ -11,6 +11,9 @@ decode models one level per module:
   (G3, docs/evidence/2026-11-09-facet-semantics.md),
 - :mod:`catpart.geometry.mesh` / :mod:`catpart.geometry.ply` — mesh
   invariants and the binary little-endian PLY writer,
+- :mod:`catpart.geometry.surface` — the exact ``a5 03 34`` degree-5
+  B-spline surface evaluator and adaptive tessellator used when a part
+  carries no facet records (docs/evidence/2026-11-19-surface-tessellation.md),
 - :mod:`catpart.geometry.export` — the ``catpart-export`` orchestration
   and its classified failure surface (:class:`ExportError`).
 
