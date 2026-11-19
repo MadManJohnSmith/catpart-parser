@@ -1,0 +1,22 @@
+claim,scope,observations,passes,rate,label,detail
+CG-01,80aad8d8,1,1,,fact,"CGMGeom abs [3707055, 4034389) size=327334 writer_offset=106 cont_name=Cont_50f58d0d_1ae0_63f47193_33d27"
+CG-02,80aad8d8,9679,1,0.7535,fact,markers: k0=423 k1=7293 k2=127 k3=108 k4=145 k5=192 k6=215 k7=175 k8=205 k9=138 k10=99 k11=125 k12=183 k13=157 k14=71 k15=23; raw 01000400=7293 raw 02000400=127
+CG-03,80aad8d8,4425,0,0.3991,fact,anchor: region=327334 preamble=290 records=4425 framed=130535 residue=196509 exact=0
+CG-04,80aad8d8,4425,4425,,fact,families=companion=2212 idrun32=2213; companion flag=0=2050 1=81 2=81; companion type=0x28=825 0x2c=49 0x30=906 0x34=33 0x38=77 0x3c=11 0x40=86 0x44=22
+CG-05,80aad8d8,1,0,,fact,first refused offset=3837880 residue_head=01 00 04 00 77 db 05 00 00 00 00 00
+CG-06,80aad8d8,1,0,,fact,region: f64_triples_raw=0 f64_triples_guarded=0 f32_triples_raw=768 f32_triples_guarded=11 knot_runs=0 weight_runs=0
+CG-07,80aad8d8,4425,0,,fact,framed bodies only: f64_triples_raw=0 f64_triples_guarded=0 f32_triples_raw=744 f32_triples_guarded=9 knot_runs=0 weight_runs=0
+CG-08,population:128,128,0,0.1857,fact,regions=128 bytes=1205008 preamble=23676 framed=219321 residue=962011 body=1181332 exact=0 partial=15 nogrid=113
+CG-08b,population:131,131,0,0.1847,fact,regions=131 bytes=1216278 preamble=23960 framed=220178 residue=972140 body=1192318 exact=0 partial=16 nogrid=115
+CG-08c,population:3,3,0,0.0780,fact,regions=3 bytes=11270 preamble=284 framed=857 residue=10129 body=10986 exact=0 partial=1 nogrid=2
+CG-08d,population:128:unguarded,128,3,0.3210,fact,regions=128 bytes=1205008 preamble=23898 framed=379113 residue=801997 body=1181110 exact=3 partial=39 nogrid=86
+CG-08e,population:131:unguarded,131,3,0.3187,fact,regions=131 bytes=1216278 preamble=24182 framed=379970 residue=812126 body=1192096 exact=3 partial=40 nogrid=88
+CG-09,population:128,128,0,0.0000,fact,per-file outcome: exact=0 partial=15 nogrid=113; coverage quartiles=0.25=0.0000 0.5=0.0000 0.75=0.0000
+CG-10,population:128,128,1,,fact,region scan: f64_triples_raw=1 f64_triples_guarded=0 f32_triples_raw=2174 f32_triples_guarded=215 knot_runs=0 weight_runs=0
+CG-11,population:128,128,1,,fact,framed bodies only: f64_triples_raw=0 f64_triples_guarded=0 f32_triples_raw=1026 f32_triples_guarded=9 knot_runs=0 weight_runs=0
+CG-12,80aad8d8,1,1,0.3991,inference,"exact=0 numeric_arrays=0 f64_triples=0 knot_runs=0 weight_runs=0 f32_guarded=9 (alias-accounted) verdict=no exact tiling at the bar (coverage 0.3991, residue 196509 B) and no numeric array -> the grid cannot be framed; STOP, open-ended class-header RE"
+CG-13,80aad8d8,4425,0,,fact,residue markers=5249 top_deltas=37:1201 45:1187 38:927 33:890 41:384 11:145 34:133 24:126
+CG-14,population:128,128,0,,fact,"guarded=215 distinct=78 top=(12.1953125, 49.5755157, 0.00486186985) hits=121 files=121"
+CG-14b,population:131,131,0,,fact,"guarded=220 distinct=80 top=(12.1953125, 49.5755157, 0.00486186985) hits=124 files=124"
+CG-15,population:128,128,0,,fact,"guarded=9 distinct=8 top=(0.00778198242, 0.0078125, 0.00787353516) hits=2 files=1"
+CG-16,population:128,31,0,,fact,files_reframed=31 framed_delta=159792 swallowed=159149 families=idrun16=18 idrun32=13 longest=13325 exact guarded=0 unguarded=3 nogrid guarded=113 unguarded=86
