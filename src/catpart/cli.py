@@ -36,7 +36,10 @@ detail): ``missing-geometry-store``, ``undecoded-variant``,
 ``malformed-pool-vertex``, ``no-evaluable-surface`` (the exact-surface
 fallback: ``a5 03 34`` frames present but no surface tessellates),
 ``untriangulable-grid`` (the structured-point-grid fallback: ``>=3x3``
-grid candidates present but none triangulates), plus
+grid candidates present but none triangulates — retained in the
+vocabulary; since 2026-11-19 a part that carries decoded points renders
+them instead, see ``docs/evidence/2026-11-19-no-surface-fallback.md``),
+plus
 ``unreadable-file`` / ``io-error`` for path-level failures; usage errors
 exit 2.
 """

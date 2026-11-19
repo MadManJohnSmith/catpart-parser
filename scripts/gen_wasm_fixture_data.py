@@ -33,9 +33,11 @@ DEFAULT_OUT = REPO_ROOT / "port" / "tests" / "fixtures" / "mod.rs"
 
 #: The §7 step 6 subset: the canonical store, one corrupted variant per
 #: classified class, the composite curve-entry shape (the §2.3 curve
-#: exposure at the boundary), and the short-file inspect refusal. Each
-#: row: the Rust const name, the fixtures_gen variant (None = the
-#: A2 canonical front end without a nested store), a short prose note.
+#: exposure at the boundary), the two no-surface display shapes (the
+#: points / curve-segment typed arrays of the 2026-11-19 fallback), and
+#: the short-file inspect refusal. Each row: the Rust const name, the
+#: fixtures_gen variant (None = the A2 canonical front end without a
+#: nested store), a short prose note.
 SUBSET: list[tuple[str, str | None, str]] = [
     (
         "GEOMETRY",
@@ -69,6 +71,18 @@ SUBSET: list[tuple[str, str | None, str]] = [
         "geometry-composite-law-curve-entries",
         "the composite decode with dropped curve-entry loops: the §2.3 "
         "curve exposure is non-empty at the boundary",
+    ),
+    (
+        "NO_SURFACE_POINTS",
+        "geometry-no-surface-points",
+        "the no-surface display fallback: a decoded point cloud, no "
+        "triangle and no segment (2026-11-19)",
+    ),
+    (
+        "NO_SURFACE_CURVES",
+        "geometry-no-surface-curves",
+        "the no-surface display fallback: one law-pinned 33 32 segment "
+        "plus one decoded circle center (2026-11-19)",
     ),
     (
         "SHORT_FILE",

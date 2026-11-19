@@ -216,6 +216,16 @@ VALID_VARIANTS = (
     # the export path triangulates it (candidate connectivity, the
     # grid-meshing note).
     "geometry-point-grid",
+    # Display-carrier fallback (2026-11-19): a CATPrtCont block with
+    # decoded carriers but no surface and no grid reading — the profile
+    # point variant carries a 6-point f64 run (below the >=3x3 grid
+    # shape), the curve variant carries 33 3X records whose law-holding
+    # 33 32 line pins one segment while a law-failing twin, a circle
+    # center and an undecoded 33 36 record exercise the gates.  The
+    # export returns points + curve_segments, never a triangle
+    # (docs/evidence/2026-11-19-no-surface-fallback.md).
+    "geometry-no-surface-points",
+    "geometry-no-surface-curves",
     # Composite-law variants (G6 stage 2c/3d, #34): the identity law
     # decodes both forms; slanted quads, curve-entry loops and the
     # u16be no-repeat rule are the law's shapes.
@@ -383,6 +393,8 @@ GEOMETRY_VARIANTS = (
     "geometry-second-store-exports",
     "geometry-surface-bspline",
     "geometry-point-grid",
+    "geometry-no-surface-points",
+    "geometry-no-surface-curves",
     "geometry-seebody-store",
     "geometry-xdoclink-store",
     "geometry-overshoot-tail",
@@ -2509,6 +2521,70 @@ def _point_grid_payload(stalled: bool = False) -> bytes:
     return block + b"\x00" * 64 + b"".join(records)
 
 
+def _profile_points(count: int = 6):
+    """A single-row profile: no ``>=3x3`` grid reading exists."""
+    return [(6.0 * i, 0.0, 1.5 * i) for i in range(count)]
+
+
+def _no_surface_points_payload() -> bytes:
+    """A CATPrtCont block with a decoded profile run and no surface.
+
+    The six points are an f64le triple run (a single row: below the
+    ``rows >= 3`` grid bar), so the grid path owns nothing and the
+    export falls to the display-carrier route: six points, no segment,
+    no triangle.  The two filler records keep the ``e5 0d`` chain law
+    (at least three records).
+    """
+    records = [
+        _grid_record(_profile_points()),
+        _grid_record(b"", cls=0x0018),
+        _grid_record(b"", cls=0x0018),
+    ]
+    block = storage_property_block(b"CATPrtCont", b"CATContainer")
+    return block + b"\x00" * 64 + b"".join(records)
+
+
+def _curve_record(family: int, payload: bytes, length: int | None = None) -> bytes:
+    """One ``33 3X`` record behind its 7-B header (BR3 C1 layout)."""
+    declared = len(payload) if length is None else length
+    return (
+        b"\x02\x00"
+        + struct.pack("<H", 7)
+        + b"\x00"
+        + struct.pack("<H", declared)
+        + bytes((0x33, family))
+        + payload
+    )
+
+
+def _no_surface_curves_payload() -> bytes:
+    """A CATPrtCont block with curve records and no surface.
+
+    Four records: a law-holding ``33 32`` line (P = (10, 0, 0),
+    Q = (0, 10, 0), the repeated P and ``|Q|`` = 10 — the G2
+    ``[P][Q][P]+|Q|`` reading, so the display segment spans
+    ``P -> P+Q``), a twin whose trailing length is wrong (the law fails,
+    so nothing is displayed), a ``33 37`` circle (decoded center, no
+    orientation law -> a point, never a guessed circle) and a ``33 36``
+    record (undecoded, skipped).  No triangle is ever emitted.
+    """
+    line = struct.pack(
+        "<10f", 10.0, 0.0, 0.0, 0.0, 10.0, 0.0, 10.0, 0.0, 0.0, 10.0
+    )
+    broken = struct.pack(
+        "<10f", 40.0, 0.0, 0.0, 0.0, 10.0, 0.0, 40.0, 0.0, 0.0, 7.0
+    )
+    circle = struct.pack(">4f", 30.0, 40.0, 0.0, 5.0) + b"\x00\x00"
+    records = (
+        _curve_record(0x32, line, length=2)
+        + _curve_record(0x32, broken, length=2)
+        + _curve_record(0x37, circle)
+        + _curve_record(0x36, b"\x00\x00")
+    )
+    block = storage_property_block(b"CATPrtCont", b"CATContainer")
+    return block + b"\x00" * 64 + records
+
+
 def _geometry_payload(variant: str) -> bytes:
     """The storage blocks + property preambles + nested store(s).
 
@@ -2527,6 +2603,10 @@ def _geometry_payload(variant: str) -> bytes:
         return _point_grid_payload()
     if variant == "geometry-point-grid-stalled":
         return _point_grid_payload(stalled=True)
+    if variant == "geometry-no-surface-points":
+        return _no_surface_points_payload()
+    if variant == "geometry-no-surface-curves":
+        return _no_surface_curves_payload()
     if variant in ("geometry-seebody-store", "geometry-seebody-composite"):
         return _nested_store_block(b"CATSeeBodyCont", _geometry_store(variant))
     if variant == "geometry-seebody-empty":

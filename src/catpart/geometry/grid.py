@@ -308,7 +308,7 @@ def _metadata_content(data, block: int, hi: int) -> int | None:
     return None
 
 
-def _regions(data) -> list[tuple[int, int]]:
+def regions(data) -> list[tuple[int, int]]:
     """Every ``CATPrtCont`` region's ``(start, end)`` in block order."""
     blocks = store.valid_blocks(data)
     outer = int.from_bytes(data[8:12], "big") if len(data) >= 12 else 0
@@ -450,7 +450,7 @@ def iter_runs(data):
     regions in block order, their admitted ``e5 0d`` runs in byte order,
     then the content-prefix f64 allocation of each region.
     """
-    for block, hi in _regions(data):
+    for block, hi in regions(data):
         for _record_start, payload, end, cls in _records(data, block, hi):
             count, start = _numeric_run(data, payload, end)
             if count % 3:
@@ -508,8 +508,8 @@ def scan_part(data) -> GridScan:
     make the grid path the part's owner.  A shaped grid that fails a
     gate is counted as refused with its named reason, never emitted.
     """
-    regions = _regions(data)
-    block = regions[0][0] if regions else None
+    region_list = regions(data)
+    block = region_list[0][0] if region_list else None
     carriers_count = 0
     shaped = 0
     meshed = 0

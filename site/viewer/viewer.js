@@ -38,6 +38,8 @@ const els = {
   gatePanel: document.getElementById("gate-panel"),
   meta: document.getElementById("meta"),
   metaPanel: document.getElementById("meta-panel"),
+  displayLabel: document.getElementById("display-label"),
+  displayLabelText: document.getElementById("display-label-text"),
   curvesBtn: document.getElementById("curve-toggle"),
   wireBtn: document.getElementById("wire-toggle"),
   curveState: document.getElementById("curve-state"),
@@ -66,6 +68,7 @@ const orbit = attachOrbit(els.canvas, camera);
 
 let meshObject = null;
 let curveGroup = null;
+let displayGroup = null;
 let solidMaterial = null;
 let showCurves = false;
 let showWireframe = false;
@@ -146,7 +149,7 @@ function setUIMode(mode) {
 }
 
 function clearScene() {
-  for (const obj of [meshObject, curveGroup]) {
+  for (const obj of [meshObject, curveGroup, displayGroup]) {
     if (!obj) continue;
     scene.remove(obj);
     obj.traverse((child) => {
@@ -156,6 +159,7 @@ function clearScene() {
   }
   meshObject = null;
   curveGroup = null;
+  displayGroup = null;
   assemblyScene.clear();
   if (assemblyUI) assemblyUI.clear();
 }
@@ -186,6 +190,53 @@ function buildMesh(vertices, triangles) {
   geometry.computeBoundingSphere();
   const sphere = geometry.boundingSphere;
   orbit.frame(sphere.center, Math.max(sphere.radius, 1e-6));
+}
+
+/* The no-surface display fallback (2026-11-19): a part with zero
+   triangles but decoded carriers is drawn as it was decoded — a point
+   cloud and the law-pinned curve segments — never as a surface. The
+   label element says so; the gate panel still records empty-mesh. */
+function buildDisplayCarriers(points, curveSegments) {
+  displayGroup = new THREE.Group();
+  const positions = new THREE.BufferAttribute(points, 3);
+  if (points.length > 0) {
+    const cloudGeometry = new THREE.BufferGeometry();
+    cloudGeometry.setAttribute("position", positions);
+    const cloud = new THREE.Points(
+      cloudGeometry,
+      new THREE.PointsMaterial({
+        color: 0xffc857,
+        size: 4,
+        sizeAttenuation: false, // pixel size: visible at any model scale
+      }),
+    );
+    displayGroup.add(cloud);
+  }
+  if (curveSegments.length > 0 && points.length > 0) {
+    const segmentGeometry = new THREE.BufferGeometry();
+    segmentGeometry.setAttribute(
+      "position",
+      new THREE.BufferAttribute(points, 3),
+    );
+    segmentGeometry.setIndex(new THREE.BufferAttribute(curveSegments, 1));
+    displayGroup.add(
+      new THREE.LineSegments(
+        segmentGeometry,
+        new THREE.LineBasicMaterial({ color: 0x38e1ff }),
+      ),
+    );
+  }
+  scene.add(displayGroup);
+
+  const box = new THREE.Box3().setFromBufferAttribute(positions);
+  const sphere = box.getBoundingSphere(new THREE.Sphere());
+  orbit.frame(sphere.center, Math.max(sphere.radius, 1e-6));
+}
+
+function setDisplayLabel(label) {
+  if (!els.displayLabel) return;
+  els.displayLabel.hidden = !label;
+  if (els.displayLabelText) els.displayLabelText.textContent = label || "";
 }
 
 function buildCurves(curves) {
@@ -314,6 +365,7 @@ const viewerState = {
   curveCount: 0,
   curvesVisible: false,
   wireframe: false,
+  display: null,
   assembly: null,
 };
 
@@ -340,22 +392,41 @@ async function loadFile(file) {
   viewerState.summary = null;
   viewerState.inspect = null;
   viewerState.curveCount = 0;
+  viewerState.display = null;
   viewerState.assembly = null;
   publishState();
   setStatus(`decoding ${file.name} (${file.size.toLocaleString("en")} B)…`);
   const bytes = new Uint8Array(await file.arrayBuffer());
   let summary = null;
+  let decoded = null;
   let doc = null;
   let exportError = null;
   let inspectError = null;
   try {
-    const result = decode_export(bytes);
-    summary = result.summary;
-    buildMesh(result.vertices, result.triangles);
-    buildCurves(result.curves);
-    viewerState.curveCount = result.curves.length;
+    decoded = decode_export(bytes);
+    summary = decoded.summary;
+    viewerState.curveCount = decoded.curves.length;
   } catch (err) {
     exportError = err;
+  }
+  const displayBlock = summary ? summary.no_surface_display : null;
+  const displayPoints = decoded && decoded.points ? decoded.points : null;
+  const displaySegments =
+    decoded && decoded.curveSegments ? decoded.curveSegments : null;
+  const hasDisplay =
+    displayBlock !== null &&
+    displayBlock !== undefined &&
+    displayPoints !== null &&
+    displayPoints.length > 0; // segments are always indexed into points
+  if (decoded) {
+    if (decoded.triangles.length > 0) {
+      buildMesh(decoded.vertices, decoded.triangles);
+    }
+    buildCurves(decoded.curves);
+  }
+  setDisplayLabel(hasDisplay ? displayBlock.label : null);
+  if (hasDisplay) {
+    buildDisplayCarriers(displayPoints, displaySegments || new Uint32Array());
   }
   try {
     doc = decode_inspect(bytes);
@@ -393,13 +464,32 @@ async function loadFile(file) {
   } else {
     clearGate();
   }
-  // A decode can succeed and still export no surface: the vertices-only
-  // family (G2 P7) carries a pool, zero triangles. The §3.4 gate already
-  // names that outcome empty-mesh; reporting it as "loaded" over a blank
-  // canvas would tell the user the part rendered when nothing did. Keep
-  // the counts (summary + gate panel) visible and state the failure.
+  // A decode can succeed and still export no surface. Two outcomes are
+  // distinct and never conflated:
+  //  - the part carries decoded carriers (points / law-pinned curve
+  //    segments): it renders as exactly that, labelled "no surface —
+  //    showing N points, M curve segments", and is never described as a
+  //    surface render;
+  //  - it carries nothing (0 points / 0 curve segments / 0 triangles):
+  //    the named §3.4 empty-mesh failure, with the counts still on screen.
   const emptyMesh = summary !== null && summary.triangle_count === 0;
-  els.canvas.hidden = !summary || emptyMesh;
+  viewerState.display = hasDisplay
+    ? {
+        mode: "no-surface",
+        label: displayBlock.label,
+        pointCount: displayPoints.length / 3,
+        curveSegmentCount: displaySegments ? displaySegments.length / 2 : 0,
+        drawn: displayGroup
+          ? {
+              points: displayGroup.children.some((child) => child.isPoints),
+              segments: displayGroup.children.some(
+                (child) => child.isLineSegments,
+              ),
+            }
+          : { points: false, segments: false },
+      }
+    : null;
+  els.canvas.hidden = !summary || (emptyMesh && !hasDisplay);
   if (exportError) {
     viewerState.error = {
       error_class: exportError.error_class || null,
@@ -411,7 +501,7 @@ async function loadFile(file) {
     );
     setStatus(`${file.name}: decode failed`);
     viewerState.status = "failed";
-  } else if (emptyMesh) {
+  } else if (emptyMesh && !hasDisplay) {
     const reason =
       `${CHECK_EMPTY_MESH}: ${summary.vertex_count} vertices decoded, ` +
       `${summary.triangle_count} triangles`;
@@ -422,6 +512,12 @@ async function loadFile(file) {
     showError(viewerState.error.error_class, viewerState.error.detail);
     setStatus(`${file.name} — ${reason}`);
     viewerState.status = "failed";
+  } else if (hasDisplay) {
+    setStatus(
+      `${file.name} — ${displayBlock.label} ` +
+        "(decoded carriers, not a surface render)",
+    );
+    viewerState.status = "loaded";
   } else {
     setStatus(
       `${file.name} — ${summary.vertex_count} vertices, ` +

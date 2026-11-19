@@ -235,14 +235,21 @@ def test_a5_surface_keeps_priority_over_the_grid_path(tmp_path: Path) -> None:
     ]
 
 
-def test_untriangulable_grid_is_a_named_failure(tmp_path: Path) -> None:
+def test_untriangulable_grid_shows_its_points_without_triangles(tmp_path: Path) -> None:
     path = tmp_path / "stalled.CATPart"
     path.write_bytes(fixture("geometry-point-grid-stalled"))
-    with pytest.raises(ExportError) as excinfo:
-        build_export(path, tmp_path / "stalled.ply")
-    assert excinfo.value.error_class == "untriangulable-grid"
-    assert "stalled-stations=1" in excinfo.value.detail
-    assert "candidate" in excinfo.value.detail
+    summary = build_export(path, tmp_path / "stalled.ply")
+    assert summary["triangle_count"] == 0
+    display = summary["no_surface_display"]
+    assert display["surface"] is False
+    assert display["point_count"] == 20
+    assert display["curve_segment_count"] == 0
+    assert display["grid_shaped"] == 1
+    assert display["grid_refusals"] == {"stalled-stations": 1}
+    classes = [warning["class"] for warning in summary["warnings"]]
+    assert "no-surface-display" in classes
+    assert "grid-candidates-refused" in classes
+    assert "stalled-stations=1" in summary["warnings"][1]["detail"]
 
 
 def test_part_without_a_grid_keeps_missing_geometry_store(tmp_path: Path) -> None:

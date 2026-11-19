@@ -184,6 +184,69 @@ fn export_composite_curve_exposure_at_the_boundary() {
 }
 
 #[wasm_bindgen_test]
+fn export_no_surface_display_carriers_at_the_boundary() {
+    // The display fallback (2026-11-19): no triangle is ever emitted; the
+    // decoded carriers cross as typed arrays — points f32 xyz, the
+    // segment index pairs u32 — beside the summary's no_surface_display
+    // block (the single source, so the Fidelity harness compares it).
+    let result = decode_export(fixtures::NO_SURFACE_POINTS)
+        .expect("the point-carrier fixture exports its carriers");
+    let summary = Reflect::get(&result, &JsValue::from_str("summary")).unwrap();
+    assert_eq!(summary_f64(&summary, "vertex_count"), 0.0);
+    assert_eq!(summary_f64(&summary, "triangle_count"), 0.0);
+    let block = Reflect::get(&summary, &JsValue::from_str("no_surface_display")).unwrap();
+    assert_eq!(
+        Reflect::get(&block, &JsValue::from_str("surface"))
+            .unwrap()
+            .as_bool(),
+        Some(false),
+        "never presented as a surface"
+    );
+    assert_eq!(
+        Reflect::get(&block, &JsValue::from_str("label"))
+            .unwrap()
+            .as_string()
+            .as_deref(),
+        Some("no surface — showing 6 points, 0 curve segments")
+    );
+    let points = Reflect::get(&result, &JsValue::from_str("points"))
+        .unwrap()
+        .dyn_into::<Float32Array>()
+        .expect("points is a Float32Array");
+    assert_eq!(points.length(), 18); // 6 points x 3
+    let segments = Reflect::get(&result, &JsValue::from_str("curveSegments"))
+        .unwrap()
+        .dyn_into::<Uint32Array>()
+        .expect("curveSegments is a Uint32Array");
+    assert_eq!(segments.length(), 0);
+
+    let result = decode_export(fixtures::NO_SURFACE_CURVES)
+        .expect("the curve-carrier fixture exports its carriers");
+    let summary = Reflect::get(&result, &JsValue::from_str("summary")).unwrap();
+    assert_eq!(summary_f64(&summary, "triangle_count"), 0.0);
+    let block = Reflect::get(&summary, &JsValue::from_str("no_surface_display")).unwrap();
+    assert_eq!(
+        Reflect::get(&block, &JsValue::from_str("curve_segment_count"))
+            .unwrap()
+            .as_f64(),
+        Some(1.0),
+        "one law-holding 33 32 record pins one segment"
+    );
+    let points = Reflect::get(&result, &JsValue::from_str("points"))
+        .unwrap()
+        .dyn_into::<Float32Array>()
+        .expect("points is a Float32Array");
+    assert_eq!(points.length(), 9); // P, P+Q, circle center
+    let segments = Reflect::get(&result, &JsValue::from_str("curveSegments"))
+        .unwrap()
+        .dyn_into::<Uint32Array>()
+        .expect("curveSegments is a Uint32Array");
+    assert_eq!(segments.length(), 2);
+    assert_eq!(segments.get_index(0), 0);
+    assert_eq!(segments.get_index(1), 1);
+}
+
+#[wasm_bindgen_test]
 fn export_classified_failures_match_the_twin_vocabulary() {
     // One corrupted variant per classified class — the exact kebab
     // strings the twin raises on these bytes (fixture-mode harness

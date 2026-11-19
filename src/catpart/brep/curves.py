@@ -234,8 +234,11 @@ def iter_curve_records(data, lo: int, hi: int) -> list[CurveRecord]:
             fam = data[p + 1]
             if 0 < ln <= MAX_RECORD_LEN and p - 6 >= lo:
                 pay = data[p + 2 : p + 2 + ln]
-                ok = True
-                if fam in (FAMILY_MIDRING, FAMILY_CIRCLE, FAMILY_CONIC):
+                # A short slice is a record that runs past the buffer: its
+                # payload is not fully present, so it is not a record
+                # (fail-closed; a truncated BE read would otherwise raise).
+                ok = len(pay) == ln
+                if ok and fam in (FAMILY_MIDRING, FAMILY_CIRCLE, FAMILY_CONIC):
                     nbe = min((ln - 2) // 4, 7)
                     vals = [
                         BE_F32.unpack_from(pay, 4 * i)[0] for i in range(nbe)

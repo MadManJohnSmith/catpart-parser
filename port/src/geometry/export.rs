@@ -82,12 +82,14 @@
 
 use serde::Serialize;
 
+use std::collections::BTreeMap;
+
 use super::composite::{CompositeDecode, CompositeInfo};
 use super::errors::{
     ExportError, IO_ERROR, MISSING_GEOMETRY_STORE, NO_EVALUABLE_SURFACE, UNDECODED_VARIANT,
-    UNREADABLE_FILE, UNTRIANGULABLE_GRID,
+    UNREADABLE_FILE,
 };
-use super::{composite, facets, grid, mesh, ply, pool, store, surface};
+use super::{composite, display, facets, grid, mesh, ply, pool, store, surface};
 
 /// The summary's schema version (twin: ``EXPORT_SCHEMA_VERSION``).
 pub const EXPORT_SCHEMA_VERSION: u32 = 1;
@@ -114,6 +116,8 @@ pub const WARN_SURFACE_TESSELLATED: &str = "bspline-surface-tessellated";
 pub const WARN_GRID_MESHED: &str = "point-grid-meshed";
 /// Grid candidates the gates refused while other grids of the part meshed.
 pub const WARN_GRID_REFUSED: &str = "grid-candidates-refused";
+/// The display-carrier fallback (2026-11-19): decoded carriers, no surface.
+pub const WARN_NO_SURFACE_DISPLAY: &str = "no-surface-display";
 
 /// One ordered warning of the summary (the twin's ``{"class": ...,
 /// "detail": ...}`` dict; field order = the twin's construction).
@@ -201,6 +205,35 @@ pub struct GridMeshing {
     pub connectivity: String,
 }
 
+/// The display-carrier block (the twin's ``no_surface_display`` dict;
+/// additive, schema ``additionalProperties: true``).  It is a display of
+/// the decoded carriers, never a surface reconstruction.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct NoSurfaceDisplay {
+    pub block: Option<usize>,
+    pub kind: String,
+    pub surface: bool,
+    pub label: String,
+    pub points: Vec<f64>,
+    pub curve_segments: Vec<u32>,
+    pub point_count: usize,
+    pub curve_segment_count: usize,
+    pub regions: usize,
+    pub pool_points: usize,
+    pub point_runs: usize,
+    pub run_points: usize,
+    pub curve_records: usize,
+    pub decoded_curve_records: usize,
+    pub skipped_curve_records: usize,
+    pub curve_points: usize,
+    pub line_records: usize,
+    pub families: BTreeMap<String, usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grid_shaped: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub grid_refusals: Option<BTreeMap<String, usize>>,
+}
+
 /// The schema-versioned export summary (``export-summary-v1``) — the
 /// twin's summary dict; field declaration order = the twin's dict
 /// construction order (spec §2.1: even byte JSON equality stays
@@ -251,6 +284,11 @@ pub struct ExportSummary {
     /// shipped law located.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub store_recovery: Option<StoreRecovery>,
+    /// The display-carrier block (2026-11-19); present only when the part
+    /// produced no surface and no surface-class mesh but carries decoded
+    /// carriers (points / law-pinned curve segments — never a surface).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub no_surface_display: Option<NoSurfaceDisplay>,
 }
 
 /// The decoded export of one store: the summary plus the PLY payload
@@ -306,8 +344,8 @@ pub fn build_export(path: &str, out_path: &str) -> Result<ExportSummary, ExportE
     Ok(outcome.summary)
 }
 
-/// Export ``data``, preferring the nested store and falling back to
-/// exact B-spline surfaces — the twin's
+/// Export ``data``, preferring the nested store, falling back to exact
+/// B-spline surfaces and finally to the display carriers — the twin's
 /// :func:`catpart.geometry.export._export_data`.
 ///
 /// The nested-store path is exactly :func:`export_store_data` (unchanged
@@ -318,19 +356,22 @@ pub fn build_export(path: &str, out_path: &str) -> Result<ExportSummary, ExportE
 /// mesh; a part with no surface frame falls to the structured point-grid
 /// route (:mod:`super::grid`, **candidate** connectivity).  A part with
 /// surface frames and no tessellatable surface raises the named
-/// ``no-evaluable-surface`` class, a part with grid candidates and no
-/// triangulable grid the named ``untriangulable-grid`` class; a part
-/// with neither re-raises the store path's original classification.
-/// Priority is facets > a5 surface > grid.
+/// ``no-evaluable-surface`` class; a part with no triangulable grid (or
+/// no grid at all) falls to the display-carrier route
+/// (:mod:`super::display`: the decoded point cloud and law-pinned curve
+/// segments, **never** a surface), which keeps the original
+/// classification only when the part has no displayable carrier.
+/// Priority is facets > a5 surface > grid > display carriers.
 pub fn export_data(data: &[u8]) -> Result<ExportOutcome, ExportError> {
-    match export_store_data(data) {
+    let mut spans: Vec<(usize, usize)> = Vec::new();
+    match export_store_data_collect(data, &mut spans) {
         Ok(outcome) => {
             if !outcome.triangles.is_empty() {
                 return Ok(outcome);
             }
-            surface_fallback(data, None, Some(outcome))
+            surface_fallback(data, None, Some(outcome), &spans)
         }
-        Err(exc) => surface_fallback(data, Some(exc), None),
+        Err(exc) => surface_fallback(data, Some(exc), None, &spans),
     }
 }
 
@@ -339,10 +380,11 @@ fn surface_fallback(
     data: &[u8],
     original: Option<ExportError>,
     previous: Option<ExportOutcome>,
+    spans: &[(usize, usize)],
 ) -> Result<ExportOutcome, ExportError> {
     let scan = surface::scan_part(data, surface::TOLERANCE_FRACTION);
     if scan.candidates == 0 {
-        return grid_fallback(data, original, previous);
+        return grid_fallback(data, original, previous, spans);
     }
     if !scan.has_mesh() {
         return Err(ExportError::new(
@@ -451,6 +493,7 @@ fn surface_fallback(
         }),
         grid_meshing: None,
         store_recovery: None,
+        no_surface_display: None,
     };
     Ok(ExportOutcome {
         summary,
@@ -465,46 +508,18 @@ fn surface_fallback(
 /// This is an **inference**: the carrier bytes pin a ``rows x cols`` point
 /// net, and the mesh is two triangles per cell with a consistent winding
 /// from the station order — connectivity is *candidate*, never a decoded
-/// surface.  A part whose only point runs have no ``>=3x3`` shape keeps
-/// the store path's original classification; a part with grid candidates
-/// and no triangulable grid raises the named ``untriangulable-grid``.
+/// surface.  A part whose grid does not triangulate falls to the
+/// display-carrier route: its decoded points are shown, never
+/// triangulated.
 fn grid_fallback(
     data: &[u8],
     original: Option<ExportError>,
     previous: Option<ExportOutcome>,
+    spans: &[(usize, usize)],
 ) -> Result<ExportOutcome, ExportError> {
     let scan = grid::scan_part(data);
     if !scan.has_mesh() {
-        if scan.has_candidates() {
-            let refusals = scan
-                .refusals
-                .iter()
-                .map(|(reason, count)| format!("{reason}={count}"))
-                .collect::<Vec<_>>()
-                .join(", ");
-            return Err(ExportError::new(
-                UNTRIANGULABLE_GRID,
-                format!(
-                    "{} 3-divisible point run(s), {} with a >=3x3 grid reading, \
-                     {} refused ({}): no structured point grid triangulated — the \
-                     grid connectivity is an inference (candidate two triangles per \
-                     cell, no surface decode) and a partial or empty mesh is never \
-                     reported (docs/evidence/2026-11-19-grid-meshing.md)",
-                    scan.carriers,
-                    scan.shaped,
-                    scan.refused,
-                    if refusals.is_empty() {
-                        "none".to_string()
-                    } else {
-                        refusals
-                    },
-                ),
-            ));
-        }
-        if let Some(previous) = previous {
-            return Ok(previous);
-        }
-        return Err(original.expect("the store path raised before the fallback"));
+        return display_fallback(data, original, previous, spans, &scan);
     }
     let vertices = scan.vertices.clone();
     let triangles = scan.triangles.clone();
@@ -600,6 +615,7 @@ fn grid_fallback(
             connectivity: grid::CONNECTIVITY.to_string(),
         }),
         store_recovery: None,
+        no_surface_display: None,
     };
     Ok(ExportOutcome {
         summary,
@@ -609,9 +625,174 @@ fn grid_fallback(
     })
 }
 
+/// Display the decoded carriers of a part with no surface, or fail — the
+/// twin's :func:`catpart.geometry.export._display_fallback`.
+///
+/// The last rung: the part has no facet triangles, no evaluable
+/// ``a5 03 34`` surface and no triangulable grid.  Its decoded carriers
+/// — the 3-divisible f64 point runs, the store path's pool when it
+/// succeeded vertices-only, and the ``33 3X`` curve records inside the
+/// located store bodies and the ``CATPrtCont`` regions — are returned as
+/// ``points`` (flat f32 xyz) and ``curve_segments`` (flat pairs of point
+/// indices, only where the ``33 32`` law pins ``P -> P+Q``) on the
+/// summary's ``no_surface_display`` block.  Nothing is triangulated,
+/// welded or joined.  A part with no displayable carrier keeps its
+/// pre-display classification (``original``), or its vertices-only
+/// success when the store path returned one.
+fn display_fallback(
+    data: &[u8],
+    original: Option<ExportError>,
+    previous: Option<ExportOutcome>,
+    spans: &[(usize, usize)],
+    grid_scan: &grid::GridScan,
+) -> Result<ExportOutcome, ExportError> {
+    let pool_vertices: Vec<(f64, f64, f64)> = previous
+        .as_ref()
+        .map(|outcome| outcome.vertices.clone())
+        .unwrap_or_default();
+    let scan = display::scan_part(data, spans, &pool_vertices);
+    if !scan.has_carriers() {
+        if let Some(previous) = previous {
+            return Ok(previous);
+        }
+        return Err(original.expect("the store path raised before the fallback"));
+    }
+
+    let flat_points: Vec<f64> = scan
+        .points
+        .iter()
+        .flat_map(|(x, y, z)| [*x, *y, *z])
+        .collect();
+    let flat_segments: Vec<u32> = scan
+        .segments
+        .iter()
+        .flat_map(|(first, second)| [*first, *second])
+        .collect();
+    let mut warnings: Vec<Warning> = previous
+        .as_ref()
+        .map(|outcome| outcome.summary.warnings.clone())
+        .unwrap_or_default();
+    warnings.push(Warning {
+        class: WARN_NO_SURFACE_DISPLAY.to_string(),
+        detail: format!(
+            "no surface decoded: {} decoded carrier points, {} law-pinned \
+             curve segments — the 3-divisible f64 point runs, the store pool \
+             when it exists, and the 33 3X record centers; a segment only \
+             where the 33 32 [P][Q][P]+|Q| laws hold. This is a faithful \
+             display of the decoded carriers, not a surface reconstruction: \
+             no triangle is emitted, no point is welded and no connectivity \
+             is inferred (docs/evidence/2026-11-19-no-surface-fallback.md)",
+            scan.points.len(),
+            scan.segments.len(),
+        ),
+    });
+    if grid_scan.has_candidates() && grid_scan.refused > 0 {
+        let refusals = grid_scan
+            .refusals
+            .iter()
+            .map(|(reason, count)| format!("{reason}={count}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        warnings.push(Warning {
+            class: WARN_GRID_REFUSED.to_string(),
+            detail: format!(
+                "{} of {} structured grid candidate(s) refused ({}); no \
+                 triangle was emitted and their points are displayed as \
+                 carriers (docs/evidence/2026-11-19-no-surface-fallback.md)",
+                grid_scan.refused, grid_scan.shaped, refusals,
+            ),
+        });
+    }
+    let block = NoSurfaceDisplay {
+        block: scan.block,
+        kind: display::KIND.to_string(),
+        surface: display::SURFACE,
+        label: scan.label(),
+        points: flat_points,
+        curve_segments: flat_segments,
+        point_count: scan.points.len(),
+        curve_segment_count: scan.segments.len(),
+        regions: scan.regions,
+        pool_points: scan.pool_points,
+        point_runs: scan.point_runs,
+        run_points: scan.run_points,
+        curve_records: scan.curve_records,
+        decoded_curve_records: scan.decoded_curve_records,
+        skipped_curve_records: scan.skipped_curve_records,
+        curve_points: scan.curve_points,
+        line_records: scan.line_records,
+        families: scan.families.clone(),
+        grid_shaped: grid_scan.has_candidates().then_some(grid_scan.shaped),
+        grid_refusals: grid_scan
+            .has_candidates()
+            .then(|| grid_scan.refusals.clone()),
+    };
+
+    if let Some(previous) = previous {
+        let mut summary = previous.summary.clone();
+        summary.warnings = warnings;
+        summary.no_surface_display = Some(block);
+        return Ok(ExportOutcome {
+            summary,
+            vertices: previous.vertices,
+            triangles: previous.triangles,
+            curves: previous.curves,
+        });
+    }
+
+    let (bbox_min, bbox_max) = mesh::bounding_box(&scan.points)
+        .expect("the display fallback always carries at least one point");
+    let summary = ExportSummary {
+        schema_version: EXPORT_SCHEMA_VERSION,
+        vertex_count: 0,
+        triangle_count: 0,
+        bounding_box: BoundingBox {
+            min: bbox_min,
+            max: bbox_max,
+        },
+        warnings,
+        store_ordinal: 0,
+        origin_kind: store::ORIGIN_KIND_BLOCK.to_string(),
+        pool_group_count: 0,
+        facet_candidate_count: 0,
+        facet_record_count: 0,
+        degenerate_triangle_count: 0,
+        mesh: MeshBlock {
+            edge_count: 0,
+            manifold: true,
+            closed: true,
+            oriented: true,
+            boundary_edge_count: 0,
+        },
+        composite: None,
+        surface_tessellation: None,
+        grid_meshing: None,
+        store_recovery: None,
+        no_surface_display: Some(block),
+    };
+    Ok(ExportOutcome {
+        summary,
+        vertices: Vec::new(),
+        triangles: Vec::new(),
+        curves: Vec::new(),
+    })
+}
+
 /// Decode ``data``'s first exportable nested store — the twin's
 /// :func:`catpart.geometry.export._export_store_data`.
+///
+/// ``spans`` collects every located store body ``(body_lo, body_hi)`` in
+/// probe order — the display fallback walks exactly those regions, the
+/// same bytes the exporter already trusted.
 pub fn export_store_data(data: &[u8]) -> Result<ExportOutcome, ExportError> {
+    let mut spans: Vec<(usize, usize)> = Vec::new();
+    export_store_data_collect(data, &mut spans)
+}
+
+fn export_store_data_collect(
+    data: &[u8],
+    spans: &mut Vec<(usize, usize)>,
+) -> Result<ExportOutcome, ExportError> {
     let size = data.len();
     let d8_outer = if size >= 12 {
         u32::from_be_bytes([data[8], data[9], data[10], data[11]]) as usize
@@ -644,6 +825,7 @@ pub fn export_store_data(data: &[u8]) -> Result<ExportOutcome, ExportError> {
         d8_outer,
         &mut first_error,
         &mut located,
+        spans,
     ) {
         return Ok(outcome);
     }
@@ -666,6 +848,7 @@ pub fn export_store_data(data: &[u8]) -> Result<ExportOutcome, ExportError> {
                 d8_outer,
                 &mut first_error,
                 &mut located,
+                spans,
             ) {
                 return Ok(outcome);
             }
@@ -693,6 +876,7 @@ pub fn export_store_data(data: &[u8]) -> Result<ExportOutcome, ExportError> {
                 d8_outer,
                 &mut first_error,
                 &mut located,
+                spans,
             ) {
                 return Ok(outcome);
             }
@@ -724,6 +908,7 @@ pub fn export_store_data(data: &[u8]) -> Result<ExportOutcome, ExportError> {
 /// ``for ordinal, blk in enumerate(cands)`` loop). ``first_error``
 /// keeps the FIRST classification across the whole search; a decoded
 /// store ends the search with the outcome.
+#[allow(clippy::too_many_arguments)]
 fn walk_candidates(
     data: &[u8],
     blocks: &[(usize, String)],
@@ -732,6 +917,7 @@ fn walk_candidates(
     d8_outer: usize,
     first_error: &mut Option<ExportError>,
     located: &mut bool,
+    spans: &mut Vec<(usize, usize)>,
 ) -> Option<ExportOutcome> {
     for (ordinal, blk) in cands.iter().enumerate() {
         let span = match store::locate_store(data, *blk, blocks, d8_outer, container) {
@@ -745,6 +931,7 @@ fn walk_candidates(
             }
         };
         *located = true;
+        spans.push((span.body_lo, span.body_hi));
         match export_store(data, &span, ordinal) {
             Ok(outcome) => return Some(outcome),
             Err(exc) => {
@@ -989,6 +1176,7 @@ fn export_store(
         surface_tessellation: None,
         grid_meshing: None,
         store_recovery: None,
+        no_surface_display: None,
     };
     if span.container != store::CONTAINER_STDCONT || span.tail_law != store::TAIL_LAW_SHIPPED {
         // Stage 3a (#34): the store was recovered — name the probe and
@@ -1321,6 +1509,7 @@ fn export_composite_store(
         surface_tessellation: None,
         grid_meshing: None,
         store_recovery: None,
+        no_surface_display: None,
     };
     if span.container != store::CONTAINER_STDCONT || span.tail_law != store::TAIL_LAW_SHIPPED {
         // Stage 3a/12 (#34): recovered stores name HOW on every decode
@@ -1578,8 +1767,19 @@ mod tests {
         let outcome = export_data(&file).unwrap();
         assert_eq!(outcome.summary.vertex_count, 8);
         assert_eq!(outcome.summary.triangle_count, 0);
-        assert_eq!(outcome.summary.warnings.len(), 1);
+        assert_eq!(outcome.summary.warnings.len(), 2);
         assert_eq!(outcome.summary.warnings[0].class, WARN_NO_FACETS);
+        assert_eq!(outcome.summary.warnings[1].class, WARN_NO_SURFACE_DISPLAY);
+        // The pool points are the display carriers: 8 points, no segment —
+        // never a surface (2026-11-19 no-surface fallback).
+        let block = outcome
+            .summary
+            .no_surface_display
+            .expect("the vertices-only success carries the display block");
+        assert!(!block.surface);
+        assert_eq!(block.point_count, 8);
+        assert_eq!(block.curve_segment_count, 0);
+        assert_eq!(block.points.len(), 24);
         assert!(outcome.summary.mesh.closed); // vacuous (all over empty)
     }
 

@@ -41,7 +41,7 @@ from __future__ import annotations
 import mmap
 
 from catpart.geometry.errors import ExportError
-from catpart.geometry import facets, grid, mesh, pool, ply, store, surface
+from catpart.geometry import display, facets, grid, mesh, pool, ply, store, surface
 from catpart.geometry import composite
 
 EXPORT_SCHEMA_VERSION = 1
@@ -62,6 +62,7 @@ WARN_DEDUP_DECLINED = "duplicate-triangles-dedup-declined"
 WARN_SURFACE_TESSELLATED = "bspline-surface-tessellated"
 WARN_GRID_MESHED = "point-grid-meshed"
 WARN_GRID_REFUSED = "grid-candidates-refused"
+WARN_NO_SURFACE_DISPLAY = "no-surface-display"
 
 
 def build_export(path, out_path) -> dict:
@@ -103,27 +104,33 @@ def _export_data(data) -> tuple[dict, list, list]:
     B-spline mesh; a part with no surface frame falls to the structured
     point-grid route (:mod:`catpart.geometry.grid`, **candidate**
     connectivity).  A part with surface frames and no tessellatable
-    surface raises the named ``no-evaluable-surface`` class, a part with
-    grid candidates and no triangulable grid the named
-    ``untriangulable-grid`` class; a part with neither re-raises the
-    store path's original classification.  Priority is facets > a5
-    surface > grid.
+    surface raises the named ``no-evaluable-surface`` class; a part with
+    grid candidates that do not triangulate, or with no grid at all,
+    falls to the display-carrier route (:mod:`catpart.geometry.display`:
+    the decoded point cloud and law-pinned curve segments, **never** a
+    surface) and keeps its original classification only when it has no
+    displayable carrier.  Priority is facets > a5 surface > grid >
+    display carriers.
     """
+    spans: list[tuple[int, int]] = []
     try:
-        summary, vertices, triangles = _export_store_data(data)
+        summary, vertices, triangles = _export_store_data(data, spans)
     except ExportError as exc:
-        return _surface_fallback(data, exc)
+        return _surface_fallback(data, exc, None, spans)
     if triangles:
         return summary, vertices, triangles
-    return _surface_fallback(data, None, (summary, vertices, triangles))
+    return _surface_fallback(data, None, (summary, vertices, triangles), spans)
 
 
-def _export_store_data(data) -> tuple[dict, list, list]:
+def _export_store_data(data, spans: list[tuple[int, int]] | None = None):
     """Decode ``data``'s first exportable nested store.
 
     Returns ``(summary, vertices, triangles)``. With several candidate
     blocks the first store passing G3's export gate wins; when all of
-    them fail, the first classification is re-raised.
+    them fail, the first classification is re-raised.  ``spans`` (when
+    given) collects every located store body ``(body_lo, body_hi)`` in
+    probe order — the display fallback walks exactly those regions, the
+    same bytes the exporter already trusted.
 
     Store search (stage 3a #34): the ``CATStdCont`` regions carry the
     shipped law; when no ``CATStdCont`` region located a store, the
@@ -153,6 +160,8 @@ def _export_store_data(data) -> tuple[dict, list, list]:
         if span is None:
             continue
         located = True
+        if spans is not None:
+            spans.append((span.body_lo, span.body_hi))
         try:
             summary, vertices, triangles = _export_store(data, span, ordinal)
         except ExportError as exc:
@@ -183,6 +192,8 @@ def _export_store_data(data) -> tuple[dict, list, list]:
                 if span is None:
                     continue
                 located = True
+                if spans is not None:
+                    spans.append((span.body_lo, span.body_hi))
                 try:
                     summary, vertices, triangles = _export_store(data, span, ordinal)
                 except ExportError as exc:
@@ -215,6 +226,8 @@ def _export_store_data(data) -> tuple[dict, list, list]:
                 if span is None:
                     continue
                 located = True
+                if spans is not None:
+                    spans.append((span.body_lo, span.body_hi))
                 try:
                     summary, vertices, triangles = _export_store(data, span, ordinal)
                 except ExportError as exc:
@@ -246,21 +259,22 @@ def _surface_fallback(
     data,
     original: ExportError | None,
     previous: tuple[dict, list, list] | None = None,
+    spans=(),
 ) -> tuple[dict, list, list]:
     """The exact-surface route for a part with no facet triangles.
 
     ``previous`` is the store path's vertices-only success (G2 P7); it is
-    returned unchanged when the part carries no ``a5 03 34`` frame and no
-    structured point grid, so the pre-surface classifications and outputs
-    stay identical.  A part with surface frames but none evaluating keeps
-    the named ``no-evaluable-surface`` failure (the a5 path has priority
-    over the grid inference); a part with no surface frames falls through
-    to :func:`_grid_fallback`.  An empty mesh is never passed off as a
-    success.
+    returned with the display-carrier block when the part carries no
+    ``a5 03 34`` frame, so the pre-surface mesh outputs stay identical.  A
+    part with surface frames but none evaluating keeps the named
+    ``no-evaluable-surface`` failure (the a5 path has priority over the
+    grid inference and over the display carriers); a part with no surface
+    frames falls through to :func:`_grid_fallback`.  An empty mesh is never
+    passed off as a success.
     """
     result = surface.scan_part(data)
     if result.candidates == 0:
-        return _grid_fallback(data, original, previous)
+        return _grid_fallback(data, original, previous, spans)
     if not result.has_mesh:
         raise ExportError(
             "no-evaluable-surface",
@@ -355,37 +369,20 @@ def _grid_fallback(
     data,
     original: ExportError | None,
     previous: tuple[dict, list, list] | None,
+    spans=(),
 ) -> tuple[dict, list, list]:
     """The structured-point-grid route for a part with no facets and no a5 frame.
 
     This is an **inference**: the carrier bytes pin a ``rows x cols``
     point net, and the mesh is two triangles per cell with a consistent
     winding from the station order — connectivity is *candidate*, never
-    a decoded surface (the summary says so, the warning says so).  A
-    part whose only point runs have no ``>=3x3`` shape keeps the store
-    path's original classification; a part with grid candidates and no
-    triangulable grid raises the named ``untriangulable-grid`` failure.
+    a decoded surface (the summary says so, the warning says so).  A part
+    with grid candidates that no gate admits falls to the display-carrier
+    route: its decoded points are shown, never triangulated.
     """
     result = grid.scan_part(data)
     if not result.has_mesh:
-        if result.has_candidates:
-            refusals = ", ".join(
-                f"{reason}={count}" for reason, count in result.refusals
-            )
-            raise ExportError(
-                "untriangulable-grid",
-                f"{result.carriers} 3-divisible point run(s), "
-                f"{result.shaped} with a >=3x3 grid reading, "
-                f"{result.refused} refused "
-                f"({refusals or 'none'}): no structured point grid "
-                "triangulated — the grid connectivity is an inference "
-                "(candidate two triangles per cell, no surface decode) and "
-                "a partial or empty mesh is never reported "
-                "(docs/evidence/2026-11-19-grid-meshing.md)",
-            )
-        if previous is not None:
-            return previous
-        raise original
+        return _display_fallback(data, original, previous, spans, result)
     vertices = list(result.vertices)
     triangles = list(result.triangles)
     stats = mesh.mesh_stats(triangles)
@@ -469,6 +466,118 @@ def _grid_fallback(
     }
     _self_check(summary)
     return summary, vertices, triangles
+
+
+def _display_fallback(data, original, previous, spans, grid_scan) -> tuple[dict, list, list]:
+    """Display the decoded carriers of a part with no surface, or fail.
+
+    The last rung: the part has no facet triangles, no evaluable ``a5 03
+    34`` surface, and no triangulable grid.  Its decoded carriers — the
+    3-divisible f64 point runs (profiles, limit boxes, sub-grid arrays),
+    the store path's pool when it succeeded vertices-only, and the
+    ``33 3X`` curve records inside the located store bodies and the
+    ``CATPrtCont`` regions — are returned as ``points`` (flat f32 xyz) and
+    ``curve_segments`` (flat pairs of point indices, only where the
+    ``33 32`` law pins ``P -> P+Q``) on the summary's
+    ``no_surface_display`` block.  Nothing is triangulated, welded or
+    joined.  A part with no displayable carrier keeps its pre-display
+    classification (``original``), or its vertices-only success when the
+    store path returned one.
+    """
+    previous_vertices = list(previous[1]) if previous is not None else []
+    scan = display.scan_part(data, spans, previous_vertices)
+    if not scan.has_carriers:
+        if previous is not None:
+            return previous
+        raise original
+
+    flat_points = [value for point in scan.points for value in point]
+    flat_segments = [index for pair in scan.segments for index in pair]
+    warnings = list(previous[0]["warnings"]) if previous is not None else []
+    warnings.append(
+        {
+            "class": WARN_NO_SURFACE_DISPLAY,
+            "detail": f"no surface decoded: {len(scan.points)} decoded "
+            f"carrier points, {len(scan.segments)} law-pinned curve "
+            "segments — the 3-divisible f64 point runs, the store pool "
+            "when it exists, and the 33 3X record centers; a segment only "
+            "where the 33 32 [P][Q][P]+|Q| laws hold. This is a faithful "
+            "display of the decoded carriers, not a surface "
+            "reconstruction: no triangle is emitted, no point is welded "
+            "and no connectivity is inferred "
+            "(docs/evidence/2026-11-19-no-surface-fallback.md)",
+        }
+    )
+    if grid_scan.has_candidates and grid_scan.refused:
+        refusals = ", ".join(
+            f"{reason}={count}" for reason, count in grid_scan.refusals
+        )
+        warnings.append(
+            {
+                "class": WARN_GRID_REFUSED,
+                "detail": f"{grid_scan.refused} of {grid_scan.shaped} "
+                f"structured grid candidate(s) refused ({refusals}); no "
+                "triangle was emitted and their points are displayed as "
+                "carriers (docs/evidence/2026-11-19-no-surface-fallback.md)",
+            }
+        )
+    display_block = {
+        "block": scan.block,
+        "kind": display.KIND,
+        "surface": display.SURFACE,
+        "label": scan.label,
+        "points": flat_points,
+        "curve_segments": flat_segments,
+        "point_count": len(scan.points),
+        "curve_segment_count": len(scan.segments),
+        "regions": scan.regions,
+        "pool_points": scan.pool_points,
+        "point_runs": scan.point_runs,
+        "run_points": scan.run_points,
+        "curve_records": scan.curve_records,
+        "decoded_curve_records": scan.decoded_curve_records,
+        "skipped_curve_records": scan.skipped_curve_records,
+        "curve_points": scan.curve_points,
+        "line_records": scan.line_records,
+        "families": {
+            f"33 {family:02x}": count for family, count in scan.families
+        },
+    }
+    if grid_scan.has_candidates:
+        display_block["grid_shaped"] = grid_scan.shaped
+        display_block["grid_refusals"] = dict(grid_scan.refusals)
+
+    if previous is not None:
+        summary = dict(previous[0])
+        summary["warnings"] = warnings
+        summary["no_surface_display"] = display_block
+        _self_check(summary)
+        return summary, previous[1], previous[2]
+
+    bbox_min, bbox_max = mesh.bounding_box(list(scan.points))
+    summary = {
+        "schema_version": EXPORT_SCHEMA_VERSION,
+        "vertex_count": 0,
+        "triangle_count": 0,
+        "bounding_box": {"min": bbox_min, "max": bbox_max},
+        "warnings": warnings,
+        "store_ordinal": 0,
+        "origin_kind": store.ORIGIN_KIND_BLOCK,
+        "pool_group_count": 0,
+        "facet_candidate_count": 0,
+        "facet_record_count": 0,
+        "degenerate_triangle_count": 0,
+        "mesh": {
+            "edge_count": 0,
+            "manifold": True,
+            "closed": True,
+            "oriented": True,
+            "boundary_edge_count": 0,
+        },
+        "no_surface_display": display_block,
+    }
+    _self_check(summary)
+    return summary, [], []
 
 
 def _recovered_error(exc: ExportError, span: store.StoreSpan, data) -> ExportError:

@@ -306,9 +306,10 @@ def test_screenshot_capture_flags_canvas_content(tmp_path):
     # Same basename on purpose: the capture reloads the page per part,
     # so a reused page's stale fileName cannot stand in for a fresh load.
     box = write_variant(tmp_path / "a", "geometry", "part.CATPart")
-    empty = write_variant(
+    carriers = write_variant(
         tmp_path / "b", "geometry-composite-law-e0b-unpinnable", "part.CATPart"
     )
+    empty = write_variant(tmp_path / "c", "geometry-seebody-empty", "part.CATPart")
     records = [
         {
             "sha256": "1" * 64,
@@ -318,6 +319,11 @@ def test_screenshot_capture_flags_canvas_content(tmp_path):
         {
             "sha256": "2" * 64,
             "path": "b/part.CATPart",
+            "local_path": str(carriers),
+        },
+        {
+            "sha256": "3" * 64,
+            "path": "c/part.CATPart",
             "local_path": str(empty),
         },
     ]
@@ -334,8 +340,17 @@ def test_screenshot_capture_flags_canvas_content(tmp_path):
     assert box_shot["canvas_nonbackground_fraction"] > 0
     assert (tmp_path / "shots" / f"{'1' * 16}.png").stat().st_size > 0
 
-    empty_shot = shots["2" * 64]
+    # A vertices-only part now renders its decoded carriers (the 2026-11-19
+    # no-surface display fallback): loaded, a visible point cloud.
+    carriers_shot = shots["2" * 64]
+    assert carriers_shot["viewer_status"] == "loaded"
+    assert carriers_shot["canvas_visible"] is True
+    assert carriers_shot["canvas_has_content"] is True
+    assert (tmp_path / "shots" / f"{'2' * 16}.png").stat().st_size > 0
+
+    # Nothing to display is still the named failure, never a blank "loaded".
+    empty_shot = shots["3" * 64]
     assert empty_shot["viewer_status"] == "failed"
     assert empty_shot["canvas_visible"] is False
     assert empty_shot["canvas_has_content"] is False
-    assert (tmp_path / "shots" / f"{'2' * 16}.png").stat().st_size > 0
+    assert (tmp_path / "shots" / f"{'3' * 16}.png").stat().st_size > 0

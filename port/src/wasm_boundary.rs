@@ -17,13 +17,19 @@
 //!   builder; field order single-sourced with the native CLI seam,
 //!   §2.4).
 //! - ``decode_export(bytes) -> { summary, vertices: Float32Array,
-//!   triangles: Uint32Array, curves: Array<Float32Array> }`` — the
+//!   triangles: Uint32Array, curves: Array<Float32Array>,
+//!   points: Float32Array, curveSegments: Uint32Array }`` — the
 //!   export-summary object, the pool in walk order, the decoded
-//!   triangles, and the decoded polyline loops (the curve-entry point
-//!   sequences) for the overlay. ``curves`` is **additive and NOT part
-//!   of the Fidelity definition** (§2.3; V3 carried it on
-//!   ``CompositeDecode`` for exactly this handoff) — the summary and
-//!   the PLY never contain it.
+//!   triangles, the decoded polyline loops (the curve-entry point
+//!   sequences) for the overlay, and the no-surface display carriers
+//!   (a flat f32 xyz point cloud + flat u32 point-index pairs, present
+//!   only when the part has no surface; see
+//!   ``docs/evidence/2026-11-19-no-surface-fallback.md``). ``curves``
+//!   and the two display arrays are **additive and NOT part of the
+//!   Fidelity definition** (§2.3; V3 carried ``curves`` on
+//!   ``CompositeDecode`` for exactly this handoff) — the PLY never
+//!   contains them, and the display arrays live on the summary's
+//!   ``no_surface_display`` block so the harness compares them parsed.
 //! - ``decode_product_structure(bytes) -> JsValue`` — the Phase 6
 //!   assembly product structure document (Ticket P3-V2 under Spec F #45,
 //!   §7.2), returning the parsed hierarchy, declared instances, resolution
@@ -177,6 +183,30 @@ pub fn decode_export(bytes: &[u8]) -> Result<JsValue, JsValue> {
         curves.push(&Float32Array::from(pts.as_slice()).into());
     }
 
+    // The display carriers (2026-11-19, the no-surface fallback): a part
+    // with no surface renders its decoded point cloud and its law-pinned
+    // curve segments — additive, like ``curves``, and never a surface.
+    // The summary's `no_surface_display` block is the single source; the
+    // arrays cross narrowed to f32 (already f32-valued: the decode
+    // rounds once) / u32 indices.
+    let (points, curve_segments) = match &outcome.summary.no_surface_display {
+        Some(block) => (
+            Float32Array::from(
+                block
+                    .points
+                    .iter()
+                    .map(|value| *value as f32)
+                    .collect::<Vec<f32>>()
+                    .as_slice(),
+            ),
+            Uint32Array::from(block.curve_segments.as_slice()),
+        ),
+        None => (
+            Float32Array::new_with_length(0),
+            Uint32Array::new_with_length(0),
+        ),
+    };
+
     let result = Object::new();
     js_sys::Reflect::set(&result, &JsValue::from_str("summary"), &summary)
         .expect("a fresh Object accepts a string-keyed property");
@@ -186,6 +216,14 @@ pub fn decode_export(bytes: &[u8]) -> Result<JsValue, JsValue> {
         .expect("a fresh Object accepts a string-keyed property");
     js_sys::Reflect::set(&result, &JsValue::from_str("curves"), &curves.into())
         .expect("a fresh Object accepts a string-keyed property");
+    js_sys::Reflect::set(&result, &JsValue::from_str("points"), &points.into())
+        .expect("a fresh Object accepts a string-keyed property");
+    js_sys::Reflect::set(
+        &result,
+        &JsValue::from_str("curveSegments"),
+        &curve_segments.into(),
+    )
+    .expect("a fresh Object accepts a string-keyed property");
     Ok(result.into())
 }
 

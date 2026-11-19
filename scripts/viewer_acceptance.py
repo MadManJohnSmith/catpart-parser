@@ -11,9 +11,14 @@ What it checks, headlessly, over the A2 synthetic fixtures:
    detected version, kind, container inventory).
 3. The curve overlay toggles (on a composite curve-entry fixture whose
    decoded polyline loops are non-empty — the §2.3 additive artifact).
-4. A corrupted fixture shows its CLASSIFIED error (class + detail),
+4. The no-surface display fallback (2026-11-19): a part with zero
+   triangles but decoded carriers opens as exactly that — the point
+   cloud case and the curve-segment case, each with the visible
+   ``no surface — showing N points, M curve segments`` label and the
+   gate still recording ``empty-mesh`` (never presented as a surface).
+5. A corrupted fixture shows its CLASSIFIED error (class + detail),
    never a blank screen.
-5. No server component: the page is served READ-ONLY (static files
+6. No server component: the page is served READ-ONLY (static files
    only) and every request the page makes stays on the serving origin —
    no CDN, no API, nothing external (§5: shields.io stays confined to
    the other pages' badges; the viewer makes zero external requests).
@@ -48,6 +53,8 @@ PAGE = "viewer/viewer.html"
 FIXTURES = [
     ("geometry", "canonical"),
     ("geometry-composite-law-curve-entries", "curves"),
+    ("geometry-no-surface-points", "no-surface-points"),
+    ("geometry-no-surface-curves", "no-surface-curves"),
     ("geometry-nan-coords", "corrupted"),
 ]
 
@@ -189,7 +196,43 @@ def check(playwright, base: str, fixture_dir: Path, gen) -> list[str]:
         "(aria-pressed tracked)"
     )
 
-    # --- 4. corrupted fixture: classified failure, never blank --------
+    # --- 4. no-surface display: point cloud + curve segments, labelled --
+    status = load_variant("geometry-no-surface-points")
+    assert status == "loaded", "the point-carrier fixture must open"
+    display = page.evaluate("window.viewer.display")
+    assert display and display["mode"] == "no-surface", display
+    assert display["pointCount"] == 6 and display["curveSegmentCount"] == 0, display
+    assert display["drawn"]["points"] is True, display
+    assert display["drawn"]["segments"] is False, display
+    label = page.inner_text("#display-label-text")
+    assert label == "no surface — showing 6 points, 0 curve segments", label
+    assert page.is_visible("#display-label")
+    assert page.is_visible("#scene")
+    assert page.evaluate("window.viewer.error") is None
+    assert page.evaluate("window.viewer.summary.triangle_count") == 0
+    # Never a surface render: the §3.4 gate still records empty-mesh.
+    gate = page.evaluate("window.viewer.gate")
+    assert gate["failed_check"] == "empty-mesh", gate
+    results.append(
+        "no-surface point cloud: loaded, 6 points / 0 triangles, "
+        f"label {label!r}, gate still empty-mesh"
+    )
+
+    status = load_variant("geometry-no-surface-curves")
+    assert status == "loaded", "the curve-carrier fixture must open"
+    display = page.evaluate("window.viewer.display")
+    assert display["pointCount"] == 3 and display["curveSegmentCount"] == 1, display
+    assert display["drawn"]["points"] is True, display
+    assert display["drawn"]["segments"] is True, display
+    label = page.inner_text("#display-label-text")
+    assert label == "no surface — showing 3 points, 1 curve segment", label
+    assert page.evaluate("window.viewer.summary.triangle_count") == 0
+    results.append(
+        "no-surface curve segments: loaded, 3 points / 1 segment "
+        f"/ 0 triangles, label {label!r}"
+    )
+
+    # --- 5. corrupted fixture: classified failure, never blank --------
     status = load_variant("geometry-nan-coords")
     assert status == "failed", "the corrupted fixture must fail the decode"
     error = page.evaluate("window.viewer.error")
@@ -205,7 +248,7 @@ def check(playwright, base: str, fixture_dir: Path, gen) -> list[str]:
         f"(malformed-pool-vertex, {len(error['detail'])}-char detail), page alive"
     )
 
-    # --- 5. no external requests, no uncaught page errors -------------
+    # --- 6. no external requests, no uncaught page errors -------------
     external = [u for u in requests if not u.startswith(origin)]
     assert not external, f"the viewer made external requests: {external}"
     assert not errors, f"uncaught page errors: {errors}"

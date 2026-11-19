@@ -18,6 +18,10 @@ decode models one level per module:
   dialect) triangulator used only when a part carries neither facets nor
   an a5 frame; its connectivity is an explicit **candidate** inference
   (docs/evidence/2026-11-19-grid-meshing.md),
+- :mod:`catpart.geometry.display` — the last-resort display route for a
+  part with no surface at all: the decoded carrier points and the
+  law-pinned ``33 32`` curve segments, rendered as exactly that and never
+  as a reconstruction (docs/evidence/2026-11-19-no-surface-fallback.md),
 - :mod:`catpart.geometry.export` — the ``catpart-export`` orchestration
   and its classified failure surface (:class:`ExportError`).
 
