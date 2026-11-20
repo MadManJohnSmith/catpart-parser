@@ -656,7 +656,11 @@ RELAXED_SHORT_MARKERS = (0x44, 0x41)
 # loop counts (one u8 each), and the refs. The ref block is
 # ``3*ty`` independent-triangle refs followed by the loops the counts
 # delimit; the first `b3` loops are triangle strips (the 0x42 law) and
-# the last `b4` are closed polygons (the 0x4c fan law). The law is
+# the last `b4` are closed polygons (the 0x4c fan law). The ref WIDTH is
+# voted per record (u8/u16be/u24be — #62, 2026-11-20: exact tiling, then
+# refs in bounds, then no repeated refs, then the 0x4f plane law, then
+# the narrower width; the corpus's big-element stores tile at u24be,
+# 97.6% vs u16be's 2.1%). The law is
 # byte-measured on the Gabarit store's 9 records
 # (docs/evidence/2026-11-18-extended-header-family.md): `b3 + b4` equals
 # the counts-table length, `sum(counts) + 3*ty == n`, every record ends at
@@ -684,27 +688,72 @@ class ExtendedFacetRecord:
     refs: tuple[int, ...]
     end: int
     normal: tuple[float, float, float] | None
+    width: int = 2  # the voted ref width (u8/u16be/u24be, #62)
 
 
-def parse_extended_facet_records(data, lo: int, hi: int, element_count=None):
+def parse_extended_facet_records(data, lo: int, hi: int, element_count=None, elements=None):
     """Every extended-header record in ``[lo, hi)`` under the 2026-11-18 law.
 
     Returns ``(records, candidates)``: ``candidates`` counts the
     extended-header positions (``ff`` at +5) and ``records`` the ones the
     law accepts. The loop count comes from the header (``b3 + b4``), not
-    from a tiling search — the counts table is exactly that long.
+    from a tiling search — the counts table is exactly that long (and
+    stays a raw ``u8`` table: the P1g escape never fires on the corpus's
+    12,376 candidates — #62's probe measured zero ``0xff`` count bytes).
 
     ``element_count`` (when known) bounds the references: an extended
     candidate whose refs leave the element space is NOT this family (a
     false-positive ``01 4x ... ff`` byte pattern), so it stays an
     unresolved candidate instead of failing the whole store on the refs
     gate. Every accepted record ends at or before the next facet header.
+
+    The ref width is VOTED per record (#62, 2026-11-20; the corpus probe
+    behind it measured w2 exact-tiling 2.1% vs w3 97.6% on the 19
+    declined files — the family's refs are u24be on the big-element
+    stores, while the small-space stores stay u16be): the candidates are
+    width u8/u16be (plus u24be ONLY when ``element_count > 65,535`` —
+    the same threshold the short-form width law uses, and a 2-byte ref
+    cannot index larger spaces) ranked by **exact tiling** first
+    (``end == nxt``; width-unambiguous for ``n > 0`` — ``nxt -
+    refs_start == width * n`` has one solution), then refs in bounds,
+    then the loop plane law (0x4f only — the only normal-carrying
+    marker; tested when ``elements`` is passed, on dup-pinned
+    coordinates for skip-bearing loops, the same battery as
+    :func:`parse_strip_records`), then the narrower width. A candidate
+    whose parse REPEATS a reference within a triangle/loop is
+    DISQUALIFIED outright (the short-form law's misread detector: a
+    narrow misread of a wider record repeats refs inside the loop, and a
+    legitimate record never repeats — a repeated ref emits a degenerate
+    triangle the emission battery declines anyway). The counts law
+    (``n == 3*ty + sum(counts)``) is width-independent, so a candidate
+    failing it under one width fails under all. A record whose winning
+    candidate's refs leave the element space is declined as a whole (the
+    false-positive rule above), so the accepted records never trip the
+    store-level refs gate.
+
+    CAASdd*Stiffener verification (2026-11-20, the #62 fix design's
+    second probe): the CAASddEditStiffener/CreateStiffener stores carry
+    ``elem_decl`` 640, so u24be is never offered there — and their
+    0x47/0x4f records exact-tile at NO width (only rec@4772007 and
+    rec@4772268 tile, at w2, areas 531/464 m2 inside the store's 104.6 m
+    exported-mesh bbox diag — kept, no area guard). The non-tiling
+    records' u8 misreads stay in-bounds and used to win the rank on the
+    in-bounds slot; the repeats disqualification above declines them
+    (measured 50,779 m2 of km-scale garbage exported without it — the
+    documented decline the ticket asks for: no exact tiling, area
+    4-60x beyond bbox_diag^2).
     """
     records = []
     candidates = 0
     hdrs = sorted(
         [m.start() for m in STRIP_RE.finditer(data, lo, hi)]
         + facet_headers(data, lo, hi)
+    )
+    widths = (1, 2, 3) if element_count is not None and element_count > 65_535 else (1, 2)
+    skips = (
+        {i for i, (_v, pt) in enumerate(elements) if pt is None}
+        if elements is not None
+        else None
     )
     for i, o in enumerate(hdrs):
         if header_len(data, o) != 6:
@@ -718,25 +767,99 @@ def parse_extended_facet_records(data, lo: int, hi: int, element_count=None):
         k = b3 + b4
         has_normal = mk in EXTENDED_NORMAL_MARKERS
         base = o + 10 + (12 if has_normal else 0)
-        refs_start = base + k
-        if refs_start + 2 > hi:
-            continue
-        n = int.from_bytes(data[o + 6 : o + 10], "little")
-        end = refs_start + 2 * n
-        if end > min(nxt, hi):
-            continue
-        counts = tuple(data[base:refs_start])
-        if n != 3 * ty + sum(counts):
-            continue
-        refs = tuple(
-            int.from_bytes(data[refs_start + 2 * j : refs_start + 2 * j + 2], "big")
-            for j in range(n)
-        )
-        if element_count is not None and any(r >= element_count for r in refs):
-            continue
         normal = None
         if has_normal:
             normal = struct.unpack("<fff", data[o + 10 : o + 22])
+        refs_start = base + k
+        if refs_start > hi:
+            continue
+        n = int.from_bytes(data[o + 6 : o + 10], "little")
+        counts = tuple(data[base:refs_start])
+        if n != 3 * ty + sum(counts):
+            continue
+        # Per-loop repeat groups: the 3*ty soup triangles, then the
+        # counts-delimited loops (the same split the emission uses).
+        best = None
+        for width in widths:
+            end = refs_start + width * n
+            if end > min(nxt, hi):
+                continue
+            refs = [
+                int.from_bytes(
+                    data[refs_start + width * j : refs_start + width * (j + 1)],
+                    "big",
+                )
+                for j in range(n)
+            ]
+            repeats = False
+            for start in range(0, 3 * ty, 3):
+                if len(set(refs[start : start + 3])) < 3:
+                    repeats = True
+                    break
+            off = 3 * ty
+            for c in counts:
+                if c > 0 and len(set(refs[off : off + c])) < c:
+                    repeats = True
+                    break
+                off += c
+            if repeats:
+                # The misread detector (the same signal the short-form
+                # width law ranks on): a narrow misread of a wider record
+                # repeats refs inside the loop, and a legitimate record
+                # never repeats (a repeated ref emits a degenerate
+                # triangle the battery declines anyway).  A width whose
+                # parse repeats is not the record's reading — disqualify
+                # the candidate.  Measured (#62 CAASdd*Stiffener check):
+                # without this, the u8 misreads of the non-tiling
+                # CAASddEditStiffener records win the rank on in-bounds
+                # (their narrow refs stay under the 640-element space)
+                # and the store exports 50,779 m2 of area outside its
+                # own 104.6 m bbox — km-scale garbage.
+                continue
+            oob = (
+                any(r >= element_count for r in refs)
+                if element_count is not None
+                else False
+            )
+            nonplanar = 0
+            if normal is not None and elements is not None:
+                off = 3 * ty
+                for c in counts:
+                    loop = refs[off : off + c]
+                    off += c
+                    if not loop:
+                        continue
+                    if any(r >= len(elements) for r in loop):
+                        continue
+                    if any(r in skips for r in loop):
+                        # The same gap-edge battery as the short records:
+                        # a skip-bearing loop is tested on its dup-pinned
+                        # coordinates; untestable loops stay silent.
+                        pin = _dup_pin_map(elements, loop)
+                        if pin is None:
+                            continue
+                        test = [pin.get(r, r) for r in loop]
+                    else:
+                        test = loop
+                    st, _dev = _loop_plane_status(test, normal, elements)
+                    if st == "nonplanar":
+                        nonplanar += 1
+            rank = (
+                0 if end == nxt else 1,
+                1 if oob else 0,
+                nonplanar,
+                width,
+            )
+            if best is None or rank < best[0]:
+                best = (rank, tuple(refs), width, end)
+        if best is None:
+            continue
+        _rank, refs, width, end = best
+        if element_count is not None and any(r >= element_count for r in refs):
+            # The winning parse's refs leave the element space: not this
+            # family (the false-positive rule; the record stays
+            # unresolved instead of tripping the store-level refs gate).
+            continue
         records.append(
             ExtendedFacetRecord(
                 offset=o,
@@ -748,6 +871,7 @@ def parse_extended_facet_records(data, lo: int, hi: int, element_count=None):
                 refs=refs,
                 end=end,
                 normal=normal,
+                width=width,
             )
         )
     return records, candidates
@@ -1597,7 +1721,7 @@ def decode_composite_store(
     # family (2026-11-18) indexes the same space, so its refs are gated
     # too.
     extended, ext_candidates = parse_extended_facet_records(
-        data, lo, hi, elem_decl
+        data, lo, hi, elem_decl, elements=elements
     )
     all_refs = [r for _o, mk, _n, _c, refs, _w in records if mk in GATED for r in refs]
     all_refs += [r for rec in extended for r in rec.refs]
@@ -1950,7 +2074,7 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
             data, d["region_end"], nxt, d["elem"], elements=d["elements"]
         )
         ext_k, ext_cands = parse_extended_facet_records(
-            data, d["region_end"], nxt, d["elem"]
+            data, d["region_end"], nxt, d["elem"], elements=d["elements"]
         )
         grefs = [
             r for _o, mk, _n, _c, refs, _w in records if mk in GATED for r in refs
@@ -2708,7 +2832,7 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
             data, d["region_end"], nxt, d["elem"], elements=d["elements"]
         )
         ext_k, ext_cands = parse_extended_facet_records(
-            data, d["region_end"], nxt, d["elem"]
+            data, d["region_end"], nxt, d["elem"], elements=d["elements"]
         )
         grefs = [
             r for _o, mk, _n, _c, refs, _w in records if mk in GATED for r in refs

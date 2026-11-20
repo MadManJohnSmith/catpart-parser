@@ -1713,20 +1713,20 @@ def test_triangulate_extended_record_soup_strips_polygons() -> None:
 # ``fidelity-cli``) and pins parsed-summary equality plus
 # byte-identical PLY; elsewhere it skips.
 PRIMARY_SEAM_FLIPS = {
-    "13bb5c0c49616ade": 152010,
-    "2fb5b092857f70ec": 1623,
+    "13bb5c0c49616ade": 215775,
+    "2fb5b092857f70ec": 1753,
     "44e63faa2d9abf84": 2520,
-    "4a32f59c1e637acd": 2223,
-    "4abf3eeaf892be44": 1529,
-    "612c5e7cc7291c71": 4387,
-    "6ab9e107b7f30308": 844,
+    "4a32f59c1e637acd": 2451,
+    "4abf3eeaf892be44": 1931,
+    "612c5e7cc7291c71": 4505,
+    "6ab9e107b7f30308": 959,
     "97a0a420923c5c67": 8641,
     "a61588e5fe2cca5f": 3017,
-    "ba0900267e2072e1": 4071,
-    "bc235805f71fdf5a": 1623,
-    "c9fdd85256ae1eba": 17779,
+    "ba0900267e2072e1": 4395,
+    "bc235805f71fdf5a": 1753,
+    "c9fdd85256ae1eba": 17239,
     "cd76cab52cf2fbe5": 1563,
-    "d31ea2c17d63c041": 2346,
+    "d31ea2c17d63c041": 2574,
     "d4127e6b5cc39236": 5080,
 }
 
@@ -1810,9 +1810,11 @@ def test_primary_seam_port_parity_on_the_flips(tmp_path):
 
 DEDUP_COORD_CASE = {"545707b9871a535c": 2266}
 # The zero-regression direction on the same seam: a store the primary
-# seam resolves keeps its exact committed geometry (the dedup never sees
-# a passing assembled mesh).
-DEDUP_COORD_NO_REGRESSION = {"b912cbef805c541b": 31203}
+# seam resolves keeps its committed geometry (the dedup never sees
+# a passing assembled mesh).  The #62 width vote admits the store's
+# extended-header record (58 triangles), so the count moved 31203 -> 31298
+# (2026-11-20); the manifold/no-dedup-outcome pins are unchanged.
+DEDUP_COORD_NO_REGRESSION = {"b912cbef805c541b": 31298}
 
 
 def _triangle_area(vertices, tri):
@@ -1836,8 +1838,9 @@ def test_coordinate_dedup_case_and_port_parity(tmp_path):
     """Python ≡ Port on the coordinate-dedup case store after B3: 545707b9
     keeps its 5 its own reps and stays manifold at 2,266 triangles with
     the coordinate dedup's fire gate never engaging (no dedup outcome),
-    and b912cbef keeps its committed 31,203-triangle emission with no
-    dedup outcome at all."""
+    and b912cbef keeps its committed emission (31,298 triangles since the
+    #62 width vote admitted its extended record) with no dedup outcome
+    at all."""
     import shutil
     import subprocess
 
