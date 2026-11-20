@@ -226,6 +226,9 @@ import struct
 
 from catpart.geometry.errors import ExportError
 from catpart.geometry.facets import (
+    EXTENDED_ESCAPED_B4_RE,
+    EXTENDED_ESCAPED_TY_RE,
+    MAX_REFS,
     NORMAL_MARKERS_ALL,
     STRIP_RE,
     facet_headers,
@@ -660,7 +663,11 @@ RELAXED_SHORT_MARKERS = (0x44, 0x41)
 # voted per record (u8/u16be/u24be — #62, 2026-11-20: exact tiling, then
 # refs in bounds, then no repeated refs, then the 0x4f plane law, then
 # the narrower width; the corpus's big-element stores tile at u24be,
-# 97.6% vs u16be's 2.1%). The law is
+# 97.6% vs u16be's 2.1%). The HEADER bytes ty/b3/b4 may each escape via
+# read_count (P1g: u8 or ff + u32le) before the fixed ff — the escaped
+# form (#64, 2026-11-20) joins as a second pass with repeats RANKED
+# (their exact-tile records carry legitimate strip joins); the 6-byte
+# pass keeps the #62 misread disqualification. The law is
 # byte-measured on the Gabarit store's 9 records
 # (docs/evidence/2026-11-18-extended-header-family.md): `b3 + b4` equals
 # the counts-table length, `sum(counts) + 3*ty == n`, every record ends at
@@ -689,6 +696,186 @@ class ExtendedFacetRecord:
     end: int
     normal: tuple[float, float, float] | None
     width: int = 2  # the voted ref width (u8/u16be/u24be, #62)
+
+
+#: The escaped-header counts-table cap (#64): ``b3 + b4`` may escape to
+#: u32le values, so the counts-table length needs a sanity bound (the
+#: corpus's escaped records carry ``k`` 192; 4,096 is 20x that).
+ESCAPED_MAX_K = 4_096
+
+
+def _parse_escaped_extended_records(data, lo, hi, hdrs, element_count, elements, shipped):
+    """The P1g-escaped extended-header records (#64, 2026-11-20).
+
+    The 2026-11-18 header law reads ``ty``/``b3``/``b4`` as raw u8; the
+    CAASdd*Stiffener gap forensics (#62 follow-up) measured a second
+    header form where each of them may escape via :func:`read_count`
+    (P1g: ``u8`` or ``0xff + u32le``) before the fixed ``ff`` +
+    ``u32le n``: ``01 <mk> <ty@P1g> <b3@P1g> <b4@P1g> ff <u32le n>
+    [12B normal if 0x4f] <b3+b4 counts@P1g> <n refs>``. The +2 shape
+    (``ty`` escaped) and the +4 shape (``b4`` escaped) are invisible to
+    both committed discovery patterns; the +3 shape (``b3`` escaped)
+    rides the committed ``STRIP_RE``/``FACET_HEADER_RE`` candidates that
+    the 6-byte law skips (``header_len != 6``).
+
+    Everything after the header is the #62 law unchanged — counts law
+    (``n == 3*ty + sum(counts)``), the width vote ranked ``(exact
+    tiling, in-bounds, repeats, loop plane law, narrower width)`` — with
+    ONE deliberate difference: **repeats are RANKED, not disqualified**.
+    The escaped records carry legitimate strip joins (the CAASdd
+    exact-tile records repeat refs in 114 of 453 loop groups; the facets
+    model F3 already treats repeated references as real geometry), so
+    the #62 misread disqualification would decline 127 of the 129
+    corpus records. The winner's refs must still resolve in-bounds (the
+    false-positive rule), and the emission keeps the per-record
+    ``_mesh_safe`` guard, so a repeats-laden misread that slips past the
+    rank still has to survive the manifold battery.
+
+    Returns ``(records, candidates)`` — candidates counts every tried
+    position; a candidate whose winning parse's refs leave the element
+    space stays unresolved, and a candidate overlapping an already
+    accepted record (shipped or escaped) is skipped, so the bytes are
+    never parsed twice.
+    """
+    positions = {m.start() for m in EXTENDED_ESCAPED_TY_RE.finditer(data, lo, hi)}
+    positions |= {m.start() for m in EXTENDED_ESCAPED_B4_RE.finditer(data, lo, hi)}
+    positions |= {
+        h
+        for h in hdrs
+        if data[h + 1] in EXTENDED_HEADER_MARKERS and header_len(data, h) != 6
+    }
+    if not positions:
+        return [], 0
+    bounds = sorted(set(hdrs) | positions | {hi})
+    skips = (
+        {i for i, (_v, pt) in enumerate(elements) if pt is None}
+        if elements is not None
+        else None
+    )
+    widths = (1, 2, 3) if element_count is not None and element_count > 65_535 else (1, 2)
+    shipped_spans = [(r.offset, r.end) for r in shipped]
+    records = []
+    accepted: list[tuple[int, int]] = []
+    tried = 0
+    for o in sorted(positions):
+        tried += 1
+        if any(a <= o < e for a, e in shipped_spans):
+            continue
+        if any(a <= o < e for a, e in accepted):
+            continue
+        mk = data[o + 1]
+        if mk not in EXTENDED_HEADER_MARKERS:
+            continue
+        try:
+            ty, p = read_count(data, o + 2)
+            b3, p = read_count(data, p)
+            b4, p = read_count(data, p)
+            if p >= hi or data[p] != 0xFF or p + 5 > hi:
+                continue
+            n = int.from_bytes(data[p + 1 : p + 5], "little")
+            p += 5
+            if not (0 <= n <= MAX_REFS):
+                continue
+            has_normal = mk in EXTENDED_NORMAL_MARKERS
+            if has_normal:
+                if p + 12 > hi:
+                    continue
+                normal = struct.unpack("<fff", data[p : p + 12])
+                p += 12
+            else:
+                normal = None
+            k = b3 + b4
+            if k > ESCAPED_MAX_K:
+                continue
+            read = read_counts(data, p, k, hi)
+            if read is None:
+                continue
+            counts, clen = read
+            counts = tuple(counts)
+            refs_start = p + clen
+            if n != 3 * ty + sum(counts):
+                continue
+        except (IndexError, struct.error):
+            continue
+        nxt = min((b for b in bounds if b > o), default=hi)
+        best = None
+        for width in widths:
+            end = refs_start + width * n
+            if end > min(nxt, hi):
+                continue
+            refs = [
+                int.from_bytes(
+                    data[refs_start + width * j : refs_start + width * (j + 1)],
+                    "big",
+                )
+                for j in range(n)
+            ]
+            repeats = False
+            for start in range(0, 3 * ty, 3):
+                if len(set(refs[start : start + 3])) < 3:
+                    repeats = True
+                    break
+            off = 3 * ty
+            for c in counts:
+                if c > 0 and len(set(refs[off : off + c])) < c:
+                    repeats = True
+                    break
+                off += c
+            oob = (
+                any(r >= element_count for r in refs)
+                if element_count is not None
+                else False
+            )
+            nonplanar = 0
+            if normal is not None and elements is not None:
+                off = 3 * ty
+                for c in counts:
+                    loop = refs[off : off + c]
+                    off += c
+                    if not loop:
+                        continue
+                    if any(r >= len(elements) for r in loop):
+                        continue
+                    if any(r in skips for r in loop):
+                        pin = _dup_pin_map(elements, loop)
+                        if pin is None:
+                            continue
+                        test = [pin.get(r, r) for r in loop]
+                    else:
+                        test = loop
+                    st, _dev = _loop_plane_status(test, normal, elements)
+                    if st == "nonplanar":
+                        nonplanar += 1
+            rank = (
+                0 if end == nxt else 1,
+                1 if oob else 0,
+                1 if repeats else 0,
+                nonplanar,
+                width,
+            )
+            if best is None or rank < best[0]:
+                best = (rank, tuple(refs), width, end)
+        if best is None:
+            continue
+        _rank, refs, width, end = best
+        if element_count is not None and any(r >= element_count for r in refs):
+            continue
+        records.append(
+            ExtendedFacetRecord(
+                offset=o,
+                marker=mk,
+                triangles=ty,
+                strips=b3,
+                polygons=b4,
+                counts=counts,
+                refs=refs,
+                end=end,
+                normal=normal,
+                width=width,
+            )
+        )
+        accepted.append((o, end))
+    return records, tried
 
 
 def parse_extended_facet_records(data, lo: int, hi: int, element_count=None, elements=None):
@@ -732,7 +919,13 @@ def parse_extended_facet_records(data, lo: int, hi: int, element_count=None, ele
     store-level refs gate.
 
     CAASdd*Stiffener verification (2026-11-20, the #62 fix design's
-    second probe): the CAASddEditStiffener/CreateStiffener stores carry
+    second probe; CORRECTED 2026-11-20 #64 — the analysis below ran on
+    the FIRST list node's elem_decl 640 before the per-rep pairing was
+    known to split this file into four stores; the 0x47/0x4f records
+    there live in a store with elem_decl 116,471, u24be IS offered, and
+    they exact-tile at w3 — see the #64 paragraph and
+    ``_parse_escaped_extended_records``): the CAASddEditStiffener/
+    CreateStiffener stores carry
     ``elem_decl`` 640, so u24be is never offered there — and their
     0x47/0x4f records exact-tile at NO width (only rec@4772007 and
     rec@4772268 tile, at w2, areas 531/464 m2 inside the store's 104.6 m
@@ -742,6 +935,27 @@ def parse_extended_facet_records(data, lo: int, hi: int, element_count=None, ele
     (measured 50,779 m2 of km-scale garbage exported without it — the
     documented decline the ticket asks for: no exact tiling, area
     4-60x beyond bbox_diag^2).
+
+    #64 (2026-11-20, the P1g-escaped header form): the CAASdd gap
+    forensics measured a SECOND header form where ``ty``/``b3``/``b4``
+    each escape via :func:`read_count` before the fixed ``ff`` —
+    ``01 <mk> <ty@P1g> <b3@P1g> <b4@P1g> ff <u32le n> …`` — invisible to
+    both discovery patterns when the fixed ``ff`` lands at +2 or +4 (the
+    +3 shape rides the committed candidates this law used to skip on
+    ``header_len != 6``). Corpus census: 202 candidates, 129 parse (the
+    counts law passes on every one that reaches it), 75 exact-tile +
+    in-bounds on 44 files. The escaped records join as a SECOND pass
+    (this 6-byte pass is byte-identical to the pre-#64 behavior; overlap
+    rejection keeps the passes from claiming the same bytes) with ONE
+    rank difference: **repeats are RANKED, not disqualified** — their
+    exact-tile records carry legitimate strip joins (114/453 loop groups
+    on the CAASdd records), so the misread disqualification would
+    decline 127 of the 129. Everything else is the same law: the winner's
+    refs must resolve in-bounds, and the emission keeps the per-record
+    ``_mesh_safe`` guard. The CAASdd runtime twin measured +8,847
+    triangles per Stiffener file (manifold; used_vertex_fraction
+    0.037 -> 0.076 / 0.076 -> 0.111); the head/frente files carry no
+    escaped-form records (measured negative).
     """
     records = []
     candidates = 0
@@ -874,7 +1088,20 @@ def parse_extended_facet_records(data, lo: int, hi: int, element_count=None, ele
                 width=width,
             )
         )
-    return records, candidates
+    # #64 (2026-11-20): the P1g-escaped header form joins as a SECOND
+    # pass over the same span — the 6-byte form's candidates, boundaries
+    # and rank above are byte-identical to the pre-#64 behavior, so every
+    # store the #62 law handled keeps its exact parse; the escaped-form
+    # records only fill the gaps (candidates whose header bytes escape
+    # via read_count, invisible to the 6-byte discovery and declined by
+    # its raw-u8 counts law). Overlap rejection keeps both passes from
+    # claiming the same bytes.
+    escaped, escaped_candidates = _parse_escaped_extended_records(
+        data, lo, hi, hdrs, element_count, elements, records
+    )
+    if escaped:
+        records = sorted(records + escaped, key=lambda r: r.offset)
+    return records, candidates + escaped_candidates
 
 
 # Plane tolerance of the committed loop battery (stage 3b): the

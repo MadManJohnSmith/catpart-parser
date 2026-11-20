@@ -1811,10 +1811,11 @@ def test_primary_seam_port_parity_on_the_flips(tmp_path):
 DEDUP_COORD_CASE = {"545707b9871a535c": 2266}
 # The zero-regression direction on the same seam: a store the primary
 # seam resolves keeps its committed geometry (the dedup never sees
-# a passing assembled mesh).  The #62 width vote admits the store's
-# extended-header record (58 triangles), so the count moved 31203 -> 31298
-# (2026-11-20); the manifold/no-dedup-outcome pins are unchanged.
-DEDUP_COORD_NO_REGRESSION = {"b912cbef805c541b": 31298}
+# a passing assembled mesh).  The #62 width vote admitted the store's
+# extended-header record (31203 -> 31298) and #64's escaped header form
+# admitted two more (31298 -> 49780, 2026-11-20); the manifold/
+# no-dedup-outcome pins are unchanged.
+DEDUP_COORD_NO_REGRESSION = {"b912cbef805c541b": 49780}
 
 
 def _triangle_area(vertices, tri):
@@ -1838,9 +1839,9 @@ def test_coordinate_dedup_case_and_port_parity(tmp_path):
     """Python ≡ Port on the coordinate-dedup case store after B3: 545707b9
     keeps its 5 its own reps and stays manifold at 2,266 triangles with
     the coordinate dedup's fire gate never engaging (no dedup outcome),
-    and b912cbef keeps its committed emission (31,298 triangles since the
-    #62 width vote admitted its extended record) with no dedup outcome
-    at all."""
+    and b912cbef keeps its committed emission (49,780 triangles after
+    #62 admitted its extended record and #64 admitted two escaped-form
+    ones) with no dedup outcome at all."""
     import shutil
     import subprocess
 
@@ -2109,3 +2110,114 @@ def test_relaxed_families_export_under_the_strict_guard(tmp_path: Path) -> None:
         assert summary["degenerate_triangle_count"] == 0, sha
         # admitted families are no longer reported as unresolved
         assert "0x44" not in str(info.get("skipped_markers", {})), sha
+
+
+# --- 2026-11-20: the P1g-escaped extended header (#64) ----------------------
+
+
+def _escaped_record(
+    marker: int,
+    ty_bytes: bytes,
+    b3_bytes: bytes,
+    b4_bytes: bytes,
+    counts: tuple[int, ...],
+    normal: tuple[float, float, float] | None,
+    refs: tuple[int, ...],
+    width: int = 2,
+) -> bytes:
+    """One escaped-header record: `01 <mk> <ty@P1g> <b3@P1g> <b4@P1g> ff
+    <u32le n> [12B normal] <counts u8> <refs at width>`."""
+    out = bytearray(bytes((0x01, marker)))
+    out += ty_bytes + b3_bytes + b4_bytes + b"\xFF"
+    out += struct.pack("<I", len(refs))
+    if normal is not None:
+        out += struct.pack("<fff", *normal)
+    out += bytes(counts)
+    fmt = {1: ">B", 2: ">H", 3: ">I"}[width]
+    for r in refs:
+        out += struct.pack(fmt, r)
+    return bytes(out)
+
+
+def test_parse_extended_facet_records_admits_the_p1g_escaped_header() -> None:
+    """#64 (2026-11-20): the CAASdd gap form — `ty`/`b3`/`b4` may each
+    escape via read_count (P1g) before the fixed `ff` + `u32le n`. The
+    escaped records RANK repeats instead of disqualifying them (their
+    exact-tile records carry legitimate strip joins), and the winner's
+    refs must still resolve in-bounds."""
+    # ty escaped (ff + u32le = 1), b3 = 1, b4 = 0, counts [3],
+    # n = 3*1 + 3 = 6; the strip loop repeats ref 1 (a strip join).
+    body = _escaped_record(
+        0x47,
+        b"\xFF" + struct.pack("<I", 1),
+        b"\x01",
+        b"\x00",
+        (3,),
+        None,
+        (0, 1, 2, 3, 1, 4),
+    )
+    records, candidates = composite.parse_extended_facet_records(
+        body, 0, len(body), element_count=64
+    )
+    assert candidates == 1
+    (record,) = records
+    assert record.triangles == 1
+    assert record.strips == 1
+    assert record.counts == (3,)
+    assert record.refs == (0, 1, 2, 3, 1, 4)
+    assert record.width == 2
+    assert record.end == len(body)  # exact tiling
+    # Out-of-range refs at the winning width: the candidate stays
+    # unresolved (the false-positive rule).
+    bad = _escaped_record(
+        0x47,
+        b"\xFF" + struct.pack("<I", 1),
+        b"\x01",
+        b"\x00",
+        (3,),
+        None,
+        (0, 1, 2, 3, 1, 0xFFFF),
+    )
+    records, candidates = composite.parse_extended_facet_records(
+        bad, 0, len(bad), element_count=64
+    )
+    assert candidates == 1
+    assert records == []
+
+
+def test_parse_extended_facet_records_b3_and_b4_escapes() -> None:
+    """The `b3`-escaped (+3) and `b4`-escaped (+4) header shapes parse
+    under the same law; the all-u8 6-byte form is untouched."""
+    # b3 escaped (ff + u32le = 1), ty = 1 u8, b4 = 0: ff lands at +3.
+    body = _escaped_record(
+        0x4F,
+        b"\x01",
+        b"\xFF" + struct.pack("<I", 1),
+        b"\x00",
+        (3,),
+        (0.0, 0.0, 1.0),
+        (0, 1, 2, 3, 4, 5),
+    )
+    records, _ = composite.parse_extended_facet_records(
+        body, 0, len(body), element_count=64
+    )
+    (record,) = records
+    assert record.triangles == 1
+    assert record.strips == 1
+    assert record.normal == (0.0, 0.0, 1.0)
+    # b4 escaped (ff + u32le = 1), b3 = 0: ff at +4, then the fixed ff.
+    body = _escaped_record(
+        0x47,
+        b"\x01",
+        b"\x00",
+        b"\xFF" + struct.pack("<I", 1),
+        (3,),
+        None,
+        (0, 1, 2, 3, 4, 5),
+    )
+    records, _ = composite.parse_extended_facet_records(
+        body, 0, len(body), element_count=64
+    )
+    (record,) = records
+    assert record.polygons == 1
+    assert record.refs == (0, 1, 2, 3, 4, 5)

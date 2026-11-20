@@ -80,6 +80,17 @@ STRIP_RE = re.compile(rb"\x01[\x41-\x4f].\xff", re.DOTALL)
 #: (:func:`header_len`), never assumed to be +3.
 FACET_HEADER_RE = re.compile(rb"\x01[\x41-\x4f](?:.\xff|...\xff)", re.DOTALL)
 
+#: The extended family's P1g-escaped header forms (#64, 2026-11-20): the
+#: ``ty``/``b3``/``b4`` header bytes may each escape to ``ff + u32le``, so
+#: the fixed ``ff`` before ``u32le n`` lands at +2 (``ty`` escaped — the
+#: CAASdd*Stiffener gap records), +3 (``b3`` escaped — already inside
+#: :data:`STRIP_RE`/:data:`FACET_HEADER_RE` discovery) or +4 (``b4``
+#: escaped). The +2 and +4 shapes are invisible to both committed
+#: patterns, so they get their own candidates; the parse itself
+#: (``ty/b3/b4`` through ``read_count``) validates them.
+EXTENDED_ESCAPED_TY_RE = re.compile(rb"\x01[\x47\x4f]\xff", re.DOTALL)
+EXTENDED_ESCAPED_B4_RE = re.compile(rb"\x01[\x47\x4f].{2}\xff", re.DOTALL)
+
 #: Loop families: strips (triangle-strip segments) and closed polygons.
 STRIP_MARKERS = (0x41, 0x42, 0x49, 0x4A)
 POLY_MARKERS = (0x4C,)

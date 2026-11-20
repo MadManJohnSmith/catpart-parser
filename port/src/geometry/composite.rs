@@ -1122,6 +1122,249 @@ fn parse_strip_records(
 /// synthetic kind (0x42 strip / 0x4c polygon).
 type DroppedLoop = (u8, Option<(f64, f64, f64)>, Vec<u32>);
 
+/// The escaped-header counts-table cap (#64): ``b3 + b4`` may escape to
+/// u32le values, so the counts-table length needs a sanity bound (the
+/// corpus's escaped records carry ``k`` 192; 4,096 is 20x that) — twin:
+/// ``ESCAPED_MAX_K``.
+const ESCAPED_MAX_K: usize = 4_096;
+
+/// The P1g-escaped extended-header records (#64, 2026-11-20) — the
+/// twin's ``_parse_escaped_extended_records``.  The 2026-11-18 header law
+/// reads ``ty``/``b3``/``b4`` as raw u8; the CAASdd*Stiffener gap
+/// forensics measured a second header form where each of them may escape
+/// via ``read_count`` (P1g: ``u8`` or ``0xff + u32le``) before the fixed
+/// ``ff`` + ``u32le n``.  The +2 shape (``ty`` escaped) and the +4 shape
+/// (``b4`` escaped) are invisible to the committed discovery; the +3
+/// shape (``b3`` escaped) rides the committed strip-header candidates the
+/// 6-byte law skips.  Everything after the header is the #62 law
+/// unchanged, with ONE deliberate difference: repeats are RANKED, not
+/// disqualified (the escaped records carry legitimate strip joins —
+/// 114/453 loop groups on the CAASdd exact-tile records).  A candidate
+/// overlapping an already accepted record is skipped, so the bytes are
+/// never parsed twice.
+#[allow(clippy::too_many_arguments)]
+fn parse_escaped_extended_records(
+    data: &[u8],
+    lo: usize,
+    hi: usize,
+    hdrs: &[usize],
+    element_count: u32,
+    elements: Option<&[Element]>,
+    shipped: &[ExtendedFacetRecord],
+) -> (Vec<ExtendedFacetRecord>, usize) {
+    // discovery: ff at +2 (ty escaped), ff at +4 (b4 escaped), and the
+    // committed header candidates with an extended marker the 6-byte
+    // law skipped (the b3-escaped +3 shape).
+    let mut positions: Vec<usize> = Vec::new();
+    let mut i = lo;
+    while i + 3 <= hi {
+        if data[i] == 0x01 && (data[i + 1] == 0x47 || data[i + 1] == 0x4F) && data[i + 2] == 0xFF {
+            positions.push(i);
+            i += 3;
+        } else {
+            i += 1;
+        }
+    }
+    let mut i = lo;
+    while i + 5 <= hi {
+        if data[i] == 0x01 && (data[i + 1] == 0x47 || data[i + 1] == 0x4F) && data[i + 4] == 0xFF {
+            positions.push(i);
+            i += 5;
+        } else {
+            i += 1;
+        }
+    }
+    for &h in hdrs {
+        if data[h + 1] == 0x47 || data[h + 1] == 0x4F {
+            let len_ok = matches!(facets::header_len(data, h), Some(len) if len != 6);
+            if len_ok {
+                positions.push(h);
+            }
+        }
+    }
+    positions.sort_unstable();
+    positions.dedup();
+    if positions.is_empty() {
+        return (Vec::new(), 0);
+    }
+    let mut bounds: Vec<usize> = hdrs.to_vec();
+    bounds.extend_from_slice(&positions);
+    bounds.push(hi);
+    bounds.sort_unstable();
+    bounds.dedup();
+    let skips: Option<HashSet<usize>> = elements.map(|els| {
+        els.iter()
+            .enumerate()
+            .filter(|(_, (_, pt))| pt.is_none())
+            .map(|(i, _)| i)
+            .collect()
+    });
+    let widths: &[u8] = if element_count > 65_535 {
+        &[1, 2, 3]
+    } else {
+        &[1, 2]
+    };
+    let mut records: Vec<ExtendedFacetRecord> = Vec::new();
+    let mut accepted: Vec<(usize, usize)> = shipped.iter().map(|r| (r.offset, r.end)).collect();
+    let mut tried = 0usize;
+    for &o in &positions {
+        tried += 1;
+        if accepted.iter().any(|&(a, e)| a <= o && o < e) {
+            continue;
+        }
+        let mk = data[o + 1];
+        if !EXTENDED_HEADER_MARKERS.contains(&mk) {
+            continue;
+        }
+        let Some((ty, mut p)) = read_count_checked(data, o + 2) else {
+            continue;
+        };
+        let Some((b3, p2)) = read_count_checked(data, p) else {
+            continue;
+        };
+        let Some((b4, p3)) = read_count_checked(data, p2) else {
+            continue;
+        };
+        p = p3;
+        if p >= hi || data[p] != 0xFF || p + 5 > hi {
+            continue;
+        }
+        let n = u32::from_le_bytes([data[p + 1], data[p + 2], data[p + 3], data[p + 4]]);
+        p += 5;
+        if n > facets::MAX_REFS {
+            continue;
+        }
+        let has_normal = EXTENDED_NORMAL_MARKERS.contains(&mk);
+        let normal = if has_normal {
+            if p + 12 > hi {
+                continue;
+            }
+            let nm = Some((
+                f32_widen(data, p),
+                f32_widen(data, p + 4),
+                f32_widen(data, p + 8),
+            ));
+            p += 12;
+            nm
+        } else {
+            None
+        };
+        let k = b3 as usize + b4 as usize;
+        if k > ESCAPED_MAX_K {
+            continue;
+        }
+        let Some((counts, clen)) = facets::read_counts(data, p, k, hi) else {
+            continue;
+        };
+        let refs_start = p + clen;
+        let sum: u32 = counts.iter().copied().sum();
+        if n != 3 * ty + sum {
+            continue;
+        }
+        let nxt = bounds.iter().copied().find(|&b| b > o).unwrap_or(hi);
+        type Rank = (u8, u8, u8, u32, u8);
+        let mut best: Option<(Rank, Vec<u32>, u8, usize)> = None;
+        for &width in widths {
+            let end = refs_start + width as usize * n as usize;
+            if end > nxt.min(hi) {
+                continue;
+            }
+            let refs: Vec<u32> = (0..n)
+                .map(|j| {
+                    let at = refs_start + width as usize * j as usize;
+                    match width {
+                        1 => u32::from(data[at]),
+                        2 => u32::from(u16::from_be_bytes([data[at], data[at + 1]])),
+                        _ => u32::from_be_bytes([0, data[at], data[at + 1], data[at + 2]]),
+                    }
+                })
+                .collect();
+            let mut repeats = false;
+            for start in (0..3 * ty as usize).step_by(3) {
+                let tri = &refs[start..start + 3];
+                let distinct: HashSet<u32> = tri.iter().copied().collect();
+                if distinct.len() < 3 {
+                    repeats = true;
+                    break;
+                }
+            }
+            if !repeats {
+                let mut off = 3 * ty as usize;
+                for c in &counts {
+                    let loop_refs = &refs[off..off + *c as usize];
+                    if *c > 0 {
+                        let distinct: HashSet<u32> = loop_refs.iter().copied().collect();
+                        if distinct.len() < loop_refs.len() {
+                            repeats = true;
+                            break;
+                        }
+                    }
+                    off += *c as usize;
+                }
+            }
+            let oob = refs.iter().any(|&r| r >= element_count);
+            let mut nonplanar = 0u32;
+            if let (Some(nm), Some(els), Some(sk)) = (normal, elements, skips.as_ref()) {
+                let mut off = 3 * ty as usize;
+                for c in &counts {
+                    let loop_refs = &refs[off..off + *c as usize];
+                    off += *c as usize;
+                    if loop_refs.is_empty() || loop_refs.iter().any(|&r| r as usize >= els.len()) {
+                        continue;
+                    }
+                    let resolved: Vec<u32>;
+                    let test: &[u32] = if loop_refs.iter().any(|&r| sk.contains(&(r as usize))) {
+                        let Some(pin) = dup_pin_map(els, sk, loop_refs) else {
+                            continue;
+                        };
+                        resolved = loop_refs
+                            .iter()
+                            .map(|&r| pin.get(&r).copied().unwrap_or(r))
+                            .collect();
+                        &resolved
+                    } else {
+                        loop_refs
+                    };
+                    let (st, _m) = loop_plane_status(test, nm, els);
+                    if st == "nonplanar" {
+                        nonplanar += 1;
+                    }
+                }
+            }
+            let rank: Rank = (
+                if end == nxt { 0 } else { 1 },
+                if oob { 1 } else { 0 },
+                if repeats { 1 } else { 0 },
+                nonplanar,
+                width,
+            );
+            if best.as_ref().is_none_or(|(b, _, _, _)| rank < *b) {
+                best = Some((rank, refs, width, end));
+            }
+        }
+        let Some((_rank, refs, width, end)) = best else {
+            continue;
+        };
+        if refs.iter().any(|&r| r >= element_count) {
+            continue;
+        }
+        accepted.push((o, end));
+        records.push(ExtendedFacetRecord {
+            offset: o,
+            marker: mk,
+            triangles: ty,
+            strips: b3,
+            polygons: b4,
+            counts,
+            refs,
+            end,
+            normal,
+            width,
+        });
+    }
+    (records, tried)
+}
+
 /// Every extended-header record in ``[lo, hi)`` under the 2026-11-18
 /// law — the twin's ``composite.parse_extended_facet_records``.
 ///
@@ -1345,7 +1588,18 @@ fn parse_extended_facet_records(
             width,
         });
     }
-    (records, candidates)
+    // #64 (2026-11-20): the P1g-escaped header form joins as a SECOND
+    // pass over the same span — the 6-byte form's candidates, boundaries
+    // and rank above are byte-identical to the pre-#64 behavior; the
+    // escaped-form records only fill the gaps. Overlap rejection keeps
+    // both passes from claiming the same bytes.
+    let (escaped, escaped_candidates) =
+        parse_escaped_extended_records(data, lo, hi, &hdrs, element_count, elements, &records);
+    if !escaped.is_empty() {
+        records.extend(escaped);
+        records.sort_by_key(|r| r.offset);
+    }
+    (records, candidates + escaped_candidates)
 }
 
 /// Triangles under the identity mapping (strip/polygon semantics) —
@@ -4352,6 +4606,66 @@ mod tests {
             out.extend_from_slice(&r.to_be_bytes());
         }
         out
+    }
+
+    /// The escaped-header forms (#64, 2026-11-20): `ty`/`b3`/`b4` may
+    /// each escape via read_count before the fixed `ff` + `u32le n`;
+    /// repeats are ranked (strip joins are real geometry), and the
+    /// winner's refs must resolve in-bounds.
+    #[test]
+    fn parse_extended_records_admits_the_p1g_escaped_header() {
+        // ty escaped (ff + u32le = 1), b3 = 1, b4 = 0, counts [3],
+        // n = 6; the strip loop repeats ref 1 (a strip join).
+        let mut body = vec![
+            0x01, 0x47, 0xFF, 1, 0, 0, 0, 0x01, 0x00, 0xFF, 6, 0, 0, 0, 3,
+        ];
+        for r in [0u32, 1, 2, 3, 1, 4] {
+            body.extend_from_slice(&(r as u16).to_be_bytes());
+        }
+        let (records, candidates) = parse_extended_facet_records(&body, 0, body.len(), 64, None);
+        assert_eq!(candidates, 1);
+        assert_eq!(records.len(), 1);
+        let rec = &records[0];
+        assert_eq!(rec.triangles, 1);
+        assert_eq!(rec.strips, 1);
+        assert_eq!(rec.counts, vec![3]);
+        assert_eq!(rec.refs, vec![0, 1, 2, 3, 1, 4]);
+        assert_eq!(rec.width, 2);
+        assert_eq!(rec.end, body.len());
+        // Out-of-range refs at the winning width: unresolved.
+        let mut bad = vec![
+            0x01, 0x47, 0xFF, 1, 0, 0, 0, 0x01, 0x00, 0xFF, 6, 0, 0, 0, 3,
+        ];
+        for r in [0u32, 1, 2, 3, 1, 0xFFFF] {
+            bad.extend_from_slice(&(r as u16).to_be_bytes());
+        }
+        let (records, candidates) = parse_extended_facet_records(&bad, 0, bad.len(), 64, None);
+        assert_eq!(candidates, 1);
+        assert!(records.is_empty());
+        // The b3-escaped (+3) and b4-escaped (+4) shapes.
+        let mut b3esc = vec![0x01, 0x4F, 0x01, 0xFF, 1, 0, 0, 0, 0x00, 0xFF, 6, 0, 0, 0];
+        // the 12-B normal rides right after n; the counts follow.
+        b3esc.extend_from_slice(&0.0f32.to_le_bytes());
+        b3esc.extend_from_slice(&0.0f32.to_le_bytes());
+        b3esc.extend_from_slice(&1.0f32.to_le_bytes());
+        b3esc.push(3);
+        for r in [0u32, 1, 2, 3, 4, 5] {
+            b3esc.extend_from_slice(&(r as u16).to_be_bytes());
+        }
+        let (records, _c) = parse_extended_facet_records(&b3esc, 0, b3esc.len(), 64, None);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].strips, 1);
+        assert_eq!(records[0].normal, Some((0.0, 0.0, 1.0)));
+        let mut b4esc = vec![
+            0x01, 0x47, 0x01, 0x00, 0xFF, 1, 0, 0, 0, 0xFF, 6, 0, 0, 0, 3,
+        ];
+        b4esc.push(3);
+        for r in [0u32, 1, 2, 3, 4, 5] {
+            b4esc.extend_from_slice(&(r as u16).to_be_bytes());
+        }
+        let (records, _c) = parse_extended_facet_records(&b4esc, 0, b4esc.len(), 64, None);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].polygons, 1);
     }
 
     /// The extended-header law (2026-11-18): ``ty`` independent
