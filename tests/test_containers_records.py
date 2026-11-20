@@ -59,11 +59,14 @@ def test_anchor_bytes_without_a_valid_record_are_skipped(tmp_path: Path) -> None
 def test_record_violating_constants_is_not_a_record(tmp_path: Path) -> None:
     # Law T3 constants (f5, f6, f8, f9, tail) and law T1 (f10) hold on
     # every corpus record; a blob violating one is not reported. The
-    # file then has no table: kind unknown, containers empty.
+    # file then has no table: kind unknown, containers empty.  The blob
+    # carries the V5_CFV2 magic so the #60 not-a-catpart law (decided on
+    # the magic, at the inspect seam) stays out of the way and the table
+    # law's unknown is what this test pins.
     path = tmp_path / "bad-constants.CATPart"
     record = bytearray(container_record("CATPrtCont", "CATProdCont"))
     record[16] = 0x99  # f5 constant 0x006c0001 broken
-    path.write_bytes(bytes(record))
+    path.write_bytes(b"V5_CFV2\x00" + b"\x00" * 24 + bytes(record))
     report = inspect(path)
     assert report["containers"] == []
     assert report["kind"] == "unknown"

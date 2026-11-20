@@ -258,7 +258,7 @@
           },
           "kind": {
             "type": ["string", "null"],
-            "enum": ["part", "product", "unknown", null],
+            "enum": ["part", "product", "unknown", "not-a-catpart", null],
             "description": "Part/product kind from the catpart-inspect output (law K1); null when the file was never parsed."
           },
           "l2": {

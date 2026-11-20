@@ -54,6 +54,9 @@ pub const PRODUCT_CONTAINERS: [&str; 2] = ["CATProdCont", "CATMechProdCont"];
 pub const KIND_PART: &str = "part";
 pub const KIND_PRODUCT: &str = "product";
 pub const KIND_UNKNOWN: &str = "unknown";
+/// The bytes do not carry the CATIA ``V5_CFV2\0`` magic at all (twin:
+/// ``KIND_NOT_A_CATPART``); decided at the inspect seam.
+pub const KIND_NOT_A_CATPART: &str = "not-a-catpart";
 
 /// One validated container-name table record (B1 layout) — the twin's
 /// :class:`catpart.containers.ContainerRecord` dataclass. Field

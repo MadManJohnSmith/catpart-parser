@@ -99,10 +99,24 @@ FAMILY_MIDRING = 0x33
 FAMILY_CIRCLE = 0x37
 FAMILY_CONIC = 0x38
 
+#: The empty-scan fallback's 12-byte f32 point-run law (the missing-store
+#: census measurement, ``missing_store_census_probe.point_runs``): a
+#: triple is a run member when finite and inside the (1e-2, 1e5) envelope
+#: (no near-zero coordinates — the measured law, stricter than the display
+#: envelope), runs chain at exactly the 12-byte stride, and a run counts
+#: from 3 triples.  It applies ONLY when every primary carrier came up
+#: empty, over the valid blocks' payload regions (bounded per region).
+F32_RUN_FLOOR = 1e-2
+F32_RUN_CEIL = 1e5
+F32_RUN_MIN_TRIPLES = 3
+F32_SCAN_MAX_REGION = 16 * 1024 * 1024
+
 #: The summary block's honesty labels.
 KIND = "decoded-carriers"
 #: The added source label for the bag-rep count-framed f32 arrays.
 SOURCE_BAGREP = "bagrep-f32-points"
+#: The added source label for the empty-scan f32 point-run fallback.
+SOURCE_F32_RUNS = "store-f32-points"
 #: ``surface = false``: this is not a surface render, by construction.
 SURFACE = False
 
@@ -129,6 +143,8 @@ class DisplayScan:
     bagrep_skipped: int
     points: tuple[tuple[float, float, float], ...]
     segments: tuple[tuple[int, int], ...]
+    f32_runs: int = 0
+    f32_points: int = 0
 
     @property
     def has_carriers(self) -> bool:
@@ -142,6 +158,8 @@ class DisplayScan:
             names.append(KIND)
         if self.bagrep_points:
             names.append(SOURCE_BAGREP)
+        if self.f32_points:
+            names.append(SOURCE_F32_RUNS)
         return tuple(names)
 
     @property
@@ -171,15 +189,53 @@ def _plausible(value: float) -> bool:
     )
 
 
-def _regions(data, spans) -> list[tuple[int, int]]:
-    """The part's carrier regions: the located store bodies + CATPrtCont.
+def _located_store_regions(data) -> set[tuple[int, int]]:
+    """The container-probing law's store bodies (the census/brep-probe law).
 
-    The store bodies are where the exporter already trusts the bytes; the
-    ``CATPrtCont`` regions are the part container itself (the grid path's
-    region law).  Duplicates are collapsed so a nested range is walked once.
+    The same law :mod:`catpart.brep` probes with — CATStdCont,
+    CATXDocLinkCont, CATSeeBodyCont, then any other block — so the curve
+    records that live in the geometry containers (not in ``CATPrtCont``)
+    are visible to the display walk.  Failures contribute nothing.
+    """
+    d8 = int.from_bytes(data[8:12], "big") if len(data) >= 12 else 0
+    blocks = store.valid_blocks(data)
+    name_of = {
+        store.CONTAINER_STDCONT: "CATStdCont",
+        store.CONTAINER_XDOCLINK: "CATXDocLinkCont",
+        store.CONTAINER_SEEBODY: "CATSeeBodyCont",
+    }
+    out: set[tuple[int, int]] = set()
+    for container in (
+        store.CONTAINER_STDCONT,
+        store.CONTAINER_XDOCLINK,
+        store.CONTAINER_SEEBODY,
+        store.CONTAINER_OTHER,
+    ):
+        want = name_of.get(container)
+        for blk, name in blocks:
+            if want is not None and name != want:
+                continue
+            try:
+                span = store.locate_store(data, blk, blocks, d8, container=container)
+            except Exception:  # noqa: BLE001 - a failed probe contributes nothing
+                continue
+            if span is not None:
+                out.add((int(span.body_lo), int(span.body_hi)))
+    return out
+
+
+def _regions(data, spans) -> list[tuple[int, int]]:
+    """The part's carrier regions: located store bodies + CATPrtCont.
+
+    ``spans`` are the exporter-validated bodies; the located store bodies
+    (the probing law above) add the geometry containers the display route
+    needs for its curve records; the ``CATPrtCont`` regions are the grid
+    path's region law.  Duplicates are collapsed so a nested range is
+    walked once.
     """
     regions = {(int(lo), int(hi)) for lo, hi in spans}
     regions.update(grid.regions(data))
+    regions.update(_located_store_regions(data))
     return sorted(regions)
 
 
@@ -333,6 +389,64 @@ def _append_point(points, point) -> int | None:
     return len(points) - 1
 
 
+def _f32_point_runs(data, lo: int, hi: int) -> list[tuple[int, int]]:
+    """Maximal 12-byte-stride f32 point runs in ``[lo, hi)`` as (start, triples).
+
+    The missing-store census law verbatim, region-local: a triple is a
+    run member when finite and inside the (``F32_RUN_FLOOR``,
+    ``F32_RUN_CEIL``) envelope; runs chain at exactly the 12-byte stride;
+    a run starts where the previous slot is not a member; a run counts
+    from ``F32_RUN_MIN_TRIPLES``.
+    """
+    size = hi - lo
+    if size < 12:
+        return []
+    ok = bytearray(size - 11)
+    for offset in range(size - 11):
+        x, y, z = struct.unpack_from("<3f", data, lo + offset)
+        ok[offset] = (
+            1
+            if (
+                math.isfinite(x)
+                and math.isfinite(y)
+                and math.isfinite(z)
+                and F32_RUN_FLOOR < abs(x) < F32_RUN_CEIL
+                and F32_RUN_FLOOR < abs(y) < F32_RUN_CEIL
+                and F32_RUN_FLOOR < abs(z) < F32_RUN_CEIL
+            )
+            else 0
+        )
+    runs: list[tuple[int, int]] = []
+    offset = 0
+    while offset < len(ok):
+        if ok[offset] and (offset < 12 or not ok[offset - 12]):
+            length = 0
+            cursor = offset
+            while cursor < len(ok) and ok[cursor]:
+                length += 1
+                cursor += 12
+            if length >= F32_RUN_MIN_TRIPLES:
+                runs.append((lo + offset, length))
+            offset = max(cursor, offset + 1)
+        else:
+            offset += 1
+    return runs
+
+
+def _raw_block_regions(data) -> list[tuple[int, int]]:
+    """Every valid block's payload region (the fallback's scan scope)."""
+    size = len(data)
+    outer = int.from_bytes(data[8:12], "big") if size >= 12 else 0
+    blocks = store.valid_blocks(data)
+    regions = {
+        (blk, store.probe_region(data, blk, blocks, outer))
+        for blk, _name in blocks
+    }
+    return sorted(
+        (lo, hi) for lo, hi in regions if hi - lo <= F32_SCAN_MAX_REGION
+    )
+
+
 def scan_part(data, spans=(), pool_points=()) -> DisplayScan:
     """Decode one part's display carriers.
 
@@ -417,6 +531,24 @@ def scan_part(data, spans=(), pool_points=()) -> DisplayScan:
         # 33 36 is out of decode scope (no established payload form).
         skipped += 1
 
+    # The empty-scan fallback (#60): a container-less ``V5_CFV2`` binary
+    # (no container-name table, so no located spans and no carriers above)
+    # still carries 12-byte f32 point runs in its blocks — the missing-
+    # store census measured them (CAAMaiUdfForMfgHoleInstance: 93 points
+    # at 75029 in CATSeeBodyCont).  Only when every primary source came
+    # up empty, over the valid blocks' payload regions, under the
+    # measured run law — never instead of a decoded carrier.
+    f32_runs = 0
+    f32_points = 0
+    if not points:
+        for lo, hi in _raw_block_regions(data):
+            for start, length in _f32_point_runs(data, lo, hi):
+                f32_runs += 1
+                for index in range(length):
+                    point = struct.unpack_from("<3f", data, start + 12 * index)
+                    if _append_point(points, point) is not None:
+                        f32_points += 1
+
     block = regions[0][0] if regions else None
     return DisplayScan(
         block=block,
@@ -437,6 +569,8 @@ def scan_part(data, spans=(), pool_points=()) -> DisplayScan:
         bagrep_skipped=bagrep_skipped,
         points=tuple(points),
         segments=tuple(segments),
+        f32_runs=f32_runs,
+        f32_points=f32_points,
     )
 
 

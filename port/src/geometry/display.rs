@@ -53,7 +53,19 @@ use super::{grid, store};
 pub const KIND: &str = "decoded-carriers";
 /// The added source label for the bag-rep count-framed f32 arrays.
 pub const SOURCE_BAGREP: &str = "bagrep-f32-points";
+/// The added source label for the empty-scan f32 point-run fallback.
+pub const SOURCE_F32_RUNS: &str = "store-f32-points";
 pub const SURFACE: bool = false;
+
+/// The empty-scan fallback's 12-byte f32 point-run law (the missing-store
+/// census measurement, the twin's ``F32_RUN_*``): finite triples inside
+/// the (1e-2, 1e5) envelope (no near-zero coordinates — the measured
+/// law), runs chained at exactly the 12-byte stride, from 3 triples.
+/// It applies ONLY when every primary carrier came up empty.
+pub const F32_RUN_FLOOR: f64 = 1e-2;
+pub const F32_RUN_CEIL: f64 = 1e5;
+pub const F32_RUN_MIN_TRIPLES: usize = 3;
+pub const F32_SCAN_MAX_REGION: usize = 16 * 1024 * 1024;
 
 /// The bag-rep payload containers the count-framed arrays live in.
 const BAGREP_PAYLOAD_BLOCKS: [&str; 5] = [
@@ -104,6 +116,73 @@ struct CurveRecord {
     end: usize,
 }
 
+/// Maximal 12-byte-stride f32 point runs in `[lo, hi)` as
+/// `(start, triples)` (the twin's `_f32_point_runs`; the missing-store
+/// census law verbatim, region-local).
+fn f32_point_runs(data: &[u8], lo: usize, hi: usize) -> Vec<(usize, usize)> {
+    let size = hi.saturating_sub(lo);
+    if size < 12 {
+        return Vec::new();
+    }
+    let mut ok = vec![0u8; size - 11];
+    for (offset, flag) in ok.iter_mut().enumerate() {
+        let o = lo + offset;
+        let x = bagrep_f32(data, o);
+        let y = bagrep_f32(data, o + 4);
+        let z = bagrep_f32(data, o + 8);
+        *flag = (x.is_finite()
+            && y.is_finite()
+            && z.is_finite()
+            && F32_RUN_FLOOR < x.abs()
+            && x.abs() < F32_RUN_CEIL
+            && F32_RUN_FLOOR < y.abs()
+            && y.abs() < F32_RUN_CEIL
+            && F32_RUN_FLOOR < z.abs()
+            && z.abs() < F32_RUN_CEIL) as u8;
+    }
+    let mut runs = Vec::new();
+    let mut offset = 0usize;
+    while offset < ok.len() {
+        if ok[offset] == 1 && (offset < 12 || ok[offset - 12] == 0) {
+            let mut length = 0usize;
+            let mut cursor = offset;
+            while cursor < ok.len() && ok[cursor] == 1 {
+                length += 1;
+                cursor += 12;
+            }
+            if length >= F32_RUN_MIN_TRIPLES {
+                runs.push((lo + offset, length));
+            }
+            offset = cursor.max(offset + 1);
+        } else {
+            offset += 1;
+        }
+    }
+    runs
+}
+
+/// Every valid block's payload region, bounded per region (the twin's
+/// `_raw_block_regions`) — the empty-scan fallback's scope.
+fn raw_block_regions(data: &[u8]) -> Vec<(usize, usize)> {
+    let size = data.len();
+    let outer = if size >= 12 {
+        u32::from_be_bytes([data[8], data[9], data[10], data[11]]) as usize
+    } else {
+        0
+    };
+    let blocks = store::valid_blocks(data);
+    let mut regions: Vec<(usize, usize)> = blocks
+        .iter()
+        .map(|(blk, _)| (*blk, store::probe_region(*blk, &blocks, outer, size)))
+        .collect();
+    regions.sort_unstable();
+    regions.dedup();
+    regions
+        .into_iter()
+        .filter(|(lo, hi)| hi.saturating_sub(*lo) <= F32_SCAN_MAX_REGION)
+        .collect()
+}
+
 /// One part's display carriers: the point cloud and the pinned segments.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DisplayScan {
@@ -125,6 +204,8 @@ pub struct DisplayScan {
     pub bagrep_skipped: usize,
     pub points: Vec<(f64, f64, f64)>,
     pub segments: Vec<(u32, u32)>,
+    pub f32_runs: usize,
+    pub f32_points: usize,
 }
 
 impl DisplayScan {
@@ -141,6 +222,9 @@ impl DisplayScan {
         }
         if self.bagrep_points > 0 {
             names.push(SOURCE_BAGREP.to_string());
+        }
+        if self.f32_points > 0 {
+            names.push(SOURCE_F32_RUNS.to_string());
         }
         names
     }
@@ -173,9 +257,45 @@ fn plausible(value: f64) -> bool {
 fn region_list(data: &[u8], spans: &[(usize, usize)]) -> Vec<(usize, usize)> {
     let mut regions: Vec<(usize, usize)> = spans.to_vec();
     regions.extend(grid::regions(data));
+    regions.extend(located_store_regions(data));
     regions.sort_unstable();
     regions.dedup();
     regions
+}
+
+/// The container-probing law's store bodies (the census/brep-probe law;
+/// the twin's `_located_store_regions`): CATStdCont, CATXDocLinkCont,
+/// CATSeeBodyCont, then any other block.  Failures contribute nothing.
+fn located_store_regions(data: &[u8]) -> Vec<(usize, usize)> {
+    let d8 = if data.len() >= 12 {
+        u32::from_be_bytes([data[8], data[9], data[10], data[11]]) as usize
+    } else {
+        0
+    };
+    let blocks = store::valid_blocks(data);
+    let mut out: Vec<(usize, usize)> = Vec::new();
+    for container in [
+        store::CONTAINER_STDCONT,
+        store::CONTAINER_XDOCLINK,
+        store::CONTAINER_SEEBODY,
+        store::CONTAINER_OTHER,
+    ] {
+        let want = match container {
+            store::CONTAINER_STDCONT => Some("CATStdCont"),
+            store::CONTAINER_XDOCLINK => Some("CATXDocLinkCont"),
+            store::CONTAINER_SEEBODY => Some("CATSeeBodyCont"),
+            _ => None,
+        };
+        for (blk, name) in &blocks {
+            if want.is_some_and(|want| name != want) {
+                continue;
+            }
+            if let Ok(Some(span)) = store::locate_store(data, *blk, &blocks, d8, container) {
+                out.push((span.body_lo, span.body_hi));
+            }
+        }
+    }
+    out
 }
 
 /// The bag-rep payload containers' ``(start, end)``, in byte order (the
@@ -450,6 +570,34 @@ pub fn scan_part(
         skipped += 1;
     }
 
+    // The empty-scan fallback (#60): a container-less `V5_CFV2` binary
+    // (no container-name table, so no located spans and no carriers
+    // above) still carries 12-byte f32 point runs in its blocks — the
+    // missing-store census measured them (CAAMaiUdfForMfgHoleInstance:
+    // 93 points at 75029 in CATSeeBodyCont).  Only when every primary
+    // source came up empty, over the valid blocks' payload regions,
+    // under the measured run law — never instead of a decoded carrier.
+    let mut f32_runs = 0usize;
+    let mut f32_points = 0usize;
+    if points.is_empty() {
+        for (lo, hi) in raw_block_regions(data) {
+            for (start, length) in f32_point_runs(data, lo, hi) {
+                f32_runs += 1;
+                for index in 0..length {
+                    let off = start + 12 * index;
+                    let point = (
+                        bagrep_f32(data, off),
+                        bagrep_f32(data, off + 4),
+                        bagrep_f32(data, off + 8),
+                    );
+                    if append_point(&mut points, point).is_some() {
+                        f32_points += 1;
+                    }
+                }
+            }
+        }
+    }
+
     DisplayScan {
         block: regions.first().map(|(blk, _)| *blk),
         regions: regions.len(),
@@ -469,6 +617,8 @@ pub fn scan_part(
         bagrep_skipped,
         points,
         segments,
+        f32_runs,
+        f32_points,
     }
 }
 
@@ -778,5 +928,25 @@ mod tests {
         let mut points = Vec::new();
         assert_eq!(line_segment(&data, &records[0], &mut points), None);
         assert!(points.is_empty());
+    }
+
+    #[test]
+    fn f32_point_runs_follow_the_missing_store_law() {
+        // 7 consecutive 12-byte-stride triples: one run of 7 (#60).
+        let mut data = Vec::new();
+        for i in 1..8u32 {
+            data.extend_from_slice(&(10.0f32 * i as f32).to_le_bytes());
+            data.extend_from_slice(&(5.0f32 * i as f32).to_le_bytes());
+            data.extend_from_slice(&(1.0f32 * i as f32).to_le_bytes());
+        }
+        assert_eq!(f32_point_runs(&data, 0, data.len()), vec![(0, 7)]);
+        // near-zero coordinates sit outside the measured envelope
+        let mut flat = Vec::new();
+        for _ in 0..5 {
+            flat.extend_from_slice(&0.0f32.to_le_bytes());
+            flat.extend_from_slice(&0.0f32.to_le_bytes());
+            flat.extend_from_slice(&0.0f32.to_le_bytes());
+        }
+        assert!(f32_point_runs(&flat, 0, flat.len()).is_empty());
     }
 }

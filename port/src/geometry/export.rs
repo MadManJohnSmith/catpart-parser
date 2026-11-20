@@ -196,6 +196,7 @@ pub struct GridMeshing {
     pub shaped: usize,
     pub meshed: usize,
     pub refused: usize,
+    pub relaxed: usize,
     pub refusals: std::collections::BTreeMap<String, usize>,
     pub duplicate_grids: usize,
     pub station_rows: usize,
@@ -549,12 +550,19 @@ fn grid_fallback(
             .map(|(reason, count)| format!("{reason}={count}"))
             .collect::<Vec<_>>()
             .join(", ");
+        let mut detail = format!(
+            "{} grid candidate(s) refused ({}); their bytes were not emitted",
+            scan.refused, refusals,
+        );
+        if scan.relaxed > 0 {
+            detail.push_str(&format!(
+                "; {} of them recovered by the station-collapse/zero-area-skip relaxation (#59)",
+                scan.relaxed,
+            ));
+        }
         warnings.push(Warning {
             class: WARN_GRID_REFUSED.to_string(),
-            detail: format!(
-                "{} grid candidate(s) refused ({}); their bytes were not emitted",
-                scan.refused, refusals,
-            ),
+            detail,
         });
     }
     if stats.boundary_edges > 0 {
@@ -612,6 +620,7 @@ fn grid_fallback(
             shaped: scan.shaped,
             meshed: scan.meshed,
             refused: scan.refused,
+            relaxed: scan.relaxed,
             refusals: scan.refusals.clone(),
             duplicate_grids: scan.duplicate_grids,
             station_rows: scan.station_rows,

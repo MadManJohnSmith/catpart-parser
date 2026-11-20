@@ -29,9 +29,14 @@ Fail-closed rules, all measured rather than tuned:
   nothing and leave the part's pre-grid classification untouched;
 - a grid whose consecutive station rows or consecutive within-row points
   do not advance (a stalled step, the corpus' trailing sentinel blocks)
-  is refused;
-- a grid whose cells contain a zero-area triangle is refused (the mesh
-  never carries a degenerate triangle);
+  is refused, then **relaxed** (E5 kind only): near-duplicate station
+  rows collapse to their first row and the zero-area cells drop, so the
+  sentinel suffix no longer poisons the real grid (#59).  The
+  prefix-dialect gates (non-monotone / non-uniform) stay refused —
+  that fit has no committed dimension;
+- a grid whose cells contain a zero-area triangle is refused, then
+  **relaxed** the same way: only the degenerate cells drop, the rest of
+  the grid triangulates;
 - a grid whose merged cell complex is not manifold is refused;
 - the f64-net prefix has no committed dimension, so it must additionally
   fit the conservative fallback: monotone stations and a bounded station
@@ -91,6 +96,15 @@ REFUSE_NOT_MANIFOLD = "not-manifold"
 REFUSE_NON_MONOTONE = "non-monotone-stations"
 REFUSE_NON_UNIFORM = "non-uniform-stations"
 
+#: The refusals the T1 relaxation applies to (#59): a trailing sentinel
+#: block collapses to its last real station row and zero-area cells drop,
+#: instead of refusing the whole grid.  The prefix-dialect gates
+#: (non-monotone / non-uniform) stay refused: that fit has no committed
+#: dimension, so the conservative fallback bar stands.
+RELAXABLE = frozenset(
+    {REFUSE_STALLED_STATIONS, REFUSE_STALLED_COLUMNS, REFUSE_DEGENERATE}
+)
+
 #: The summary's connectivity label: this is an inference, not a surface.
 CONNECTIVITY = "candidate"
 
@@ -125,6 +139,7 @@ class GridScan:
     points: int
     vertices: tuple[tuple[float, float, float], ...]
     triangles: tuple[tuple[int, int, int], ...]
+    relaxed: int = 0
 
     @property
     def has_mesh(self) -> bool:
@@ -441,6 +456,62 @@ def _points_at(data, start: int, count: int):
     )
 
 
+def _relaxed_triangles(points, shape: GridShape):
+    """The T1 relaxation (#59) for the stalled / degenerate refusals.
+
+    A trailing sentinel block is a run of near-identical station rows
+    (the corpus' tiny trailing boxes); near-duplicate station rows
+    collapse to their first row (step <= ``STALL_FRACTION`` of the
+    grid diagonal, the same bar the stall gate uses), and only the
+    zero-area cells drop (floor = ``DEGENERATE_AREA_FRACTION`` x the
+    collapsed diagonal) instead of refusing the whole grid.
+
+    Returns ``(kept_rows, new_points, triangles)`` or ``None`` when the
+    collapse leaves fewer than ``MIN_ROWS`` rows, the collapsed grid is
+    empty or non-finite, or no triangle survives the area floor.  The
+    caller owns the manifold gate, both on the relaxed grid alone and
+    on the merge with any already-admitted grid.
+    """
+    rows, cols = shape.rows, shape.cols
+    diagonal = _diagonal(points)
+    if diagonal <= 0.0:
+        return None
+    eps = STALL_FRACTION * diagonal
+    stations = _stations(points, shape)
+    kept = [0]
+    for row in range(1, rows):
+        if _distance(stations[row], stations[kept[-1]]) > eps:
+            kept.append(row)
+    if len(kept) < MIN_ROWS:
+        return None
+    new_points: list[tuple[float, float, float]] = []
+    for row in kept:
+        new_points.extend(points[row * cols:(row + 1) * cols])
+    diagonal = _diagonal(new_points)
+    if diagonal <= 0.0:
+        return None
+    floor = DEGENERATE_AREA_FRACTION * diagonal * diagonal
+    nrows = len(kept)
+    triangles: list[tuple[int, int, int]] = []
+    for i in range(nrows - 1):
+        for j in range(cols - 1):
+            a = i * cols + j
+            b = (i + 1) * cols + j
+            c = (i + 1) * cols + j + 1
+            d = i * cols + j + 1
+            if _area2(new_points[a], new_points[b], new_points[c]) <= floor:
+                continue
+            if _area2(new_points[a], new_points[c], new_points[d]) <= floor:
+                continue
+            triangles.append((a, b, c))
+            triangles.append((a, c, d))
+    if not triangles:
+        return None
+    if not all(math.isfinite(v) for point in new_points for v in point):
+        return None
+    return kept, new_points, triangles
+
+
 def iter_runs(data):
     """Every 3-divisible point run of the part, in the committed scan order.
 
@@ -514,6 +585,7 @@ def scan_part(data) -> GridScan:
     shaped = 0
     meshed = 0
     refused = 0
+    relaxed = 0
     refusals: dict[str, int] = {}
     duplicate_grids = 0
     station_rows = 0
@@ -536,6 +608,32 @@ def scan_part(data) -> GridScan:
         if cell_triangles is None:
             refused += 1
             refusals[reason] = refusals.get(reason, 0) + 1
+            if reason not in RELAXABLE:
+                continue
+            relaxed_result = _relaxed_triangles(points, shape)
+            if relaxed_result is None:
+                continue
+            kept_rows, new_points, relaxed_cells = relaxed_result
+            if not mesh.mesh_stats(relaxed_cells).manifold:
+                continue
+            if vertices:
+                merged = triangles + [
+                    (a + len(vertices), b + len(vertices), c + len(vertices))
+                    for a, b, c in relaxed_cells
+                ]
+                if not mesh.mesh_stats(merged).manifold:
+                    continue
+            relaxed += 1
+            station_rows += len(kept_rows)
+            columns += shape.cols
+            points_count += len(new_points)
+            if monotone:
+                monotone_grids += 1
+            base = len(vertices)
+            vertices.extend(new_points)
+            triangles.extend(
+                (a + base, b + base, c + base) for a, b, c in relaxed_cells
+            )
             continue
         meshed += 1
         station_rows += shape.rows
@@ -554,6 +652,7 @@ def scan_part(data) -> GridScan:
         shaped=shaped,
         meshed=meshed,
         refused=refused,
+        relaxed=relaxed,
         refusals=tuple(sorted(refusals.items())),
         duplicate_grids=duplicate_grids,
         station_rows=station_rows,

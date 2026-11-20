@@ -30,7 +30,11 @@
 //! ``rows x cols`` reading (fewer than 3 rows or 3 columns) is not a grid
 //! and leaves the part's pre-grid classification untouched; a grid with a
 //! stalled station/column step, a zero-area cell or a non-manifold cell
-//! complex is refused; the prefix dialect has no committed dimension, so
+//! complex is refused, then relaxed for the stalled / degenerate gates
+//! (near-duplicate station rows collapse to their first row and only the
+//! zero-area cells drop, #59 — the prefix gates stay refused, and a
+//! relaxed grid merges only under the strict merged-manifold guard); the
+//! prefix dialect has no committed dimension, so
 //! it must additionally fit monotone stations and a bounded station step
 //! ratio (E5 grids use the committed dimension and report monotonicity
 //! instead of gating on it).
@@ -124,6 +128,7 @@ pub struct GridScan {
     pub points: usize,
     pub vertices: Vec<(f64, f64, f64)>,
     pub triangles: Vec<(u32, u32, u32)>,
+    pub relaxed: usize,
 }
 
 impl GridScan {
@@ -645,6 +650,72 @@ fn admit(points: &[(f64, f64, f64)], shape: GridShape, kind: &str) -> Admission 
     (Some(triangles), None, monotone)
 }
 
+/// The T1 relaxation result: `(kept_rows, collapsed_points, triangles)`.
+type RelaxedGrid = (Vec<usize>, Vec<(f64, f64, f64)>, Vec<(u32, u32, u32)>);
+
+/// The T1 relaxation (#59) for the stalled / degenerate refusals: the
+/// Python twin is `catpart.geometry.grid._relaxed_triangles`.  Near-
+/// duplicate station rows collapse to their first row (step <=
+/// `STALL_FRACTION` of the grid diagonal, the stall gate's bar) and only
+/// the zero-area cells drop, instead of refusing the whole grid.
+/// Returns `(kept_rows, new_points, triangles)` or `None`.
+fn relaxed_triangles(points: &[(f64, f64, f64)], shape: GridShape) -> Option<RelaxedGrid> {
+    let rows = shape.rows;
+    let cols = shape.cols;
+    let diag = diagonal(points);
+    if diag <= 0.0 {
+        return None;
+    }
+    let eps = STALL_FRACTION * diag;
+    let centers = stations(points, shape);
+    let mut kept: Vec<usize> = vec![0];
+    for row in 1..rows {
+        if distance(centers[row], centers[*kept.last().unwrap()]) > eps {
+            kept.push(row);
+        }
+    }
+    if kept.len() < MIN_ROWS {
+        return None;
+    }
+    let mut new_points: Vec<(f64, f64, f64)> = Vec::new();
+    for &row in &kept {
+        new_points.extend_from_slice(&points[row * cols..(row + 1) * cols]);
+    }
+    let diag = diagonal(&new_points);
+    if diag <= 0.0 {
+        return None;
+    }
+    let floor = DEGENERATE_AREA_FRACTION * diag * diag;
+    let nrows = kept.len();
+    let mut triangles: Vec<(u32, u32, u32)> = Vec::new();
+    for i in 0..nrows - 1 {
+        for j in 0..cols - 1 {
+            let a = i * cols + j;
+            let b = (i + 1) * cols + j;
+            let c = (i + 1) * cols + j + 1;
+            let d = i * cols + j + 1;
+            if area2(new_points[a], new_points[b], new_points[c]) <= floor {
+                continue;
+            }
+            if area2(new_points[a], new_points[c], new_points[d]) <= floor {
+                continue;
+            }
+            triangles.push((a as u32, b as u32, c as u32));
+            triangles.push((a as u32, c as u32, d as u32));
+        }
+    }
+    if triangles.is_empty() {
+        return None;
+    }
+    if !new_points
+        .iter()
+        .all(|p| p.0.is_finite() && p.1.is_finite() && p.2.is_finite())
+    {
+        return None;
+    }
+    Some((kept, new_points, triangles))
+}
+
 /// Census one part's point runs and merge every admitted grid mesh.
 pub fn scan_part(data: &[u8]) -> GridScan {
     let region_list = regions(data);
@@ -653,6 +724,7 @@ pub fn scan_part(data: &[u8]) -> GridScan {
     let mut shaped = 0usize;
     let mut meshed = 0usize;
     let mut refused = 0usize;
+    let mut relaxed = 0usize;
     let mut refusals: BTreeMap<String, usize> = BTreeMap::new();
     let mut duplicate_grids = 0usize;
     let mut station_rows = 0usize;
@@ -677,6 +749,42 @@ pub fn scan_part(data: &[u8]) -> GridScan {
         let Some(cells) = cell_triangles else {
             refused += 1;
             let key = reason.unwrap_or(REFUSE_DEGENERATE).to_string();
+            let relaxable = matches!(
+                reason,
+                Some(REFUSE_STALLED_STATIONS)
+                    | Some(REFUSE_STALLED_COLUMNS)
+                    | Some(REFUSE_DEGENERATE)
+            );
+            let relaxed_result = if relaxable {
+                relaxed_triangles(&run.points, shape)
+            } else {
+                None
+            };
+            if let Some((kept_rows, new_points, relaxed_cells)) = relaxed_result {
+                let base = vertices.len() as u32;
+                let mut merged = triangles.clone();
+                merged.extend(
+                    relaxed_cells
+                        .iter()
+                        .map(|&(a, b, c)| (a + base, b + base, c + base)),
+                );
+                let merged_manifold = vertices.is_empty() || mesh::mesh_stats(&merged).manifold;
+                if mesh::mesh_stats(&relaxed_cells).manifold && merged_manifold {
+                    relaxed += 1;
+                    station_rows += kept_rows.len();
+                    columns += shape.cols;
+                    points_count += new_points.len();
+                    if monotone {
+                        monotone_grids += 1;
+                    }
+                    vertices.extend(new_points.iter().copied());
+                    triangles.extend(
+                        relaxed_cells
+                            .iter()
+                            .map(|&(a, b, c)| (a + base, b + base, c + base)),
+                    );
+                }
+            }
             *refusals.entry(key).or_insert(0) += 1;
             continue;
         };
@@ -709,6 +817,7 @@ pub fn scan_part(data: &[u8]) -> GridScan {
         points: points_count,
         vertices,
         triangles,
+        relaxed,
     }
 }
 
@@ -796,13 +905,77 @@ mod tests {
     }
 
     #[test]
-    fn stalled_station_rows_are_refused() {
+    fn stalled_station_rows_relax_to_the_real_grid() {
         let scan = scan_part(&part_data(true));
         assert_eq!(scan.shaped, 1);
         assert_eq!(scan.meshed, 0);
+        assert_eq!(scan.relaxed, 1);
         assert_eq!(scan.refusals.get(REFUSE_STALLED_STATIONS).copied(), Some(1));
-        assert!(!scan.has_mesh());
-        assert!(scan.has_candidates());
+        // the sentinel row collapses: the real 4x5 net triangulates (#59)
+        assert!(scan.has_mesh());
+        assert_eq!(scan.station_rows, 4);
+        assert_eq!(scan.columns, 5);
+        assert_eq!(scan.points, 20);
+        assert_eq!(scan.triangles.len(), 24);
+        let stats = mesh::mesh_stats(&scan.triangles);
+        assert!(stats.manifold);
+    }
+
+    #[test]
+    fn degenerate_cells_skip_instead_of_refusing() {
+        // a 3x3 net with one coincident corner pair (p4 := p3): cells
+        // (0,0) and (1,0) become zero-area (b==c, a==d) and drop; the
+        // other two cells and all nine points stand (#59)
+        let mut holed = grid_points(3, 3);
+        holed[4] = holed[3];
+        let shape = GridShape {
+            rows: 3,
+            cols: 3,
+            station_axis: 0,
+            spread: 0.0,
+        };
+        let (kept, new_points, triangles) = relaxed_triangles(&holed, shape).unwrap();
+        assert_eq!(kept, vec![0, 1, 2]);
+        assert_eq!(new_points.len(), 9);
+        assert_eq!(triangles.len(), 4); // 4 cells = 8 triangles, 2 cells drop
+        let stats = mesh::mesh_stats(&triangles);
+        assert!(stats.manifold);
+    }
+
+    #[test]
+    fn relaxed_triangles_unit_laws() {
+        // collapse: only near-duplicate station rows fold, the rest stand
+        let mut stalled = grid_points(5, 5);
+        let tail: Vec<(f64, f64, f64)> = stalled[15..20].to_vec();
+        stalled[20..25].clone_from_slice(&tail);
+        let shape = GridShape {
+            rows: 5,
+            cols: 5,
+            station_axis: 0,
+            spread: 0.0,
+        };
+        let (kept, new_points, triangles) = relaxed_triangles(&stalled, shape).unwrap();
+        assert_eq!(kept, vec![0, 1, 2, 3]);
+        assert_eq!(new_points.len(), 20);
+        assert_eq!(triangles.len(), 24);
+        // a grid of identical rows collapses below MIN_ROWS: None
+        let mut flat = grid_points(4, 4);
+        let head: Vec<(f64, f64, f64)> = flat[0..4].to_vec();
+        for row in 1..4 {
+            flat[row * 4..(row + 1) * 4].clone_from_slice(&head);
+        }
+        assert!(
+            relaxed_triangles(
+                &flat,
+                GridShape {
+                    rows: 4,
+                    cols: 4,
+                    station_axis: 0,
+                    spread: 0.0,
+                }
+            )
+            .is_none()
+        );
     }
 
     #[test]

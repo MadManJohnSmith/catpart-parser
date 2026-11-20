@@ -137,3 +137,20 @@ def test_inspect_detected_version_unknown_for_bare_token(
     code, out, err = run_inspect([str(path)], capsys)
     assert code == 0, err
     assert json.loads(out)["detected_version"] == "unknown"
+
+
+def test_inspect_classifies_non_catia_bytes_as_not_a_catpart(
+    build_catpart, tmp_path: Path, capsys
+) -> None:
+    # #60: the 6 magic_ok=no manifest misfits (text placeholders, HTML
+    # pages, YAML templates) classify not-a-catpart — out of the CATIA
+    # open-rate denominator — while every V5_CFV2 file keeps the
+    # container-table kind law K1 untouched.
+    odd = tmp_path / "odd.CATPart"
+    odd.write_bytes(build_catpart(magic=b"XX_CFV2\x00"))
+    code, out, _ = run_inspect([str(odd)], capsys)
+    assert code == 0
+    report = json.loads(out)
+    assert_schema_valid(report)
+    assert report["magic"] == "XX_CFV2"
+    assert report["kind"] == "not-a-catpart"

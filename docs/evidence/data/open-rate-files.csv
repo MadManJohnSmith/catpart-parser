@@ -4,9 +4,9 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 002e03ea032528d3,sample/CAACATIAApplicationFrm.edu/InputData/CAACafSearch.CATPart,dev,part,empty-mesh,DISPLAY,0,116,6
 0032f87d64e1bd78,CATIA/old_catia/CATIA_VITE/SP02_MAQUETTE_VITE.CATPart,dev,part,pass,MESH,758,0,0
 006395786be0df4e,CATIA/CATIA_vol/_NPart#194294.CATPart,dev,part,pass,MESH,3639,0,0
-009cc6056fb040b9,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/BundleSegment3.CATPart,dev,part,empty-mesh,DISPLAY,0,136,0
+009cc6056fb040b9,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/BundleSegment3.CATPart,dev,part,pass,MESH,96,0,0
 013c38dbba810fad,CATIA/CATIA_vol/TUBE (1).CATPart,dev,part,pass,MESH,992,0,0
-01bd888df54c2790,online/CAAScdSddUseCases/samples/CAASddCreatePlate.CATPart,dev,part,undecoded-variant,BLANK,0,0,0
+01bd888df54c2790,online/CAAScdSddUseCases/samples/CAASddCreatePlate.CATPart,dev,part,empty-mesh,DISPLAY,0,14,0
 01d289f459924d13,02_MakingRessources/_CAO/CONTROL_BOARD/ControlBoard_CI/F09VP.CATPart,dev,part,pass,MESH,12,0,0
 01f2a48c9151197e,sample/CAACommonLayoutItf.edu/InputData/HangerModel/SpatialLoft-4072E.CATPart,dev,part,pass,MESH,28,0,0
 022523b419c2ad6e,online/CAAScdPriUseCases/samples/CAAPriChangeHole.CATPart,dev,part,empty-mesh,DISPLAY,0,93,2
@@ -29,7 +29,7 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 059d871a5f0b85c4,online/CAAScdStrUseCases/samples/EditCoping/Shell_VStf_006.1.CATPart,dev,part,pass,MESH,1961,0,0
 05c904aef159eb2a,CATIA/new_catia/PATANT.CATPart,dev,part,pass,MESH,3560,0,0
 05d3ebd19ddc8043,02_Pistao_Biela/ccam bush.CATPart,held-out,part,pass,MESH,496,0,0
-05fe6c233d50ab53,CAAV5V6MechanicalModeler.edu/InputData/CAAV5V6ExtCombinedCurve.CATPart,dev,part,undecoded-variant,BLANK,0,0,0
+05fe6c233d50ab53,CAAV5V6MechanicalModeler.edu/InputData/CAAV5V6ExtCombinedCurve.CATPart,dev,part,empty-mesh,DISPLAY,0,28,0
 06038b0a8d0fa860,sample/CAAMechanicalModeler.edu/InputData/CAAAxisSystemCreation.CATPart,dev,part,empty-mesh,DISPLAY,0,52,0
 067086b8a8e28a22,CATIA/old_catia/CATIA1/SEPA/STRUCT_BAS.CATPart,dev,part,pass,MESH,2721,0,0
 0689ff98ac25202f,CATIA/test_tolerence.CATPart,dev,part,empty-mesh,DISPLAY,0,8,0
@@ -40,7 +40,7 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 07150c16d32e3888,CATIA/preparation_commande_sepa/SP02_ALPHA_BETA_SEPA/SP02_ALPHA5_SEPA2_CAPUCHON.CATPart,dev,part,pass,MESH,825,0,0
 07a577674de17029,02_MakingRessources/_CAO/CONTROL_BOARD/ControlBoard_CI/10uF.CATPart,dev,part,pass,MESH,12,0,0
 07c5304698063710,CATIA/CATIA_vol/SP02_BETA_TUBE (1).CATPart,dev,part,pass,MESH,244,0,0
-07d3c70bcaa64ce8,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/CAAElecDeviceConnection/First_Back_Shell.CATPart,dev,part,pass,MESH,1964,0,0
+07d3c70bcaa64ce8,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/CAAElecDeviceConnection/First_Back_Shell.CATPart,dev,part,pass,MESH,2220,0,0
 07f621d6222361db,Spur Gear12.CATPart,held-out,part,pass,MESH,1516,0,0
 084841b3a2068a72,online/CAAScdPstUseCases/samples/CAAPstPad1_1.CATPart,dev,part,empty-mesh,DISPLAY,0,162,0
 08588c5c87c14268,sample/CAACommonLayoutItf.edu/InputData/HangerModel/SpatialLoft-4052E.CATPart,dev,part,pass,MESH,8,0,0
@@ -81,7 +81,7 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 0ef3692dadcbc18c,3DjiexiCAA/tests/caa_completion/fixtures_manual/business_seal_bond.CATPart,dev,part,pass,MESH,12,0,0
 0eff8ecfb84eeb4a,CATIA/preparation_commande_sepa/SP02_ALPHA_BETA_SEPA/_NPart#194287.CATPart,dev,part,pass,MESH,39,0,0
 0f00ae30cb5e7984,CATIA/CATIA_vol/SP02_ALPHA/SP02_ALPHA_Vis-Retrein.CATPart,dev,part,pass,MESH,6478,0,0
-0f0ff88b4bab5f6b,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAA_EHIMultiSegmentSample/backshell_F.CATPart,dev,part,pass,MESH,11782,0,0
+0f0ff88b4bab5f6b,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAA_EHIMultiSegmentSample/backshell_F.CATPart,dev,part,pass,MESH,12974,0,0
 0f18f7721733626d,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAAEhiProtectionSample/Multi-branchable1.CATPart,dev,part,pass,MESH,4108,0,0
 0f3ead7c0ca7d058,CATIA/old_catia/CATIA6/ALPHA/SP02_ALPHA_PROPU.CATPart,dev,part,pass,MESH,1676,0,0
 0f74bd2a13cfaaa6,03_Valvulas/valve cover.CATPart,held-out,part,pass,MESH,3086,0,0
@@ -112,7 +112,7 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 151ad1854ab6dc56,CATIA/old_catia/CATIA4/ALPHA/ALPHA_SEPA/ALPHA_SEPA_RONDELLE.CATPart,dev,part,pass,MESH,584,0,0
 152159176ca8d58d,sample/CAAElecRoutingItf.edu/CNext/resources/graphic/CAAEwrListWiresInBundleSegment/command-backshell-el.CATPart,dev,part,pass,MESH,610,0,0
 1528c0d92f26613e,sample/CAAElecFlatteningItf.edu/CNext/resources/graphic/ModelArrangeJunction/Connector_F.CATPart,dev,part,pass,MESH,148,0,0
-153a33fb45e24dd4,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAA_EHIMultiSegmentSample/CorrugateTube10-2.CATPart,dev,part,empty-mesh,DISPLAY,0,2678,0
+153a33fb45e24dd4,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAA_EHIMultiSegmentSample/CorrugateTube10-2.CATPart,dev,part,pass,MESH,720,0,0
 15930c8204f15e41,online/CAAScdDmuUseCases/samples/skeleton.CATPart,dev,part,empty-mesh,DISPLAY,0,40,0
 15b865041e7aa4c2,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAA_EHIMultiSegmentSample/Battery6Volts.CATPart,dev,part,empty-mesh,DISPLAY,0,168,0
 15c694f833796c49,CATIA/new_catia/PONSEUR_AILERON.CATPart,dev,part,pass,MESH,316,0,0
@@ -130,7 +130,7 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 1806b46f94cc79e1,CATIA/CATIA_vol/Usinage/Gabarit_Trous_Para_Elec_Alpha.CATPart,dev,part,pass,MESH,12954,0,0
 18a5e736be72bf2d,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_BundleSegment3_2.CATPart,dev,part,empty-mesh,DISPLAY,0,529,0
 18ad2b498a397111,CATIA/CATIA_vol/Carte_elec_finales/L0806~L0806_L2.0-W1.6-H1.0~U5Q5.CATPart,dev,part,pass,MESH,1717,0,0
-18bb4ca6a3e1fe67,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAAEhiProtectionSample/Tape001-2004_01_28-12_47_01_135.CATPart,dev,part,empty-mesh,DISPLAY,0,2409,0
+18bb4ca6a3e1fe67,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAAEhiProtectionSample/Tape001-2004_01_28-12_47_01_135.CATPart,dev,part,pass,MESH,912,0,0
 18d5ae4f7385cef7,CATIA/CATIA_vol/Carte_elec_finales/SOD-123_L2.7-W1.6-LS3.7-RD-1~SOD-123_L2.7-W1.6-LS3.7-RD-1~U5Q5.CATPart,dev,part,pass,MESH,1059,0,0
 193319dbb2cbc84d,CATIA/preparation_commande_sepa/SP02_ALPHA_BETA_SEPA/SP02_BETA_TUBE (1).CATPart,dev,part,pass,MESH,532,0,0
 1950ec3d7e9b03c6,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/CAAElecDeviceConnection/Third_Single_Connector.CATPart,dev,part,empty-mesh,DISPLAY,0,13,0
@@ -180,7 +180,7 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 223c9965ae17178c,02_MakingRessources/_CAO/STRUCTURE/CASE/Case_Top_Front.CATPart,dev,part,pass,MESH,1841,0,0
 2251fd41fedccb6a,连接关系示例数据/连接关系示例数据/510.023 A.CATPart,dev,part,pass,MESH,102,0,0
 228aa102a5b0b2a9,CATIA/CATIA_vol/SP02_ALPHA/Crochet_F_bas.CATPart,dev,part,pass,MESH,6378,0,0
-230b0591fc55dd46,caa_new/tests/dummy.CATPart,dev,unknown,missing-geometry-store,BLANK,0,0,0
+230b0591fc55dd46,caa_new/tests/dummy.CATPart,dev,not-a-catpart,missing-geometry-store,BLANK,0,0,0
 234b04f8927624d8,02_MakingRessources/_CAO/_standard/TerminalBlock10_CI.CATPart,dev,part,pass,MESH,2506,0,0
 24173b9c1a4a575e,sample/CAADMAPSInterfaces.edu/CNext/resources/graphic/sheet.CATPart,dev,part,missing-geometry-store,BLANK,0,0,0
 248e6403568db4b6,3DjiexiCAA/tests/caa_completion/fixtures_manual/pd_shaft_groove.CATPart,dev,part,pass,MESH,208,0,0
@@ -361,9 +361,9 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 42c2c553eec6206b,02_Pistao_Biela/coneecting road assembly ori.CATPart,held-out,part,pass,MESH,393,0,0
 42edb95efb9bbb60,CATIA/CATIA_vol/Bague exeterieur.CATPart,dev,part,pass,MESH,3768,0,0
 42eef2a398c71506,sample/CAACommonLayoutItf.edu/InputData/HangerModel/Z03000-D10-M0014.CATPart,dev,part,pass,MESH,48,0,0
-42f48ec172b314be,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/BundleSegment2.CATPart,dev,part,empty-mesh,DISPLAY,0,392,0
+42f48ec172b314be,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/BundleSegment2.CATPart,dev,part,pass,MESH,384,0,0
 4302e0c5b1bc37e9,CAAxPDMInterfaces.edu/InputData/RetrieveConsistentSet/RetrieveConsistentSet00A/RetrieveConsistentSet011/Part1.CATPart,dev,part,empty-mesh,DISPLAY,0,1,0
-43405f84effa3396,sample/CAAManufacturingItf.edu/CNext/resources/graphic/CAAMaiToolEditionCustomization.CATPart,dev,part,missing-geometry-store,BLANK,0,0,0
+43405f84effa3396,sample/CAAManufacturingItf.edu/CNext/resources/graphic/CAAMaiToolEditionCustomization.CATPart,dev,part,empty-mesh,DISPLAY,0,160,0
 434d4bb4b3ce97a3,sample/CAAAdvancedTopologicalOpe.edu/FunctionTests/InputData/TolerantSweepDev1.CATPart,dev,part,pass,MESH,32,0,0
 4360727601d99ef9,sample/CAAComponentsCatalogs.edu/InputData/CAANuts6Sides.CATPart,dev,part,empty-mesh,DISPLAY,0,39,0
 43916c40dfc26279,CATIA/old_catia/CATIA6/BETA/SP02_BETA_SEPA_PRINCIPALE.CATPart,dev,part,pass,MESH,5114,0,0
@@ -404,7 +404,7 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 4a21610fa101a958,CATIA/catia_lucas/SEPARATION/SP02_ALPHA5_SEPA2_PRINCIPALE_1.CATPart,dev,part,pass,MESH,1481,0,0
 4a3255399d4eb4c0,CATIA/CATIA_vol/Carte_elec_finales/HDR-F-2.54_1X3~HDR-M-2.54_1x3_1~U5Q5.CATPart,dev,part,pass,MESH,2963,0,0
 4a32f59c1e637acd,CATIA/CATIA_vol/Carte_elec_finales/SOT-23-3_L2.9-W1.6-P1.90-LS2.8-BR~SOT-23-3L_L2.9-W1.6-H1.1-LS2.8-P0.95~U5Q5.CATPart,dev,part,pass,MESH,2223,0,0
-4a3f8ef2bd1f2af2,online/CAAScdAniUseCases/samples/Crankshaft.CATPart,dev,part,missing-geometry-store,BLANK,0,0,0
+4a3f8ef2bd1f2af2,online/CAAScdAniUseCases/samples/Crankshaft.CATPart,dev,part,empty-mesh,DISPLAY,0,4114,0
 4a56bca546979019,diseño_3d/lengua/tensor/presionador.CATPart,dev,part,pass,MESH,7973,0,0
 4abf3eeaf892be44,CATIA/preparation_commande_sepa/SP02_ALPHA_BETA_SEPA/CONN-TH_3P-P2.50_B3B-XH-AM-LF-SN~CONN-TH_XH2.50-LI-3P~Of2H.CATPart,dev,part,pass,MESH,1529,0,0
 4ad53b87c35a77e7,CATIA/CATIA_vol/SP02_ALPHA5_SEPA2_MINI_RESSORTS.CATPart,dev,part,pass,MESH,35,0,0
@@ -445,7 +445,7 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 4ff38edc16bb1842,sample/CAACommonLayoutItf.edu/InputData/HangerModel/Z03000-D10-M0022.CATPart,dev,part,pass,MESH,48,0,0
 4ff7b61bf8c69320,CATIA/preparation_commande_sepa/SP02_ALPHA_BETA_SEPA/Composant31.CATPart,dev,part,pass,MESH,11603,0,0
 5045d4abf82b954a,CAAStructureInterfaces.edu/CNext/resources/graphic/Shape_Ref_007.CATPart,dev,part,pass,MESH,64,0,0
-505a36f64a44262d,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_Support2.CATPart,dev,part,missing-geometry-store,BLANK,0,0,0
+505a36f64a44262d,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_Support2.CATPart,dev,part,empty-mesh,DISPLAY,0,331,0
 505bbe1fbc701219,CATIA/catia_lucas/SP02_BETA/SP02_BETA_Trappe_Parachute.CATPart,dev,part,pass,MESH,4,0,0
 507fdc4b92860fc1,CATIA/CATIA_vol/Sepa_beta_Finale/SP02_BETA5_SEPA2_PRINCIPALE.CATPart,dev,part,pass,MESH,34327,0,0
 508ae884d67b6828,02_MakingRessources/_CAO/CONTROL_BOARD/ControlBoard_CI/100nF.CATPart,dev,part,pass,MESH,12,0,0
@@ -456,7 +456,7 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 50dd3e533e41ab82,CATIA/CATIA_vol/Cartes Electroniques/HDR-F-2.54_1X2~HDR-F-2.54_1x2~eucq.CATPart,dev,part,pass,MESH,1259,0,0
 50ef4e9af9a9ddfc,CAAxPDMInterfaces.edu/InputData/CAAOmbPart1ForSamplePDM.CATPart,dev,part,empty-mesh,DISPLAY,0,7,0
 5110dfec8ac30a2e,CATIA/CATIA_vol/SP02_BETA/Bout_Test_Tube.CATPart,dev,part,pass,MESH,2706,0,0
-5122a961966ccb8e,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_BundleSegment4_2.CATPart,dev,part,missing-geometry-store,BLANK,0,0,0
+5122a961966ccb8e,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_BundleSegment4_2.CATPart,dev,part,empty-mesh,DISPLAY,0,2139,0
 512987185a249a6e,3DjiexiCAA/tests/fixtures/catia_r21/partdesign_holes_stale.CATPart,dev,part,pass,MESH,236,0,0
 51497b3de3bc86f0,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/CAAElecConnectCases/Case1/Part7.CATPart,dev,part,pass,MESH,12,0,0
 517784e2c8ed869a,CATIA/old_catia/CATIA3/SP02_Alpha_BAS.CATPart,dev,part,pass,MESH,3306,0,0
@@ -464,7 +464,7 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 51ea9ac1fe6bfed6,sample/CAAMechanicalCommands.edu/InputData/CAAUdfModel.CATPart,dev,part,empty-mesh,DISPLAY,0,12,0
 51ec64afaa8f0913,CATIA/CATIA_vol/Usinage/Moule_retrein.CATPart,dev,part,pass,MESH,164,0,0
 52001b6d940937b8,CATIA/CATIA_vol/SEPARATION/SP02_BETA5_SEPA2_BAGUE-RETENUE.CATPart,dev,part,pass,MESH,984,0,0
-521f08e35ad8c141,C-AMEDEO-FRAMEWORK/CA-DEOPTIMISE/CAD-DESIGN/H2-BWB-Q100-CONF0000/AAA-ARCHITECTURES_AIRFRAMES_AERODYNAMICS/CE-CAD-Q100-AAA-ATA-53-FUSELAGE/CC/CE-CC-CAD-Q100-AAA-ATA-53-10-STRUCTURE-1/CI/CE-CC-CI-CAD-Q100-AAA-ATA-53-10-01-COMPONENT-1/3DModels/fpb_assy_v3.CATPart,dev,unknown,missing-geometry-store,BLANK,0,0,0
+521f08e35ad8c141,C-AMEDEO-FRAMEWORK/CA-DEOPTIMISE/CAD-DESIGN/H2-BWB-Q100-CONF0000/AAA-ARCHITECTURES_AIRFRAMES_AERODYNAMICS/CE-CAD-Q100-AAA-ATA-53-FUSELAGE/CC/CE-CC-CAD-Q100-AAA-ATA-53-10-STRUCTURE-1/CI/CE-CC-CI-CAD-Q100-AAA-ATA-53-10-01-COMPONENT-1/3DModels/fpb_assy_v3.CATPart,dev,not-a-catpart,missing-geometry-store,BLANK,0,0,0
 52390ddfc4ec23e9,CATIA/preparation_commande_sepa/SP02_ALPHA_BETA_SEPA/_NPart#194283.CATPart,dev,part,pass,MESH,1680,0,0
 5255ecad7ec4ba72,CATIA/CATIA_vol/Carte_elec_finales/PCB_ROUTEUR.CATPart,dev,part,pass,MESH,166,0,0
 527c698f18335370,CATIA/CATIA_vol/Carte_elec_finales/CONN-SMD_2147210040~CONN-SMD_2147210040~7Q6T.CATPart,dev,part,pass,MESH,2092,0,0
@@ -483,7 +483,7 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 54afa01334ec9933,CATIA/CATIA_vol/Composants_Generiques/Rampe.CATPart,dev,part,pass,MESH,3912,0,0
 54b043d4e188c366,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAAEhiProtectionSample/Multi-branchable3.CATPart,dev,part,empty-mesh,DISPLAY,0,6,0
 54cebe10b495eb5c,CATIA/CATIA_vol/Carte_elec_finales/CONN-TH_B2B-XH-A-LF-SN~XH2.5-2A~U5Q5.CATPart,dev,part,pass,MESH,1883,0,0
-550e4e2673beabf7,连接关系示例数据/连接关系示例数据/511.000_NOTE A.CATPart,dev,part,undecoded-variant,BLANK,0,0,0
+550e4e2673beabf7,连接关系示例数据/连接关系示例数据/511.000_NOTE A.CATPart,dev,part,empty-mesh,DISPLAY,0,18,0
 553828a6cf47f27e,CATIA/CATIA_vol/SP02_BETA/Document.CATPart,dev,part,pass,MESH,856,0,0
 554ef6339fcf0a80,02_MakingRessources/_CAO/SYSTEM/TouchCols_Solders.CATPart,dev,part,pass,MESH,332,0,0
 55773f8d38665bcd,online/CAAScdSfdUseCases/samples/CAASfdEditStiffener.CATPart,dev,part,pass,MESH,1863,0,0
@@ -498,7 +498,7 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 5728856e6fe04473,03_Valvulas/rocker arm.CATPart,held-out,part,pass,MESH,255,0,0
 5753d3679b17e3e6,CATIA/CATIA_vol/Carte_elec_finales/R0805~R0805_L2.0-W1.3-H0.6~iaXJ.CATPart,dev,part,pass,MESH,777,0,0
 57681043979ca92c,sample/CAAMechanicalModeler.edu/InputData/CAACombinedCurve.CATPart,dev,part,empty-mesh,DISPLAY,0,55,0
-57b5c1dd0c315970,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_FConnector.CATPart,dev,part,missing-geometry-store,BLANK,0,0,0
+57b5c1dd0c315970,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_FConnector.CATPart,dev,part,empty-mesh,DISPLAY,0,187,0
 57c3fb49ea61453d,CATIA/preparation_commande_sepa/SP02_ALPHA_BETA_SEPA/SP02_ALPHA5_SEPA2_RETENUE_ROULEMENT2.CATPart,dev,part,pass,MESH,752,0,0
 57d4b85846f5b261,CATIA/CATIA_vol/Carte_elec_finales/SW-TH_XKB_SS-12M11XX~SW-TH_XKB_SS-12M11XX~iaXJ.CATPart,dev,part,pass,MESH,1607,0,0
 57dbf12722134b37,online/CAAScdSfdUseCases/samples/CAASfdCreateStiffener.CATPart,dev,part,pass,MESH,369,0,0
@@ -522,7 +522,7 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 5a982112b4f5edc1,02_MakingRessources/_CAO/_standard/M4x10_Poelier.CATPart,dev,part,not-manifold,MESH,2306,0,0
 5aa99ab0f9aad9aa,CATIA/CATIA_vol/SEPARATION/SP02_BETA5_SEPA2_BIELLE2.CATPart,dev,part,pass,MESH,104,0,0
 5abb042b3a19c899,Hardware/3dp4drone/receiver/Part1.CATPart,dev,part,pass,MESH,411,0,0
-5abff0b101e450cf,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAA_EHIMultiSegmentSample/BranchableBundleSegment1.CATPart,dev,part,empty-mesh,DISPLAY,0,3166,0
+5abff0b101e450cf,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAA_EHIMultiSegmentSample/BranchableBundleSegment1.CATPart,dev,part,pass,MESH,1344,0,0
 5b38a50bcf858391,CATIA/CATIA_vol/Carte_elec_finales/Etage1.CATPart,dev,part,pass,MESH,3018,0,0
 5b5b23caa17cf1b1,02_MakingRessources/_CAO/CONTROL_BOARD/ControlBoard_CI/Board.CATPart,dev,part,pass,MESH,2712,0,0
 5bd16caf51981ca9,online/CAAScdStrUseCases/samples/CreateCoping/Shell_VStf_005.1.CATPart,dev,part,pass,MESH,5877,0,0
@@ -540,7 +540,7 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 5da9377da3fea808,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/CAAElecConnectCases/Case2/Part1.CATPart,dev,part,pass,MESH,12,0,0
 5de8b8fc2e5262fb,sample/CAAElecFlatteningItf.edu/CNext/resources/graphic/ModelArrangeJunction/RectangularConnector-MX10.CATPart,dev,part,pass,MESH,246,0,0
 5e5e9258eeb66d12,spidar300/robot/cad/Electronica/Raspberry pi - model B/SD Card.CATPart,dev,part,pass,MESH,734,0,0
-5e75b5fbdf9e9ed5,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/BundleSegment5.CATPart,dev,part,empty-mesh,DISPLAY,0,364,0
+5e75b5fbdf9e9ed5,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/BundleSegment5.CATPart,dev,part,pass,MESH,384,0,0
 5e7fd49451bad3c2,CAATPSInterfaces.edu/FunctionTests/InputData/TPSPartToleranced.CATPart,dev,part,empty-mesh,DISPLAY,0,57,0
 5eac5773b308de29,CATIA/old_catia/CATIA5/ALPHA/SP02_ALPHA_SEPA/SP02_ALPHA_SEPA_COUPLEUR.CATPart,dev,part,pass,MESH,968,0,0
 5ec5c865235effe0,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/PN-29112000-1650.CATPart,dev,part,empty-mesh,DISPLAY,0,110,0
@@ -576,7 +576,7 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 64224b8b403a6c5e,CATIA/CATIA_vol/Cartes Electroniques/Board~eucq.CATPart,dev,part,pass,MESH,820,0,0
 6489ed166ecf9de0,02_MakingRessources/_CAO/SYSTEM/LedStrips_WireControl_final.CATPart,dev,part,pass,MESH,5455,0,0
 64d646b1dbf71e4c,CATIA/CATIA_vol/SP02_BETA5_SEPA2_PRINCIPALE.CATPart,dev,part,pass,MESH,31791,0,0
-6523a7144defd69d,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_clamp1.CATPart,dev,part,missing-geometry-store,BLANK,0,0,0
+6523a7144defd69d,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_clamp1.CATPart,dev,part,empty-mesh,DISPLAY,0,214,0
 65329ee154d099f9,spidar300/robot/cad/Electronica/Camara.CATPart,dev,part,pass,MESH,439,0,0
 65564a9bbcafb35b,online/CAAScdSddUseCases/samples/OpeningCreationData/WT18x179.5.CATPart,dev,part,empty-mesh,DISPLAY,0,2,0
 65eb023d5fbe050c,CATIA/catia_lucas/SP02_BETA/Pointe-Coiffe.CATPart,dev,part,pass,MESH,5036,0,0
@@ -587,7 +587,7 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 66ba9b0360c32f17,Spur Gear11.CATPart,held-out,part,pass,MESH,1676,0,0
 66c9b98b6a7239ac,CATIA/CATIA_vol/SP02_ALPHA/sup_cro_SP_bas.CATPart,dev,part,pass,MESH,1672,0,0
 673e7e305b5ce513,diseño_3d/cachete/mandibula_palanca_izquierda.CATPart,dev,part,pass,MESH,7070,0,0
-6769a88c824dd85d,online/CAAScdPstUseCases/samples/CAAPstFunnel.CATPart,dev,part,missing-geometry-store,BLANK,0,0,0
+6769a88c824dd85d,online/CAAScdPstUseCases/samples/CAAPstFunnel.CATPart,dev,part,empty-mesh,DISPLAY,0,14,0
 677a7c22b889bf0f,Hardware/modules/misc/telemetry-cuav-air-link-4g-1.snapshot.3/Telemetry CUAV Air Link 4G.CATPart,dev,part,pass,MESH,1948,0,0
 677ff5862739794f,online/CAAScdAniUseCases/samples/bielle.CATPart,dev,part,empty-mesh,DISPLAY,0,181,0
 67b37d06c40d6eed,3DjiexiCAA/tests/caa_completion/fixtures_manual/negative_empty_surface_imported.CATPart,dev,part,undecoded-variant,BLANK,0,0,0
@@ -618,7 +618,7 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 6c65cb66c9617c90,sample/CAACommonLayoutItf.edu/InputData/HangerModel/Z03000-D10-M0031.CATPart,dev,part,pass,MESH,48,0,0
 6c6a2e9f3d5f5303,spidar300/robot/cad/Pinza/PINZA_IZQUIERDA.CATPart,dev,part,pass,MESH,73824,0,0
 6c83fa29242ce381,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/CAAElecSupport/Case2/MutliSupport.CATPart,dev,part,pass,MESH,160,0,0
-6cab134d4405d3f8,CAAxPDMInterfaces.edu/InputData/DocCheck/MyTextDocCheck.CATPart,dev,unknown,missing-geometry-store,BLANK,0,0,0
+6cab134d4405d3f8,CAAxPDMInterfaces.edu/InputData/DocCheck/MyTextDocCheck.CATPart,dev,not-a-catpart,missing-geometry-store,BLANK,0,0,0
 6cab9855e306ad75,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAA_EHIMultiBranchableSample/Part1.CATPart,dev,part,pass,MESH,112,0,0
 6cae53658fce6bf1,CATIA/CATIA_vol/SP02_ALPHA/SP02_ALPHA_AF/SP02_ALPHA_AF_BLOC_BIELLE.CATPart,dev,part,pass,MESH,684,0,0
 6cffb28b006706cf,sample/CAAManufacturingItf.edu/CNext/resources/graphic/CAAMaiUserOHM.CATPart,dev,part,pass,MESH,12,0,0
@@ -718,10 +718,10 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 81cbaef95eb85c2f,CATIA/CATIA_vol/SP02_ALPHA/SP02_ALPHA_AF/SP02_ALPHA_AF_BLOC_BAGUE0.CATPart,dev,part,pass,MESH,868,0,0
 81d20b3116085604,3DjiexiCAA/tests/caa_completion/fixtures_manual/product_fta_backups/version_fta_v1_scaffold_20260805_134440.CATPart,dev,part,pass,MESH,88,0,0
 81f730b6066f8d4f,online/CAAScdStrUseCases/samples/EditCoping/Part1.CATPart,dev,part,pass,MESH,2,0,0
-822815ea745e984c,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_Support1.CATPart,dev,part,missing-geometry-store,BLANK,0,0,0
+822815ea745e984c,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_Support1.CATPart,dev,part,empty-mesh,DISPLAY,0,255,0
 8269ca4e5257ff8c,02_MakingRessources/_CAO/SYSTEM/TouchRows_Strips.CATPart,dev,part,pass,MESH,9211,0,0
 826d7713208e7e39,sample/CAAElecRoutingItf.edu/CNext/resources/graphic/CAAEwrFilter/BundleSegment3.CATPart,dev,part,pass,MESH,12,0,0
-827c5b7ab5cfe15c,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAA_EHIMultiSegmentSample/Tape5-2.CATPart,dev,part,empty-mesh,DISPLAY,0,2186,0
+827c5b7ab5cfe15c,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAA_EHIMultiSegmentSample/Tape5-2.CATPart,dev,part,pass,MESH,864,0,0
 82acf24bf9edb3ba,spidar300/robot/cad/Tornilleria/Tornillo cabeza hexagonal M3 x30.CATPart,dev,part,pass,MESH,330,0,0
 82de011940646800,sample/CAADraftingInterfaces.edu/CNext/resources/graphic/Part1ForGenShapeUseCase.CATPart,dev,part,empty-mesh,DISPLAY,0,304,0
 831214b30f4da9cb,sample/CAAMechanicalCommands.edu/InputData/CAALoft.CATPart,dev,part,empty-mesh,DISPLAY,0,24,0
@@ -731,10 +731,10 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 839fb40ca8ec27ec,online/CAAScdStrUseCases/samples/CreateCoping/Design_Unit_008.CATPart,dev,part,pass,MESH,7131,0,0
 83ed224a1c568168,02_MakingRessources/_CAO/POWER_SUPPLY/RSP320/M3-7L.1.1.1.CATPart,dev,part,pass,MESH,124,0,0
 83fd95c522378f8d,02_MakingRessources/_CAO/POWER_BOARD/Hitbox_PowerBoardCase.CATPart,dev,part,pass,MESH,1046,0,0
-84037f7a16cc6546,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/BundleSegment4.CATPart,dev,part,empty-mesh,DISPLAY,0,275,0
+84037f7a16cc6546,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/BundleSegment4.CATPart,dev,part,pass,MESH,288,0,0
 842294f4694f02c5,sample/CAAManufacturingItf.edu/CNext/resources/graphic/CAAMaiDumpToolPath8.CATPart,dev,part,empty-mesh,DISPLAY,0,51,0
 842b5557792ced7b,CATIA/old_catia/CATIA3/SP02_Beta_Haut.CATPart,dev,part,pass,MESH,8135,0,0
-8497f19a04c4f50d,diseño_3d/cachete/cachete_soporte_mirror.CATPart,dev,part,undecoded-variant,BLANK,0,0,0
+8497f19a04c4f50d,diseño_3d/cachete/cachete_soporte_mirror.CATPart,dev,part,empty-mesh,DISPLAY,0,27,0
 84a5746954c2ec0d,CATIA/new_catia/bague2.CATPart,dev,part,pass,MESH,1048,0,0
 84cbee894d09961b,CATIA/catia_lucas/SP02_ALPHA/SP02_ALPHA_AF/SP02_ALPHA_AF_BLOC_BAGUE0.CATPart,dev,part,pass,MESH,6713,0,0
 852f2516b6af4b95,spidar300/robot/cad/Electronica/Arduino Mega 2560/Arduino Mega.CATPart,dev,part,pass,MESH,1884,0,0
@@ -769,7 +769,7 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 89d0279a1f276e40,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAAEhiProtectionSample/Tape001-2004_01_28-12_40_50_958.CATPart,dev,part,pass,MESH,1362,0,0
 89d9d6423df9d010,CATIA/CATIA_vol/_NPart#194323.CATPart,dev,part,pass,MESH,2944,0,0
 89f6f5ec67dda5cb,CATIA/old_catia/CATIA4/ALPHA/ALPHA_SEPA/ALPHA_SEPA_SG90_and_arm.CATPart,dev,part,pass,MESH,2266,0,0
-89fad3db7102f02a,online/CAAScdAsmUseCases/samples/NewScrew.CATPart,dev,part,missing-geometry-store,BLANK,0,0,0
+89fad3db7102f02a,online/CAAScdAsmUseCases/samples/NewScrew.CATPart,dev,part,empty-mesh,DISPLAY,0,230,0
 8a80a0126b32b1ea,3DjiexiCAA/tests/caa_completion/fixtures_manual/parameters_units_properties.CATPart,dev,part,pass,MESH,12,0,0
 8aa66b9e34452730,02_MakingRessources/_CAO/SYSTEM/Velostat.CATPart,dev,part,pass,MESH,461,0,0
 8b0243864de45905,CATIA/CATIA_vol/Carte_elec_finales/LED0805-R-RD~LED0805-RD~U5Q5.CATPart,dev,part,pass,MESH,1824,0,0
@@ -849,7 +849,7 @@ sha16,path,split,report kind,report class,open kind,triangles,points,segments
 981fc13b51ba7f45,diseño_3d/cachete/pin_rodamiento.CATPart,dev,part,pass,MESH,752,0,0
 9834c4650301c4c2,CAAxPDMInterfaces.edu/InputData/SendTo/Part1.CATPart,dev,part,pass,MESH,200,0,0
 9864e388e2232094,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/CAAElecDeviceConnection/First_Single_Connector.CATPart,dev,part,empty-mesh,DISPLAY,0,92,0
-989d0dbbdf5455ed,CAAxPDMInterfaces.edu/InputData/DocCheck/Part1.CATPart,dev,part,missing-geometry-store,BLANK,0,0,0
+989d0dbbdf5455ed,CAAxPDMInterfaces.edu/InputData/DocCheck/Part1.CATPart,dev,part,empty-mesh,DISPLAY,0,26,0
 989d1329852d0fb7,online/CAAScdPspUseCases/samples/WELD-W1.CATPart,dev,part,empty-mesh,DISPLAY,0,44,0
 98ce210853752b3e,diseño_3d/lengua/tensor/pin_4mm.CATPart,dev,part,pass,MESH,1384,0,0
 98d6d925b4977200,spidar300/robot/cad/Tornilleria/Tuerca M3.CATPart,dev,part,pass,MESH,144,0,0
@@ -909,7 +909,7 @@ a2de4a9566fd6771,02_MakingRessources/_CAO/_standard/CapacitorCI.CATPart,dev,part
 a34acec5af998093,spidar300/robot/cad/Electronica/Raspberry pi - model B/c-5558065-1-a1-3d.CATPart,dev,part,pass,MESH,861,0,0
 a380a2c5ed10e7ad,02_MakingRessources/_CAO/CONTROL_BOARD/PowerBoard_powerwire.CATPart,dev,part,pass,MESH,606,0,0
 a385c4f6f41535d9,sample/CAACommonLayoutItf.edu/InputData/HangerModel/SpatialLoft-4067E.CATPart,dev,part,pass,MESH,20,0,0
-a3cdbd45c5a6898b,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/BundleSegment6.CATPart,dev,part,empty-mesh,DISPLAY,0,241,0
+a3cdbd45c5a6898b,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/BundleSegment6.CATPart,dev,part,pass,MESH,240,0,0
 a3e514616028f57e,sample/CAACommonLayoutItf.edu/InputData/HangerModel/Z03000-D10-M0029.CATPart,dev,part,pass,MESH,48,0,0
 a404256f8d3d0741,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAA_EHIMultiSegmentSample/connector_F.CATPart,dev,part,empty-mesh,DISPLAY,0,84,0
 a4268a35ab1efc7e,sample/CAAElecRoutingItf.edu/CNext/resources/graphic/CAAEwrListWiresInBundleSegment/command-shell-el.CATPart,dev,part,pass,MESH,306,0,0
@@ -976,7 +976,7 @@ acbdb97473f468f5,CATIA/preparation_commande_sepa/SP02_ALPHA_BETA_SEPA/_NPart#194
 acdbeae229a3f6bd,02_MakingRessources/_CAO/STRUCTURE/CASE/Case_Logo_Red.CATPart,dev,part,pass,MESH,1279,0,0
 ad63afb7217c099d,CAAStructureInterfaces.edu/CNext/resources/graphic/SectionPath/L8x6x1.CATPart,dev,part,empty-mesh,DISPLAY,0,11,0
 ad6d2087242500b1,sample/CAACommonLayoutItf.edu/InputData/HangerModel/SpatialLoft-4061E.CATPart,dev,part,pass,MESH,16,0,0
-ad895d409c730ae2,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_BundleSegment1_2.CATPart,dev,part,missing-geometry-store,BLANK,0,0,0
+ad895d409c730ae2,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_BundleSegment1_2.CATPart,dev,part,empty-mesh,DISPLAY,0,2842,0
 adb5c755df3be5a7,CATIA/CATIA_vol/SP02_ALPHA/SP02_ALPHA_Trappe_Parachute2.CATPart,dev,part,pass,MESH,4,0,0
 adc0b404f0248d64,02_MakingRessources/_CAO/TOP_PLATFORM/DB25_Male.CATPart,dev,part,pass,MESH,3037,0,0
 addacf3c7dd100fd,Spur Gear14.CATPart,held-out,part,pass,MESH,1512,0,0
@@ -995,7 +995,7 @@ b00e31c89c8b5791,online/CAAScdDriUseCases/samples/Cube.CATPart,dev,part,empty-me
 b03ad04a6ec34088,sample/CAAElecFlatteningItf.edu/CNext/resources/graphic/ModelFlattenManager/Multi-branchable1_Ehf.CATPart,dev,part,pass,MESH,40,0,0
 b04ed01f8ac37059,CATIA/new_catia/SP02_ALPHA/SP02_ALPHA_AF/SUPPORT_VIS/Part1.CATPart,dev,part,pass,MESH,3725,0,0
 b0725109a49b5157,sample/CAACommonLayoutItf.edu/InputData/HangerModel/Z03000-D10-M0026.CATPart,dev,part,pass,MESH,48,0,0
-b0b76dc355b2e070,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_Equipment.CATPart,dev,part,missing-geometry-store,BLANK,0,0,0
+b0b76dc355b2e070,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_Equipment.CATPart,dev,part,empty-mesh,DISPLAY,0,688,0
 b0de68d8508de8e4,sample/CAAAssemblyUI.edu/CNext/resources/graphic/AsdScrew.CATPart,dev,part,pass,MESH,180,0,0
 b0e07338249a0067,online/CAAScdPriUseCases/samples/Pad.CATPart,dev,part,empty-mesh,DISPLAY,0,16,0
 b137006b99e1a0eb,CATIA/new_catia/SP02_BETA/SP02_BETA_BAGUE_1.CATPart,dev,part,pass,MESH,564,0,0
@@ -1015,7 +1015,7 @@ b3e2cdae8932545d,sample/CAAElecFlatteningItf.edu/CNext/resources/graphic/ModelFl
 b4011ed92ecc37bf,sample/CAACommonLayoutItf.edu/InputData/RacewayModel/E_Motor.CATPart,dev,part,pass,MESH,824,0,0
 b4367e2d05b16fde,diseño_3d/labios/palanca_labios_upper.CATPart,dev,part,pass,MESH,7489,0,0
 b4629da168fceae6,CATIA/CATIA_vol/SP02_ALPHA/SP02_ALPHA_AF/ST3215_Servo.CATPart,dev,part,pass,MESH,22230,0,0
-b4e58796023fc6f0,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_BundleSegment1_1.CATPart,dev,part,missing-geometry-store,BLANK,0,0,0
+b4e58796023fc6f0,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_BundleSegment1_1.CATPart,dev,part,empty-mesh,DISPLAY,0,2407,0
 b4fd22e357f83410,online/CAAScdSddUseCases/samples/CAASddCreateMember.CATPart,dev,part,pass,MESH,56320,0,0
 b526f545078d592b,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/Alimentation-PW10-50Watts.CATPart,dev,part,empty-mesh,DISPLAY,0,215,0
 b5363479da466b7e,CATIA/CATIA_vol/Carte_elec_finales/KEY-SMD_KMR2XXGXXX~KEY-SMD_5P-L4.2-W2.8-H1.9-LS4.6-P1.6~iaXJ.CATPart,dev,part,pass,MESH,3240,0,0
@@ -1054,7 +1054,7 @@ ba6ae0de7400208e,03_Valvulas/Radiator.CATPart,held-out,part,pass,MESH,4624,0,0
 babb6fbb066d8fc6,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAAEhiProtectionSample/AdaptiveClamp.CATPart,dev,part,pass,MESH,54,0,0
 bad44bdf52f5c411,model/PalmDown5motors2.CATPart,dev,part,empty-mesh,DISPLAY,0,15636,7818
 baf02c0b48fa9204,CATIA/old_catia/CATIA5/BETA/SP02_BETA_SEPA_PRINCIPALE.CATPart,dev,part,pass,MESH,4245,0,0
-bafb33e5c3b05cf7,CATIA/CATIA_vol/test_tolerence.CATPart,dev,unknown,missing-geometry-store,BLANK,0,0,0
+bafb33e5c3b05cf7,CATIA/CATIA_vol/test_tolerence.CATPart,dev,not-a-catpart,missing-geometry-store,BLANK,0,0,0
 bb335cffa6a3fbe4,spidar300/robot/cad/Pata/ISO_4032_M4_STEEL_GRADE_A_HEXAGON_NUT.CATPart,dev,part,pass,MESH,144,0,0
 bb6e693e2e62042c,CATIA/CATIA_vol/SP02_ALPHA/SP02_ALPHA_BAGUE_0.CATPart,dev,part,pass,MESH,4152,0,0
 bb7e5bc074e80b79,CATIA/CATIA_vol/Carte_elec_finales/C0805~C0805_L2.0-W1.3-H1.3~7Q6T.CATPart,dev,part,pass,MESH,1653,0,0
@@ -1068,14 +1068,14 @@ bc21020dffe9ba55,CATIA/CATIA_vol/Carte_elec_finales/SOT-23-6_L2.9-W1.6-P0.95-LS2
 bc235805f71fdf5a,CATIA/CATIA_vol/Carte_elec_finales/WSON-8_L2.0-W2.0-P0.50-TL-EP~WSON-8_L2.0-W2.0-H0.8-P0.50~7Q6T.CATPart,dev,part,pass,MESH,1623,0,0
 bc257632c53b1e58,sample/CAAElecFlatteningItf.edu/CNext/resources/graphic/ModelFlatteningParameters/Connector_M.CATPart,dev,part,empty-mesh,DISPLAY,0,212,12
 bccd81302f1e5ac7,3DjiexiCAA/tests/caa_completion/fixtures_manual/registry_statuses.CATPart,dev,part,pass,MESH,12,0,0
-bce3f5be6c7320dd,online/CAAScdPstUseCases/samples/CAAPstHull.CATPart,dev,part,missing-geometry-store,BLANK,0,0,0
+bce3f5be6c7320dd,online/CAAScdPstUseCases/samples/CAAPstHull.CATPart,dev,part,empty-mesh,DISPLAY,0,6,0
 bcf9db69baf62aa1,online/CAAScdPspUseCases/samples/FLANGE-WN-RFBW-150-4in.CATPart,dev,part,pass,MESH,160,0,0
 bd3b6ca1bf372528,Hardware/3dp4drone/nxholder/Part2.CATPart,dev,part,pass,MESH,242,0,0
 bd79fa8e39e8fab2,CATIA/old_catia/CATIA2/Corps.CATPart,dev,part,pass,MESH,1377,0,0
 bda049b6795af1bd,sample/CAAElecFlatteningItf.edu/CNext/resources/graphic/ModelFlatteningParameters/Connector_F.CATPart,dev,part,empty-mesh,DISPLAY,0,84,0
 bdc4d328cd13b711,02_MakingRessources/_CAO/STRUCTURE/CASE/Case_Logo_Blue.CATPart,dev,part,pass,MESH,1202,0,0
 bdc6c8855f29f210,CATIA/catia_lucas/SEPARATION/SP02_ALPHA5_SEPA2_VIS-SANS-FIN2.CATPart,dev,part,pass,MESH,6298,0,0
-bdd7ec876d08f2dc,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAA_EHIMultiSegmentSample/backshell_M.CATPart,dev,part,pass,MESH,2038,0,0
+bdd7ec876d08f2dc,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAA_EHIMultiSegmentSample/backshell_M.CATPart,dev,part,pass,MESH,3320,0,0
 bdf09b287170a4f6,sample/CAACommonLayoutItf.edu/InputData/HangerModel/E_ControlPanelE.CATPart,dev,part,pass,MESH,1392,0,0
 bdfa5dc382af17ce,CAAxPDMInterfaces.edu/InputData/RetrieveConsistentSet/RetrieveConsistentSet00E/Part7.CATPart,dev,part,pass,MESH,12,0,0
 be1be7cc8c68bb47,CAAxPDMInterfaces.edu/InputData/RetrieveConsistentSet/RetrieveConsistentSet00A/RetrieveConsistentSet013/Part5.CATPart,dev,part,empty-mesh,DISPLAY,0,6,0
@@ -1105,12 +1105,12 @@ c2ac26a1cbcf4e2a,spidar300/robot/cad/servo/TGY-9025MG/Horn_Circular_TGY-9025MG.C
 c2d1ecc6dca46685,sample/CAACATMatInterfaces.edu/CNext/resources/graphic/CAASamplePart.CATPart,dev,part,empty-mesh,DISPLAY,0,20,0
 c30d09d088c6a0de,diseño_3d/lengua/lengua_v2/lengua_7.CATPart,dev,part,pass,MESH,2094,0,0
 c35822ae6fa57302,CATIA/CATIA_vol/Usinage/Gabarit_Trous_Beta.CATPart,dev,part,pass,MESH,6108,0,0
-c377cd208546eb34,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAA_EHIMultiSegmentSample/BranchableBundleSegment4.CATPart,dev,part,pass,MESH,288,0,0
+c377cd208546eb34,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAA_EHIMultiSegmentSample/BranchableBundleSegment4.CATPart,dev,part,pass,MESH,2172,0,0
 c3973a6f2407d3d8,CATIA/CATIA_vol/_NPart#194318.CATPart,dev,part,empty-mesh,DISPLAY,0,19202,0
 c39744ba28cd9663,online/CAAScdKniUseCases/samples/p2.CATPart,dev,part,empty-mesh,DISPLAY,0,4,0
 c3d7913303cc8b10,sample/CAAPlantShipInterfaces.edu/CNext/resources/graphic/P_Ve_6b52067b_1c44_419bd478_5560.CATPart,dev,part,pass,MESH,276,0,0
 c40505a375276d39,02_MakingRessources/_CAO/POWER_BOARD/PowerBoard_CI/Board.CATPart,dev,part,pass,MESH,3276,0,0
-c485d068f8760243,online/CAAScdKniUseCases/samples/p1.CATPart,dev,part,missing-geometry-store,BLANK,0,0,0
+c485d068f8760243,online/CAAScdKniUseCases/samples/p1.CATPart,dev,part,empty-mesh,DISPLAY,0,18,0
 c49381c2f0383a97,02_MakingRessources/_CAO/STRUCTURE/TopCase_Foam.CATPart,dev,part,pass,MESH,2132,0,0
 c4b7e908b409b3d9,02_MakingRessources/_CAO/POWER_SUPPLY/RSP320/tn.1.1.1.CATPart,dev,part,pass,MESH,4346,0,0
 c502ce3c1384982c,spidar300/robot/cad/Gimbal/brazo 3.CATPart,dev,part,pass,MESH,3382,0,0
@@ -1127,7 +1127,7 @@ c605cfbfef7406ef,diseño_3d/lengua/lengua_v2/ac2.CATPart,dev,part,pass,MESH,2680
 c6167421ba48bcdf,CATIA/preparation_commande_sepa/SP02_ALPHA_BETA_SEPA/_NPart#194322.CATPart,dev,part,pass,MESH,100,0,0
 c617b20a2bbe2282,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/CAAElecDeviceFactory/Third_Single_Connector.CATPart,dev,part,empty-mesh,DISPLAY,0,13,0
 c61a05374b408aa7,CATIA/CATIA_vol/SP02_ALPHA/Coiffe-Alpha.CATPart,dev,part,pass,MESH,9774,0,0
-c631705964eb9ab7,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAAEhiProtectionSample/Tape001-2004_01_28-12_55_20_094.CATPart,dev,part,pass,MESH,190,0,0
+c631705964eb9ab7,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAAEhiProtectionSample/Tape001-2004_01_28-12_55_20_094.CATPart,dev,part,pass,MESH,1438,0,0
 c6557d5394718e4a,CATIA/old_catia/CATIA4/ALPHA/ALPHA_SEPA/ALPHA_SEPA_BIELLE.CATPart,dev,part,pass,MESH,204,0,0
 c6cd95b34c9bc54a,spidar300/robot/cad/Pata/Separador2.CATPart,dev,part,pass,MESH,136,0,0
 c6ea532ed7fe82b0,spidar300/robot/cad/Gimbal/brazo 2.CATPart,dev,part,pass,MESH,2841,0,0
@@ -1146,20 +1146,20 @@ c93c92f909260c94,CATIA/CATIA_vol/SP02_BETA/Crochet_F.CATPart,dev,part,pass,MESH,
 c975b4083c413e49,online/CAAScdDmuUseCases/samples/driver_3d.CATPart,dev,part,empty-mesh,DISPLAY,0,62,0
 c98bce652d28a3e9,online/CAAEwrUseCases/samples/PN-27112000-1700.CATPart,dev,part,empty-mesh,DISPLAY,0,27,0
 c9fdd85256ae1eba,diseño_3d/lengua/lengua_v2/lengua_original.CATPart,dev,part,pass,MESH,17779,0,0
-ca047ae9ad9eaa82,online/CAAScdPriUseCases/samples/CAAPriPocket.CATPart,dev,part,missing-geometry-store,BLANK,0,0,0
+ca047ae9ad9eaa82,online/CAAScdPriUseCases/samples/CAAPriPocket.CATPart,dev,part,empty-mesh,DISPLAY,0,6,0
 ca090500a25b99a5,online/CAAScdSddUseCases/samples/CAASddEditMember.CATPart,dev,part,pass,MESH,6020,0,0
 ca533c0439efe309,sample/CAAKnowHow.edu/CNext/resources/graphic/HolesWithChecksRules.CATPart,dev,part,empty-mesh,DISPLAY,0,296,0
-cab3b6f2e49a5545,sample/CAAManufacturingItf.edu/CNext/resources/graphic/CAAMaiUdfForMfgHoleInstance.CATPart,dev,unknown,missing-geometry-store,BLANK,0,0,0
+cab3b6f2e49a5545,sample/CAAManufacturingItf.edu/CNext/resources/graphic/CAAMaiUdfForMfgHoleInstance.CATPart,dev,unknown,empty-mesh,DISPLAY,0,254,0
 cb2686d6d215bfc1,sample/CAAMechanicalCommands.edu/InputData/CAAUdfModelWithTypeInst.CATPart,dev,part,empty-mesh,DISPLAY,0,25,0
 cb3c7762e15af2cf,online/CAAMmrTechArticles/images/CAAMmrTableWood.CATPart,dev,part,empty-mesh,DISPLAY,0,40,0
 cb41963fda3094eb,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/CAAElecConnectCases/Case1/Part4.CATPart,dev,part,pass,MESH,116,0,0
 cb49f9f46b36053e,sample/CAAElecFlatteningItf.edu/CNext/resources/graphic/ModelGreenLineMechPartAndSupportInBNS/Multi-branchable2_Ehf.CATPart,dev,part,pass,MESH,176,0,0
 cb4f484ec65c968c,sample/CAAElecFlatteningItf.edu/CNext/resources/graphic/ModelFlatteningParameters/Bundle_Segment2_Ehf1.CATPart,dev,part,empty-mesh,DISPLAY,0,315,0
-cb6454b50f3ad828,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAA_EHIMultiSegmentSample/BranchableBundleSegment2.CATPart,dev,part,empty-mesh,DISPLAY,0,3393,0
+cb6454b50f3ad828,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAA_EHIMultiSegmentSample/BranchableBundleSegment2.CATPart,dev,part,pass,MESH,1344,0,0
 cbdc1aa0309c2da2,diseño_3d/cachete/cachete_palanca_superior_mirror.CATPart,dev,part,pass,MESH,5334,0,0
 cc4498ef8cbfe12a,sample/CAACommonLayoutItf.edu/CNext/resources/graphic/CAACloPspEduIn/PIP_6b52067b_1c44_419bd510_2359f.CATPart,dev,part,pass,MESH,224,0,0
 cc789d253d5d9a34,CATIA/CATIA_vol/SEPARATION/Document.CATPart,dev,part,pass,MESH,948,0,0
-cc8288bcdba778d4,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_BundleSegment2_2.CATPart,dev,part,missing-geometry-store,BLANK,0,0,0
+cc8288bcdba778d4,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_BundleSegment2_2.CATPart,dev,part,empty-mesh,DISPLAY,0,605,0
 ccbb7862d8b280b5,diseño_3d/modelos_originales/head_ia.CATPart,dev,part,pass,MESH,65,0,0
 ccbf5f782cf78fb7,Symmetry of Part1.1.2.3.4.5.6.7.8.9.10.11.CATPart,held-out,part,pass,MESH,1402,0,0
 cd0c43b058fe41b2,sample/CAACommonLayoutItf.edu/InputData/HangerModel/Z03000-D10-M0019.CATPart,dev,part,pass,MESH,48,0,0
@@ -1216,10 +1216,10 @@ d594d37ad093893f,CATIA/CATIA_vol/Carte_elec_finales/CONN-TH_2P-P3.00_MOLEX_43650
 d5e79220ccd9d7a5,Spur Gear24.CATPart,held-out,part,pass,MESH,508,0,0
 d5fe542dd69447b0,sample/CAAComponentsCatalogs.edu/InputData/CAANuts4Sides.CATPart,dev,part,empty-mesh,DISPLAY,0,65,0
 d6651b9b725746d9,02_MakingRessources/_CAO/POWER_SUPPLY/PowerSupplySupport_WorkFile.CATPart,dev,part,pass,MESH,232,0,0
-d665cd12f7bef75c,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/CAAElecDeviceFactory/BACK_SHELL.CATPart,dev,part,empty-mesh,DISPLAY,0,5972,0
+d665cd12f7bef75c,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/CAAElecDeviceFactory/BACK_SHELL.CATPart,dev,part,pass,MESH,150,0,0
 d67512e692691ab4,sample/CAAAdvancedTopologicalOpe.edu/FunctionTests/InputData/TolerantSweepInit.CATPart,dev,part,pass,MESH,62,0,0
 d6848e7bf18e3482,02_MakingRessources/_CAO/SYSTEM/TouchRows_Solders.CATPart,dev,part,pass,MESH,672,0,0
-d696356b0f57274e,sample/CAAElecRoutingItf.edu/CNext/resources/graphic/CAAEwrListWiresInBundleSegment/Multi-branchable1.CATPart,dev,part,empty-mesh,DISPLAY,0,1348,0
+d696356b0f57274e,sample/CAAElecRoutingItf.edu/CNext/resources/graphic/CAAEwrListWiresInBundleSegment/Multi-branchable1.CATPart,dev,part,pass,MESH,816,0,0
 d6aa6e71a25e9dd8,diseño_3d/mecanismos/comprobacion_curvas_matlab/curva_ejemplo.CATPart,dev,part,empty-mesh,DISPLAY,0,4,0
 d6bbfb18bab46d8f,CATIA/CATIA_vol/SP02_BETA/SP02_BETA_Bague_Servo_parachute.CATPart,dev,part,pass,MESH,4108,0,0
 d6d2a920f505a6ec,sample/CAACommonLayoutItf.edu/CNext/resources/graphic/CAACloTransferElements/TUBE_BENDABLE_TVII_d43e6887_1058_555ab35d_5a8.CATPart,dev,part,pass,MESH,16,0,0
@@ -1231,11 +1231,11 @@ d796a8d724e5f0a6,online/CAAScdStrUseCases/samples/HEA120.CATPart,dev,part,missin
 d7e4a65dec9a2d58,sample/CAAPrismaticMachiningItf.edu/CNEXT/resources/graphic/CAAPmiDoublePocketUdfInstance.CATPart,dev,part,empty-mesh,DISPLAY,0,244,0
 d7ed0772bd391186,连接关系示例数据/连接关系示例数据/512.000_NOTE A.CATPart,dev,part,pass,MESH,17728,0,0
 d80a32cd4ce980f1,sample/CAACommonLayoutItf.edu/InputData/HangerModel/Z03000-D10-M0008.CATPart,dev,part,pass,MESH,96,0,0
-d8c1bbc27d9f96ea,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_Structure.CATPart,dev,part,missing-geometry-store,BLANK,0,0,0
+d8c1bbc27d9f96ea,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_Structure.CATPart,dev,part,empty-mesh,DISPLAY,0,1472,0
 d8da49e951f80c8b,CATIA/catia_lucas/SP02_ALPHA/SP02_ALPHA_AF/SP02_ALPHA_AF_BLOC_BIELLE.CATPart,dev,part,pass,MESH,664,0,0
 d8db743c42ab531b,CATIA/CATIA_vol/Composants_Generiques/Piece_composite_inf.CATPart,dev,part,pass,MESH,1968,0,0
 d92ec3d2355cd39b,spidar300/robot/cad/servo/996r/ROUND_MOUNT.CATPart,dev,part,pass,MESH,2190,0,0
-d9ad440e027bf99e,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAA_EHIMultiSegmentSample/BranchableBundleSegment3.CATPart,dev,part,pass,MESH,190,0,0
+d9ad440e027bf99e,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAA_EHIMultiSegmentSample/BranchableBundleSegment3.CATPart,dev,part,pass,MESH,1894,0,0
 d9e4d9dd66222976,CATIA/CATIA_vol/Composants_Generiques/MS580305BA01-00.CATPart,dev,part,pass,MESH,2906,0,0
 da05603f7cc7a711,sample/CAACommonLayoutItf.edu/InputData/HangerModel/SpatialLoft-4070E.CATPart,dev,part,pass,MESH,12,0,0
 da0802ee47c72659,sample/CAAMechanicalModeler.edu/InputData/CAAMmrPartBodyRequest.CATPart,dev,part,pass,MESH,34,0,0
@@ -1285,7 +1285,7 @@ e2378a63b87b34f7,spidar300/robot/cad/Gimbal/brazo 1.CATPart,dev,part,pass,MESH,3
 e254a37e2ba6902c,02_MakingRessources/_CAO/POWER_SUPPLY/RSP320/_NPart#310670.CATPart,dev,part,pass,MESH,92,0,0
 e2aea6b9298d40bd,online/CAAScdAniUseCases/samples/Cube_R13_Freq.CATPart,dev,part,pass,MESH,12,0,0
 e2b88bbf0bbe5dbc,CATIA/CATIA_vol/SP02_ALPHA5_SEPA2_LIEN_MOTEUR_VSF.CATPart,dev,part,pass,MESH,3244,0,0
-e2e24efd2331a09c,sample/CAAManufacturingItf.edu/CNext/resources/graphic/CAAMaiUdfForMfgHoleTemplate.CATPart,dev,unknown,missing-geometry-store,BLANK,0,0,0
+e2e24efd2331a09c,sample/CAAManufacturingItf.edu/CNext/resources/graphic/CAAMaiUdfForMfgHoleTemplate.CATPart,dev,unknown,empty-mesh,DISPLAY,0,111,0
 e2e73af600236d7d,CATIA/CATIA_vol/Carte_elec_finales/PCB_APEX-EX.CATPart,dev,part,pass,MESH,3166,0,0
 e30385fe62d918a2,online/CAAScdStrUseCases/samples/EditCoping/Design_Unit_008.CATPart,dev,part,pass,MESH,7131,0,0
 e34cd781fe53c7ac,sample/CAACommonLayoutItf.edu/InputData/HangerModel/Z03000-D10-M0034.CATPart,dev,part,pass,MESH,48,0,0
@@ -1341,12 +1341,12 @@ e9ca6192a2854002,CATIA/CATIA_vol/Cartes Electroniques/SP02_PCB_Allumage_Pre-RCE.
 e9e06a925d7994be,spidar300/robot/cad/Gimbal/suspension frame up.CATPart,dev,part,pass,MESH,4679,0,0
 ea00228689861d23,CATIA/CATIA_vol/SEPARATION/SP02_ALPHA5_SEPA2_ECROU.CATPart,dev,part,pass,MESH,2026,0,0
 ea0190880d1d49c0,03_Valvulas/spring.CATPart,held-out,part,pass,MESH,1075,0,0
-ea2c21b75376fcc0,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_MConnector.CATPart,dev,part,missing-geometry-store,BLANK,0,0,0
+ea2c21b75376fcc0,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_MConnector.CATPart,dev,part,empty-mesh,DISPLAY,0,286,0
 ea83b6478b65137b,CATIA/CATIA_vol/SP02_BETA/SP02_BETA_Support-Module-Elec.CATPart,dev,part,empty-mesh,DISPLAY,0,6,0
 eaccbb5627f608ea,online/CAAScdAniUseCases/samples/SimpleCrank.CATPart,dev,part,empty-mesh,DISPLAY,0,38,7
 eaf6890653df8d33,online/CAAScdPstUseCases/samples/CAAPstPad1_2.CATPart,dev,part,empty-mesh,DISPLAY,0,60,0
 eb536f05f70283f8,CATIA/CATIA_vol/Carte_elec_finales/LQFP-64_L10.0-W10.0-P0.50-LS12.0-BL~LQFP-64_L10.0-W10.0-H1.4-LS12.0-P0.50~U5Q5.CATPart,dev,part,pass,MESH,15650,0,0
-eb8df968f4e0ae98,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/CAAElecDeviceConnection/Second_Back_Shell.CATPart,dev,part,pass,MESH,11782,0,0
+eb8df968f4e0ae98,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/CAAElecDeviceConnection/Second_Back_Shell.CATPart,dev,part,pass,MESH,12974,0,0
 ec2c96d08d340345,3DjiexiCAA/tests/caa_completion/fixtures_manual/geo_cavities.CATPart,dev,part,pass,MESH,232,0,0
 ec5026e5bb8ab425,CATIA/CATIA_vol/C-7-5530843-7.CATPart,dev,part,pass,MESH,553,0,0
 ec57ac235e68330c,CATIA/CATIA_vol/Carte_elec_finales/USB-C-SMD_TYPE-C-6PIN-2MD-073~USB-C-SMD_TYPE-C-6PIN-2MD-073~U5Q5.CATPart,dev,part,pass,MESH,3681,0,0
@@ -1375,12 +1375,12 @@ f0bc0143be709839,3DjiexiCAA/tests/caa_completion/fixtures_manual/version_part_v2
 f1a66e05422ff7e5,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/CAAElecSupport/Case1/Adaptive.CATPart,dev,part,pass,MESH,58,0,0
 f2096cf220292dd9,02_MakingRessources/_CAO/_standard/M2.5x25_CHC.CATPart,dev,part,pass,MESH,3049,0,0
 f21255ac24b9f7d2,spidar300/robot/cad/Tornilleria/Tornillo 996r.CATPart,dev,part,pass,MESH,1175,0,0
-f23efa7773a9a336,online/CAAEwrUseCases/samples/Bundle_Segment2.CATPart,dev,part,empty-mesh,DISPLAY,0,564,0
+f23efa7773a9a336,online/CAAEwrUseCases/samples/Bundle_Segment2.CATPart,dev,part,pass,MESH,336,0,0
 f27d08ec6a8f8804,CATIA/new_catia/SP02_ALPHA/SP02_ALPHA_BAGUE_1.CATPart,dev,part,pass,MESH,1112,0,0
 f2d3c60374d6252b,CATIA/CATIA_vol/SP02_ALPHA/Alpha_Support_Cage.CATPart,dev,part,pass,MESH,8930,0,0
 f2e8855f7a95a0e5,spidar300/robot/cad/Tornilleria/Bearing 4x10x4.CATPart,dev,part,pass,MESH,1624,0,0
 f2ea893c258e4fb9,sample/CAACommonLayoutItf.edu/InputData/HangerModel/Z03000-D10-M0020.CATPart,dev,part,pass,MESH,48,0,0
-f32351260640f891,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAAEhiProtectionSample/Tape001-2004_01_28-12_53_52_328.CATPart,dev,part,empty-mesh,DISPLAY,0,1464,0
+f32351260640f891,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAAEhiProtectionSample/Tape001-2004_01_28-12_53_52_328.CATPart,dev,part,pass,MESH,756,0,0
 f365e18d0556aa22,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAAEhiProtectionSample/MBB2.CATPart,dev,part,empty-mesh,DISPLAY,0,83,0
 f3862d22fd9025ff,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAAEhiProtectionSample/Multi-branchable2.CATPart,dev,part,empty-mesh,DISPLAY,0,6,0
 f393cea8abdf0966,02_MakingRessources/_CAO/CONTROL_BOARD/PinHeader.CATPart,dev,part,pass,MESH,676,0,0
@@ -1435,9 +1435,9 @@ fd82b17bd65be617,spidar300/robot/cad/Electronica/Raspberry pi - model B/SJ1-3555
 fe66038ce464a051,sample/CAAElecDeviceItf.edu/CNext/resources/graphic/CAAElecDeviceConnection/First_Mounting_Equipment.CATPart,dev,part,empty-mesh,DISPLAY,0,148,0
 fe6d27fdc91cf54a,CATIA/new_catia/SP02_ALPHA/SP02_ALPHA_AILERON.CATPart,dev,part,pass,MESH,12,0,0
 fe8985b04d27d4b3,online/CAAScdKniUseCases/samples/p5.CATPart,dev,part,missing-geometry-store,BLANK,0,0,0
-fec863960e434b76,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_EConnector.CATPart,dev,part,missing-geometry-store,BLANK,0,0,0
+fec863960e434b76,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_EConnector.CATPart,dev,part,empty-mesh,DISPLAY,0,192,0
 ff51cf21bc520af0,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAAEhiProtectionSample/Tape5-2-2009_07_01-09_58_42_069.CATPart,dev,part,pass,MESH,52,0,0
 ff60483c070b8f5d,3DjiexiCAA/tests/caa_completion/fixtures_manual/pd_shell_thickness.CATPart,dev,part,pass,MESH,40,0,0
-ff716a8865e03765,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAAEhiProtectionSample/Corrugate002-2004_01_28-12_48_14_761.CATPart,dev,part,empty-mesh,DISPLAY,0,1685,0
+ff716a8865e03765,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAAEhiProtectionSample/Corrugate002-2004_01_28-12_48_14_761.CATPart,dev,part,pass,MESH,756,0,0
 ff842b8ab2869583,sample/CAACommonLayoutItf.edu/InputData/HangerModel/SpatialLoft-4082E.CATPart,dev,part,pass,MESH,12,0,0
 ffdbc4f7a2569ab8,CATIA/CATIA_vol/Carte_elec_finales/SOT-23_L2.9-W1.3-P1.90-LS2.4-BR~SOT-23-3P_L2.9-W1.3-H1.0-LS2.4-P0.95~U5Q5.CATPart,dev,part,pass,MESH,2405,0,0

@@ -139,7 +139,7 @@ def test_scan_merges_the_grid_with_two_triangles_per_cell() -> None:
     assert all(math.isfinite(c) for point in scan.vertices for c in point)
 
 
-def test_stalled_station_rows_are_refused_by_name() -> None:
+def test_stalled_station_rows_relax_to_the_real_grid() -> None:
     stalled = grid_points(5, 5)
     stalled[20:25] = stalled[15:20]  # the last station row repeats
     payload = b"".join(f64(*point) for point in stalled)
@@ -152,9 +152,50 @@ def test_stalled_station_rows_are_refused_by_name() -> None:
     )
     assert scan.shaped == 1
     assert scan.meshed == 0
+    assert scan.relaxed == 1
     assert dict(scan.refusals) == {grid.REFUSE_STALLED_STATIONS: 1}
-    assert not scan.has_mesh
-    assert scan.has_candidates
+    # the sentinel row collapses: 5 station rows -> 4, the real 4x5 net
+    assert scan.has_mesh
+    assert scan.station_rows == 4
+    assert scan.columns == 5
+    assert scan.points == 20
+    assert len(scan.triangles) == (4 - 1) * (5 - 1) * 2
+    stats = mesh.mesh_stats(list(scan.triangles))
+    assert stats.manifold
+
+
+def test_degenerate_cells_skip_instead_of_refusing() -> None:
+    # a 3x3 net with one coincident corner pair: cells (0,0) and (1,0)
+    # become zero-area (b==c, a==d) and drop; the other two cells and
+    # all nine points stand (the zero-area law skips cells, it does not
+    # refuse the grid — #59).  Gate order keeps _admit's refusal reason
+    # stalled-columns for this fixture, so the skip law is pinned at the
+    # _relaxed_triangles level.
+    holed = grid_points(3, 3)
+    holed[4] = holed[3]
+    shape = grid.GridShape(rows=3, cols=3, station_axis=0, spread=0.0)
+    kept, new_points, triangles = grid._relaxed_triangles(holed, shape)
+    assert kept == [0, 1, 2]
+    assert len(new_points) == 9
+    assert len(triangles) == 4  # 4 cells = 8 triangles, 2 cells drop
+    stats = mesh.mesh_stats(list(triangles))
+    assert stats.manifold
+
+
+def test_relaxed_triangles_unit_laws() -> None:
+    # collapse: only near-duplicate station rows fold, the rest stand
+    stalled = grid_points(5, 5)
+    stalled[20:25] = stalled[15:20]
+    shape = grid.GridShape(rows=5, cols=5, station_axis=0, spread=0.0)
+    kept, new_points, triangles = grid._relaxed_triangles(stalled, shape)
+    assert kept == [0, 1, 2, 3]
+    assert len(new_points) == 20
+    assert len(triangles) == 24
+    # a grid of identical rows collapses below MIN_ROWS: refused stays
+    flat = grid_points(4, 4)
+    for row in range(1, 4):
+        flat[row * 4:(row + 1) * 4] = flat[0:4]
+    assert grid._relaxed_triangles(flat, grid.GridShape(rows=4, cols=4, station_axis=0, spread=0.0)) is None
 
 
 def test_identical_carriers_are_one_grid() -> None:
@@ -180,15 +221,16 @@ def test_export_falls_back_to_the_grid_mesh(tmp_path: Path) -> None:
     path.write_bytes(fixture("geometry-point-grid"))
     out = tmp_path / "grid.ply"
     summary = build_export(path, out)
-    assert summary["triangle_count"] == 24
-    assert summary["vertex_count"] == 20
+    assert summary["triangle_count"] == 48
+    assert summary["vertex_count"] == 40
     assert summary["grid_meshing"]["connectivity"] == "candidate"
     assert summary["grid_meshing"]["meshed"] == 1
     assert summary["grid_meshing"]["shaped"] == 2
     assert summary["grid_meshing"]["refused"] == 1
+    assert summary["grid_meshing"]["relaxed"] == 1
     assert summary["grid_meshing"]["refusals"] == {"stalled-stations": 1}
-    assert summary["grid_meshing"]["station_rows"] == 4
-    assert summary["grid_meshing"]["columns"] == 5
+    assert summary["grid_meshing"]["station_rows"] == 8
+    assert summary["grid_meshing"]["columns"] == 10
     assert "surface_tessellation" not in summary
     classes = [warning["class"] for warning in summary["warnings"]]
     assert "point-grid-meshed" in classes
@@ -235,21 +277,23 @@ def test_a5_surface_keeps_priority_over_the_grid_path(tmp_path: Path) -> None:
     ]
 
 
-def test_untriangulable_grid_shows_its_points_without_triangles(tmp_path: Path) -> None:
+def test_stalled_grid_relaxes_instead_of_staying_blank(tmp_path: Path) -> None:
     path = tmp_path / "stalled.CATPart"
     path.write_bytes(fixture("geometry-point-grid-stalled"))
     summary = build_export(path, tmp_path / "stalled.ply")
-    assert summary["triangle_count"] == 0
-    display = summary["no_surface_display"]
-    assert display["surface"] is False
-    assert display["point_count"] == 20
-    assert display["curve_segment_count"] == 0
-    assert display["grid_shaped"] == 1
-    assert display["grid_refusals"] == {"stalled-stations": 1}
+    # the sentinel row collapses and the real 3x5 net triangulates (#59)
+    assert summary["triangle_count"] == 16
+    assert summary["vertex_count"] == 15
+    grid_block = summary["grid_meshing"]
+    assert grid_block["meshed"] == 0
+    assert grid_block["relaxed"] == 1
+    assert grid_block["refusals"] == {"stalled-stations": 1}
+    assert summary["mesh"]["manifold"] is True
     classes = [warning["class"] for warning in summary["warnings"]]
-    assert "no-surface-display" in classes
+    assert "point-grid-meshed" in classes
     assert "grid-candidates-refused" in classes
     assert "stalled-stations=1" in summary["warnings"][1]["detail"]
+    assert "relaxation" in summary["warnings"][1]["detail"]
 
 
 def test_part_without_a_grid_keeps_missing_geometry_store(tmp_path: Path) -> None:

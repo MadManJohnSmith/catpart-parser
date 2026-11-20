@@ -67,6 +67,11 @@ PRODUCT_CONTAINERS = ("CATProdCont", "CATMechProdCont")
 KIND_PART = "part"
 KIND_PRODUCT = "product"
 KIND_UNKNOWN = "unknown"
+#: The bytes do not carry the CATIA ``V5_CFV2\0`` magic at all (text
+#: placeholders, HTML pages, YAML templates — the 6 ``magic_ok=no``
+#: manifest misfits).  Decided at the inspect seam, where the header is
+#: already parsed; the K1 container law stays magic-independent.
+KIND_NOT_A_CATPART = "not-a-catpart"
 
 
 def _ceil8(n: int) -> int:

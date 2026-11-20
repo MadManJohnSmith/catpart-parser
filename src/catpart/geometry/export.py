@@ -403,11 +403,19 @@ def _grid_fallback(
         refusals = ", ".join(
             f"{reason}={count}" for reason, count in result.refusals
         )
+        detail = (
+            f"{result.refused} grid candidate(s) refused "
+            f"({refusals}); their bytes were not emitted"
+        )
+        if result.relaxed:
+            detail += (
+                f"; {result.relaxed} of them recovered by the "
+                "station-collapse/zero-area-skip relaxation (#59)"
+            )
         warnings.append(
             {
                 "class": WARN_GRID_REFUSED,
-                "detail": f"{result.refused} grid candidate(s) refused "
-                f"({refusals}); their bytes were not emitted",
+                "detail": detail,
             }
         )
     if stats.boundary_edges:
@@ -455,6 +463,7 @@ def _grid_fallback(
             "shaped": result.shaped,
             "meshed": result.meshed,
             "refused": result.refused,
+            "relaxed": result.relaxed,
             "refusals": dict(result.refusals),
             "duplicate_grids": result.duplicate_grids,
             "station_rows": result.station_rows,

@@ -256,7 +256,10 @@ def test_bagrep_array_gates_are_fail_closed(tmp_path: Path) -> None:
     # A count-framed block whose clean run does NOT end (a clean f32
     # follows the declared block) is a byte pattern, not an array; a
     # declared count that is not a multiple of three is not a point
-    # array.  Neither contributes a point.
+    # array.  Neither contributes a bag-rep point: the bag-rep route
+    # stays fail-closed, and the points the scan does show come only
+    # from the empty-scan f32-run fallback (#60), whose measured law
+    # admits these same bytes as plain 12-byte-stride runs.
     not_ending = bagrep_array(
         (1.0, 2.0, 3.0), (4.0, 5.0, 6.0), (7.0, 8.0, 9.0)
     ) + b"".join(struct.pack("<f", float(value)) for value in range(10, 22))
@@ -266,11 +269,16 @@ def test_bagrep_array_gates_are_fail_closed(tmp_path: Path) -> None:
     data = bagrep_part(not_ending + not_divisible)
     scan = display.scan_part(data)
     assert scan.bagrep_arrays == 0
-    assert scan.points == ()
+    assert scan.bagrep_points == 0
+    assert scan.f32_runs == 2
+    assert scan.f32_points == 10
+    assert display.SOURCE_BAGREP not in scan.sources
+    assert display.SOURCE_F32_RUNS in scan.sources
 
     # The 100 m display envelope is applied per point: a clean array of
     # out-of-envelope coordinates frames (pool scale allows 1e6) but
-    # displays nothing and keeps the pre-display classification.
+    # displays nothing and keeps the pre-display classification.  The
+    # f32-run fallback stays out too (1e6 is outside its 1e5 ceiling).
     path = tmp_path / "envelope.CATPart"
     path.write_bytes(
         bagrep_part(
@@ -285,6 +293,7 @@ def test_bagrep_array_gates_are_fail_closed(tmp_path: Path) -> None:
     assert scan.bagrep_arrays == 1
     assert scan.bagrep_points == 0
     assert scan.bagrep_skipped == 3
+    assert scan.f32_points == 0
     assert not scan.has_carriers
     with pytest.raises(ExportError) as excinfo:
         build_export(path, tmp_path / "envelope.ply")
@@ -526,14 +535,12 @@ def test_bagrep_arrays_open_the_missing_store_rows() -> None:
 def test_corpus_population_renders_the_decoded_carriers(tmp_path: Path) -> None:
     """The measured population (docs/evidence/2026-11-19-no-surface-fallback.md).
 
-    Of the 120 no-facet parts that open as nothing today, 106 render with
-    the display fallback (26,993 points, 188 law-pinned segments on 31
-    parts, zero triangles) and the other 14 carry no displayable carrier:
-    they keep their ``undecoded-variant`` class.  The bag-rep
-    count-framed f32 arrays add 8,319 points on 29 parts (including the
-    two rows that now open: ``3b9452edecb4f777`` and
-    ``d6aa6e71a25e9dd8``); the counts are pinned part by part in
-    ``docs/evidence/data/no-surface-fallback-parts.csv``.
+    Of the 120 no-facet parts, the T1 grid relaxation (#59) now
+    triangulates 5 that refused whole before (4,422 candidate
+    triangles); 105 still open via the display fallback and 10 keep
+    their ``undecoded-variant`` class.  The bag-rep count-framed f32
+    arrays keep their measured share; the counts are pinned part by
+    part in ``docs/evidence/data/no-surface-fallback-parts.csv``.
     """
     root = Path(__file__).resolve().parents[1]
     manifest = _manifest()
@@ -554,21 +561,25 @@ def test_corpus_population_renders_the_decoded_carriers(tmp_path: Path) -> None:
         except ExportError as exc:
             classes[exc.error_class] = classes.get(exc.error_class, 0) + 1
             continue
+        totals["triangles"] += summary["triangle_count"]
+        if summary["triangle_count"]:
+            # the T1-relaxed grids: a mesh, not a display (no block)
+            classes["mesh"] = classes.get("mesh", 0) + 1
+            continue
         classes["display"] = classes.get("display", 0) + 1
         block = summary["no_surface_display"]
         totals["points"] += block["point_count"]
         totals["curve_segments"] += block["curve_segment_count"]
         totals["parts_with_segments"] += 1 if block["curve_segment_count"] else 0
-        totals["triangles"] += summary["triangle_count"]
         if sha == PINNED_PART:
             pinned = block
 
-    assert classes == {"display": 106, "undecoded-variant": 14}, classes
+    assert classes == {"mesh": 5, "display": 105, "undecoded-variant": 10}, classes
     assert totals == {
-        "points": 26993,
+        "points": 9685,
         "curve_segments": 188,
         "parts_with_segments": 31,
-        "triangles": 0,
+        "triangles": 4422,
     }, totals
     assert pinned is not None, "the pinned part must be in the display population"
     assert pinned["point_count"] == 116
@@ -583,3 +594,21 @@ def test_corpus_population_renders_the_decoded_carriers(tmp_path: Path) -> None:
     assert pinned["line_records"] == 6
     assert pinned["surface"] is False
     assert pinned["label"] == "no surface — showing 116 points, 6 curve segments"
+
+
+def test_empty_scan_f32_run_fallback_opens_container_less_carriers() -> None:
+    # #60: a part whose only geometry is a plain 12-byte-stride f32 run
+    # (no count framing for the bag-rep law, no grid reading, no curve
+    # record) displays the run's points under the measured missing-store
+    # law — the CAAMaiUdfForMfgHole* lever (+2 open) and the 22 further
+    # BLANK rows the same fallback rescues.  The fallback never runs
+    # when any primary carrier decoded (the gates test pins that side).
+    payload = b"".join(
+        struct.pack("<3f", 10.0 * i, 5.0 * i, 1.0 * i) for i in range(1, 8)
+    )
+    scan = display.scan_part(bagrep_part(payload))
+    assert scan.f32_runs == 1
+    assert scan.f32_points == 7
+    assert scan.points == tuple((10.0 * i, 5.0 * i, 1.0 * i) for i in range(1, 8))
+    assert scan.sources == (display.SOURCE_F32_RUNS,)
+    assert scan.label == "no surface — showing 7 points, 0 curve segments"

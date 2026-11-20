@@ -52,7 +52,7 @@ import mmap
 import sys
 from pathlib import Path
 
-from catpart.containers import detect_kind, parse_container_table
+from catpart.containers import KIND_NOT_A_CATPART, detect_kind, parse_container_table
 from catpart.geometry import ExportError, build_export
 from catpart.header import HEADER_SIZE, parse_header
 from catpart.identity import parse_document_name
@@ -92,7 +92,11 @@ def build_inspect_report(path: Path) -> dict:
         "header_dword20": info.header_dword20,
         "file_size": file_size,
         "detected_version": version,
-        "kind": detect_kind(records),
+        "kind": (
+            KIND_NOT_A_CATPART
+            if info.magic != "V5_CFV2"
+            else detect_kind(records)
+        ),
         "document_name": document_name,
         "containers": [record.to_json() for record in records],
         "trailer": None if trailer is None else trailer.to_json(),

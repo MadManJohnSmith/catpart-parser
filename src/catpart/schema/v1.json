@@ -53,8 +53,8 @@
     },
     "kind": {
       "type": "string",
-      "enum": ["part", "product", "unknown"],
-      "description": "Part/product kind from the container-name table records (law K1, docs/evidence/2026-11-07-container-kind-law.md): 'part' when a record is named CATPrtCont, 'product' when CATProdCont or CATMechProdCont is named and CATPrtCont is not, 'unknown' otherwise (no table, or a table carrying neither name - 0/1810 with-table corpus files)."
+      "enum": ["part", "product", "unknown", "not-a-catpart"],
+      "description": "Part/product kind from the container-name table records (law K1, docs/evidence/2026-11-07-container-kind-law.md): 'part' when a record is named CATPrtCont, 'product' when CATProdCont or CATMechProdCont is named and CATPrtCont is not, 'unknown' otherwise (no table, or a table carrying neither name - 0/1810 with-table corpus files), and 'not-a-catpart' when the bytes do not carry the V5_CFV2 zero-byte magic at all (the 6 magic_ok=no manifest misfits: text placeholders, HTML pages, YAML templates)."
     },
     "document_name": {
       "type": ["string", "null"],

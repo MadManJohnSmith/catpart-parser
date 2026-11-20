@@ -28,7 +28,7 @@
 
 use serde::Serialize;
 
-use crate::containers::{ContainerRecord, detect_kind, parse_container_table};
+use crate::containers::{ContainerRecord, KIND_NOT_A_CATPART, detect_kind, parse_container_table};
 use crate::header::{HEADER_SIZE, HeaderInfo, parse_header};
 use crate::identity::parse_document_name;
 use crate::trailer::{TrailerInfo, parse_trailer};
@@ -122,6 +122,11 @@ pub fn build_inspect_document(data: &[u8]) -> Result<InspectDocument, InspectRef
         }
     };
     let records = parse_container_table(data);
+    let kind = if magic != "V5_CFV2" {
+        KIND_NOT_A_CATPART
+    } else {
+        detect_kind(&records)
+    };
     Ok(InspectDocument {
         schema_version: SCHEMA_VERSION,
         magic,
@@ -132,7 +137,7 @@ pub fn build_inspect_document(data: &[u8]) -> Result<InspectDocument, InspectRef
         header_dword20,
         file_size,
         detected_version: detect_version(data),
-        kind: detect_kind(&records),
+        kind,
         document_name: parse_document_name(data),
         containers: records,
         trailer: parse_trailer(data),
@@ -161,5 +166,17 @@ mod tests {
     #[test]
     fn schema_version_is_one() {
         assert_eq!(SCHEMA_VERSION, 1);
+    }
+
+    /// The twin's `test_inspect_classifies_non_catia_bytes_as_not_a_catpart`:
+    /// bytes without the V5_CFV2 magic still describe, and classify
+    /// not-a-catpart (#60).
+    #[test]
+    fn non_catia_magic_classifies_not_a_catpart() {
+        let mut data = vec![b'X'; 64];
+        data[0..8].copy_from_slice(b"XX_CFV2\x00");
+        let doc = build_inspect_document(&data).unwrap();
+        assert_eq!(doc.magic, "XX_CFV2");
+        assert_eq!(doc.kind, KIND_NOT_A_CATPART);
     }
 }
