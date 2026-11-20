@@ -500,13 +500,14 @@ OPEN_RATE = Path(__file__).resolve().parents[1] / "docs/evidence/data/open-rate-
     reason="open-rate census is absent (the corpus-gated case)",
 )
 def test_bagrep_arrays_open_the_missing_store_rows() -> None:
-    """The combined open-rate census after both display levers (2026-11-19).
+    """The combined open-rate census after all display levers (2026-11-20).
 
     ``docs/evidence/data/open-rate-files.csv`` is the merged-tree probe
-    over all 1,442 manifest part rows: 56 rows stay BLANK, the 14
-    formerly-BLANK rows whose geometry containers carry a count-framed
-    f32 array are DISPLAY, and the five a5-priority rows (four of which
-    also carry an array) are MESH through the subtype-4 patch head.
+    over all 1,442 manifest part rows: 30 rows stay BLANK, the bag-rep
+    count-framed arrays and the #60 empty-scan f32-run fallback open 26
+    formerly-BLANK rows as DISPLAY (incl. the 2 container-less
+    V5_CFV2 binaries), the T1-relaxed grids open 15 rows as MESH
+    (#59), and the 4 non-CATIA rows classify not-a-catpart (#60).
     """
     import csv
 
@@ -515,7 +516,7 @@ def test_bagrep_arrays_open_the_missing_store_rows() -> None:
     assert len(rows) == 1442, len(rows)
     by_sha = {row["sha16"]: row for row in rows}
     blank = {row["sha16"] for row in rows if row["open kind"] == "BLANK"}
-    assert len(blank) == 56, sorted(blank)
+    assert len(blank) == 30, sorted(blank)
     for sha in BAGREP_OPENED:
         row = by_sha[sha]
         assert row["open kind"] == "DISPLAY", (sha, row)
