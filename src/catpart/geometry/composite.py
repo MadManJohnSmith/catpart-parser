@@ -637,6 +637,18 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
 #: (manifold) guard. No new reading is introduced.
 EXPORTED_SHORT_MARKERS = (0x42, 0x49, 0x4A, 0x4C)
 
+#: The T3 relaxed families (#61, 2026-11-20): 0x44 and 0x41 parse under
+#: the SAME (width, k) tiling law as the exported families (226/226
+#: carrier records: header_len=4, types 1/2, widths 1/2, counts tiling,
+#: refs in pool range) but carry no 12-B normal and their primitive
+#: reading G3 has not pinned.  Their loops export in the SECOND pass of
+#: :func:`_triangulate`, under the STRICT mesh guard — no seam-area
+#: exception — so a base-manifold mesh stays manifold by construction
+#: and the base pass stays byte-identical to the pre-T3 behavior.  The
+#: accepted/declined loop counts ride the summary as
+#: ``relaxed_loops_accepted`` / ``relaxed_loops_declined``.
+RELAXED_SHORT_MARKERS = (0x44, 0x41)
+
 # --- the extended-header facet family (0x47/0x4f, 2026-11-18) --------------
 #
 # The header form is ``01 <mk> ty b3 b4 ff`` (`ff` at +5, not +3), then
@@ -1163,6 +1175,46 @@ def _triangulate(elements, records, extended=(), seam_area=None):
             extended_declined += 1
             loops_curve_entry += len(rec_dropped)
 
+    # The T3 relaxed families (#61): a SECOND pass over the same records,
+    # so the base pass's outcome is bit-identical to the pre-T3 behavior
+    # (the relaxed loops never touch the base pass's edge budget).  Each
+    # relaxed loop enters only under the STRICT mesh guard — no
+    # seam-area exception — so every fold keeps every edge at <= 2 uses
+    # and a base-manifold mesh stays manifold by construction.
+    relaxed_accepted = 0
+    relaxed_declined = 0
+    for _off, mk, normal, counts, refs, _w in records:
+        if mk not in RELAXED_SHORT_MARKERS:
+            continue
+        o = 0
+        for c in counts:
+            loop = refs[o:o + c]
+            o += c
+            if not loop:
+                continue
+            if any(r in skips for r in loop):
+                loops_curve_entry += 1
+                dropped.append((mk, normal, loop))
+                continue
+            loops_exported += 1
+            idxs = [written_rank[r] for r in loop]
+            tris, deg = _loop_triangles(mk, idxs, points)
+            if deg:
+                # The extended-family precondition: a loop carrying a
+                # degenerate emission is declined WHOLE and its skip is
+                # never counted — the L2 law treats any skipped
+                # degenerate as anomalous (G3 F7 rate 0 on clean stores),
+                # so the corpus invariant degenerate_triangle_count == 0
+                # on passing parts is preserved by construction.
+                relaxed_declined += 1
+                continue
+            if _mesh_safe(edge_uses, tris):
+                triangles.extend(tris)
+                _fold_edge_uses(edge_uses, _edge_uses(tris))
+                relaxed_accepted += 1
+            else:
+                relaxed_declined += 1
+
     stats = {
         "loops_exported": loops_exported,
         "loops_curve_entry": loops_curve_entry,
@@ -1174,6 +1226,9 @@ def _triangulate(elements, records, extended=(), seam_area=None):
     if extended:
         stats["extended_triangles"] = extended_triangles
         stats["extended_declined"] = extended_declined
+    if relaxed_accepted or relaxed_declined:
+        stats["relaxed_loops_accepted"] = relaxed_accepted
+        stats["relaxed_loops_declined"] = relaxed_declined
     if dropped:
         stats["dup_pin"] = _e0b_dup_pin(
             elements, points, written_rank, dropped, triangles
@@ -1575,7 +1630,7 @@ def decode_composite_store(
 
     skipped_markers: dict[int, int] = {}
     for _o, mk, _n, _c, _refs, _w in records:
-        if mk not in EXPORTED_SHORT_MARKERS:
+        if mk not in EXPORTED_SHORT_MARKERS and mk not in RELAXED_SHORT_MARKERS:
             skipped_markers[mk] = skipped_markers.get(mk, 0) + 1
 
     # The extended records' counters ride their own summary keys (the
@@ -1929,7 +1984,13 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
         # The primary-seam counters are per rep (each rep's
         # ``_triangulate`` assembled its own mesh) and sum at the store
         # level; a zero never enters ``info`` (passing rows unchanged).
-        for _key in ("primary_loop_skips", "primary_loop_kept"):
+        # The relaxed-family counters sum the same way (T3, #61).
+        for _key in (
+            "primary_loop_skips",
+            "primary_loop_kept",
+            "relaxed_loops_accepted",
+            "relaxed_loops_declined",
+        ):
             if _key in stats_k:
                 loop_stats[_key] = loop_stats.get(_key, 0) + stats_k.pop(_key)
         ext_records += len(ext_k)
@@ -1943,7 +2004,7 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
         curve_entries += len(d["elements"]) - len(d["pts"])
         reps_exported += 1
         for _o, mk, _n, _c, _refs, _w in records:
-            if mk not in EXPORTED_SHORT_MARKERS:
+            if mk not in EXPORTED_SHORT_MARKERS and mk not in RELAXED_SHORT_MARKERS:
                 skipped_markers[mk] = skipped_markers.get(mk, 0) + 1
     if not points:
         raise ExportError(
@@ -2220,7 +2281,7 @@ def _decode_raw_array(data, lo, hi, groups, payload, elem_decl, seam_area=None):
     ext_declined = loop_stats.pop("extended_declined", 0)
     skipped_markers: dict[int, int] = {}
     for _o, mk, _n, _c, _refs, _w in records:
-        if mk not in EXPORTED_SHORT_MARKERS:
+        if mk not in EXPORTED_SHORT_MARKERS and mk not in RELAXED_SHORT_MARKERS:
             skipped_markers[mk] = skipped_markers.get(mk, 0) + 1
     info = {
         "stage": "identity-raw-array",
@@ -2677,7 +2738,13 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
         # The primary-seam counters are per rep (each rep's
         # ``_triangulate`` assembled its own mesh) and sum at the store
         # level; a zero never enters ``info`` (passing rows unchanged).
-        for _key in ("primary_loop_skips", "primary_loop_kept"):
+        # The relaxed-family counters sum the same way (T3, #61).
+        for _key in (
+            "primary_loop_skips",
+            "primary_loop_kept",
+            "relaxed_loops_accepted",
+            "relaxed_loops_declined",
+        ):
             if _key in stats_k:
                 loop_stats[_key] = loop_stats.get(_key, 0) + stats_k.pop(_key)
         ext_records += len(ext_k)
@@ -2692,7 +2759,7 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
         curve_entries += len(d["elements"]) - len(d["pts"])
         reps_exported += 1
         for _o, mk, _n, _c, _refs, _w in records:
-            if mk not in EXPORTED_SHORT_MARKERS:
+            if mk not in EXPORTED_SHORT_MARKERS and mk not in RELAXED_SHORT_MARKERS:
                 skipped_markers[mk] = skipped_markers.get(mk, 0) + 1
     if not points:
         raise ExportError(

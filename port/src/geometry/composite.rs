@@ -156,6 +156,16 @@ pub const GATED: [u8; 4] = [0x42, 0x49, 0x4A, 0x4C];
 /// coplanarity battery and incremental edge-use guard).
 pub const EXPORTED_SHORT_MARKERS: [u8; 4] = [0x42, 0x49, 0x4A, 0x4C];
 
+/// The T3 relaxed families (#61, 2026-11-20) — twin:
+/// ``RELAXED_SHORT_MARKERS``. 0x44 and 0x41 parse under the SAME
+/// (width, k) tiling law as the exported families (226/226 carrier
+/// records) but carry no 12-B normal and their primitive reading G3
+/// has not pinned.  Their loops export in the SECOND pass of
+/// `triangulate`, under the STRICT mesh guard — no seam-area exception
+/// — so a base-manifold mesh stays manifold by construction and the
+/// base pass stays byte-identical to the pre-T3 behavior.
+pub const RELAXED_SHORT_MARKERS: [u8; 2] = [0x44, 0x41];
+
 /// Markers observed in the extended-header form (the family's scope;
 /// 2026-11-18, docs/evidence/2026-11-18-extended-header-family.md).
 pub const EXTENDED_HEADER_MARKERS: [u8; 2] = [0x47, 0x4F];
@@ -388,6 +398,14 @@ pub struct CompositeInfo {
     /// than the sliver bound (real surface — never dropped).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub primary_loop_kept: Option<u32>,
+    /// The T3 relaxed families (#61): loops the strict guard accepted
+    /// (absent when none).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relaxed_loops_accepted: Option<u32>,
+    /// The T3 relaxed families (#61): loops the strict guard refused
+    /// (absent when none).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relaxed_loops_declined: Option<u32>,
     /// Stage-10 (relaxed stage 15) / 2026-11-18: the law name on a
     /// firing store (``e0b-dup-pin`` or ``closed-manifold-weld``).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1212,6 +1230,10 @@ struct Triangulation {
     extended_triangles: u32,
     /// The extended records the manifold-assembly gate declined.
     extended_declined: u32,
+    /// The T3 relaxed-family loops the strict guard accepted (#61).
+    relaxed_loops_accepted: u32,
+    /// The T3 relaxed-family loops the strict guard refused (#61).
+    relaxed_loops_declined: u32,
     /// The primary-emit seam: sliver loops skipped at the primary
     /// emission (the twin's ``primary_loop_skips``).
     primary_loop_skips: u32,
@@ -1410,6 +1432,59 @@ fn triangulate(
             st.loops_curve_entry += rec_st.loops_curve_entry;
         }
     }
+    // The T3 relaxed families (#61): a SECOND pass over the same
+    // records, so the base pass's outcome is bit-identical to the
+    // pre-T3 behavior (the relaxed loops never touch the base pass's
+    // edge budget).  Each relaxed loop enters only under the STRICT
+    // mesh guard — no seam-area exception — so every fold keeps every
+    // edge at <= 2 uses and a base-manifold mesh stays manifold by
+    // construction.  The `edge_uses` histogram carries the accepted
+    // extended records' folds, like the Python twin's dict.
+    let mut relaxed_accepted = 0u32;
+    let mut relaxed_declined = 0u32;
+    for rec in records {
+        if !RELAXED_SHORT_MARKERS.contains(&rec.marker) {
+            continue;
+        }
+        let mut o = 0usize;
+        for c in &rec.counts {
+            let loop_refs = &rec.refs[o..o + *c as usize];
+            o += *c as usize;
+            if loop_refs.is_empty() {
+                continue;
+            }
+            if loop_refs.iter().any(|&r| skips.contains(&(r as usize))) {
+                st.loops_curve_entry += 1;
+                st.dropped_loops
+                    .push((rec.marker, rec.normal, loop_refs.to_vec()));
+                continue;
+            }
+            st.loops_exported += 1;
+            let idxs: Vec<u32> = loop_refs
+                .iter()
+                .map(|&r| {
+                    u32::try_from(written_rank[&(r as usize)]).expect(
+                        "guarded: the refs gate bounds r by the element space \
+                         and the skip filter removed the unranked elements",
+                    )
+                })
+                .collect();
+            let (tris, deg) = loop_triangles(rec.marker, &idxs, &points);
+            if deg != 0 {
+                // The extended-family precondition: a loop carrying a
+                // degenerate emission is declined WHOLE and its skip is
+                // never counted (the twin's comment on the L2 law).
+                relaxed_declined += 1;
+                continue;
+            }
+            if mesh_safe(&mut edge_uses, &tris) {
+                st.triangles.extend(tris);
+                relaxed_accepted += 1;
+            } else {
+                relaxed_declined += 1;
+            }
+        }
+    }
     // The per-loop dup-pin weld: evaluate every dropped loop when any
     // exists (the 2026-11-18 surface-loss fix — no empty-mesh
     // precondition; each loop is welded behind the battery + mesh
@@ -1432,6 +1507,8 @@ fn triangulate(
         loops_curve_entry: st.loops_curve_entry,
         extended_triangles,
         extended_declined,
+        relaxed_loops_accepted: relaxed_accepted,
+        relaxed_loops_declined: relaxed_declined,
         primary_loop_skips: st.primary_loop_skips,
         primary_loop_kept: st.primary_loop_kept,
         dup_pin,
@@ -1703,6 +1780,8 @@ fn decode_per_rep(
     let mut ext_declined = 0usize;
     // The primary-emit seam counters (per rep; summed at store level).
     let mut primary_loop_skips = 0u32;
+    let mut relaxed_loops_accepted = 0u32;
+    let mut relaxed_loops_declined = 0u32;
     let mut primary_loop_kept = 0u32;
     let mut write_count = 0usize;
     let mut table_bytes = 0usize;
@@ -1817,6 +1896,8 @@ fn decode_per_rep(
         loops_curve_entry += tri_res.loops_curve_entry;
         primary_loop_skips += tri_res.primary_loop_skips;
         primary_loop_kept += tri_res.primary_loop_kept;
+        relaxed_loops_accepted += tri_res.relaxed_loops_accepted;
+        relaxed_loops_declined += tri_res.relaxed_loops_declined;
         // The §2.3 curve exposure: this exported rep's dropped loops'
         // pre-weld sequences (additive, outside Fidelity).
         for (_mk, _normal, loop_refs) in &tri_res.dropped_loops {
@@ -1833,7 +1914,9 @@ fn decode_per_rep(
         curve_entries += d.elements.len() - d.pts.len();
         reps_exported += 1;
         for rec in &records {
-            if !EXPORTED_SHORT_MARKERS.contains(&rec.marker) {
+            if !EXPORTED_SHORT_MARKERS.contains(&rec.marker)
+                && !RELAXED_SHORT_MARKERS.contains(&rec.marker)
+            {
                 *skipped_markers.entry(rec.marker).or_insert(0) += 1;
             }
         }
@@ -1903,6 +1986,8 @@ fn decode_per_rep(
         curve_entry_law: None,
         loops_curve_entry_exported: None,
         primary_loop_skips: None,
+        relaxed_loops_accepted: None,
+        relaxed_loops_declined: None,
         primary_loop_seam_declined: None,
         primary_loop_kept: None,
         unordered_dedup_dropped: None,
@@ -1920,6 +2005,11 @@ fn decode_per_rep(
     }
     if primary_loop_kept > 0 {
         info.primary_loop_kept = Some(primary_loop_kept);
+    }
+    if relaxed_loops_accepted > 0 || relaxed_loops_declined > 0 {
+        // the twin emits BOTH keys whenever either counter is nonzero
+        info.relaxed_loops_accepted = Some(relaxed_loops_accepted);
+        info.relaxed_loops_declined = Some(relaxed_loops_declined);
     }
     if curve_entry_law > 0 {
         info.curve_entry_law = Some("e0b-dup-pin");
@@ -2507,7 +2597,9 @@ fn decode_store_once(
     }
     let mut skipped_markers: BTreeMap<u8, u32> = BTreeMap::new();
     for rec in &records {
-        if !EXPORTED_SHORT_MARKERS.contains(&rec.marker) {
+        if !EXPORTED_SHORT_MARKERS.contains(&rec.marker)
+            && !RELAXED_SHORT_MARKERS.contains(&rec.marker)
+        {
             *skipped_markers.entry(rec.marker).or_insert(0) += 1;
         }
     }
@@ -2543,6 +2635,8 @@ fn decode_store_once(
         curve_entry_law: None,
         loops_curve_entry_exported: None,
         primary_loop_skips: None,
+        relaxed_loops_accepted: None,
+        relaxed_loops_declined: None,
         primary_loop_seam_declined: None,
         primary_loop_kept: None,
         unordered_dedup_dropped: None,
@@ -2864,7 +2958,9 @@ fn decode_raw_array_path(
     let ext_declined = tri_res.extended_declined;
     let mut skipped_markers: BTreeMap<u8, u32> = BTreeMap::new();
     for rec in &records {
-        if !EXPORTED_SHORT_MARKERS.contains(&rec.marker) {
+        if !EXPORTED_SHORT_MARKERS.contains(&rec.marker)
+            && !RELAXED_SHORT_MARKERS.contains(&rec.marker)
+        {
             *skipped_markers.entry(rec.marker).or_insert(0) += 1;
         }
     }
@@ -2897,6 +2993,8 @@ fn decode_raw_array_path(
         curve_entry_law: None,
         loops_curve_entry_exported: None,
         primary_loop_skips: None,
+        relaxed_loops_accepted: None,
+        relaxed_loops_declined: None,
         primary_loop_seam_declined: None,
         primary_loop_kept: None,
         unordered_dedup_dropped: None,
@@ -3476,6 +3574,8 @@ fn decode_mixedwrite(
     let mut ext_declined = 0usize;
     // The primary-emit seam counters (per rep; summed at store level).
     let mut primary_loop_skips = 0u32;
+    let mut relaxed_loops_accepted = 0u32;
+    let mut relaxed_loops_declined = 0u32;
     let mut primary_loop_kept = 0u32;
     let mut write_count = 0usize;
     let mut table_bytes = 0usize;
@@ -3554,6 +3654,8 @@ fn decode_mixedwrite(
         loops_curve_entry += tri_res.loops_curve_entry;
         primary_loop_skips += tri_res.primary_loop_skips;
         primary_loop_kept += tri_res.primary_loop_kept;
+        relaxed_loops_accepted += tri_res.relaxed_loops_accepted;
+        relaxed_loops_declined += tri_res.relaxed_loops_declined;
         // The §2.3 curve exposure: this exported rep's dropped loops'
         // pre-weld sequences (additive, outside Fidelity).
         for (_mk, _normal, loop_refs) in &tri_res.dropped_loops {
@@ -3575,7 +3677,9 @@ fn decode_mixedwrite(
         curve_entries += d.elements.len() - d.pts.len();
         reps_exported += 1;
         for rec in &records {
-            if !EXPORTED_SHORT_MARKERS.contains(&rec.marker) {
+            if !EXPORTED_SHORT_MARKERS.contains(&rec.marker)
+                && !RELAXED_SHORT_MARKERS.contains(&rec.marker)
+            {
                 *skipped_markers.entry(rec.marker).or_insert(0) += 1;
             }
         }
@@ -3639,6 +3743,8 @@ fn decode_mixedwrite(
         curve_entry_law: None,
         loops_curve_entry_exported: None,
         primary_loop_skips: None,
+        relaxed_loops_accepted: None,
+        relaxed_loops_declined: None,
         primary_loop_seam_declined: None,
         primary_loop_kept: None,
         unordered_dedup_dropped: None,
@@ -3656,6 +3762,11 @@ fn decode_mixedwrite(
     }
     if primary_loop_kept > 0 {
         info.primary_loop_kept = Some(primary_loop_kept);
+    }
+    if relaxed_loops_accepted > 0 || relaxed_loops_declined > 0 {
+        // the twin emits BOTH keys whenever either counter is nonzero
+        info.relaxed_loops_accepted = Some(relaxed_loops_accepted);
+        info.relaxed_loops_declined = Some(relaxed_loops_declined);
     }
     if curve_entry_law > 0 {
         info.curve_entry_law = Some("e0b-dup-pin");
@@ -3873,6 +3984,8 @@ mod tests {
             extended_header_triangles: None,
             extended_header_declined: None,
             primary_loop_skips: None,
+            relaxed_loops_accepted: None,
+            relaxed_loops_declined: None,
             primary_loop_seam_declined: None,
             primary_loop_kept: None,
             curve_entry_law: None,
@@ -3955,6 +4068,8 @@ mod tests {
             extended_header_triangles: None,
             extended_header_declined: None,
             primary_loop_skips: None,
+            relaxed_loops_accepted: None,
+            relaxed_loops_declined: None,
             primary_loop_seam_declined: None,
             primary_loop_kept: None,
             curve_entry_law: None,

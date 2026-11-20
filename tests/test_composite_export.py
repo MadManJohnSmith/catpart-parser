@@ -1715,13 +1715,13 @@ def test_triangulate_extended_record_soup_strips_polygons() -> None:
 PRIMARY_SEAM_FLIPS = {
     "13bb5c0c49616ade": 152010,
     "2fb5b092857f70ec": 1623,
-    "44e63faa2d9abf84": 2516,
+    "44e63faa2d9abf84": 2520,
     "4a32f59c1e637acd": 2223,
     "4abf3eeaf892be44": 1529,
     "612c5e7cc7291c71": 4387,
-    "6ab9e107b7f30308": 850,
+    "6ab9e107b7f30308": 844,
     "97a0a420923c5c67": 8641,
-    "a61588e5fe2cca5f": 2986,
+    "a61588e5fe2cca5f": 3017,
     "ba0900267e2072e1": 4071,
     "bc235805f71fdf5a": 1623,
     "c9fdd85256ae1eba": 17779,
@@ -2057,3 +2057,52 @@ def test_composite_0x49_fixture_exports_the_box(tmp_path, capsys):
     assert info["skipped_markers"] == {}  # 0x49 is exported, not skipped
     vertices, faces = parse_ply(ply_path)
     assert len(vertices) == 12 and len(faces) == 12
+
+
+# --- 2026-11-20: the T3 relaxed facet families (#61) ---------------------
+#
+# 0x44 and 0x41 parse under the same (width, k) tiling law as the
+# exported families (226/226 carrier records, header_len=4, no 12-B
+# normal) but their primitive reading G3 has not pinned.  Their loops
+# export in the SECOND pass of `_triangulate` under the STRICT mesh
+# guard — no seam-area exception — plus the extended-family
+# degenerate precondition (a loop carrying a degenerate emission is
+# declined whole and its skip never counted), so a passing part's L2
+# row cannot regress: manifold stays, degenerate_triangle_count stays 0.
+
+CORPUS_RELAXED_CARRIERS = {
+    # a 0x44 carrier that gains real surface: head_hueca_x1.5 (+18 tris,
+    # +32,859 mm^2 of previously undisplayed geometry)
+    "ab1c7b09f52a9658",
+    # a 0x41-carrier washer (a61588e5) is pinned in PRIMARY_SEAM_FLIPS
+}
+
+
+def test_relaxed_families_export_under_the_strict_guard(tmp_path: Path) -> None:
+    import csv
+
+    root = Path(__file__).resolve().parents[1]
+    rows = {
+        r["sha256"][:16]: r
+        for r in csv.DictReader((root / "manifests" / "corpus-manifest.csv").open())
+        if r["kind"] == "part"
+    }
+    missing = [
+        sha
+        for sha in CORPUS_RELAXED_CARRIERS
+        if sha not in rows or not (root / rows[sha]["local_path"]).exists()
+    ]
+    if missing:
+        pytest.skip(f"corpus is absent ({len(missing)} carrier files missing)")
+
+    from catpart.geometry import build_export
+
+    for sha in CORPUS_RELAXED_CARRIERS:
+        path = root / rows[sha]["local_path"]
+        summary = build_export(path, tmp_path / f"{sha}.ply")
+        info = summary["composite"]
+        assert info.get("relaxed_loops_accepted", 0) >= 1, (sha, info)
+        assert summary["mesh"]["manifold"] is True, sha
+        assert summary["degenerate_triangle_count"] == 0, sha
+        # admitted families are no longer reported as unresolved
+        assert "0x44" not in str(info.get("skipped_markers", {})), sha
