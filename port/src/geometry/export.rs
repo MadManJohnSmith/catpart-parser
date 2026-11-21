@@ -89,7 +89,7 @@ use super::errors::{
     ExportError, IO_ERROR, MISSING_GEOMETRY_STORE, NO_EVALUABLE_SURFACE, UNDECODED_VARIANT,
     UNREADABLE_FILE,
 };
-use super::{composite, display, facets, grid, mesh, ply, pool, store, surface};
+use super::{composite, display, face_gp, facets, grid, mesh, ply, pool, store, surface};
 
 /// The summary's schema version (twin: ``EXPORT_SCHEMA_VERSION``).
 pub const EXPORT_SCHEMA_VERSION: u32 = 1;
@@ -116,6 +116,8 @@ pub const WARN_SURFACE_TESSELLATED: &str = "bspline-surface-tessellated";
 pub const WARN_GRID_MESHED: &str = "point-grid-meshed";
 /// Grid candidates the gates refused while other grids of the part meshed.
 pub const WARN_GRID_REFUSED: &str = "grid-candidates-refused";
+/// The ``CATSurfacicRep`` patch-stream fallback (#63): the CAT3DFaceGP law.
+pub const WARN_FACE_GP_MESHED: &str = "bagrep-face-gp-meshed";
 /// The display-carrier fallback (2026-11-19): decoded carriers, no surface.
 pub const WARN_NO_SURFACE_DISPLAY: &str = "no-surface-display";
 
@@ -206,6 +208,26 @@ pub struct GridMeshing {
     pub connectivity: String,
 }
 
+/// The face-gp block (#63) — the twin's ``bagrep_face_gp`` dict; the
+/// counters of the CAT3DFaceGP decode over the ``CATSurfacicRep`` patch
+/// sub-records (docs/evidence/2026-11-21-bagrep-face-gp.md).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct BagrepFaceGp {
+    /// The route's source label (``bagrep-face-gp``).
+    pub source: String,
+    /// Patch streams that emitted triangles (the records' declared
+    /// arrays concatenated with disjoint index spaces).
+    pub records: usize,
+    /// Every ``0x51`` sub-record in the ``CATSurfacicRep`` spans.
+    pub sub_records: usize,
+    /// Strict-gate passes.
+    pub sub_records_gated: usize,
+    /// Assembly refusals (the incremental guard).
+    pub guard_refused: usize,
+    /// Unordered duplicate triangles dropped.
+    pub dedup_dropped: usize,
+}
+
 /// The display-carrier block (the twin's ``no_surface_display`` dict;
 /// additive, schema ``additionalProperties: true``).  It is a display of
 /// the decoded carriers, never a surface reconstruction.
@@ -287,6 +309,11 @@ pub struct ExportSummary {
     /// grid fallback (candidate connectivity, no surface decode).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub grid_meshing: Option<GridMeshing>,
+    /// The face-gp block (#63, 2026-11-21); present only when the part
+    /// took the ``CATSurfacicRep`` patch-stream fallback (the
+    /// CAT3DFaceGP law's folded mesh, source ``bagrep-face-gp``).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bagrep_face_gp: Option<BagrepFaceGp>,
     /// The stage-3a/12 recovery provenance; absent on stores the
     /// shipped law located.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -500,6 +527,7 @@ fn surface_fallback(
         }),
         grid_meshing: None,
         store_recovery: None,
+        bagrep_face_gp: None,
         no_surface_display: None,
     };
     Ok(ExportOutcome {
@@ -526,7 +554,7 @@ fn grid_fallback(
 ) -> Result<ExportOutcome, ExportError> {
     let scan = grid::scan_part(data);
     if !scan.has_mesh() {
-        return display_fallback(data, original, previous, spans, &scan);
+        return face_gp_fallback(data, original, previous, spans, &scan);
     }
     let vertices = scan.vertices.clone();
     let triangles = scan.triangles.clone();
@@ -628,6 +656,148 @@ fn grid_fallback(
             station_monotone: scan.monotone_grids,
             points: scan.points,
             connectivity: grid::CONNECTIVITY.to_string(),
+        }),
+        store_recovery: None,
+        bagrep_face_gp: None,
+        no_surface_display: None,
+    };
+    Ok(ExportOutcome {
+        summary,
+        vertices,
+        triangles,
+        curves: Vec::new(),
+    })
+}
+
+/// The ``CATSurfacicRep`` patch-stream route for a part with no facets,
+/// no a5 frame and no triangulable grid (#63) — the twin's
+/// :func:`catpart.geometry.export._face_gp_fallback`.
+///
+/// The record's ``0x51`` patch sub-records decode under the CAT3DFaceGP
+/// law (:mod:`catpart.geometry.face_gp` — decoded connectivity under
+/// the approved design's strict per-sub-record gate: byte-exact
+/// closure, mult-3 in-bounds indices, no repeated-index triangle,
+/// self-manifold; the gated members fold in order under the unordered
+/// dedup and the incremental ``mesh_safe`` guard).  A part whose gated
+/// sub-records fold into a non-empty manifold mesh exports it — the
+/// declared point arrays are the vertices, source label
+/// ``bagrep-face-gp`` — replacing the store path's vertices-only
+/// success when there is one (triangles carry strictly more
+/// information than the empty-mesh vertices-only export).  A part with
+/// no gated sub-records, no clean declared array or no folded triangle
+/// falls through to the display-carrier route with its summary
+/// unchanged: every pre-face-gp output is byte-identical.
+fn face_gp_fallback(
+    data: &[u8],
+    original: Option<ExportError>,
+    previous: Option<ExportOutcome>,
+    spans: &[(usize, usize)],
+    grid_scan: &grid::GridScan,
+) -> Result<ExportOutcome, ExportError> {
+    let scan = match face_gp::scan_part(data) {
+        Some(scan) => scan,
+        None => return display_fallback(data, original, previous, spans, grid_scan),
+    };
+
+    let vertices = scan.vertices.clone();
+    let triangles = scan.triangles.clone();
+    let stats = mesh::mesh_stats(&triangles);
+    let mut warnings: Vec<Warning> = previous
+        .as_ref()
+        .map(|outcome| outcome.summary.warnings.clone())
+        .unwrap_or_default();
+    warnings.push(Warning {
+        class: WARN_FACE_GP_MESHED.to_string(),
+        detail: face_gp::warning_detail(&scan),
+    });
+    if scan.dedup_dropped > 0 {
+        warnings.push(Warning {
+            class: WARN_DEDUP.to_string(),
+            detail: format!(
+                "{} duplicate unordered triangles dropped in the face-gp \
+                 assembly (the same three vertex indices re-listed by a \
+                 later sub-record; first copy wins, its winding kept — the \
+                 composite stage-15 dedup lever, #63)",
+                scan.dedup_dropped,
+            ),
+        });
+    }
+    if grid_scan.has_candidates() && grid_scan.refused > 0 {
+        let refusals = grid_scan
+            .refusals
+            .iter()
+            .map(|(reason, count)| format!("{reason}={count}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        warnings.push(Warning {
+            class: WARN_GRID_REFUSED.to_string(),
+            detail: format!(
+                "{} of {} structured grid candidate(s) refused ({}); no \
+                 triangle was emitted and their points are displayed as \
+                 carriers (docs/evidence/2026-11-19-no-surface-fallback.md)",
+                grid_scan.refused, grid_scan.shaped, refusals,
+            ),
+        });
+    }
+    if stats.boundary_edges > 0 {
+        warnings.push(Warning {
+            class: WARN_OPEN_SHELL.to_string(),
+            detail: format!(
+                "{} boundary edges: the mesh is a manifold but not closed \
+                 (G3 F6: sheet-like open shells are legitimate geometry, \
+                 and patch streams are concatenated with disjoint index \
+                 spaces — no topology join is attempted between records)",
+                stats.boundary_edges,
+            ),
+        });
+    }
+    let unused = vertices.len() - mesh::used_vertex_count(&triangles, vertices.len());
+    if unused > 0 {
+        warnings.push(Warning {
+            class: WARN_UNUSED_VERTICES.to_string(),
+            detail: format!(
+                "{} of {} bagrep face-gp vertices are not referenced by any \
+                 exported triangle",
+                unused,
+                vertices.len(),
+            ),
+        });
+    }
+
+    let (bbox_min, bbox_max) = mesh::bounding_box(&vertices)
+        .expect("the face-gp fallback always carries at least one triangle's vertices");
+    let summary = ExportSummary {
+        schema_version: EXPORT_SCHEMA_VERSION,
+        vertex_count: vertices.len(),
+        triangle_count: triangles.len(),
+        bounding_box: BoundingBox {
+            min: bbox_min,
+            max: bbox_max,
+        },
+        warnings,
+        store_ordinal: 0,
+        origin_kind: store::ORIGIN_KIND_BLOCK.to_string(),
+        pool_group_count: 0,
+        facet_candidate_count: 0,
+        facet_record_count: 0,
+        degenerate_triangle_count: 0,
+        mesh: MeshBlock {
+            edge_count: stats.edge_count,
+            manifold: stats.manifold,
+            closed: stats.closed,
+            oriented: stats.oriented,
+            boundary_edge_count: stats.boundary_edges,
+        },
+        composite: None,
+        surface_tessellation: None,
+        grid_meshing: None,
+        bagrep_face_gp: Some(BagrepFaceGp {
+            source: face_gp::SOURCE.to_string(),
+            records: scan.records,
+            sub_records: scan.sub_records,
+            sub_records_gated: scan.sub_records_gated,
+            guard_refused: scan.guard_refused,
+            dedup_dropped: scan.dedup_dropped,
         }),
         store_recovery: None,
         no_surface_display: None,
@@ -794,6 +964,7 @@ fn display_fallback(
         surface_tessellation: None,
         grid_meshing: None,
         store_recovery: None,
+        bagrep_face_gp: None,
         no_surface_display: Some(block),
     };
     Ok(ExportOutcome {
@@ -1202,6 +1373,7 @@ fn export_store(
         surface_tessellation: None,
         grid_meshing: None,
         store_recovery: None,
+        bagrep_face_gp: None,
         no_surface_display: None,
     };
     if span.container != store::CONTAINER_STDCONT || span.tail_law != store::TAIL_LAW_SHIPPED {
@@ -1535,6 +1707,7 @@ fn export_composite_store(
         surface_tessellation: None,
         grid_meshing: None,
         store_recovery: None,
+        bagrep_face_gp: None,
         no_surface_display: None,
     };
     if span.container != store::CONTAINER_STDCONT || span.tail_law != store::TAIL_LAW_SHIPPED {

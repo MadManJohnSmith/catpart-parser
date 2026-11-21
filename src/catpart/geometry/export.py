@@ -41,7 +41,7 @@ from __future__ import annotations
 import mmap
 
 from catpart.geometry.errors import ExportError
-from catpart.geometry import display, facets, grid, mesh, pool, ply, store, surface
+from catpart.geometry import display, face_gp, facets, grid, mesh, pool, ply, store, surface
 from catpart.geometry import composite
 
 EXPORT_SCHEMA_VERSION = 1
@@ -62,6 +62,7 @@ WARN_DEDUP_DECLINED = "duplicate-triangles-dedup-declined"
 WARN_SURFACE_TESSELLATED = "bspline-surface-tessellated"
 WARN_GRID_MESHED = "point-grid-meshed"
 WARN_GRID_REFUSED = "grid-candidates-refused"
+WARN_FACE_GP_MESHED = "bagrep-face-gp-meshed"
 WARN_NO_SURFACE_DISPLAY = "no-surface-display"
 
 
@@ -106,11 +107,14 @@ def _export_data(data) -> tuple[dict, list, list]:
     connectivity).  A part with surface frames and no tessellatable
     surface raises the named ``no-evaluable-surface`` class; a part with
     grid candidates that do not triangulate, or with no grid at all,
-    falls to the display-carrier route (:mod:`catpart.geometry.display`:
+    falls to the face-gp route (:mod:`catpart.geometry.face_gp`: the
+    ``CATSurfacicRep`` patch sub-records under the CAT3DFaceGP law,
+    #63 — decoded connectivity, not an inference) and from there to the
+    display-carrier route (:mod:`catpart.geometry.display`:
     the decoded point cloud and law-pinned curve segments, **never** a
     surface) and keeps its original classification only when it has no
     displayable carrier.  Priority is facets > a5 surface > grid >
-    display carriers.
+    face-gp patches > display carriers.
     """
     spans: list[tuple[int, int]] = []
     try:
@@ -377,12 +381,14 @@ def _grid_fallback(
     point net, and the mesh is two triangles per cell with a consistent
     winding from the station order — connectivity is *candidate*, never
     a decoded surface (the summary says so, the warning says so).  A part
-    with grid candidates that no gate admits falls to the display-carrier
-    route: its decoded points are shown, never triangulated.
+    with grid candidates that no gate admits falls to the face-gp route
+    (the ``CATSurfacicRep`` patch streams, #63) and from there to the
+    display-carrier route: its decoded points are shown, never
+    triangulated.
     """
     result = grid.scan_part(data)
     if not result.has_mesh:
-        return _display_fallback(data, original, previous, spans, result)
+        return _face_gp_fallback(data, original, previous, spans, result)
     vertices = list(result.vertices)
     triangles = list(result.triangles)
     stats = mesh.mesh_stats(triangles)
@@ -471,6 +477,117 @@ def _grid_fallback(
             "station_monotone": result.monotone_grids,
             "points": result.points,
             "connectivity": grid.CONNECTIVITY,
+        },
+    }
+    _self_check(summary)
+    return summary, vertices, triangles
+
+
+def _face_gp_fallback(data, original, previous, spans, grid_scan) -> tuple[dict, list, list]:
+    """The ``CATSurfacicRep`` patch-stream route for a part with no facets,
+    no a5 frame and no triangulable grid (#63).
+
+    The record's ``0x51`` patch sub-records decode under the CAT3DFaceGP
+    law (:mod:`catpart.geometry.face_gp` — decoded connectivity under
+    the approved design's strict per-sub-record gate: byte-exact
+    closure, mult-3 in-bounds indices, no repeated-index triangle,
+    self-manifold; the gated members fold in order under the unordered
+    dedup and the incremental ``_mesh_safe`` guard).  A part whose
+    gated sub-records fold into a non-empty manifold mesh exports it —
+    the declared point arrays are the vertices, source label
+    ``bagrep-face-gp`` — replacing the store path's vertices-only
+    success when there is one (triangles carry strictly more
+    information than the empty-mesh vertices-only export).  A part with
+    no gated sub-records, no clean declared array or no folded triangle
+    falls through to the display-carrier route with its summary
+    unchanged: every pre-face-gp output is byte-identical.
+    """
+    scan = face_gp.scan_part(data)
+    if scan is None:
+        return _display_fallback(data, original, previous, spans, grid_scan)
+
+    vertices = list(scan.vertices)
+    triangles = list(scan.triangles)
+    stats = mesh.mesh_stats(triangles)
+    warnings = list(previous[0]["warnings"]) if previous is not None else []
+    warnings.append(
+        {
+            "class": WARN_FACE_GP_MESHED,
+            "detail": face_gp.warning_detail(scan),
+        }
+    )
+    if scan.dedup_dropped:
+        warnings.append(
+            {
+                "class": WARN_DEDUP,
+                "detail": f"{scan.dedup_dropped} duplicate unordered "
+                "triangles dropped in the face-gp assembly (the same "
+                "three vertex indices re-listed by a later sub-record; "
+                "first copy wins, its winding kept — the composite "
+                "stage-15 dedup lever, #63)",
+            }
+        )
+    if grid_scan.has_candidates and grid_scan.refused:
+        refusals = ", ".join(
+            f"{reason}={count}" for reason, count in grid_scan.refusals
+        )
+        warnings.append(
+            {
+                "class": WARN_GRID_REFUSED,
+                "detail": f"{grid_scan.refused} of {grid_scan.shaped} "
+                f"structured grid candidate(s) refused ({refusals}); no "
+                "triangle was emitted and their points are displayed as "
+                "carriers (docs/evidence/2026-11-19-no-surface-fallback.md)",
+            }
+        )
+    if stats.boundary_edges:
+        warnings.append(
+            {
+                "class": WARN_OPEN_SHELL,
+                "detail": f"{stats.boundary_edges} boundary edges: the "
+                "mesh is a manifold but not closed (G3 F6: sheet-like "
+                "open shells are legitimate geometry, and patch streams "
+                "are concatenated with disjoint index spaces — no "
+                "topology join is attempted between records)",
+            }
+        )
+    unused = len(vertices) - mesh.used_vertex_count(triangles, len(vertices))
+    if unused:
+        warnings.append(
+            {
+                "class": WARN_UNUSED_VERTICES,
+                "detail": f"{unused} of {len(vertices)} bagrep face-gp "
+                "vertices are not referenced by any exported triangle",
+            }
+        )
+
+    bbox_min, bbox_max = mesh.bounding_box(vertices)
+    summary = {
+        "schema_version": EXPORT_SCHEMA_VERSION,
+        "vertex_count": len(vertices),
+        "triangle_count": len(triangles),
+        "bounding_box": {"min": bbox_min, "max": bbox_max},
+        "warnings": warnings,
+        "store_ordinal": 0,
+        "origin_kind": store.ORIGIN_KIND_BLOCK,
+        "pool_group_count": 0,
+        "facet_candidate_count": 0,
+        "facet_record_count": 0,
+        "degenerate_triangle_count": 0,
+        "mesh": {
+            "edge_count": stats.edge_count,
+            "manifold": stats.manifold,
+            "closed": stats.closed,
+            "oriented": stats.oriented,
+            "boundary_edge_count": stats.boundary_edges,
+        },
+        "bagrep_face_gp": {
+            "source": face_gp.SOURCE,
+            "records": scan.records,
+            "sub_records": scan.sub_records,
+            "sub_records_gated": scan.sub_records_gated,
+            "guard_refused": scan.guard_refused,
+            "dedup_dropped": scan.dedup_dropped,
         },
     }
     _self_check(summary)

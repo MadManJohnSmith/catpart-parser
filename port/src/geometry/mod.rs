@@ -19,6 +19,7 @@ pub mod composite;
 pub mod display;
 pub mod errors;
 pub mod export;
+pub mod face_gp;
 pub mod facets;
 pub mod grid;
 pub mod mesh;

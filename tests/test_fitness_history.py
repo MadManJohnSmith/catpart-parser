@@ -69,7 +69,7 @@ L3_BLOCK = {
 }
 
 #: The last accepted committed row (the escaped header form; #64).
-LAST_ACCEPTED_RUN_ID = "20261120T221222Z-6aa551"
+LAST_ACCEPTED_RUN_ID = "20261121T022927Z-cfb51d"
 
 
 def row_with_l3(l3: object) -> dict:
@@ -170,7 +170,7 @@ def test_every_committed_history_row_still_validates() -> None:
         for line in HISTORY_PATH.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    assert len(rows) == 27
+    assert len(rows) == 28
     for row in rows:
         validate(row, ROW_SCHEMA)
     # The 14 pre-#58 rows are unchanged; the eleven post-#58 rows carry L3.
