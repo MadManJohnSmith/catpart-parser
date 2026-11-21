@@ -35,7 +35,9 @@
 use serde::{Deserialize, Serialize};
 
 use super::pairing::ProductInstanceRecord;
-use super::transforms::{PositionKind, PositionRecord, TransformRecord};
+use super::transforms::{
+    PositionKind, PositionRecord, TransformRecord, scan_position_matrix_streams,
+};
 
 /// Canonical default identity transform `[tx, ty, tz, qw, qx, qy, qz]`.
 pub const IDENTITY_TRANSFORM: [f64; 7] = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0];
@@ -463,6 +465,45 @@ pub fn bind_position_layer(
     Some(BindingMode::PositionStream8d81)
 }
 
+/// Bind a name-table enumeration to the document's `_Position` layer.
+///
+/// The V5R26 name table carries no per-instance marker and its order is not an
+/// instance order (alphabetized in A1/A3, logical in B4/B2), so no ordinal
+/// binding is sound. The law is fail-closed:
+///
+/// - zero non-root `8d81` records -> identity at origin (in the snapshot,
+///   `_Position` presence and record count coincide in 199/199 files);
+/// - any record -> [`PlacementStatus::Undecodable`] (anti-masking: a position
+///   exists that cannot be attributed, so it is never written as identity).
+///
+/// Returns the number of non-root position records seen.
+pub fn bind_name_table(instances: &mut [ProductInstanceRecord], data: &[u8]) -> usize {
+    let n_records = scan_position_matrix_streams(data).len();
+    for inst in instances.iter_mut() {
+        if n_records == 0 {
+            inst.placement_status = PlacementStatus::Identity;
+            inst.transform = Some(IDENTITY_TRANSFORM);
+            inst.has_position_attr = false;
+            inst.object_tag = None;
+            inst.classification_detail = Some(
+                "name-table enumeration: no _Position transform records (identity at origin)"
+                    .to_string(),
+            );
+        } else {
+            inst.placement_status = PlacementStatus::Undecodable;
+            inst.transform = None;
+            inst.has_position_attr = true;
+            inst.object_tag = None;
+            inst.classification_detail = Some(format!(
+                "name-table enumeration: {} transform record(s) cannot be attributed to names \
+                 (the name table carries no instance order)",
+                n_records
+            ));
+        }
+    }
+    n_records
+}
+
 /// Mark every `_Position` instance undecodable after a position-layer count mismatch.
 ///
 /// Anti-masking: `transform` stays `None`; no identity fallback is written.
@@ -756,5 +797,79 @@ mod tests {
             assert!(inst.transform.is_none());
             assert!(inst.classification_detail.is_some());
         }
+    }
+
+    fn name_table_position_bytes(records: usize) -> Vec<u8> {
+        let mut data = Vec::new();
+        for _ in 0..records {
+            data.extend_from_slice(&crate::product::transforms::POSITION_EXPLICIT_HEADER);
+            data.extend_from_slice(&crate::product::transforms::R15_MATRIX_MARKER);
+            data.extend_from_slice(&[0xE7, 0xE8, 0xE8, 0xE8]);
+            data.extend_from_slice(&[0xE7, 0xE8, 0xE8, 0xE8]);
+            data.push(0xE7);
+            for v in [12.5f64, 0.0, 14.4] {
+                data.push(0xE6);
+                data.extend_from_slice(&v.to_le_bytes());
+            }
+            data.push(0xFE);
+        }
+        data
+    }
+
+    #[test]
+    fn name_table_zero_records_binds_identity() {
+        let mut instances = vec![
+            make_test_instance("Widget", "Widget", false),
+            make_test_instance("Bracket", "Bracket", false),
+        ];
+
+        let n = bind_name_table(&mut instances, &[]);
+
+        assert_eq!(n, 0);
+        for inst in &instances {
+            assert_eq!(inst.placement_status, PlacementStatus::Identity);
+            assert_eq!(inst.transform, Some(IDENTITY_TRANSFORM));
+            assert!(!inst.has_position_attr);
+            assert!(inst.object_tag.is_none());
+        }
+    }
+
+    #[test]
+    fn name_table_position_records_never_bind_identity() {
+        let mut instances = vec![
+            make_test_instance("Widget", "Widget", false),
+            make_test_instance("Bracket", "Bracket", false),
+        ];
+        let data = name_table_position_bytes(2);
+
+        let n = bind_name_table(&mut instances, &data);
+
+        assert_eq!(n, 2);
+        for inst in &instances {
+            assert_eq!(inst.placement_status, PlacementStatus::Undecodable);
+            assert!(inst.transform.is_none());
+            assert!(inst.has_position_attr);
+            assert!(inst.classification_detail.is_some());
+        }
+    }
+
+    #[test]
+    fn name_table_root_frame_is_not_a_position_record() {
+        let mut data = Vec::new();
+        data.extend_from_slice(&crate::product::transforms::POSITION_ROOT_HEADER);
+        data.extend_from_slice(&crate::product::transforms::R15_MATRIX_MARKER);
+        data.extend_from_slice(&[0xE7, 0xE8, 0xE8, 0xE8]);
+        data.extend_from_slice(&[0xE7, 0xE8, 0xE8, 0xE8]);
+        data.push(0xE7);
+        for v in [0.0f64, 0.0, 0.0] {
+            data.push(0xE6);
+            data.extend_from_slice(&v.to_le_bytes());
+        }
+        data.push(0xFE);
+
+        let mut instances = vec![make_test_instance("Widget", "Widget", false)];
+        let n = bind_name_table(&mut instances, &data);
+        assert_eq!(n, 0);
+        assert_eq!(instances[0].placement_status, PlacementStatus::Identity);
     }
 }

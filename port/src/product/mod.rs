@@ -8,21 +8,24 @@
 
 pub mod binding;
 pub mod framing;
+pub mod ownership;
 pub mod pairing;
 pub mod pool;
 pub mod transforms;
 
 pub use binding::{
     BindingMode, IDENTITY_TRANSFORM, PlacementBinding, PlacementStatus, bind_instances,
-    bind_position_layer, compute_bindings, mark_position_layer_undecodable,
+    bind_name_table, bind_position_layer, compute_bindings, mark_position_layer_undecodable,
 };
 pub use framing::{
     PoolCandidate, PoolForm, detect_pool_form, extract_r15_instance_names, find_structure_pool,
     scan_framing_candidates, verify_length_law,
 };
+pub use ownership::{OwnedInstanceRecord, OwnedTreeDocument, own_children, resolve_owned_assembly};
 pub use pairing::{
-    InstanceRecord, PairingClassificationSummary, PairingRule, ProductInstanceRecord,
-    classify_pairings, extract_instances, is_constraint_name, separate_instances_and_constraints,
+    InstanceRecord, NameTable, PairingClassificationSummary, PairingRule, ProductInstanceRecord,
+    classify_pairings, extract_instances, extract_name_table_instances, has_name_table_signature,
+    is_constraint_name, read_name_table, separate_instances_and_constraints,
 };
 pub use pool::{
     BINARY_SENTINEL, ItemKind, PoolItem, decode_pool_texts, is_colon_shape, is_dot_shape, is_token,
@@ -127,40 +130,66 @@ pub fn parse_product(data: &[u8]) -> Result<ProductStructureDocument, ProductErr
 
             let pool_has_position = texts.iter().any(|t| t == "_Position");
             let mut instances = extract_instances(&texts, pool_has_position);
+            let mut warnings = Vec::new();
 
-            // Scan for transform records:
-            // 1. Modern 129b records (with 81b connector record filtering)
-            let modern_records = scan_modern_transform_records(data);
-            let has_modern = !modern_records.is_empty();
-            let mut transform_records = modern_records;
-            // 2. R15 inline matrix streams fallback
-            if transform_records.is_empty() {
-                transform_records = scan_r15_matrix_streams(data);
-            }
-            // 3. Raw 56b ctorproxy records fallback
-            if transform_records.is_empty() {
-                transform_records = scan_raw_56b_records(data);
-            }
-
-            // Bind instances to transforms. When the modern 129b layer is present, the
-            // 129b records are constraint/connector frames, NOT placement: if the legacy
-            // gate would have placed this file, prefer the `_Position` 8d81 layer and fail
-            // closed to undecodable on a count mismatch. Files the legacy gate rejects are
-            // not promoted by a bare matrix count (attribution order is not proven there).
-            let legacy_mode = compute_bindings(&instances, &transform_records, pool_has_position).1;
-            let legacy_would_place = matches!(
-                legacy_mode,
-                BindingMode::Sequential1to1
-                    | BindingMode::RootPlusSequential
-                    | BindingMode::IdentityDefault
-            );
-            let positions = if has_modern && pool_has_position && legacy_would_place {
-                scan_position_matrix_streams(data)
+            // V5R26 name-table pools (ticket #68): `_InstanceName` is schema
+            // vocabulary and the body is an interned name table, so the marker
+            // passes find nothing. The branch fills that gap only (additive).
+            if instances.is_empty() && has_name_table_signature(&texts) {
+                instances = extract_name_table_instances(&texts).unwrap_or_default();
+                let n_records = bind_name_table(&mut instances, data);
+                warnings.push(ProductWarning {
+                    class: "name-table-v5r26".to_string(),
+                    detail: format!(
+                        "V5R26 name-table pool: {} interned names enumerated from the pool body",
+                        instances.len()
+                    ),
+                });
+                if n_records > 0 {
+                    warnings.push(ProductWarning {
+                        class: "position-binding-open-v5r26".to_string(),
+                        detail: "the document carries _Position transform records but the name \
+                                 table has no instance order; placement stays undecodable \
+                                 (never identity)"
+                            .to_string(),
+                    });
+                }
             } else {
-                Vec::new()
-            };
-            let binding_mode =
-                if !positions.is_empty() && instances.iter().any(|inst| inst.has_position_attr) {
+                // Scan for transform records:
+                // 1. Modern 129b records (with 81b connector record filtering)
+                let modern_records = scan_modern_transform_records(data);
+                let has_modern = !modern_records.is_empty();
+                let mut transform_records = modern_records;
+                // 2. R15 inline matrix streams fallback
+                if transform_records.is_empty() {
+                    transform_records = scan_r15_matrix_streams(data);
+                }
+                // 3. Raw 56b ctorproxy records fallback
+                if transform_records.is_empty() {
+                    transform_records = scan_raw_56b_records(data);
+                }
+
+                // Bind instances to transforms. When the modern 129b layer is present, the
+                // 129b records are constraint/connector frames, NOT placement: if the legacy
+                // gate would have placed this file, prefer the `_Position` 8d81 layer and fail
+                // closed to undecodable on a count mismatch. Files the legacy gate rejects are
+                // not promoted by a bare matrix count (attribution order is not proven there).
+                let legacy_mode =
+                    compute_bindings(&instances, &transform_records, pool_has_position).1;
+                let legacy_would_place = matches!(
+                    legacy_mode,
+                    BindingMode::Sequential1to1
+                        | BindingMode::RootPlusSequential
+                        | BindingMode::IdentityDefault
+                );
+                let positions = if has_modern && pool_has_position && legacy_would_place {
+                    scan_position_matrix_streams(data)
+                } else {
+                    Vec::new()
+                };
+                let binding_mode = if !positions.is_empty()
+                    && instances.iter().any(|inst| inst.has_position_attr)
+                {
                     match bind_position_layer(&mut instances, &positions) {
                         Some(mode) => mode,
                         None => {
@@ -177,18 +206,17 @@ pub fn parse_product(data: &[u8]) -> Result<ProductStructureDocument, ProductErr
                     bind_instances(&mut instances, &transform_records, pool_has_position)
                 };
 
-            let mut warnings = Vec::new();
-            if binding_mode == BindingMode::PositionStream8d81 {
-                warnings.push(ProductWarning {
+                if binding_mode == BindingMode::PositionStream8d81 {
+                    warnings.push(ProductWarning {
                     class: "position-stream-8d81".to_string(),
                     detail: format!(
                         "placement bound from the _Position 8d81 layer ({} records; 129-byte layer not used)",
                         positions.len()
                     ),
                 });
-            }
-            if binding_mode == BindingMode::Undecodable {
-                warnings.push(ProductWarning {
+                }
+                if binding_mode == BindingMode::Undecodable {
+                    warnings.push(ProductWarning {
                     class: "undecodable-placement".to_string(),
                     detail: format!(
                         "constraint mesh override or unresolvable transform records ({} records for {} instances)",
@@ -196,6 +224,7 @@ pub fn parse_product(data: &[u8]) -> Result<ProductStructureDocument, ProductErr
                         instances.len()
                     ),
                 });
+                }
             }
 
             let total_instances = instances.len();
@@ -724,5 +753,141 @@ mod tests {
                 assert!(inst.transform.is_none());
             }
         }
+    }
+
+    fn name_table_payload(name: &str, names: &[&str], extra_head: &[&str], bag: bool) -> Vec<u8> {
+        let mut payload = Vec::new();
+        for text in [
+            "CATCatalogManager",
+            "catalogManager",
+            "catalogLinks",
+            "",
+            "ASMPRODUCT",
+            "ASMProduct",
+            "_ViewsList",
+            "_Connectors",
+            "_RepresentedBy",
+            "_Component",
+            "_PartNumber",
+        ] {
+            push_pool_item(&mut payload, text);
+        }
+        push_pool_item(&mut payload, name);
+        for text in extra_head {
+            push_pool_item(&mut payload, text);
+        }
+        for text in [
+            "_BagRepsList",
+            "_PrdVersion",
+            "_PubConnectors",
+            "_AttrForLiterals",
+            "_RefProduct",
+            "_Disciplines",
+            "PRDBAGREP",
+            "3DIC",
+            "_Reps",
+            "_InstanceName",
+        ] {
+            if !bag && (text == "PRDBAGREP" || text == "3DIC") {
+                continue;
+            }
+            push_pool_item(&mut payload, text);
+        }
+        for text in names {
+            push_pool_item(&mut payload, text);
+        }
+        push_pool_item(&mut payload, "IsRoot");
+        payload
+    }
+
+    #[test]
+    fn parse_name_table_pool_enumerates_identity() {
+        let payload = name_table_payload("TableAssembly", &["Widget", "Bracket"], &[], true);
+        let file_data = build_synthetic_product_data(&payload);
+
+        let doc = parse_product(&file_data).unwrap();
+
+        assert_eq!(doc.pool_form, "framed");
+        assert_eq!(doc.total_instances, 2);
+        assert_eq!(doc.placed_instances, 0);
+        assert_eq!(doc.identity_instances, 2);
+        assert_eq!(doc.instances[0].instance_name, "Widget");
+        assert_eq!(doc.instances[0].part_number, "Widget");
+        assert_eq!(doc.instances[0].pairing_rule, PairingRule::NameTable);
+        assert!(!doc.instances[0].has_position_attr);
+        assert_eq!(doc.instances[0].placement_status, PlacementStatus::Identity);
+        assert_eq!(doc.instances[0].transform, Some(IDENTITY_TRANSFORM));
+        assert!(doc.warnings.iter().any(|w| w.class == "name-table-v5r26"));
+        assert!(
+            !doc.warnings
+                .iter()
+                .any(|w| w.class == "position-binding-open-v5r26")
+        );
+    }
+
+    #[test]
+    fn parse_name_table_with_position_records_stays_undecodable() {
+        let payload = name_table_payload("PositionedTable", &["Widget", "Bracket"], &[], true);
+        let mut file_data = build_synthetic_product_data(&payload);
+        file_data.extend_from_slice(&crate::product::transforms::POSITION_EXPLICIT_HEADER);
+        file_data.extend_from_slice(&crate::product::transforms::R15_MATRIX_MARKER);
+        file_data.extend_from_slice(&[0xE7, 0xE8, 0xE8, 0xE8]);
+        file_data.extend_from_slice(&[0xE7, 0xE8, 0xE8, 0xE8]);
+        file_data.push(0xE7);
+        for v in [12.5f64, 0.0, 14.4] {
+            file_data.push(0xE6);
+            file_data.extend_from_slice(&v.to_le_bytes());
+        }
+        file_data.push(0xFE);
+
+        let doc = parse_product(&file_data).unwrap();
+
+        assert_eq!(doc.total_instances, 2);
+        assert_eq!(doc.identity_instances, 0);
+        for inst in &doc.instances {
+            // Anti-masking: never identity when a position record exists.
+            assert_eq!(inst.placement_status, PlacementStatus::Undecodable);
+            assert!(inst.transform.is_none());
+            assert!(inst.has_position_attr);
+        }
+        assert!(
+            doc.warnings
+                .iter()
+                .any(|w| w.class == "position-binding-open-v5r26")
+        );
+    }
+
+    #[test]
+    fn parse_name_table_gate_rejects_other_generations() {
+        let with_mechprod = name_table_payload(
+            "MechProduct",
+            &["Widget", "Bracket"],
+            &["CATMechProdCont"],
+            true,
+        );
+        let doc = parse_product(&build_synthetic_product_data(&with_mechprod)).unwrap();
+        assert_eq!(doc.total_instances, 0);
+        assert!(!doc.warnings.iter().any(|w| w.class == "name-table-v5r26"));
+
+        let without_bag = name_table_payload("NoBag", &["Widget", "Bracket"], &[], false);
+        let doc = parse_product(&build_synthetic_product_data(&without_bag)).unwrap();
+        assert_eq!(doc.total_instances, 0);
+        assert!(!doc.warnings.iter().any(|w| w.class == "name-table-v5r26"));
+    }
+
+    #[test]
+    fn parse_name_table_branch_yields_to_the_marker_passes() {
+        let payload = name_table_payload(
+            "Mixed",
+            &["Base", "_InstanceName", "Base.1", "Other"],
+            &[],
+            true,
+        );
+        let doc = parse_product(&build_synthetic_product_data(&payload)).unwrap();
+
+        assert_eq!(doc.total_instances, 1);
+        assert_eq!(doc.instances[0].instance_name, "Base.1");
+        assert_eq!(doc.instances[0].pairing_rule, PairingRule::Triple);
+        assert!(!doc.warnings.iter().any(|w| w.class == "name-table-v5r26"));
     }
 }
