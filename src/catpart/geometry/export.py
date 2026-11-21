@@ -57,6 +57,7 @@ WARN_EXTENDED_DECLINED = "extended-header-geometry-declined"
 WARN_PRIMARY_SKIP = "primary-loop-manifold-skip"
 WARN_PRIMARY_DECLINED = "primary-loop-manifold-declined"
 WARN_PRIMARY_KEPT = "primary-loop-manifold-kept"
+WARN_PRIMARY_RELIST_SKIP = "primary-loop-relist-skip"
 WARN_DEDUP = "duplicate-triangles-deduped"
 WARN_DEDUP_DECLINED = "duplicate-triangles-dedup-declined"
 WARN_SURFACE_TESSELLATED = "bspline-surface-tessellated"
@@ -1072,6 +1073,23 @@ def _export_composite_store(
                 "before (the over-use is named, not hidden; owner "
                 "decision, docs/evidence/"
                 "2026-11-18-primary-emit-seam.md)",
+            }
+        )
+    if info.get("primary_loop_relist_skips"):
+        warnings.append(
+            {
+                "class": WARN_PRIMARY_RELIST_SKIP,
+                "detail": f"{info['primary_loop_relist_skips']} kept "
+                "primary facet loops skipped as re-listed skin: their "
+                "triangles re-list facets the surviving mesh already "
+                "carries (the NX->CATIA writer writes the same surface "
+                "twice, re-triangulated with the other diagonal), and "
+                "removing them leaves the store mesh manifold with the "
+                "boundary-edge set not growing "
+                f"({info.get('primary_loop_relist_boundary', '?')}) — "
+                "the Fase 3 L1 fail-closed post-pass, issue #70; the "
+                "skip is declined and the previous emission kept "
+                "whenever either condition fails",
             }
         )
     if info.get("unordered_dedup_dropped"):

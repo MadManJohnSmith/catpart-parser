@@ -423,6 +423,14 @@ pub struct CompositeInfo {
     /// (absent when none).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relaxed_loops_declined: Option<u32>,
+    /// Fase 3 L1 (#70): kept primary loops skipped as re-listed skin
+    /// (the fail-closed third pass; absent when it never fired).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary_loop_relist_skips: Option<u32>,
+    /// Fase 3 L1 (#70): the boundary-edge count before->after the
+    /// relist skip (absent when it never fired).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary_loop_relist_boundary: Option<String>,
     /// Stage-10 (relaxed stage 15) / 2026-11-18: the law name on a
     /// firing store (``e0b-dup-pin`` or ``closed-manifold-weld``).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -464,6 +472,16 @@ pub struct CompositeDecode {
     /// displaces the earlier rep's surface. Internal — never
     /// serialized (the twin's private ``_space_offsets``).
     pub space_offsets: Vec<usize>,
+    /// Fase 3 L1 (#70): the relist pass's skipped kept loops' triangles
+    /// (store-level indices) — the vertex-coverage gate's input.
+    /// Internal — never serialized.
+    pub kept_loop_tris: Vec<(u32, u32, u32)>,
+    /// Fase 3 L1 (#70): how many loops ``kept_loop_tris`` carries.
+    /// Internal — never serialized.
+    pub kept_loop_count: u32,
+    /// Fase 3 L1 (#70): loops the relist pass declined to emit.
+    /// Internal — never serialized.
+    pub relist_forced: u32,
 }
 
 /// The twin's ``_f32`` (composite.py:222): the ONE widening point —
@@ -1845,6 +1863,11 @@ struct Triangulation {
     /// The primary-emit seam: over-using loops kept because each is
     /// larger than the sliver bound (the twin's ``primary_loop_kept``).
     primary_loop_kept: u32,
+    /// Fase 3 L1 (#70): the relist pass's declined kept loops' triangles
+    /// and counters (empty/0 outside the relist pass).
+    kept_loop_tris: Vec<(u32, u32, u32)>,
+    kept_loop_count: u32,
+    relist_forced: u32,
     /// The per-loop dup-pin weld block.
     dup_pin: Option<DupPin>,
     /// The dropped curve-entry loops (marker, record normal, loop
@@ -1867,6 +1890,11 @@ struct EmitState {
     /// The primary-emit seam counters (the twin's stats keys).
     primary_loop_skips: u32,
     primary_loop_kept: u32,
+    /// Fase 3 L1 (#70): the relist pass's declined kept loops' triangles
+    /// (recorded for the vertex-coverage gate) and counters.
+    kept_tris: Vec<(u32, u32, u32)>,
+    kept_loops: u32,
+    relist_forced: u32,
 }
 
 /// The shared emission context of one :fn:`triangulate` call (the
@@ -1875,6 +1903,9 @@ struct EmitCtx<'a> {
     written_rank: &'a HashMap<usize, usize>,
     skips: &'a HashSet<usize>,
     points: &'a [(f64, f64, f64)],
+    /// Fase 3 L1 (#70): skip refused above-sliver loops at decision
+    /// time (the S5 seam-max world) instead of keeping them.
+    relist_skip: bool,
 }
 
 impl EmitCtx<'_> {
@@ -1935,6 +1966,12 @@ impl EmitCtx<'_> {
                     st.primary_loop_skips += 1;
                     return;
                 }
+                if self.relist_skip {
+                    st.relist_forced += 1;
+                    st.kept_loops += 1;
+                    st.kept_tris.extend(tris);
+                    return;
+                }
                 st.primary_loop_kept += 1;
                 fold_edge_uses(&mut st.edge_uses, &tris);
             }
@@ -1948,6 +1985,7 @@ fn triangulate(
     records: &[CompositeRecord],
     extended: &[ExtendedFacetRecord],
     seam_area: Option<f64>,
+    relist_skip: bool,
 ) -> Triangulation {
     let mut written_rank: HashMap<usize, usize> = HashMap::new();
     let mut skips: HashSet<usize> = HashSet::new();
@@ -1964,6 +2002,7 @@ fn triangulate(
         written_rank: &written_rank,
         skips: &skips,
         points: &points,
+        relist_skip,
     };
     let mut st = EmitState::default();
     for rec in records {
@@ -2116,6 +2155,9 @@ fn triangulate(
         relaxed_loops_declined: relaxed_declined,
         primary_loop_skips: st.primary_loop_skips,
         primary_loop_kept: st.primary_loop_kept,
+        kept_loop_tris: st.kept_tris,
+        kept_loop_count: st.kept_loops,
+        relist_forced: st.relist_forced,
         dup_pin,
         dropped_loops: st.dropped_loops,
     }
@@ -2306,6 +2348,7 @@ fn decode_rep_node(
 /// unexported with the reason named. When no rep exports, raises the
 /// stage-3d ``unabsorbed`` classification with the per-rep residue
 /// named (fail-closed, no guessing).
+#[allow(clippy::too_many_arguments)]
 fn decode_per_rep(
     data: &[u8],
     lo: usize,
@@ -2314,6 +2357,7 @@ fn decode_per_rep(
     n_missing: usize,
     n_pool: usize,
     seam_area: Option<f64>,
+    relist_skip: bool,
 ) -> Result<CompositeDecode, ExportError> {
     let nodes = scan_token_nodes(data, lo, hi);
     let rep_nodes = rep_node_positions(&nodes, groups);
@@ -2395,6 +2439,9 @@ fn decode_per_rep(
     let node_bytes: usize = decoded.values().map(|d| d.payload_len).sum();
     let mut reps_unexported: Vec<String> = Vec::new();
     let mut reps_dup_pin: Vec<(usize, DupPin)> = Vec::new();
+    let mut kept_loop_tris: Vec<(u32, u32, u32)> = Vec::new();
+    let mut kept_loop_count = 0u32;
+    let mut relist_forced_total = 0u32;
     let mut curves: Vec<Vec<(f64, f64, f64)>> = Vec::new();
     let mut space_offsets: Vec<usize> = Vec::new();
     let mut reps_decoded = 0usize;
@@ -2487,7 +2534,7 @@ fn decode_per_rep(
         }
         let base = points.len();
         space_offsets.push(base);
-        let tri_res = triangulate(&d.elements, &records, &ext_k, seam_area);
+        let tri_res = triangulate(&d.elements, &records, &ext_k, seam_area, relist_skip);
         // The per-loop dup-pin weld (2026-11-18): the rep's dropped
         // loops were evaluated independently (pinnable + battery +
         // mesh guard). The welded ones merge at the store level below
@@ -2508,6 +2555,13 @@ fn decode_per_rep(
         loops_curve_entry += tri_res.loops_curve_entry;
         primary_loop_skips += tri_res.primary_loop_skips;
         primary_loop_kept += tri_res.primary_loop_kept;
+        if !tri_res.kept_loop_tris.is_empty() {
+            for &(a, b, c) in &tri_res.kept_loop_tris {
+                kept_loop_tris.push((a + base as u32, b + base as u32, c + base as u32));
+            }
+            kept_loop_count += tri_res.kept_loop_count;
+            relist_forced_total += tri_res.relist_forced;
+        }
         relaxed_loops_accepted += tri_res.relaxed_loops_accepted;
         relaxed_loops_declined += tri_res.relaxed_loops_declined;
         // The §2.3 curve exposure: this exported rep's dropped loops'
@@ -2570,6 +2624,8 @@ fn decode_per_rep(
         curve_entry_law += dp.loops;
     }
     let mut info = CompositeInfo {
+        primary_loop_relist_skips: None,
+        primary_loop_relist_boundary: None,
         stage: "identity-per-rep",
         element_decl,
         node_points: points.len(),
@@ -2633,6 +2689,9 @@ fn decode_per_rep(
     // rep's facet is visible by COORDINATE identity (the entry point
     // applies the law to the mesh the store actually exports).
     Ok(CompositeDecode {
+        kept_loop_tris,
+        kept_loop_count,
+        relist_forced: relist_forced_total,
         points,
         triangles,
         degenerate,
@@ -2992,7 +3051,15 @@ pub fn decode_composite_store(
     kinds: &[Vec<u8>],
     allow_unrouted_elements: bool,
 ) -> Result<CompositeDecode, ExportError> {
-    let baseline = decode_store_once(data, span, groups, kinds, allow_unrouted_elements, None)?;
+    let baseline = decode_store_once(
+        data,
+        span,
+        groups,
+        kinds,
+        allow_unrouted_elements,
+        None,
+        false,
+    )?;
     let area = mesh_area(&baseline.triangles, &baseline.points);
     let seam = decode_store_once(
         data,
@@ -3001,8 +3068,10 @@ pub fn decode_composite_store(
         kinds,
         allow_unrouted_elements,
         Some(area),
+        false,
     )?;
     let skipped = seam.info.primary_loop_skips.unwrap_or(0);
+    let seam_kept = seam.info.primary_loop_kept.unwrap_or(0);
     let mut chosen = if skipped > 0 && !mesh::mesh_stats(&seam.triangles).manifold {
         // The seam fires ONLY where it resolves the store's over-use:
         // a store whose mesh is still not manifold after the slivers
@@ -3012,6 +3081,9 @@ pub fn decode_composite_store(
         info.primary_loop_seam_declined = Some(skipped);
         info.primary_loop_kept = seam.info.primary_loop_kept;
         CompositeDecode {
+            kept_loop_tris: Vec::new(),
+            kept_loop_count: 0,
+            relist_forced: 0,
             points: baseline.points,
             triangles: baseline.triangles,
             degenerate: baseline.degenerate,
@@ -3035,6 +3107,71 @@ pub fn decode_composite_store(
         &chosen.points,
         &chosen.space_offsets,
     );
+    // The re-listed-keep skip (Fase 3 L1, #70; the S5 root-cause
+    // investigation): a kept primary loop is the NX->CATIA writer's
+    // re-listed skin — the same facets the surviving mesh already
+    // carries, re-triangulated with the other diagonal (invisible to
+    // the coordinate dedup).  It runs AFTER the dedup (each law sees
+    // the mesh the previous one actually exports; the dedup's
+    // committed outcomes are unchanged) and ONLY on the
+    // still-not-manifold residue: a third decode pass re-runs the
+    // emission with the refused above-sliver loops SKIPPED AT DECISION
+    // TIME (the S5 seam-max world), and its result is adopted ONLY
+    // when the candidate mesh is manifold AND its boundary-edge count
+    // does not grow against the chosen emission AND every skipped
+    // loop's vertex coordinates survive in the candidate (the skin
+    // signature; a unique-surface loop with its own apex coordinates
+    // is declined).  Any failed condition keeps the previous emission
+    // byte-for-byte — fail-closed, PRIMARY_LOOP_AREA_REL untouched.
+    let chosen_stats = mesh::mesh_stats(&chosen.triangles);
+    if !chosen_stats.manifold
+        && (seam_kept > 0 || chosen.info.primary_loop_kept.unwrap_or(0) > 0)
+        && let Ok(rel) = decode_store_once(
+            data,
+            span,
+            groups,
+            kinds,
+            allow_unrouted_elements,
+            Some(area),
+            true,
+        )
+        && !rel.triangles.is_empty()
+    {
+        let cand_stats = mesh::mesh_stats(&rel.triangles);
+        let mut surviving: HashSet<(u64, u64, u64)> = HashSet::new();
+        for &(a, b, c) in &rel.triangles {
+            for i in [a, b, c] {
+                surviving.insert(vkey(rel.points[i as usize]));
+            }
+        }
+        let covered = rel.kept_loop_tris.iter().all(|t| {
+            [t.0, t.1, t.2]
+                .iter()
+                .all(|&i| surviving.contains(&vkey(rel.points[i as usize])))
+        });
+        if cand_stats.manifold
+            && cand_stats.boundary_edges <= chosen_stats.boundary_edges
+            && covered
+        {
+            let mut info = rel.info;
+            info.primary_loop_relist_skips = Some(rel.relist_forced);
+            info.primary_loop_relist_boundary = Some(format!(
+                "{}->{}",
+                chosen_stats.boundary_edges, cand_stats.boundary_edges
+            ));
+            chosen = CompositeDecode {
+                kept_loop_tris: Vec::new(),
+                kept_loop_count: 0,
+                relist_forced: 0,
+                points: rel.points,
+                triangles: rel.triangles,
+                degenerate: rel.degenerate,
+                info,
+                curves: rel.curves,
+                space_offsets: rel.space_offsets,
+            };
+        }
+    }
     Ok(chosen)
 }
 
@@ -3070,6 +3207,7 @@ pub fn decode_composite_store(
 /// walk-mismatch branch fails closed with the twin's class naming the
 /// stage-2 gap — every store the table walk handles decodes
 /// identically to the twin.
+#[allow(clippy::too_many_arguments)]
 fn decode_store_once(
     data: &[u8],
     span: &StoreSpan,
@@ -3077,6 +3215,7 @@ fn decode_store_once(
     kinds: &[Vec<u8>],
     allow_unrouted_elements: bool,
     seam_area: Option<f64>,
+    relist_skip: bool,
 ) -> Result<CompositeDecode, ExportError> {
     let lo = span.body_lo;
     let hi = span.body_hi;
@@ -3120,7 +3259,16 @@ fn decode_store_once(
             if walk_mismatch(payload, elem_decl).is_none() {
                 return Err(exc);
             }
-            match decode_raw_array_path(data, lo, hi, groups, payload, elem_decl, seam_area) {
+            match decode_raw_array_path(
+                data,
+                lo,
+                hi,
+                groups,
+                payload,
+                elem_decl,
+                seam_area,
+                relist_skip,
+            ) {
                 Ok(ok) => return Ok(ok),
                 Err(raw_exc) => {
                     let raw_detail = raw_exc.detail;
@@ -3131,7 +3279,7 @@ fn decode_store_once(
                     // (the zero-block extent candidates; the flat law's
                     // counts_end-pinned start), runs before the store
                     // fails closed.
-                    match decode_mixedwrite(data, lo, hi, groups, seam_area) {
+                    match decode_mixedwrite(data, lo, hi, groups, seam_area, relist_skip) {
                         Ok(ok) => return Ok(ok),
                         Err(reps_exc) => {
                             return Err(ExportError::new(
@@ -3159,7 +3307,16 @@ fn decode_store_once(
     if missing > 0 {
         // Stage-5 per-rep decomposition (stage-4b law): try the
         // sequence-of-reps reading before failing closed.
-        return decode_per_rep(data, lo, hi, groups, missing, pool_set.len(), seam_area);
+        return decode_per_rep(
+            data,
+            lo,
+            hi,
+            groups,
+            missing,
+            pool_set.len(),
+            seam_area,
+            relist_skip,
+        );
     }
 
     let (records, n_hdrs) = parse_strip_records(data, lo, hi, elem_decl, Some(&elements));
@@ -3195,7 +3352,10 @@ fn decode_store_once(
         ));
     }
 
-    let tri_res = triangulate(&elements, &records, &extended, seam_area);
+    let tri_res = triangulate(&elements, &records, &extended, seam_area, relist_skip);
+    let rel_kept_tris = tri_res.kept_loop_tris.clone();
+    let rel_kept_count = tri_res.kept_loop_count;
+    let rel_forced = tri_res.relist_forced;
     let mut triangles = tri_res.triangles;
     let mut degenerate = tri_res.degenerate;
     let mut loops_exported = tri_res.loops_exported;
@@ -3223,6 +3383,8 @@ fn decode_store_once(
         }
     }
     let mut info = CompositeInfo {
+        primary_loop_relist_skips: None,
+        primary_loop_relist_boundary: None,
         stage: "identity-table-walk",
         element_decl: elem_decl as usize,
         node_points: points.len(),
@@ -3288,6 +3450,9 @@ fn decode_store_once(
         .map(|(_mk, _normal, loop_refs)| curve_sequence(loop_refs, &elements))
         .collect();
     Ok(CompositeDecode {
+        kept_loop_tris: rel_kept_tris,
+        kept_loop_count: rel_kept_count,
+        relist_forced: rel_forced,
         points,
         triangles,
         degenerate,
@@ -3528,6 +3693,7 @@ fn decode_raw_array(
 /// strip/polygon triangulation. Raises ``undecoded-variant`` with the
 /// raw gap when the law does not cover the store — the twin's
 /// ``_decode_raw_array``.
+#[allow(clippy::too_many_arguments)]
 fn decode_raw_array_path(
     data: &[u8],
     lo: usize,
@@ -3536,6 +3702,7 @@ fn decode_raw_array_path(
     payload: &[u8],
     elem_decl: u32,
     seam_area: Option<f64>,
+    relist_skip: bool,
 ) -> Result<CompositeDecode, ExportError> {
     let poolv: Vec<(f64, f64, f64)> = groups
         .iter()
@@ -3575,7 +3742,10 @@ fn decode_raw_array_path(
     // The raw element space has no skip slots, so no dropped
     // curve-entry loops exist and the weld candidate is never accepted
     // here (the twin pops it on this path).
-    let tri_res = triangulate(&elements, &records, &extended, seam_area);
+    let tri_res = triangulate(&elements, &records, &extended, seam_area, relist_skip);
+    let raw_rel_kept_tris = tri_res.kept_loop_tris.clone();
+    let raw_rel_kept_count = tri_res.kept_loop_count;
+    let raw_rel_forced = tri_res.relist_forced;
     let triangles = tri_res.triangles;
     let degenerate = tri_res.degenerate;
     let loops_exported = tri_res.loops_exported;
@@ -3591,6 +3761,8 @@ fn decode_raw_array_path(
         }
     }
     let info = CompositeInfo {
+        primary_loop_relist_skips: None,
+        primary_loop_relist_boundary: None,
         stage: "identity-raw-array",
         element_decl: elem_decl as usize,
         node_points: points.len(),
@@ -3645,6 +3817,9 @@ fn decode_raw_array_path(
     // slots, so no dropped curve-entry loops exist and the artifact is
     // empty (measured corpus incidence 0).
     Ok(CompositeDecode {
+        kept_loop_tris: raw_rel_kept_tris,
+        kept_loop_count: raw_rel_kept_count,
+        relist_forced: raw_rel_forced,
         points,
         triangles,
         degenerate,
@@ -3900,6 +4075,58 @@ struct NodeMixedwrite {
 ///     real near-zero coordinates on these stores), x-ascending >=
 ///     RAW_FIT_RATE OR the pool fully re-listed verbatim (junk spans
 ///     absorb nothing and fail here).
+/// Whether `pts` absorbs the paired pool group's vertices — the
+/// exact-f32 test, then the stage-4b noise tolerance for pools within
+/// the committed 10,000-vertex cap (the store-level absorption
+/// semantics of :fn:`decode_mixedwrite`, applied to one region). An
+/// empty pool absorbs nothing (no evidence either way).
+fn region_absorbs(pts: &[(f64, f64, f64)], poolv: &[(f64, f64, f64)]) -> bool {
+    let pset: HashSet<(u64, u64, u64)> = poolv.iter().copied().map(vkey).collect();
+    if pset.is_empty() {
+        return false;
+    }
+    let pts_set: HashSet<(u64, u64, u64)> = pts.iter().copied().map(vkey).collect();
+    let missing: Vec<(f64, f64, f64)> = poolv
+        .iter()
+        .copied()
+        .filter(|v| !pts_set.contains(&vkey(*v)))
+        .collect();
+    if missing.is_empty() {
+        return true;
+    }
+    if pset.len() <= 10_000 {
+        missing
+            .iter()
+            .all(|&v| matches!(tol_match(v, pts), Some(best) if best <= NOISE_REL))
+    } else {
+        false
+    }
+}
+
+/// The flat law's reading: `element_count` full triples straight after
+/// the 4-B tail field (start pinned by `counts_end`), ALL-nice under
+/// :fn:`nice` — the points, or `None` when the span does not fit or a
+/// coordinate fails the predicate.
+fn flat_reading(
+    payload: &[u8],
+    element_count: u32,
+    counts_end: usize,
+) -> Option<Vec<(f64, f64, f64)>> {
+    let s = counts_end + 4;
+    if s + 12 * element_count as usize <= payload.len() && element_count >= 2 {
+        let pts: Vec<(f64, f64, f64)> = payload[s..s + 12 * element_count as usize]
+            .as_chunks::<12>()
+            .0
+            .iter()
+            .map(|t| (f32_widen(t, 0), f32_widen(t, 4), f32_widen(t, 8)))
+            .collect();
+        if pts.iter().all(|&(x, y, z)| nice(x) && nice(y) && nice(z)) {
+            return Some(pts);
+        }
+    }
+    None
+}
+
 fn decode_node_mixedwrite(
     payload: &[u8],
     element_count: u32,
@@ -3940,6 +4167,26 @@ fn decode_node_mixedwrite(
             .iter()
             .map(|t| (f32_widen(t, 0), f32_widen(t, 4), f32_widen(t, 8)))
             .collect();
+        // Fase 3 L2 (#72, the S6 Dodge store anatomy): the raw-vs-flat
+        // absorption tiebreak — the raw claim loses when a flat reading
+        // exists that absorbs the PAIRED pool group while the raw does
+        // not (evidence of absorption, not probe order; measured on
+        // the Dodge Challenger's 43.88 MB store: exactly 1 of the 501
+        // raw claims flips).  Stores whose raw region absorbs its
+        // paired pool keep their committed decode verbatim.
+        if !region_absorbs(&pts, poolv)
+            && let Some(flat_pts) = flat_reading(payload, element_count, counts_end)
+            && region_absorbs(&flat_pts, poolv)
+        {
+            return NodeMixedwrite {
+                law: Some("flat"),
+                elements: flat_pts.iter().map(|&pt| (0, Some(pt))).collect(),
+                pts: flat_pts,
+                region_end_rel: counts_end + 4 + 12 * element_count as usize,
+                write_count: 3 * element_count as usize,
+                failure: String::new(),
+            };
+        }
         return NodeMixedwrite {
             law: Some("raw"),
             // raw elements are all written, slot value 0
@@ -4051,6 +4298,7 @@ fn decode_mixedwrite(
     hi: usize,
     groups: &[PoolGroup],
     seam_area: Option<f64>,
+    relist_skip: bool,
 ) -> Result<CompositeDecode, ExportError> {
     let poolv: Vec<(f64, f64, f64)> = groups
         .iter()
@@ -4209,6 +4457,9 @@ fn decode_mixedwrite(
     let mut curve_entries = 0usize;
     let mut reps_unexported: Vec<String> = Vec::new();
     let mut reps_dup_pin: Vec<(usize, DupPin)> = Vec::new();
+    let mut kept_loop_tris: Vec<(u32, u32, u32)> = Vec::new();
+    let mut kept_loop_count = 0u32;
+    let mut relist_forced_total = 0u32;
     let mut curves: Vec<Vec<(f64, f64, f64)>> = Vec::new();
     let mut space_offsets: Vec<usize> = Vec::new();
     let node_bytes: usize = decoded.values().map(|m| m.rep.payload_len).sum();
@@ -4270,7 +4521,7 @@ fn decode_mixedwrite(
         }
         let base = points.len();
         space_offsets.push(base);
-        let tri_res = triangulate(&d.elements, &records, &ext_k, seam_area);
+        let tri_res = triangulate(&d.elements, &records, &ext_k, seam_area, relist_skip);
         // The per-loop dup-pin weld (see decode_per_rep).
         if let Some(dp) = &tri_res.dup_pin {
             reps_dup_pin.push((base, dp.clone()));
@@ -4287,6 +4538,13 @@ fn decode_mixedwrite(
         loops_curve_entry += tri_res.loops_curve_entry;
         primary_loop_skips += tri_res.primary_loop_skips;
         primary_loop_kept += tri_res.primary_loop_kept;
+        if !tri_res.kept_loop_tris.is_empty() {
+            for &(a, b, c) in &tri_res.kept_loop_tris {
+                kept_loop_tris.push((a + base as u32, b + base as u32, c + base as u32));
+            }
+            kept_loop_count += tri_res.kept_loop_count;
+            relist_forced_total += tri_res.relist_forced;
+        }
         relaxed_loops_accepted += tri_res.relaxed_loops_accepted;
         relaxed_loops_declined += tri_res.relaxed_loops_declined;
         // The §2.3 curve exposure: this exported rep's dropped loops'
@@ -4348,6 +4606,8 @@ fn decode_mixedwrite(
         curve_entry_law += dp.loops;
     }
     let mut info = CompositeInfo {
+        primary_loop_relist_skips: None,
+        primary_loop_relist_boundary: None,
         stage: "identity-mixedwrite-reps",
         element_decl,
         node_points: points.len(),
@@ -4408,6 +4668,9 @@ fn decode_mixedwrite(
     // The disjoint per-rep index spaces, in emission order (see the
     // decode_per_rep note above).
     Ok(CompositeDecode {
+        kept_loop_tris,
+        kept_loop_count,
+        relist_forced: relist_forced_total,
         points,
         triangles,
         degenerate,
@@ -4591,6 +4854,8 @@ mod tests {
         // A dup + a third triangle over-using {0,1}: not-manifold; the
         // dup's removal resolves it.
         let mut info = CompositeInfo {
+            primary_loop_relist_skips: None,
+            primary_loop_relist_boundary: None,
             stage: "identity-table-walk",
             element_decl: 4,
             node_points: 4,
@@ -4675,6 +4940,8 @@ mod tests {
     #[test]
     fn unordered_dedup_matches_coordinates_across_disjoint_spaces() {
         let mut info = CompositeInfo {
+            primary_loop_relist_skips: None,
+            primary_loop_relist_boundary: None,
             stage: "identity-per-rep",
             element_decl: 8,
             node_points: 8,
@@ -4983,19 +5250,19 @@ mod tests {
         let records = vec![quad.clone(), tiny.clone(), large.clone()];
         // The quad's two triangles are 50 mm² each; both candidates
         // over-use its (1, 2) edge (used twice already).
-        let tri = triangulate(&elements, &records, &[], Some(100.0));
+        let tri = triangulate(&elements, &records, &[], Some(100.0), false);
         assert_eq!(tri.triangles.len(), 3); // quad + the large fin
         assert_eq!(tri.primary_loop_skips, 1); // the 0.005 mm² sliver
         assert_eq!(tri.primary_loop_kept, 1); // the 25 mm² fin
         assert!(!mesh::mesh_stats(&tri.triangles).manifold);
         // The seam off (the registry pass): every refused loop is kept.
-        let all = triangulate(&elements, &records, &[], None);
+        let all = triangulate(&elements, &records, &[], None, false);
         assert_eq!(all.triangles.len(), 4);
         assert_eq!(all.primary_loop_skips, 0);
         assert_eq!(all.primary_loop_kept, 2);
         // A store whose only refused loops are slivers becomes
         // manifold: drop the large record and the quad remains.
-        let sliver_only = triangulate(&elements, &[quad, tiny], &[], Some(100.0));
+        let sliver_only = triangulate(&elements, &[quad, tiny], &[], Some(100.0), false);
         assert_eq!(sliver_only.triangles.len(), 2);
         assert_eq!(sliver_only.primary_loop_skips, 1);
         assert_eq!(sliver_only.primary_loop_kept, 0);
@@ -5032,7 +5299,7 @@ mod tests {
             normal: None,
             width: 2,
         };
-        let tri = triangulate(&elements, &[], &[rec.clone()], None);
+        let tri = triangulate(&elements, &[], &[rec.clone()], None, false);
         // 1 soup + 1 strip (3 refs) + 2 fan triangles (4 refs)
         assert_eq!(tri.triangles.len(), 4);
         assert_eq!(tri.degenerate, 0);
@@ -5054,7 +5321,7 @@ mod tests {
             normal: None,
             width: 2,
         };
-        let tri = triangulate(&elements, &[], &[rec, overlapping], None);
+        let tri = triangulate(&elements, &[], &[rec, overlapping], None, false);
         assert_eq!(tri.triangles.len(), 4);
         assert_eq!(tri.extended_triangles, 4);
         assert_eq!(tri.extended_declined, 1);

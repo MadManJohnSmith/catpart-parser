@@ -1606,7 +1606,9 @@ def _e0b_dup_pin(elements, points, written_rank, dropped, triangles):
     }
 
 
-def _triangulate(elements, records, extended=(), seam_area=None):
+def _triangulate(
+    elements, records, extended=(), seam_area=None, relist_skip=False
+):
     """Triangles under the identity mapping (strip/polygon semantics).
 
     Loop references are 0-based element indices; triangles index the
@@ -1691,10 +1693,18 @@ def _triangulate(elements, records, extended=(), seam_area=None):
     primary_kept = 0
     edge_uses: dict[tuple[int, int], int] = {}
     dropped = []
+    # The re-listed-keep skip (Fase 3 L1, #70): with ``relist_skip`` a
+    # refused loop above the sliver bound is SKIPPED at decision time
+    # (the S5 seam-max world, manifold 20/20) instead of kept, and its
+    # triangles are recorded so the store-level gate can verify the
+    # vertex-coverage criterion before adopting the emission.
+    kept_tris: list = []
+    kept_loops = 0
+    relist_forced = 0
 
     def emit(kind, normal, loop, count_loop=True):
         nonlocal degenerate, loops_exported, loops_curve_entry
-        nonlocal primary_skips, primary_kept
+        nonlocal primary_skips, primary_kept, kept_loops, relist_forced
         if not loop:
             return
         if any(r in skips for r in loop):
@@ -1716,6 +1726,11 @@ def _triangulate(elements, records, extended=(), seam_area=None):
         if not _mesh_safe(edge_uses, tris):
             if seam_area is not None and area <= PRIMARY_LOOP_AREA_REL * seam_area:
                 primary_skips += 1
+                return
+            if relist_skip:
+                relist_forced += 1
+                kept_loops += 1
+                kept_tris.extend(tris)
                 return
             primary_kept += 1
             _fold_edge_uses(edge_uses, _edge_uses(tris))
@@ -1805,7 +1820,13 @@ def _triangulate(elements, records, extended=(), seam_area=None):
                 continue
             if _mesh_safe(edge_uses, tris):
                 triangles.extend(tris)
-                _fold_edge_uses(edge_uses, _edge_uses(tris))
+                # (the fold already happened inside :func:`_mesh_safe`'s
+                # accept arm; the T3 commit's extra ``_fold_edge_uses``
+                # here double-counted every accepted relaxed loop's
+                # edges, over-refusing later relaxed loops on the same
+                # histogram — a Python-twin-only bug the port never
+                # copied; surfaced by the Dodge store's relaxed loops,
+                # Fase 3 L2 #72)
                 relaxed_accepted += 1
             else:
                 relaxed_declined += 1
@@ -1818,6 +1839,10 @@ def _triangulate(elements, records, extended=(), seam_area=None):
         stats["primary_loop_skips"] = primary_skips
     if primary_kept:
         stats["primary_loop_kept"] = primary_kept
+    if kept_tris:
+        stats["kept_loop_tris"] = kept_tris
+        stats["kept_loop_count"] = kept_loops
+        stats["relist_forced"] = relist_forced
     if extended:
         stats["extended_triangles"] = extended_triangles
         stats["extended_declined"] = extended_declined
@@ -1945,7 +1970,14 @@ def _apply_unordered_dedup(triangles, info, points=None, space_offsets=()):
 
 
 def decode_composite_store(
-    data, span, groups, kinds, allow_unrouted_elements=False, *, _seam_area=_SEAM_UNSET
+    data,
+    span,
+    groups,
+    kinds,
+    allow_unrouted_elements=False,
+    *,
+    _seam_area=_SEAM_UNSET,
+    _relist_skip=False,
 ):
     """Decode one composite store span under the identity law (stage 3d;
     per-rep decomposition added 2026-11-12 stage 5, #34).
@@ -2113,6 +2145,77 @@ def decode_composite_store(
         # store's disjoint index spaces) resolve it, so a passing
         # store's mesh is never touched.
         triangles = _apply_unordered_dedup(triangles, info, points, offsets)
+        # The re-listed-keep skip (Fase 3 L1, #70; the S5 root-cause
+        # investigation): a kept primary loop is the NX->CATIA writer's
+        # re-listed skin — the same facets the surviving mesh already
+        # carries, re-triangulated with the other diagonal (invisible
+        # to the coordinate dedup).  It runs AFTER the dedup (each law
+        # sees the mesh the previous one actually exports; the dedup's
+        # committed outcomes are unchanged) and ONLY on the
+        # still-not-manifold residue: a third decode pass re-runs the
+        # emission with the refused above-sliver loops SKIPPED AT
+        # DECISION TIME (the S5 seam-max world), and its result is
+        # adopted ONLY when the candidate mesh is manifold AND its
+        # boundary-edge count does not grow against the chosen emission
+        # AND every skipped loop's vertex coordinates survive in the
+        # candidate (the skin signature; a unique-surface loop with its
+        # own apex coordinates is declined).  Any failed condition keeps
+        # the previous emission byte-for-byte — fail-closed,
+        # PRIMARY_LOOP_AREA_REL untouched.  Measured on the submarine's
+        # 357 kept-loop stores: restores manifold on the clean
+        # stratified bucket without opening boundary edges (docs/
+        # evidence/ phase-3 L1 note).
+        chosen_stats = mesh.mesh_stats(list(triangles))
+        if not chosen_stats.manifold and (
+            seam_info.get("primary_loop_kept") or info.get("primary_loop_kept")
+        ):
+            try:
+                rel_points, rel_triangles, rel_degenerate, rel_info = (
+                    decode_composite_store(
+                        data,
+                        span,
+                        groups,
+                        kinds,
+                        allow_unrouted_elements=allow_unrouted_elements,
+                        _seam_area=area,
+                        _relist_skip=True,
+                    )
+                )
+            except ExportError:
+                rel_info = None
+            if rel_info is not None and rel_triangles:
+                rel_kept = rel_info.pop("_kept_loop_tris", None)
+                rel_info.pop("_kept_loop_count", None)
+                rel_offsets = rel_info.pop("_space_offsets", ())
+                cand_stats = mesh.mesh_stats(list(rel_triangles))
+                surviving: set = set()
+                for t in rel_triangles:
+                    for i in t:
+                        surviving.add(rel_points[i])
+                covered = all(
+                    rel_points[i] in surviving
+                    for t in (rel_kept or ())
+                    for i in t
+                )
+                adopted = (
+                    cand_stats.manifold
+                    and cand_stats.boundary_edges <= chosen_stats.boundary_edges
+                    and covered
+                )
+                if adopted:
+                    points, triangles, degenerate = (
+                        rel_points,
+                        rel_triangles,
+                        rel_degenerate,
+                    )
+                    info, offsets = rel_info, rel_offsets
+                    info["primary_loop_relist_skips"] = info.pop(
+                        "relist_forced", 0
+                    )
+                    info["primary_loop_relist_boundary"] = (
+                        f"{chosen_stats.boundary_edges}->"
+                        f"{cand_stats.boundary_edges}"
+                    )
         return points, triangles, degenerate, info
     seam_area = _seam_area
     lo, hi = span.body_lo, span.body_hi
@@ -2149,7 +2252,14 @@ def decode_composite_store(
             raise
         try:
             return _decode_raw_array(
-                data, lo, hi, groups, payload, elem_decl, seam_area=seam_area
+                data,
+                lo,
+                hi,
+                groups,
+                payload,
+                elem_decl,
+                seam_area=seam_area,
+                relist_skip=_relist_skip,
             )
         except ExportError as raw_exc:
             raw_detail = raw_exc.detail
@@ -2162,7 +2272,9 @@ def decode_composite_store(
         # stage-6 behavior (its 28 exports are byte-identical); this
         # path only sees stores the raw law declines.
         try:
-            return _decode_mixedwrite(data, lo, hi, groups, seam_area=seam_area)
+            return _decode_mixedwrite(
+                data, lo, hi, groups, seam_area=seam_area, relist_skip=_relist_skip
+            )
         except ExportError as reps_exc:
             raise ExportError(
                 "undecoded-variant",
@@ -2180,7 +2292,14 @@ def decode_composite_store(
         # Stage-5 per-rep decomposition (stage-4b law): try the
         # sequence-of-reps reading before failing closed.
         return _decode_per_rep(
-            data, lo, hi, groups, len(missing), len(pool_set), seam_area=seam_area
+            data,
+            lo,
+            hi,
+            groups,
+            len(missing),
+            len(pool_set),
+            seam_area=seam_area,
+            relist_skip=_relist_skip,
         )
 
     records, n_hdrs = parse_strip_records(
@@ -2212,7 +2331,11 @@ def decode_composite_store(
             )
 
     triangles, degenerate, loop_stats = _triangulate(
-        elements, records, extended=extended, seam_area=seam_area
+        elements,
+        records,
+        extended=extended,
+        seam_area=seam_area,
+        relist_skip=_relist_skip,
     )
     # The dup-pin weld (2026-11-18, per loop): ``_triangulate`` already
     # evaluated every dropped loop independently (fully pinnable,
@@ -2237,6 +2360,8 @@ def decode_composite_store(
     # soup triples are not loops; the declined records are named).
     ext_triangles = loop_stats.pop("extended_triangles", 0)
     ext_declined = loop_stats.pop("extended_declined", 0)
+    kept_tris = loop_stats.pop("kept_loop_tris", None)
+    kept_loops = loop_stats.pop("kept_loop_count", 0)
     info = {
         "stage": "identity-table-walk",
         "element_decl": elem_decl,
@@ -2266,6 +2391,9 @@ def decode_composite_store(
     # (:func:`decode_composite_store` pops the key and applies the law
     # there — the mesh the store actually exports).
     info["_space_offsets"] = (0,)
+    if kept_tris:
+        info["_kept_loop_tris"] = kept_tris
+        info["_kept_loop_count"] = kept_loops
     return points, triangles, degenerate, info
 
 
@@ -2416,7 +2544,9 @@ def _decode_rep_node(payload, element_count, poolv):
     )
 
 
-def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
+def _decode_per_rep(
+    data, lo, hi, groups, n_missing, n_pool, seam_area=None, relist_skip=False
+):
     """The sequence-of-reps reading (stage-4b per-rep law, stage-5
     integration; pairing/territory corrected 2026-11-18, #50 B3).
 
@@ -2497,6 +2627,8 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
     ext_declined = 0
     reps_unexported = []
     reps_dup_pin = []
+    reps_kept_tris = []
+    kept_loop_count = 0
     space_offsets = []
     reps_decoded = 0
     reps_exported = 0
@@ -2572,7 +2704,11 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
         base = len(points)
         space_offsets.append(base)
         tri_k, deg_k, stats_k = _triangulate(
-            d["elements"], records, extended=ext_k, seam_area=seam_area
+            d["elements"],
+            records,
+            extended=ext_k,
+            seam_area=seam_area,
+            relist_skip=relist_skip,
         )
         # The dup-pin weld is per loop (2026-11-18): the rep's dropped
         # loops were evaluated independently (pinnable + battery + mesh
@@ -2581,6 +2717,13 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
         # counted as dropped.
         if "dup_pin" in stats_k:
             reps_dup_pin.append((base, stats_k.pop("dup_pin")))
+        if "kept_loop_tris" in stats_k:
+            # The Fase 3 L1 relist-skip post-pass (see
+            # decode_composite_store): the rep's kept primary loops'
+            # triangles ride to the store level with this rep's point
+            # offset, exactly like the dup-pin weld above.
+            reps_kept_tris.append((base, stats_k.pop("kept_loop_tris")))
+            kept_loop_count += stats_k.pop("kept_loop_count", 0)
         points += d["pts"]
         triangles += [(a + base, b + base, c + base) for a, b, c in tri_k]
         degenerate += deg_k
@@ -2593,6 +2736,7 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
         for _key in (
             "primary_loop_skips",
             "primary_loop_kept",
+            "relist_forced",
             "relaxed_loops_accepted",
             "relaxed_loops_declined",
         ):
@@ -2665,6 +2809,11 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
     # (:func:`decode_composite_store` pops the key and applies the law
     # to the mesh the store actually exports).
     info["_space_offsets"] = tuple(space_offsets)
+    if reps_kept_tris:
+        info["_kept_loop_tris"] = [
+            (a + b, s + b, t + b) for b, tris in reps_kept_tris for a, s, t in tris
+        ]
+        info["_kept_loop_count"] = kept_loop_count
     return points, triangles, degenerate, info
 
 
@@ -2845,7 +2994,16 @@ def decode_raw_array(payload: bytes, elem_decl: int, poolv):
     return points, info
 
 
-def _decode_raw_array(data, lo, hi, groups, payload, elem_decl, seam_area=None):
+def _decode_raw_array(
+    data,
+    lo,
+    hi,
+    groups,
+    payload,
+    elem_decl,
+    seam_area=None,
+    relist_skip=False,
+):
     """Export path of the raw-array law: decode the array, then the
     committed export ladder on the raw element space — records parsed
     over the store body, the M2b identity refs gate (gated families'
@@ -2875,7 +3033,11 @@ def _decode_raw_array(data, lo, hi, groups, payload, elem_decl, seam_area=None):
                 "identity on the raw array; G3 open question 2)",
             )
     triangles, degenerate, loop_stats = _triangulate(
-        elements, records, extended=extended, seam_area=seam_area
+        elements,
+        records,
+        extended=extended,
+        seam_area=seam_area,
+        relist_skip=relist_skip,
     )
     # The raw-array path keeps the committed curve-entry rule (it has no
     # weld branch; measured corpus incidence 0) and names the extended
@@ -2884,6 +3046,8 @@ def _decode_raw_array(data, lo, hi, groups, payload, elem_decl, seam_area=None):
     loop_stats.pop("dup_pin", None)
     ext_triangles = loop_stats.pop("extended_triangles", 0)
     ext_declined = loop_stats.pop("extended_declined", 0)
+    kept_tris = loop_stats.pop("kept_loop_tris", None)
+    kept_loops = loop_stats.pop("kept_loop_count", 0)
     skipped_markers: dict[int, int] = {}
     for _o, mk, _n, _c, _refs, _w in records:
         if mk not in EXPORTED_SHORT_MARKERS and mk not in RELAXED_SHORT_MARKERS:
@@ -2907,6 +3071,9 @@ def _decode_raw_array(data, lo, hi, groups, payload, elem_decl, seam_area=None):
             info["extended_header_declined"] = ext_declined
     # One index space on this path (see the single-region note above).
     info["_space_offsets"] = (0,)
+    if kept_tris:
+        info["_kept_loop_tris"] = kept_tris
+        info["_kept_loop_count"] = kept_loops
     return points, triangles, degenerate, info
 
 
@@ -3064,6 +3231,41 @@ def _raw_escape_probe(payload: bytes, element_count: int):
     return s, rate, asc
 
 
+def _region_absorbs(pts, poolv):
+    """Whether ``pts`` absorbs the paired pool group's vertices — the
+    exact-f32 test, then the stage-4b noise tolerance for pools within
+    the committed 10,000-vertex cap (the store-level absorption
+    semantics of :func:`_decode_mixedwrite`, applied to one region).
+    An empty pool absorbs nothing (no evidence either way)."""
+    pset = set(poolv)
+    if not pset:
+        return False
+    pts_set = set(pts)
+    missing = pset - pts_set
+    if missing and len(pset) <= 10_000:
+        missing = {
+            v
+            for v in missing
+            if (best := _tol_match(v, pts)) is None or best > NOISE_REL
+        }
+    return not missing
+
+
+def _flat_reading(payload: bytes, element_count: int, counts_end: int):
+    """The flat law's reading: ``element_count`` full triples straight
+    after the 4-B tail field (start pinned by ``counts_end``), ALL-nice
+    under :func:`_nice` — the points list, or ``None`` when the span
+    does not fit or any coordinate fails the predicate."""
+    s = counts_end + 4
+    if s + 12 * element_count <= len(payload) and element_count >= 2:
+        pts = list(
+            struct.iter_unpack("<fff", payload[s : s + 12 * element_count])
+        )
+        if all(_nice(x) and _nice(y) and _nice(z) for x, y, z in pts):
+            return pts
+    return None
+
+
 def _decode_node_mixedwrite(payload: bytes, element_count: int, counts_end: int, poolv):
     """Decode one token-node payload with the stage-8 law set (ported
     from ``mixedwrite_decode.decode_node`` — not re-derived), in the
@@ -3109,6 +3311,28 @@ def _decode_node_mixedwrite(payload: bytes, element_count: int, counts_end: int,
             pts = list(
                 struct.iter_unpack("<fff", payload[s : s + 12 * element_count])
             )
+            # Fase 3 L2 (#72, the S6 Dodge store anatomy): the raw-vs-
+            # flat absorption tiebreak — the raw claim loses when a
+            # flat reading exists that absorbs the PAIRED pool group
+            # while the raw does not (evidence of absorption, not
+            # probe order; measured on the Dodge Challenger's 43.88 MB
+            # store: exactly 1 of the 501 raw claims flips, the
+            # group-266 node whose casual 0xFF at the region boundary
+            # stole the start 12 bytes past the flat reading and
+            # dropped its first triple).  The store-level judgment
+            # stays per rep below; stores whose raw region absorbs its
+            # paired pool keep their committed decode verbatim.
+            if not _region_absorbs(pts, poolv):
+                flat_pts = _flat_reading(payload, element_count, counts_end)
+                if flat_pts is not None and _region_absorbs(flat_pts, poolv):
+                    return (
+                        "flat",
+                        [(0, pt) for pt in flat_pts],
+                        flat_pts,
+                        counts_end + 4 + 12 * element_count,
+                        3 * element_count,
+                        "",
+                    )
             return (
                 "raw",
                 [(0, pt) for pt in pts],
@@ -3117,35 +3341,24 @@ def _decode_node_mixedwrite(payload: bytes, element_count: int, counts_end: int,
                 3 * element_count,
                 "",
             )
-    s = counts_end + 4
-    if s + 12 * element_count <= len(payload) and element_count >= 2:
-        ok = True
-        xs = []
-        for k in range(element_count):
-            x, y, z = struct.unpack_from("<fff", payload, s + 12 * k)
-            if not (_nice(x) and _nice(y) and _nice(z)):
-                ok = False
-                break
-            xs.append(x)
-        if ok:
-            asc = (
-                sum(1 for a, b in zip(xs, xs[1:]) if b >= a - 1e-6)
-                / (element_count - 1)
+    pts = _flat_reading(payload, element_count, counts_end)
+    if pts is not None:
+        xs = [p[0] for p in pts]
+        asc = (
+            sum(1 for a, b in zip(xs, xs[1:]) if b >= a - 1e-6)
+            / (element_count - 1)
+        )
+        pset = set(poolv)
+        hits = len(pset & set(pts))
+        if asc >= RAW_FIT_RATE or (pset and hits == len(pset)):
+            return (
+                "flat",
+                [(0, pt) for pt in pts],
+                pts,
+                counts_end + 4 + 12 * element_count,
+                3 * element_count,
+                "",
             )
-            pts = list(
-                struct.iter_unpack("<fff", payload[s : s + 12 * element_count])
-            )
-            pset = set(poolv)
-            hits = len(pset & set(pts))
-            if asc >= RAW_FIT_RATE or (pset and hits == len(pset)):
-                return (
-                    "flat",
-                    [(0, pt) for pt in pts],
-                    pts,
-                    s + 12 * element_count,
-                    3 * element_count,
-                    "",
-                )
     if probe is not None:
         s, rate, asc = probe
         return (
@@ -3159,7 +3372,9 @@ def _decode_node_mixedwrite(payload: bytes, element_count: int, counts_end: int,
     return None, [], [], 0, 0, "table: no walk-exact zero-block extent"
 
 
-def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
+def _decode_mixedwrite(
+    data, lo: int, hi: int, groups, seam_area=None, relist_skip=False
+):
     """The stage-8 mixed-write per-rep composition (stage 9, #34): the
     stage-5 per-rep decomposition applied to the walk-mismatch residue
     over the FULL-body window, with the stage-8 locator/predicate laws
@@ -3285,6 +3500,8 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
     ext_declined = 0
     reps_unexported = []
     reps_dup_pin = []
+    reps_kept_tris = []
+    kept_loop_count = 0
     space_offsets = []
     reps_decoded = 0
     reps_exported = 0
@@ -3335,11 +3552,22 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
         base = len(points)
         space_offsets.append(base)
         tri_k, deg_k, stats_k = _triangulate(
-            d["elements"], records, extended=ext_k, seam_area=seam_area
+            d["elements"],
+            records,
+            extended=ext_k,
+            seam_area=seam_area,
+            relist_skip=relist_skip,
         )
         # The dup-pin weld is per loop (see _decode_per_rep).
         if "dup_pin" in stats_k:
             reps_dup_pin.append((base, stats_k.pop("dup_pin")))
+        if "kept_loop_tris" in stats_k:
+            # The Fase 3 L1 relist-skip post-pass (see
+            # decode_composite_store): the rep's kept primary loops'
+            # triangles ride to the store level with this rep's point
+            # offset, exactly like the dup-pin weld above.
+            reps_kept_tris.append((base, stats_k.pop("kept_loop_tris")))
+            kept_loop_count += stats_k.pop("kept_loop_count", 0)
         points += d["pts"]
         triangles += [(a + base, b + base, c + base) for a, b, c in tri_k]
         degenerate += deg_k
@@ -3352,6 +3580,7 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
         for _key in (
             "primary_loop_skips",
             "primary_loop_kept",
+            "relist_forced",
             "relaxed_loops_accepted",
             "relaxed_loops_declined",
         ):
@@ -3416,6 +3645,11 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
     # The disjoint per-rep index spaces, in emission order (see the
     # _decode_per_rep note above).
     info["_space_offsets"] = tuple(space_offsets)
+    if reps_kept_tris:
+        info["_kept_loop_tris"] = [
+            (a + b, s + b, t + b) for b, tris in reps_kept_tris for a, s, t in tris
+        ]
+        info["_kept_loop_count"] = kept_loop_count
     return points, triangles, degenerate, info
 
 
