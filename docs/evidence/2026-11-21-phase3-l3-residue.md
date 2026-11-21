@@ -24,7 +24,7 @@ decode with `_relist_skip=True`). One store per part; no export errors.
 | :--- | :--- |
 | candidate mesh is manifold | **240/240** |
 | all skipped-loop vertex coordinates survive in the candidate | **145/240** |
-| boundary-edge count does not grow | 26/145 of the covered set |
+| boundary-edge count does not grow | **0/145** of the covered set (all 60 non-growing cases are uncovered) |
 | all three conditions (the shipped L1 gate) | **117/357 of the original set, 0/240 here** |
 
 The 240 split into **145 covered** (the S5 "sewable" bucket) and **95 not
@@ -47,11 +47,11 @@ to the candidate surface, relative to the part's bounding-box diagonal:
 | `< 1e-2` | 54 (centroid screen; the 19 exact cases were confirmed with the full 4-point probe) |
 
 The 19 exact cases are genuine re-listed skins (max absolute deviation
-`≤ 4.3e-6 mm`, one `3.8e-3 mm` outlier on `LS-Valv-75`); the rest deviate by
-millimetres to infinity — the skip would drop surface. The S5 projection of
-~107 sewable parts is **refuted** by the geometric measure: the honest
-ceiling for a exact-skin skip is **19 parts** (7.9% of the residue, 5.3% of
-the original 357).
+`≤ 4.3e-6 mm`, one `3.8e-3 mm` outlier on `LS-Valv-75`). The other 126 exceed
+`1e-4` relative: 4 sit below `1e-3` and 122 by millimetres to infinity — the
+skip would drop surface. The S5 projection of ~107 sewable parts is **refuted**
+by the geometric measure: the honest ceiling for an exact-skin skip is
+**19 parts** (7.9% of the residue, 5.3% of the original 357).
 
 ## A topology-only split makes all 240 manifold, but it is a different lever
 
