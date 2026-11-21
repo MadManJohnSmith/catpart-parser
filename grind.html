@@ -16,7 +16,9 @@
   <div class="page-head">
     <div class="crumb">issue #34 · G6</div>
     <h1>The grind to the 80% bar</h1>
-    <p class="lead">L2 geometry-sanity went from a 5.50% baseline to 82.40% after the post-v1.0 decoder fixes (74.80% in four days during the grind). Every
+    <p class="lead">L2 geometry-sanity went from a 5.50% baseline to 82.40% after the post-v1.0 decoder fixes (74.80% in four days during the grind). The 2026-11-22
+    marathon added multi-region composite reads (Submarino 58.92% &rarr; 92.87%) and measured dev 83.35% on the canonical report's part population; its
+    accepted history row is still pending, so the headline badge stays on the last accepted run. Every
     entry below is a merged commit or an accepted fitness run — analyses that failed are recorded
     as refutations, not smoothed away. Corrections are dated, never massaged.</p>
   </div>
@@ -67,7 +69,20 @@
       return "<tr><td>" + r[cols[0]] + "</td><td class='n'>" + r[cols[1]] + "</td><td>" + (r[cols[2]] || "") + "</td></tr>";
     }).join("") + "</table>";
   }
-  document.getElementById("cls-grid").innerHTML =
+  var marathonCard = "";
+  if (D.marathon) {
+    var M = D.marathon;
+    marathonCard = '<div class="cls-card"><h3>Marathon v3 — ' + M.date + '</h3>' +
+      '<div class="src">' + M.label + '</div>' +
+      table([
+        { m: "L2 dev", v: M.dev.pass + "/" + M.dev.total + " (" + M.dev.pct + "%)", n: M.note },
+        { m: "L2 held-out", v: M.held_out.pass + "/" + M.held_out.total + " (" + M.held_out.pct + "%)", n: "" },
+        { m: "L2 Submarino", v: M.submarino.pass + "/" + M.submarino.total + " (" + M.submarino.pct + "%)", n: "external snapshot, 757 parts" },
+        { m: "not-manifold", v: String(M.not_manifold), n: "down from 277 at the baseline" },
+        { m: "Open Rate", v: M.open_rate, n: "honest: feature-tree-only parts excluded" },
+      ], ["m", "v", "n"]) + "</div>";
+  }
+  document.getElementById("cls-grid").innerHTML = marathonCard +
     '<div class="cls-card"><h3>Failure classes at the 2026-11-10 baseline</h3>' +
     '<div class="src">committed census · population ' + c.baseline_census.population + " parts (dev + held-out)</div>" +
     table(c.baseline_census.rows, ["class", "n", "note"]) + "</div>" +

@@ -41,7 +41,14 @@
         <button id="edges-toggle" type="button" aria-pressed="true">Edges</button>
         <button id="wire-toggle" type="button" aria-pressed="false">Wireframe</button>
         <button id="curve-toggle" type="button" aria-pressed="false" disabled>Curve overlay</button>
+        <button id="shading-toggle" type="button" aria-pressed="false">Even shading</button>
         <span id="curve-state" class="dim">0 loops</span>
+        <div id="views-toolbar" class="views-toolbar" role="group" aria-label="Standard CAD views">
+          <button id="view-iso" type="button">Iso</button>
+          <button id="view-front" type="button">Front</button>
+          <button id="view-top" type="button">Top</button>
+          <button id="view-right" type="button">Right</button>
+        </div>
         <div id="exploded-view-toolbar" class="exploded-control" hidden>
           <label for="explode-slider" class="dim">Explode</label>
           <input type="range" id="explode-slider" class="exploded-slider" min="0.0" max="3.0" step="0.05" value="0.0">
@@ -83,6 +90,22 @@
         <p class="lede">The in-browser gate mirrors <code>_score_export</code> exactly —
         same check order, same constants (spec §3.4).</p>
         <div id="gate" class="gate"><p class="dim">no file loaded</p></div>
+      </section>
+      <section id="feature-panel" class="panel" hidden>
+        <h2>Feature / Spec Tree</h2>
+        <p class="lede">The part's parametric records — named from the
+        writer's length-framed feature-type names. A name census, never
+        geometry. Click a feature row to highlight it and see where its
+        records live in the file.</p>
+        <div id="feature-tree" class="feature-tree"></div>
+        <div id="feature-detail" class="feature-detail" hidden></div>
+      </section>
+      <section id="bodies-panel" class="panel" hidden>
+        <h2>Bodies</h2>
+        <p class="lede">Visual components of the decoded mesh — computed
+        client-side from shared vertices, not decoded CATIA body
+        boundaries. Toggle one to show or hide it.</p>
+        <div id="bodies-list" class="bodies-list"></div>
       </section>
       <section id="meta-panel" class="panel">
         <h2>Metadata</h2>
