@@ -902,8 +902,12 @@ def parse_129b_transform_records(data: bytes) -> list[dict[str, Any]]:
     return records
 
 
-def _parse_run_length_floats(stream: bytes, count: int) -> list[float] | None:
-    """Decode `count` run-length IEEE-754 values (e8/e7/e9/e6 tags)."""
+def _parse_run_length_floats(stream: bytes, count: int) -> tuple[list[float], int] | None:
+    """Decode `count` run-length IEEE-754 values (e8/e7/e9/e6 tags).
+
+    Returns the values and the consumed byte count (the raw matrix body) or
+    `None` when the stream is not a well-formed run-length sequence.
+    """
     vals: list[float] = []
     p = 0
     while p < len(stream) and len(vals) < count:
@@ -925,7 +929,9 @@ def _parse_run_length_floats(stream: bytes, count: int) -> list[float] | None:
             p += 9
         else:
             return None
-    return vals if len(vals) == count else None
+    if len(vals) != count:
+        return None
+    return vals, p
 
 
 def _det3(r: list[list[float]]) -> float:
@@ -998,27 +1004,41 @@ def parse_position_matrix_records(data: bytes) -> list[dict[str, Any]]:
             continue
         vals = _parse_run_length_floats(data[pos + 2 :], 12)
         if vals is not None:
-            r = [vals[0:3], vals[3:6], vals[6:9]]
-            if _is_proper_rotation(r) and all(abs(x) <= 1e7 for x in vals[9:12]):
+            values, consumed = vals
+            r = [values[0:3], values[3:6], values[6:9]]
+            if _is_proper_rotation(r) and all(abs(x) <= 1e7 for x in values[9:12]):
                 records.append({
                     "kind": kind,
-                    "translation": vals[9:12],
+                    "translation": values[9:12],
                     "quaternion": _mat3_to_quat(r),
                     "offset": pos,
+                    "matrix": data[pos + 2 : pos + 2 + consumed],
                 })
         idx = pos + 2
     return records
 
 
-def _name_table_placement(n_records: int) -> dict[str, Any]:
-    """Placement fields for a name-table instance under the fail-closed law.
+def _name_table_placement(
+    records: Sequence[Mapping[str, Any]], n_own: int | None = None
+) -> dict[str, Any]:
+    """Placement fields for name-table instances under the fail-closed law.
 
-    `_Position` presence and the non-root `8d81` record count coincide in
-    199/199 files of the V5R26 snapshot, so zero records is a sound identity
-    signal. Any record means a position exists that the name table cannot
-    attribute (its order is not an instance order); those are undecodable,
-    never identity (anti-masking).
+    `records` are the document's non-root `_Position` 8d81 records (each
+    carrying its raw matrix body). `n_own` is `own(D)` — computable only by
+    the tree walker, which holds the document set. Without it (single-document
+    reads) the law stays fail-closed: `_Position` presence and the non-root
+    record count coincide in 199/199 snapshot files, so zero records is a
+    sound identity signal and any record is undecodable, never identity
+    (anti-masking).
+
+    With `n_own`, the S7 refinement fires: `#R == #own(D)` and every matrix
+    body byte-identical makes the record-to-child permutation free (the
+    subset question disappears), so the one matrix applies to every own
+    child. Order-independent by construction — no ordinal law. Identity
+    frames (`e9 f4 07 04 37`) are constraint/connector placeholders
+    (Clause 3); a record set containing one never places.
     """
+    n_records = len(records)
     if n_records == 0:
         return {
             "has_position_attr": False,
@@ -1028,6 +1048,26 @@ def _name_table_placement(n_records: int) -> dict[str, Any]:
             "classification_detail": (
                 "name-table enumeration: no _Position transform records "
                 "(identity at origin)"
+            ),
+        }
+    places = (
+        n_own is not None
+        and n_records == n_own
+        and all(rec["kind"] == "explicit" for rec in records)
+        and len({rec["matrix"] for rec in records}) == 1
+    )
+    if places:
+        t = records[0]["translation"]
+        q = records[0]["quaternion"]
+        return {
+            "has_position_attr": True,
+            "placement_status": "placed",
+            "transform": [t[0], t[1], t[2], q[0], q[1], q[2], q[3]],
+            "object_tag": None,
+            "classification_detail": (
+                f"name-table placed law: {n_records} byte-identical _Position "
+                f"matrices == own children count ({n_own}); the matrix applies "
+                "to every own child (order-free, no ordinal law)"
             ),
         }
     return {
@@ -1101,8 +1141,14 @@ def read_product_name_table(texts: Sequence[str]) -> dict[str, Any] | None:
 def _name_table_instances(
     table: dict[str, Any], data: bytes
 ) -> list[dict[str, Any]]:
-    """Enumerate one record per interned name, with fail-closed placement."""
-    n_records = len(parse_position_matrix_records(data))
+    """Enumerate one record per interned name, with fail-closed placement.
+
+    Single-document read: `own(D)` needs the document set, so the placed law
+    cannot fire here and any record count stays undecodable (the tree walker
+    in `resolve_owned_assembly` is what applies the refinement).
+    """
+    records = parse_position_matrix_records(data)
+    placement = _name_table_placement(records)
     instances = []
     for name in table["names"]:
         inst = {
@@ -1110,7 +1156,7 @@ def _name_table_instances(
             "part_number": name,
             "pairing_rule": "name_table",
         }
-        inst.update(_name_table_placement(n_records))
+        inst.update(placement)
         instances.append(inst)
     return instances
 
@@ -1172,13 +1218,15 @@ def resolve_owned_assembly(
         data = docs.get(name)
         if table is None or data is None or name in visiting:
             return
-        n_records = len(parse_position_matrix_records(data))
         child_tables = {
             child: child_table["names"]
             for child in table["names"]
             if (child_table := table_for(child)) is not None
         }
         own = own_instance_names(table["names"], child_tables)
+        placement = _name_table_placement(
+            parse_position_matrix_records(data), n_own=len(own)
+        )
 
         visiting.add(name)
         try:
@@ -1191,7 +1239,7 @@ def resolve_owned_assembly(
                     "parent_index": parent_index,
                     "child_product": child if child in docs else None,
                 }
-                row.update(_name_table_placement(n_records))
+                row.update(placement)
                 rows.append(row)
                 index = len(rows) - 1
                 if child in docs:

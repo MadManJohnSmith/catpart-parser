@@ -176,6 +176,10 @@ pub struct PositionRecord {
     pub transform: TransformRecord,
     /// Byte offset of the `8d 81` marker.
     pub offset: usize,
+    /// Raw run-length matrix body (`12` values, `12..=108` bytes), exactly as
+    /// encoded after the `8d 81` marker. The `placed` law compares these
+    /// bodies byte-for-byte across a document's records.
+    pub matrix_body: Vec<u8>,
 }
 
 impl PositionRecord {
@@ -447,11 +451,10 @@ pub fn mat3_to_quat(r: &[[f64; 3]; 3]) -> [f64; 4] {
     [qw, qx, qy, qz]
 }
 
-/// Decode a 12-element run-length matrix stream from bytes following `[0x8d, 0x81]`.
+/// Validate and decode `12` already-parsed run-length values into a transform.
 ///
-/// Returns `Some(([tx, ty, tz], [qw, qx, qy, qz]))` on success.
-pub fn decode_r15_matrix_stream(stream: &[u8]) -> Option<([f64; 3], [f64; 4])> {
-    let (vals, _) = parse_run_length_floats(stream, 12)?;
+/// Floats 0..8 are the row-major rotation R, 9..11 the translation in mm.
+fn decode_r15_values(vals: &[f64]) -> Option<([f64; 3], [f64; 4])> {
     let r = [
         [vals[0], vals[1], vals[2]],
         [vals[3], vals[4], vals[5]],
@@ -471,6 +474,14 @@ pub fn decode_r15_matrix_stream(stream: &[u8]) -> Option<([f64; 3], [f64; 4])> {
 
     let quat = mat3_to_quat(&r);
     Some((t, quat))
+}
+
+/// Decode a 12-element run-length matrix stream from bytes following `[0x8d, 0x81]`.
+///
+/// Returns `Some(([tx, ty, tz], [qw, qx, qy, qz]))` on success.
+pub fn decode_r15_matrix_stream(stream: &[u8]) -> Option<([f64; 3], [f64; 4])> {
+    let (vals, _) = parse_run_length_floats(stream, 12)?;
+    decode_r15_values(&vals)
 }
 
 /// Scan a buffer for R15 inline matrix streams anchored at marker `[0x8d, 0x81]`.
@@ -502,7 +513,8 @@ pub fn scan_r15_matrix_streams(data: &[u8]) -> Vec<TransformRecord> {
 /// position. The product-root position (`e8 e0 07 37`) and every other matrix
 /// are excluded.
 ///
-/// Records are returned in document order (the serialization order).
+/// Records are returned in document order (the serialization order), each with
+/// its raw matrix body for the `placed` byte-identity law.
 pub fn scan_position_matrix_streams(data: &[u8]) -> Vec<PositionRecord> {
     let mut records = Vec::new();
     let mut idx = 0;
@@ -516,12 +528,14 @@ pub fn scan_position_matrix_streams(data: &[u8]) -> Vec<PositionRecord> {
             break;
         };
         if let Some(kind) = position_kind_before(data, pos)
-            && let Some((t, q)) = decode_r15_matrix_stream(&data[pos + 2..])
+            && let Some((vals, consumed)) = parse_run_length_floats(&data[pos + 2..], 12)
+            && let Some((t, q)) = decode_r15_values(&vals)
         {
             records.push(PositionRecord {
                 kind,
                 transform: TransformRecord::from_placement(t, q, 0),
                 offset: pos,
+                matrix_body: data[pos + 2..pos + 2 + consumed].to_vec(),
             });
         }
         idx = pos + 2;
