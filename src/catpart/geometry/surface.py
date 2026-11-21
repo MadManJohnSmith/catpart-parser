@@ -5,7 +5,7 @@ This is the shipped half of ``docs/evidence/2026-11-19-surface-head.md``
 ``docs/evidence/2026-11-19-surface-tessellation.md`` (the mesh) and
 ``docs/evidence/2026-11-19-join-order-probe.md`` (the second subtype).
 
-Two head grammars share the marker.  The **two-lane** record (subtype 0)
+Three head grammars share the marker.  The **two-lane** record (subtype 0)
 is a self-delimiting degree-5, C2, non-rational tensor-product B-spline:
 each lane block names ``n`` distinct knots, the pole net is exactly
 ``3*n_u`` by ``3*n_v`` triples, and the only constant
@@ -16,6 +16,16 @@ lane.  Its grid is ``3*n_u`` by ``(degree_v + 1) + 3*(n_v - 2)``, and a
 closing middle byte selects a 32-byte rational layout (coordinates then
 weights) or the 24-byte non-rational one.  Both grammars close on the
 measured 152/154-byte tail; the grid is predicted, never searched for.
+
+The **compact** record (``docs/evidence/2026-11-21-surface-compact-head.md``)
+is recognised before the ``+8`` byte is read, because it has no subtype
+field: each lane stores its degree, knot count and either implicit clamped
+multiplicities or an explicit multiplicity vector, so its pole net is
+``sum(mult_u) - degree_u - 1`` by ``sum(mult_v) - degree_v - 1``.  Its tail
+is not a closure law (141..3597 bytes measured); the grid is still
+predicted by the head and validated by the net, never by a tail size.
+This grammar's knots are not chord-length, so it is also the only branch
+that does not apply the chord-length band.
 
 The tessellator subdivides each knot span by a bounded adaptive tensor
 grid: cells whose centre departs from the bilinear cell by more than
@@ -46,6 +56,17 @@ SURFACE_CLASS = 0x34
 #: The two decoded payload subtypes: the two-lane surface and the patch.
 SUBTYPE_TWO_LANE = 0
 SUBTYPE_PATCH = 4
+#: Grammar discriminator of the compact head.  It is not a stored byte: this
+#: grammar has no subtype field, and is recognised by its own lane tokens.
+SUBTYPE_COMPACT = 2
+#: Compact lane markers: implicit clamped multiplicities, explicit vector.
+COMPACT_KNOTS_IMPLICIT = 0x0C
+COMPACT_KNOTS_EXPLICIT = 0x04
+#: Bytes that open the compact pole net (measured 0x01 and 0x05).
+COMPACT_POLE_MARKERS = (0x01, 0x05)
+#: Compact lane limits (measured degrees 1..5, knot counts 2..16).
+MAX_COMPACT_DEGREE = 15
+MAX_COMPACT_KNOTS = 64
 #: Record tag at the head of each lane block and at the second lane.
 HEAD_TAG = 5
 #: Second-lane tag byte after the u lane.
@@ -102,8 +123,10 @@ class SurfaceHead:
 
     ``degree_v`` is the patch grammar's stored v degree and 5 for the
     two-lane grammar; ``rational`` selects the 32-byte coordinate-then-
-    weights layout.  Both grammars are clamped with interior multiplicity
-    3, so ``poles = (degree + 1) + 3*(n - 2)`` per direction.
+    weights layout.  The two stored grammars are clamped with interior
+    multiplicity 3, so ``poles = (degree + 1) + 3*(n - 2)`` per direction.
+    The compact grammar stores its multiplicities: ``mult_u``/``mult_v``
+    are then non-empty and ``poles = sum(mult) - degree - 1``.
     """
 
     start: int
@@ -119,6 +142,8 @@ class SurfaceHead:
     degree_u: int = DEGREE
     degree_v: int = DEGREE
     rational: bool = False
+    mult_u: tuple[int, ...] = ()
+    mult_v: tuple[int, ...] = ()
 
     @property
     def head_bytes(self) -> int:
@@ -126,10 +151,14 @@ class SurfaceHead:
 
     @property
     def poles_u(self) -> int:
+        if self.subtype == SUBTYPE_COMPACT:
+            return sum(self.mult_u) - self.degree_u - 1
         return (self.degree_u + 1) + MULTIPLICITY * (self.n_u - 2)
 
     @property
     def poles_v(self) -> int:
+        if self.subtype == SUBTYPE_COMPACT:
+            return sum(self.mult_v) - self.degree_v - 1
         return (self.degree_v + 1) + MULTIPLICITY * (self.n_v - 2)
 
     @property
@@ -150,12 +179,17 @@ class SurfaceHead:
 
     @property
     def scale_limit(self) -> float:
-        return (
-            MODEL_SCALE_PATCH if self.subtype == SUBTYPE_PATCH else MODEL_SCALE_TWO_LANE
-        )
+        if self.subtype == SUBTYPE_TWO_LANE:
+            return MODEL_SCALE_TWO_LANE
+        return MODEL_SCALE_PATCH
 
     @property
     def knots(self) -> tuple[tuple[float, ...], tuple[float, ...]]:
+        if self.subtype == SUBTYPE_COMPACT:
+            return (
+                compact_knot_vector(self.knots_u, self.mult_u),
+                compact_knot_vector(self.knots_v, self.mult_v),
+            )
         return (
             knot_vector(self.knots_u, self.degree_u),
             knot_vector(self.knots_v, self.degree_v),
@@ -168,7 +202,13 @@ class SurfaceHead:
 
 @dataclasses.dataclass(frozen=True)
 class SurfaceAssessment:
-    """The evaluable battery's measurements for one decoded surface."""
+    """The evaluable battery's measurements for one decoded surface.
+
+    ``arc_applicable`` is false only on the compact grammar, whose knots are
+    not chord-length (measured median ratio 3.14, 25.4 % inside the band):
+    there the corner residual, hull, folds, finiteness and scale remain the
+    grid-integrity gates and the band is not a coherency law.
+    """
 
     corner_residual: float
     finite: bool
@@ -177,6 +217,7 @@ class SurfaceAssessment:
     arc_ratio: float
     bbox: tuple[float, float, float, float, float, float]
     scale_ok: bool = True
+    arc_applicable: bool = True
 
     @property
     def plausible_scale(self) -> bool:
@@ -188,6 +229,10 @@ class SurfaceAssessment:
         return low <= self.arc_ratio <= high
 
     @property
+    def arc_ok(self) -> bool:
+        return self.arc_coherent or not self.arc_applicable
+
+    @property
     def evaluable(self) -> bool:
         return (
             self.corner_residual <= CORNER_TOL
@@ -195,7 +240,7 @@ class SurfaceAssessment:
             and self.hull_violations == 0
             and self.folds == 0
             and self.plausible_scale
-            and self.arc_coherent
+            and self.arc_ok
         )
 
 
@@ -297,14 +342,126 @@ def candidate_frames(data) -> list[tuple[int, int, int]]:
         out.append((hit, record[0], record[1]))
 
 
+def _parse_compact_lane(data, pos: int, end: int):
+    """One compact lane block at ``pos``; ``(degree, n, knots, mult, next)``.
+
+    ``None`` when the three head bytes are not a lane block or the lane does
+    not close.  The first two bytes are ``(degree << 2) | 1`` and
+    ``(knot_count << 2) | 1``; the third is the lane's own marker: ``0x0c``
+    for implicit clamped multiplicities, ``0x04`` for an explicit vector of
+    ``(mult << 2) | 1`` bytes after the knots.
+    """
+    if pos + 3 > end:
+        return None
+    token_degree = _u8(data, pos)
+    token_count = _u8(data, pos + 1)
+    marker = _u8(data, pos + 2)
+    if marker not in (COMPACT_KNOTS_IMPLICIT, COMPACT_KNOTS_EXPLICIT):
+        return None
+    if token_degree & 3 != 1 or token_count & 3 != 1:
+        return None
+    degree = token_degree >> 2
+    n = token_count >> 2
+    if not 1 <= degree <= MAX_COMPACT_DEGREE:
+        return None
+    if not MIN_LANE <= n <= MAX_COMPACT_KNOTS:
+        return None
+    lane = pos + 3
+    if lane + 8 * n > end:
+        return None
+    knots = tuple(_f64le(data, lane + 8 * i) for i in range(n))
+    if not _strictly_increasing(knots):
+        return None
+    nxt = lane + 8 * n
+    if marker == COMPACT_KNOTS_EXPLICIT:
+        if nxt + n > end:
+            return None
+        tokens = data[nxt : nxt + n]
+        if any(token & 3 != 1 for token in tokens):
+            return None
+        mult = tuple(token >> 2 for token in tokens)
+        if any(count < 1 for count in mult):
+            return None
+        nxt += n
+    else:
+        mult = (degree + 1,) + (1,) * (n - 2) + (degree + 1,)
+    if sum(mult) - degree - 1 < 2:
+        return None
+    return degree, n, knots, mult, nxt
+
+
+def parse_compact_head(data, payload: int, end: int) -> SurfaceHead | None:
+    """Decode the compact head (``docs/evidence/2026-11-21-surface-compact-head.md``).
+
+    ::
+
+        +0        u8  (degree_u << 2) | 1
+        +1        u8  (n_u << 2) | 1
+        +2        u8  0x0c | 0x04        implicit clamped / explicit mult
+        +3        f64 knots_u[n_u]       strictly increasing
+                  u8  (mult << 2) | 1    only for the 0x04 marker
+                  …                      the same block for v
+                  u8  0x01 | 0x05        opens the pole net
+                  24 B × poles_u × poles_v
+
+    ``poles = sum(multiplicities) - degree - 1`` per direction, which is
+    ``(degree + 1) + (n - 2)`` for the implicit form.  The tail is not a
+    closure law here (141..3597 B measured), so the net length is the only
+    closure check: the grid must end inside the frame with a non-negative
+    tail.  Positive dispatch: this grammar has no subtype byte, so the lane
+    tokens must match before anything is read at ``payload + 8``.
+    """
+    if payload + 6 > end:
+        return None
+    first = _parse_compact_lane(data, payload, end)
+    if first is None:
+        return None
+    degree_u, n_u, knots_u, mult_u, pos = first
+    second = _parse_compact_lane(data, pos, end)
+    if second is None:
+        return None
+    degree_v, n_v, knots_v, mult_v, pos = second
+    if pos + 1 > end:
+        return None
+    if _u8(data, pos) not in COMPACT_POLE_MARKERS:
+        return None
+    grid = pos + 1
+    head = SurfaceHead(
+        start=payload,
+        end=end,
+        n_u=n_u,
+        n_v=n_v,
+        knots_u=knots_u,
+        knots_v=knots_v,
+        mode_u=0,
+        mode_v=0,
+        grid=grid,
+        subtype=SUBTYPE_COMPACT,
+        degree_u=degree_u,
+        degree_v=degree_v,
+        mult_u=mult_u,
+        mult_v=mult_v,
+    )
+    if head.poles_u < 2 or head.poles_v < 2:
+        return None
+    if grid + head.net_bytes > end:
+        return None
+    return head
+
+
 def parse_surface_head(data, payload: int, end: int) -> SurfaceHead | None:
     """Decode one payload head; ``None`` when its arithmetic does not close.
 
     The grid offset is *predicted* by the head, never searched for: the
     tag, both lane lengths, both strictly increasing lanes, the closing
-    bytes and a measured 152/154-byte tail must all agree.  The subtype
-    byte at ``+8`` selects the grammar.
+    bytes and a measured 152/154-byte tail must all agree.  The compact
+    grammar has no subtype field and is tried first, positively, on its own
+    lane tokens; the two stored grammars are then selected by the byte at
+    ``+8``.
     """
+    compact = parse_compact_head(data, payload, end)
+    if compact is not None:
+        return compact
     if payload + 9 > end:
         return None
     subtype = _u8(data, payload + 8)
@@ -442,6 +599,16 @@ def parse_patch_head(data, payload: int, end: int) -> SurfaceHead | None:
     if head.tail not in SURFACE_TAILS:
         return None
     return head
+
+
+def compact_knot_vector(distinct, multiplicities) -> tuple[float, ...]:
+    """The full knot vector of a compact lane: each value repeated ``mult`` times."""
+    if len(distinct) != len(multiplicities):
+        raise ValueError("a compact lane needs one multiplicity per knot")
+    out: list[float] = []
+    for value, count in zip(distinct, multiplicities):
+        out.extend([value] * count)
+    return tuple(out)
 
 
 def knot_vector(distinct, degree: int = DEGREE) -> tuple[float, ...]:
@@ -676,6 +843,7 @@ def assess(head: SurfaceHead, poles, weights=None) -> SurfaceAssessment:
         arc_ratio=arc_ratio,
         bbox=box,
         scale_ok=max(abs(c) for c in box) <= head.scale_limit,
+        arc_applicable=head.subtype != SUBTYPE_COMPACT,
     )
 
 

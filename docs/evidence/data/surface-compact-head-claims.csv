@@ -1,0 +1,9 @@
+claim,scope,observations,passes,rate,label,detail
+SG-01,population:94,3743,3733,0.9973,fact,"compact head decode: 3733/3743 a5 03 34 candidate frames; 77 distinct tails 141..3597 B (141 B on 2536 frames) and every decoded frame closes on the predicted grid, so the tail is not a closure law for this grammar"
+SG-02,population:3731,3731,3731,1.0000,fact,"pole law sum(mult)-degree-1: 3731/3731 plausible nets evaluate with corner residual <= 1e-9 (max 1.36e-12); the grid offset is predicted by the head, not searched for"
+SG-03,population:3731,3731,68,0.0182,fact,"chord-length band 0.5..2.0 holds on only 68/3731 compact nets (median arc_ratio 0.0328): this grammar's parameterisation is not chord-length, so the compact branch does not apply the band"
+SG-04,population:94,94,91,0.9681,fact,"L2 recovery: 91/94 no-evaluable-surface submarine parts tessellate 3683 patches / 2134032 triangles; L1 counterfactual with the band kept is 16/94 parts, 68 patches, 34096 triangles"
+SG-05,population:3743,3743,48,0.0128,fact,"frames refused after decode: 48, all folds; 2 further frames predict non-numeric nets (plausible_net) and 10 do not decode (3-lane variant in 2 parts); the 3 remaining parts are BW-hatch-cargo-torp-up-G, BW-hatch-up-Top-G, MB-Mani-H"
+SG-06,d7ed0772,3,3,1.0000,fact,"SH-15 legacy frames still refused: two kilometre-scale merged nets fail scale and the folded non-station-constant net fails folds/arc; the shapes are rebuilt synthetically in tests/test_surface_compact_head.py and the Rust twin"
+SG-07,corpus:1956,37460,37460,1.0000,fact,"baseline main@1f752f0 vs branch head census: 37096 frames decode identically, 0 lost, 0 changed; 364 new compact heads in 14 parts whose facet-store PLY output is byte-identical (surface fallback never runs)"
+SG-08,parity:94,94,94,1.0000,fact,"Rust twin reproduces the Python census exactly: 91 parts, 3683 patches, 2134032 triangles, 3731 decoded, 48 refused, same 3 misses"

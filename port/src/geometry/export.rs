@@ -426,9 +426,10 @@ fn surface_fallback(
             format!(
                 "{} a5 03 34 surface frame(s): {} head-decodable, {} evaluable, \
                  {} tessellated, {} refused (the exact B-spline battery: corner \
-                 poles, finite samples, pole hull, no fold, model scale, \
-                 chord-length knots; docs/evidence/2026-11-19-surface-head.md \
-                 section 5) — no surface produced a sane mesh",
+                 poles, finite samples, pole hull, no fold, model scale, and the \
+                 chord-length band on the grammars that define it; \
+                 docs/evidence/2026-11-19-surface-head.md section 5) — no surface \
+                 produced a sane mesh",
                 scan.candidates, scan.decoded, scan.evaluable, scan.tessellated, scan.refused,
             ),
         ));
@@ -439,7 +440,7 @@ fn surface_fallback(
     let mut warnings = vec![Warning {
         class: WARN_SURFACE_TESSELLATED.to_string(),
         detail: format!(
-            "{} exact degree-5 C2 B-spline surface(s) tessellated from {} \
+            "{} exact B-spline surface(s) tessellated from {} \
              evaluable a5 03 34 record(s) on an adaptive tensor grid (maximum \
              chord error 1e-3 of each pole-net bbox diagonal; \
              docs/evidence/2026-11-19-surface-tessellation.md)",

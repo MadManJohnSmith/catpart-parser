@@ -28,7 +28,9 @@
 //! The evaluable battery is the probe's measured one: exact corner
 //! poles, finite samples on a 21x21 lattice, containment in the pole
 //! hull, no normal fold, model scale and a chord-length-coherent knot
-//! span.
+//! span.  The compact grammar (2026-11-21) stores its own degrees and
+//! multiplicities and is the one branch where the chord-length band does
+//! not apply: its parameterisation is not chord-length.
 //!
 //! Numeric contract (spec §2.2): decode module — all arithmetic in f64,
 //! verbatim expression shape and order with the Python twin (the
@@ -47,6 +49,17 @@ pub const SURFACE_CLASS: u8 = 0x34;
 /// The two decoded payload subtypes: the two-lane surface and the patch.
 pub const SUBTYPE_TWO_LANE: u8 = 0;
 pub const SUBTYPE_PATCH: u8 = 4;
+/// Grammar discriminator of the compact head.  It is not a stored byte: this
+/// grammar has no subtype field, and is recognised by its own lane tokens.
+pub const SUBTYPE_COMPACT: u8 = 2;
+/// Compact lane markers: implicit clamped multiplicities, explicit vector.
+pub const COMPACT_KNOTS_IMPLICIT: u8 = 0x0C;
+pub const COMPACT_KNOTS_EXPLICIT: u8 = 0x04;
+/// Bytes that open the compact pole net (measured 0x01 and 0x05).
+pub const COMPACT_POLE_MARKERS: [u8; 2] = [0x01, 0x05];
+/// Compact lane limits (measured degrees 1..5, knot counts 2..16).
+pub const MAX_COMPACT_DEGREE: usize = 15;
+pub const MAX_COMPACT_KNOTS: usize = 64;
 /// Record tag at the head of each lane block.
 pub const HEAD_TAG: u32 = 5;
 /// Second-lane tag byte after the u lane.
@@ -102,13 +115,17 @@ type Grid = (Vec<f64>, Vec<f64>, Vec<Vec<(f64, f64, f64)>>);
 type PoleMatrix = Vec<Vec<(f64, f64, f64)>>;
 /// The parallel rational-weight matrix.
 type WeightMatrix = Vec<Vec<f64>>;
+/// One decoded compact lane: ``(degree, knot_count, knots, mult, next)``.
+type CompactLane = (usize, usize, Vec<f64>, Vec<usize>, usize);
 
 /// The decoded head of one surface payload; ``grid`` is predicted.
 ///
 /// ``degree_v`` is the patch grammar's stored v degree and 5 for the
 /// two-lane grammar; ``rational`` selects the 32-byte coordinate-then-
-/// weights layout.  Both grammars are clamped with interior multiplicity
-/// 3, so ``poles = (degree + 1) + 3*(n - 2)`` per direction.
+/// weights layout.  The two stored grammars are clamped with interior
+/// multiplicity 3, so ``poles = (degree + 1) + 3*(n - 2)`` per direction.
+/// The compact grammar stores its multiplicities: ``mult_u``/``mult_v``
+/// are then non-empty and ``poles = sum(mult) - degree - 1``.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SurfaceHead {
     pub start: usize,
@@ -124,6 +141,8 @@ pub struct SurfaceHead {
     pub degree_u: usize,
     pub degree_v: usize,
     pub rational: bool,
+    pub mult_u: Vec<usize>,
+    pub mult_v: Vec<usize>,
 }
 
 impl SurfaceHead {
@@ -131,10 +150,18 @@ impl SurfaceHead {
         self.grid - self.start
     }
     pub fn poles_u(&self) -> usize {
-        (self.degree_u + 1) + MULTIPLICITY * (self.n_u - 2)
+        if self.subtype == SUBTYPE_COMPACT {
+            self.mult_u.iter().sum::<usize>() - self.degree_u - 1
+        } else {
+            (self.degree_u + 1) + MULTIPLICITY * (self.n_u - 2)
+        }
     }
     pub fn poles_v(&self) -> usize {
-        (self.degree_v + 1) + MULTIPLICITY * (self.n_v - 2)
+        if self.subtype == SUBTYPE_COMPACT {
+            self.mult_v.iter().sum::<usize>() - self.degree_v - 1
+        } else {
+            (self.degree_v + 1) + MULTIPLICITY * (self.n_v - 2)
+        }
     }
     pub fn points(&self) -> usize {
         self.poles_u() * self.poles_v()
@@ -149,21 +176,32 @@ impl SurfaceHead {
         self.end - (self.grid + self.net_bytes())
     }
     pub fn scale_limit(&self) -> f64 {
-        if self.subtype == SUBTYPE_PATCH {
-            MODEL_SCALE_PATCH
-        } else {
+        if self.subtype == SUBTYPE_TWO_LANE {
             MODEL_SCALE_TWO_LANE
+        } else {
+            MODEL_SCALE_PATCH
         }
     }
     pub fn knots(&self) -> (Vec<f64>, Vec<f64>) {
-        (
-            knot_vector(&self.knots_u, self.degree_u),
-            knot_vector(&self.knots_v, self.degree_v),
-        )
+        if self.subtype == SUBTYPE_COMPACT {
+            (
+                compact_knot_vector(&self.knots_u, &self.mult_u),
+                compact_knot_vector(&self.knots_v, &self.mult_v),
+            )
+        } else {
+            (
+                knot_vector(&self.knots_u, self.degree_u),
+                knot_vector(&self.knots_v, self.degree_v),
+            )
+        }
     }
 }
 
 /// The evaluable battery's measurements for one decoded surface.
+///
+/// ``arc_applicable`` is false only on the compact grammar, whose knots are
+/// not chord-length: there the corner residual, hull, folds, finiteness and
+/// scale remain the grid-integrity gates and the band is not a coherency law.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SurfaceAssessment {
     pub corner_residual: f64,
@@ -173,6 +211,7 @@ pub struct SurfaceAssessment {
     pub arc_ratio: f64,
     pub bbox: [f64; 6],
     pub scale_ok: bool,
+    pub arc_applicable: bool,
 }
 
 impl SurfaceAssessment {
@@ -182,13 +221,16 @@ impl SurfaceAssessment {
     pub fn arc_coherent(&self) -> bool {
         self.arc_ratio >= ARC_RATIO_BAND.0 && self.arc_ratio <= ARC_RATIO_BAND.1
     }
+    pub fn arc_ok(&self) -> bool {
+        self.arc_coherent() || !self.arc_applicable
+    }
     pub fn evaluable(&self) -> bool {
         self.corner_residual <= CORNER_TOL
             && self.finite
             && self.hull_violations == 0
             && self.folds == 0
             && self.plausible_scale()
-            && self.arc_coherent()
+            && self.arc_ok()
     }
 }
 
@@ -311,11 +353,125 @@ pub fn candidate_frames(data: &[u8]) -> Vec<(usize, usize, usize)> {
     out
 }
 
+/// One compact lane block: ``(degree, n, knots, mult, next)``.
+///
+/// The first two bytes are ``(degree << 2) | 1`` and ``(knot_count << 2) | 1``;
+/// the third is the lane marker: ``0x0c`` for implicit clamped multiplicities,
+/// ``0x04`` for an explicit vector of ``(mult << 2) | 1`` bytes after the knots.
+fn parse_compact_lane(data: &[u8], pos: usize, end: usize) -> Option<CompactLane> {
+    if pos + 3 > end {
+        return None;
+    }
+    let token_degree = *data.get(pos)?;
+    let token_count = *data.get(pos + 1)?;
+    let marker = *data.get(pos + 2)?;
+    if !matches!(marker, COMPACT_KNOTS_IMPLICIT | COMPACT_KNOTS_EXPLICIT) {
+        return None;
+    }
+    if token_degree & 3 != 1 || token_count & 3 != 1 {
+        return None;
+    }
+    let degree = (token_degree >> 2) as usize;
+    let n = (token_count >> 2) as usize;
+    if !(1..=MAX_COMPACT_DEGREE).contains(&degree) {
+        return None;
+    }
+    if !(MIN_LANE as usize..=MAX_COMPACT_KNOTS).contains(&n) {
+        return None;
+    }
+    let lane = pos + 3;
+    if lane + 8 * n > end {
+        return None;
+    }
+    let knots: Vec<f64> = (0..n)
+        .map(|i| f64_le(data, lane + 8 * i))
+        .collect::<Option<_>>()?;
+    if !strictly_increasing(&knots) {
+        return None;
+    }
+    let mut nxt = lane + 8 * n;
+    let mult: Vec<usize> = if marker == COMPACT_KNOTS_EXPLICIT {
+        if nxt + n > end {
+            return None;
+        }
+        let tokens = data.get(nxt..nxt + n)?;
+        if tokens.iter().any(|token| token & 3 != 1) {
+            return None;
+        }
+        let mult: Vec<usize> = tokens.iter().map(|&token| (token >> 2) as usize).collect();
+        if mult.iter().any(|&count| count < 1) {
+            return None;
+        }
+        nxt += n;
+        mult
+    } else {
+        let mut mult = vec![1usize; n];
+        mult[0] = degree + 1;
+        mult[n - 1] = degree + 1;
+        mult
+    };
+    if mult.iter().sum::<usize>() < degree + 3 {
+        return None;
+    }
+    Some((degree, n, knots, mult, nxt))
+}
+
+/// Decode the compact head (``docs/evidence/2026-11-21-surface-compact-head.md``).
+///
+/// The grammar has no subtype field: two lane blocks carry their own degree,
+/// knot count and multiplicities, then ``0x01``/``0x05`` opens the
+/// ``poles_u x poles_v`` net.  ``poles = sum(mult) - degree - 1`` per
+/// direction.  The tail is not a closure law here (141..3597 B measured), so
+/// the net length is the only closure check.
+pub fn parse_compact_head(data: &[u8], payload: usize, end: usize) -> Option<SurfaceHead> {
+    if payload + 6 > end || end > data.len() {
+        return None;
+    }
+    let (degree_u, n_u, knots_u, mult_u, pos) = parse_compact_lane(data, payload, end)?;
+    let (degree_v, n_v, knots_v, mult_v, pos) = parse_compact_lane(data, pos, end)?;
+    if pos + 1 > end {
+        return None;
+    }
+    if !COMPACT_POLE_MARKERS.contains(data.get(pos)?) {
+        return None;
+    }
+    let grid = pos + 1;
+    let head = SurfaceHead {
+        start: payload,
+        end,
+        n_u,
+        n_v,
+        knots_u,
+        knots_v,
+        mode_u: 0,
+        mode_v: 0,
+        grid,
+        subtype: SUBTYPE_COMPACT,
+        degree_u,
+        degree_v,
+        rational: false,
+        mult_u,
+        mult_v,
+    };
+    if head.poles_u() < 2 || head.poles_v() < 2 {
+        return None;
+    }
+    if grid + head.net_bytes() > end {
+        return None;
+    }
+    Some(head)
+}
+
 /// Decode one payload head; ``None`` when its arithmetic does not close.
 ///
-/// The subtype byte at ``+8`` selects the grammar; both close on a measured
-/// tail and predict the grid rather than searching for it.
+/// The compact grammar has no subtype field and is tried first, positively,
+/// on its own lane tokens; the two stored grammars are then selected by the
+/// byte at ``+8``.  Both of those close on a measured tail and predict the
+/// grid rather than searching for it.
 pub fn parse_surface_head(data: &[u8], payload: usize, end: usize) -> Option<SurfaceHead> {
+    if let Some(head) = parse_compact_head(data, payload, end) {
+        return Some(head);
+    }
     if end > data.len() || payload + 9 > end {
         return None;
     }
@@ -390,6 +546,8 @@ pub fn parse_surface_head(data: &[u8], payload: usize, end: usize) -> Option<Sur
         degree_u: DEGREE,
         degree_v: DEGREE,
         rational: false,
+        mult_u: Vec::new(),
+        mult_v: Vec::new(),
     };
     if !SURFACE_TAILS.contains(&head.tail()) {
         return None;
@@ -468,6 +626,8 @@ pub fn parse_patch_head(data: &[u8], payload: usize, end: usize) -> Option<Surfa
         degree_u: DEGREE,
         degree_v: degree_v as usize,
         rational: closing[1] == CLOSING_RATIONAL,
+        mult_u: Vec::new(),
+        mult_v: Vec::new(),
     };
     if head.poles_u() < 2 || head.poles_v() < 2 {
         return None;
@@ -476,6 +636,19 @@ pub fn parse_patch_head(data: &[u8], payload: usize, end: usize) -> Option<Surfa
         return None;
     }
     Some(head)
+}
+
+/// The full knot vector of a compact lane: each value repeated ``mult`` times.
+pub fn compact_knot_vector(distinct: &[f64], multiplicities: &[usize]) -> Vec<f64> {
+    assert!(
+        distinct.len() == multiplicities.len(),
+        "a compact lane needs one multiplicity per knot"
+    );
+    let mut out = Vec::new();
+    for (value, count) in distinct.iter().zip(multiplicities) {
+        out.extend(std::iter::repeat_n(*value, *count));
+    }
+    out
 }
 
 /// Clamped degree-``degree`` knots with multiplicity-3 interior values.
@@ -824,6 +997,7 @@ pub fn assess(
         arc_ratio,
         bbox: box_,
         scale_ok,
+        arc_applicable: head.subtype != SUBTYPE_COMPACT,
     }
 }
 
@@ -1282,5 +1456,279 @@ mod tests {
             (1, 0, 0)
         );
         assert!(!refused.has_mesh());
+    }
+
+    // ------------------------------------------------------- compact head
+
+    fn hex_bytes(text: &str) -> Vec<u8> {
+        (0..text.len() / 2)
+            .map(|i| u8::from_str_radix(&text[2 * i..2 * i + 2], 16).unwrap())
+            .collect()
+    }
+
+    fn compact_lane(degree: usize, knots: &[f64], mult: Option<&[usize]>) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.push(((degree as u8) << 2) | 1);
+        out.push(((knots.len() as u8) << 2) | 1);
+        out.push(if mult.is_some() {
+            COMPACT_KNOTS_EXPLICIT
+        } else {
+            COMPACT_KNOTS_IMPLICIT
+        });
+        for &value in knots {
+            push_f64(&mut out, value);
+        }
+        if let Some(mult) = mult {
+            for &count in mult {
+                out.push(((count as u8) << 2) | 1);
+            }
+        }
+        out
+    }
+
+    fn compact_head_bytes() -> Vec<u8> {
+        let mut out = compact_lane(3, &[0.0, 1.0], None);
+        out.extend(compact_lane(1, &[0.0, 1.0], None));
+        out.push(0x01);
+        out
+    }
+
+    fn flat_net(rows: usize, cols: usize) -> Vec<u8> {
+        let mut out = Vec::new();
+        for i in 0..rows {
+            for j in 0..cols {
+                push_f64(&mut out, 10.0 * i as f64);
+                push_f64(&mut out, 8.0 * j as f64);
+                push_f64(&mut out, 0.0);
+            }
+        }
+        out
+    }
+
+    fn compact_payload(tail: usize) -> Vec<u8> {
+        let mut out = compact_head_bytes();
+        out.extend(flat_net(4, 2));
+        out.extend(std::iter::repeat_n(0u8, tail));
+        out
+    }
+
+    fn compact_part_data() -> Vec<u8> {
+        let mut data = vec![0u8; 32];
+        data.extend_from_slice(b"\x34\x12CATStorageProperty");
+        data.extend(std::iter::repeat_n(0u8, 10));
+        data.extend_from_slice(b"CATUnicodeString");
+        data.extend_from_slice(b"\xa0\x02\x00\x00\x00\x00\x34");
+        let name = b"CATPrtCont";
+        data.push(name.len() as u8);
+        data.extend_from_slice(name);
+        data.extend(std::iter::repeat_n(0u8, 64));
+        let blob = compact_payload(141);
+        data.extend_from_slice(&SURFACE_MARKER);
+        data.extend_from_slice(&(blob.len() as u32).to_le_bytes());
+        data.push(0x0f);
+        data.extend_from_slice(&blob);
+        data
+    }
+
+    fn legacy_head_bytes(knots_u: &[f64], knots_v: &[f64]) -> Vec<u8> {
+        fn push_lane_block(out: &mut Vec<u8>, knots: &[f64]) {
+            out.extend_from_slice(&HEAD_TAG.to_le_bytes());
+            out.extend_from_slice(&(knots.len() as u32).to_le_bytes());
+            out.push(0);
+            out.extend_from_slice(&2u32.to_le_bytes());
+            for &value in knots {
+                push_f64(out, value);
+            }
+        }
+        let mut out = Vec::new();
+        push_lane_block(&mut out, knots_u);
+        out.push(LANE_TAG);
+        push_lane_block(&mut out, knots_v);
+        out.extend_from_slice(&CLOSING);
+        out
+    }
+
+    fn legacy_payload(net: &[(f64, f64, f64)], knots_u: &[f64], knots_v: &[f64]) -> Vec<u8> {
+        let mut out = legacy_head_bytes(knots_u, knots_v);
+        for &(x, y, z) in net {
+            push_f64(&mut out, x);
+            push_f64(&mut out, y);
+            push_f64(&mut out, z);
+        }
+        out.extend(std::iter::repeat_n(0u8, 152));
+        out
+    }
+
+    #[test]
+    fn compact_head_pins_the_lane_tokens_and_the_pole_law() {
+        let blob = compact_payload(141);
+        let head = parse_surface_head(&blob, 0, blob.len()).unwrap();
+        assert_eq!(head.subtype, SUBTYPE_COMPACT);
+        assert_eq!((head.degree_u, head.degree_v), (3, 1));
+        assert_eq!((head.n_u, head.n_v), (2, 2));
+        assert_eq!(head.mult_u, vec![4, 4]);
+        assert_eq!(head.mult_v, vec![2, 2]);
+        assert_eq!((head.poles_u(), head.poles_v()), (4, 2));
+        assert_eq!(head.points(), 8);
+        assert_eq!(head.head_bytes(), 2 * (3 + 16) + 1);
+        assert_eq!(head.grid, head.head_bytes());
+        assert_eq!(head.tail(), 141);
+        assert_eq!(head.knots().0, vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn compact_head_decodes_the_measured_frame_hex() {
+        // ST-Stern-ins.CATPart frame 0x5a56: 0d 09 0c / 0.0 / 1.0 /
+        // 05 09 0c / 0.0 / 1.0 / 01, then the 4 x 2 net.
+        let mut blob = hex_bytes(
+            "0d090c0000000000000000000000000000f03f\
+             05090c0000000000000000000000000000f03f01",
+        );
+        blob.extend(flat_net(4, 2));
+        blob.extend(std::iter::repeat_n(0u8, 141));
+        let head = parse_surface_head(&blob, 0, blob.len()).unwrap();
+        assert_eq!((head.degree_u, head.degree_v), (3, 1));
+        assert_eq!((head.n_u, head.n_v), (2, 2));
+        assert_eq!(head.mult_u, vec![4, 4]);
+        assert_eq!(head.mult_v, vec![2, 2]);
+        assert_eq!((head.poles_u(), head.poles_v()), (4, 2));
+        assert_eq!(head.grid, 0x27);
+        assert_eq!(head.head_bytes(), 39);
+        assert_eq!(head.tail(), 141);
+    }
+
+    #[test]
+    fn compact_explicit_multiplicity_vector() {
+        // BW-Hull-Bow-YL.CATPart frame 0x6f2e: degree 5, 3 knots, explicit
+        // 19 05 19 = (6, 1, 6), then an implicit degree-5 lane.
+        let mut blob = hex_bytes(
+            "150d048109a7b5e046843fbf59b59d1683e13fcae236e9ffffef3f190519\
+             150d0c0000000000000000000000000000e03f000000000000f03f01",
+        );
+        blob.extend(flat_net(7, 7));
+        blob.extend(std::iter::repeat_n(0u8, 477));
+        let head = parse_surface_head(&blob, 0, blob.len()).unwrap();
+        assert_eq!((head.degree_u, head.degree_v), (5, 5));
+        assert_eq!(head.mult_u, vec![6, 1, 6]);
+        assert_eq!(head.mult_v, vec![6, 1, 6]);
+        assert_eq!((head.poles_u(), head.poles_v()), (7, 7));
+        assert_eq!(head.head_bytes(), 58);
+        assert_eq!(head.tail(), 477);
+        assert_eq!(
+            head.poles_u(),
+            head.mult_u.iter().sum::<usize>() - head.degree_u - 1
+        );
+    }
+
+    #[test]
+    fn compact_tail_is_not_a_closure_law() {
+        for tail in [0usize, 141, 185, 3597] {
+            let blob = compact_payload(tail);
+            let head = parse_surface_head(&blob, 0, blob.len()).unwrap();
+            assert_eq!(head.tail(), tail);
+        }
+    }
+
+    #[test]
+    fn compact_accepts_both_pole_markers_and_refuses_others() {
+        for marker in COMPACT_POLE_MARKERS {
+            let mut blob = compact_head_bytes();
+            let last = blob.len() - 1;
+            blob[last] = marker;
+            blob.extend(flat_net(4, 2));
+            blob.extend(std::iter::repeat_n(0u8, 141));
+            assert!(parse_surface_head(&blob, 0, blob.len()).is_some());
+        }
+        let mut blob = compact_head_bytes();
+        let last = blob.len() - 1;
+        blob[last] = 0x0f;
+        blob.extend(flat_net(4, 2));
+        blob.extend(std::iter::repeat_n(0u8, 141));
+        assert!(parse_surface_head(&blob, 0, blob.len()).is_none());
+    }
+
+    #[test]
+    fn compact_arc_band_is_not_applied_while_legacy_keeps_it() {
+        let net: Vec<(f64, f64, f64)> = (0..6)
+            .flat_map(|i| (0..6).map(move |j| (10.0 * i as f64, 8.0 * j as f64, 0.0)))
+            .collect();
+        let legacy = legacy_payload(&net, &[0.0, 1.0], &[0.0, 1.0]);
+        let legacy_head = parse_surface_head(&legacy, 0, legacy.len()).unwrap();
+        let legacy_fit = assess(&legacy_head, &pole_net(&legacy, &legacy_head), None);
+        assert!(!legacy_fit.arc_coherent());
+        assert!(legacy_fit.arc_applicable);
+        assert!(!legacy_fit.evaluable());
+
+        let mut compact = compact_lane(5, &[0.0, 1.0], None);
+        compact.extend(compact_lane(5, &[0.0, 1.0], None));
+        compact.push(0x01);
+        for &(x, y, z) in &net {
+            push_f64(&mut compact, x);
+            push_f64(&mut compact, y);
+            push_f64(&mut compact, z);
+        }
+        compact.extend(std::iter::repeat_n(0u8, 141));
+        let head = parse_surface_head(&compact, 0, compact.len()).unwrap();
+        let poles = pole_net(&compact, &head);
+        let fit = assess(&head, &poles, None);
+        assert_eq!(fit.arc_ratio, legacy_fit.arc_ratio);
+        assert!(!fit.arc_coherent());
+        assert!(!fit.arc_applicable);
+        assert!(fit.arc_ok());
+        assert!(fit.evaluable());
+        assert!(tessellate(&head, &poles, None, TOLERANCE_FRACTION).is_some());
+    }
+
+    #[test]
+    fn d7ed0772_legacy_frames_stay_refused() {
+        // SH-15: two ~993 m nets (merged allocation) and one folded,
+        // non-station-constant net.  The compact branch must not weaken the
+        // legacy battery.
+        let knots_u: Vec<f64> = (0..5).map(|i| 10.0 * 14.0 * i as f64 / 4.0).collect();
+        let knots_v: Vec<f64> = (0..3).map(|j| 8.0 * 8.0 * j as f64 / 2.0).collect();
+        let in_scale: Vec<(f64, f64, f64)> = (0..15)
+            .flat_map(|i| {
+                (0..9).map(move |j| (10.0 * i as f64, 8.0 * j as f64, 0.02 * (i * i) as f64))
+            })
+            .collect();
+        let kilometre: Vec<(f64, f64, f64)> = in_scale
+            .iter()
+            .map(|&(x, y, z)| (1000.0 * x, 1000.0 * y, 1000.0 * z))
+            .collect();
+        let blob = legacy_payload(&kilometre, &knots_u, &knots_v);
+        let head = parse_surface_head(&blob, 0, blob.len()).unwrap();
+        let fit = assess(&head, &pole_net(&blob, &head), None);
+        assert!(!fit.plausible_scale());
+        assert!(!fit.evaluable());
+
+        let junk = vec![(1.47e308, 1.47e308, 1.47e308); 135];
+        let blob = legacy_payload(&junk, &knots_u, &knots_v);
+        let head = parse_surface_head(&blob, 0, blob.len()).unwrap();
+        assert!(!plausible_net(&pole_net(&blob, &head)));
+
+        let folded: Vec<(f64, f64, f64)> = (0..15)
+            .flat_map(|i| {
+                let x = if i < 7 { i } else { 14 - i };
+                (0..9).map(move |j| (10.0 * x as f64, 8.0 * j as f64, 0.0))
+            })
+            .collect();
+        let wide: Vec<f64> = (0..5).map(|i| 14000.0 * i as f64 / 4.0).collect();
+        let blob = legacy_payload(&folded, &wide, &knots_v);
+        let head = parse_surface_head(&blob, 0, blob.len()).unwrap();
+        let fit = assess(&head, &pole_net(&blob, &head), None);
+        assert!(fit.folds > 0);
+        assert!(!fit.arc_coherent());
+        assert!(!fit.evaluable());
+    }
+
+    #[test]
+    fn scan_part_censuses_the_compact_record() {
+        let scan = scan_part(&compact_part_data(), TOLERANCE_FRACTION);
+        assert_eq!(scan.candidates, 1);
+        assert_eq!(scan.decoded, 1);
+        assert_eq!(scan.evaluable, 1);
+        assert_eq!(scan.tessellated, 1);
+        assert_eq!(scan.refused, 0);
+        assert!(scan.has_mesh());
     }
 }
