@@ -76,9 +76,10 @@ warning and provenance), not a silent L2 lever.
 
 ## Consequence
 
-* The planned L3 "sewing" lever is **not justified** by measurement: 126 of
-  the 145 covered candidates would lose surface, and only 19 are exact skins.
-  No L3 code is added.
+* The planned L3 "sewing" lever is **not justified** by measurement: only 19
+  of the 145 covered candidates are exact skins; the other 126 exceed `1e-4`
+  relative deviation, so the skip is not surface-preserving for them. No L3
+  code is added.
 * Issue #70's actionable part is delivered: L1 fixes 117 parts; the remaining
   240 are documented native writer content (the NX→CATIA writer re-lists
   skins with another diagonal and shares their edges), not a regression of
@@ -89,9 +90,10 @@ warning and provenance), not a silent L2 lever.
 
 ## What this note does not assert
 
-* It does not claim the 240 are unfixable in principle; it measures that
-  dropping the kept loops loses surface for 221 of them, and that the
-  topology-only split is not a surface-fidelity improvement.
+* It does not claim the 240 are unfixable in principle; it measures that the
+  skip is not surface-preserving for 221 of them (95 lose unique vertices,
+  126 deviate from the surviving surface), and that the topology-only split
+  is not a surface-fidelity improvement.
 * It does not reopen the L1 adoption: the 117 fixed parts stay fixed
   byte-for-byte.
 * It does not change `PRIMARY_LOOP_AREA_REL`, the L2 gate, or the corpus
