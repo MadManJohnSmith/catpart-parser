@@ -1820,7 +1820,13 @@ def _triangulate(
                 continue
             if _mesh_safe(edge_uses, tris):
                 triangles.extend(tris)
-                _fold_edge_uses(edge_uses, _edge_uses(tris))
+                # (the fold already happened inside :func:`_mesh_safe`'s
+                # accept arm; the T3 commit's extra ``_fold_edge_uses``
+                # here double-counted every accepted relaxed loop's
+                # edges, over-refusing later relaxed loops on the same
+                # histogram — a Python-twin-only bug the port never
+                # copied; surfaced by the Dodge store's relaxed loops,
+                # Fase 3 L2 #72)
                 relaxed_accepted += 1
             else:
                 relaxed_declined += 1
@@ -3225,6 +3231,41 @@ def _raw_escape_probe(payload: bytes, element_count: int):
     return s, rate, asc
 
 
+def _region_absorbs(pts, poolv):
+    """Whether ``pts`` absorbs the paired pool group's vertices — the
+    exact-f32 test, then the stage-4b noise tolerance for pools within
+    the committed 10,000-vertex cap (the store-level absorption
+    semantics of :func:`_decode_mixedwrite`, applied to one region).
+    An empty pool absorbs nothing (no evidence either way)."""
+    pset = set(poolv)
+    if not pset:
+        return False
+    pts_set = set(pts)
+    missing = pset - pts_set
+    if missing and len(pset) <= 10_000:
+        missing = {
+            v
+            for v in missing
+            if (best := _tol_match(v, pts)) is None or best > NOISE_REL
+        }
+    return not missing
+
+
+def _flat_reading(payload: bytes, element_count: int, counts_end: int):
+    """The flat law's reading: ``element_count`` full triples straight
+    after the 4-B tail field (start pinned by ``counts_end``), ALL-nice
+    under :func:`_nice` — the points list, or ``None`` when the span
+    does not fit or any coordinate fails the predicate."""
+    s = counts_end + 4
+    if s + 12 * element_count <= len(payload) and element_count >= 2:
+        pts = list(
+            struct.iter_unpack("<fff", payload[s : s + 12 * element_count])
+        )
+        if all(_nice(x) and _nice(y) and _nice(z) for x, y, z in pts):
+            return pts
+    return None
+
+
 def _decode_node_mixedwrite(payload: bytes, element_count: int, counts_end: int, poolv):
     """Decode one token-node payload with the stage-8 law set (ported
     from ``mixedwrite_decode.decode_node`` — not re-derived), in the
@@ -3270,6 +3311,28 @@ def _decode_node_mixedwrite(payload: bytes, element_count: int, counts_end: int,
             pts = list(
                 struct.iter_unpack("<fff", payload[s : s + 12 * element_count])
             )
+            # Fase 3 L2 (#72, the S6 Dodge store anatomy): the raw-vs-
+            # flat absorption tiebreak — the raw claim loses when a
+            # flat reading exists that absorbs the PAIRED pool group
+            # while the raw does not (evidence of absorption, not
+            # probe order; measured on the Dodge Challenger's 43.88 MB
+            # store: exactly 1 of the 501 raw claims flips, the
+            # group-266 node whose casual 0xFF at the region boundary
+            # stole the start 12 bytes past the flat reading and
+            # dropped its first triple).  The store-level judgment
+            # stays per rep below; stores whose raw region absorbs its
+            # paired pool keep their committed decode verbatim.
+            if not _region_absorbs(pts, poolv):
+                flat_pts = _flat_reading(payload, element_count, counts_end)
+                if flat_pts is not None and _region_absorbs(flat_pts, poolv):
+                    return (
+                        "flat",
+                        [(0, pt) for pt in flat_pts],
+                        flat_pts,
+                        counts_end + 4 + 12 * element_count,
+                        3 * element_count,
+                        "",
+                    )
             return (
                 "raw",
                 [(0, pt) for pt in pts],
@@ -3278,35 +3341,24 @@ def _decode_node_mixedwrite(payload: bytes, element_count: int, counts_end: int,
                 3 * element_count,
                 "",
             )
-    s = counts_end + 4
-    if s + 12 * element_count <= len(payload) and element_count >= 2:
-        ok = True
-        xs = []
-        for k in range(element_count):
-            x, y, z = struct.unpack_from("<fff", payload, s + 12 * k)
-            if not (_nice(x) and _nice(y) and _nice(z)):
-                ok = False
-                break
-            xs.append(x)
-        if ok:
-            asc = (
-                sum(1 for a, b in zip(xs, xs[1:]) if b >= a - 1e-6)
-                / (element_count - 1)
+    pts = _flat_reading(payload, element_count, counts_end)
+    if pts is not None:
+        xs = [p[0] for p in pts]
+        asc = (
+            sum(1 for a, b in zip(xs, xs[1:]) if b >= a - 1e-6)
+            / (element_count - 1)
+        )
+        pset = set(poolv)
+        hits = len(pset & set(pts))
+        if asc >= RAW_FIT_RATE or (pset and hits == len(pset)):
+            return (
+                "flat",
+                [(0, pt) for pt in pts],
+                pts,
+                counts_end + 4 + 12 * element_count,
+                3 * element_count,
+                "",
             )
-            pts = list(
-                struct.iter_unpack("<fff", payload[s : s + 12 * element_count])
-            )
-            pset = set(poolv)
-            hits = len(pset & set(pts))
-            if asc >= RAW_FIT_RATE or (pset and hits == len(pset)):
-                return (
-                    "flat",
-                    [(0, pt) for pt in pts],
-                    pts,
-                    s + 12 * element_count,
-                    3 * element_count,
-                    "",
-                )
     if probe is not None:
         s, rate, asc = probe
         return (

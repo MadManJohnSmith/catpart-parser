@@ -4075,6 +4075,58 @@ struct NodeMixedwrite {
 ///     real near-zero coordinates on these stores), x-ascending >=
 ///     RAW_FIT_RATE OR the pool fully re-listed verbatim (junk spans
 ///     absorb nothing and fail here).
+/// Whether `pts` absorbs the paired pool group's vertices — the
+/// exact-f32 test, then the stage-4b noise tolerance for pools within
+/// the committed 10,000-vertex cap (the store-level absorption
+/// semantics of :fn:`decode_mixedwrite`, applied to one region). An
+/// empty pool absorbs nothing (no evidence either way).
+fn region_absorbs(pts: &[(f64, f64, f64)], poolv: &[(f64, f64, f64)]) -> bool {
+    let pset: HashSet<(u64, u64, u64)> = poolv.iter().copied().map(vkey).collect();
+    if pset.is_empty() {
+        return false;
+    }
+    let pts_set: HashSet<(u64, u64, u64)> = pts.iter().copied().map(vkey).collect();
+    let missing: Vec<(f64, f64, f64)> = poolv
+        .iter()
+        .copied()
+        .filter(|v| !pts_set.contains(&vkey(*v)))
+        .collect();
+    if missing.is_empty() {
+        return true;
+    }
+    if pset.len() <= 10_000 {
+        missing
+            .iter()
+            .all(|&v| matches!(tol_match(v, pts), Some(best) if best <= NOISE_REL))
+    } else {
+        false
+    }
+}
+
+/// The flat law's reading: `element_count` full triples straight after
+/// the 4-B tail field (start pinned by `counts_end`), ALL-nice under
+/// :fn:`nice` — the points, or `None` when the span does not fit or a
+/// coordinate fails the predicate.
+fn flat_reading(
+    payload: &[u8],
+    element_count: u32,
+    counts_end: usize,
+) -> Option<Vec<(f64, f64, f64)>> {
+    let s = counts_end + 4;
+    if s + 12 * element_count as usize <= payload.len() && element_count >= 2 {
+        let pts: Vec<(f64, f64, f64)> = payload[s..s + 12 * element_count as usize]
+            .as_chunks::<12>()
+            .0
+            .iter()
+            .map(|t| (f32_widen(t, 0), f32_widen(t, 4), f32_widen(t, 8)))
+            .collect();
+        if pts.iter().all(|&(x, y, z)| nice(x) && nice(y) && nice(z)) {
+            return Some(pts);
+        }
+    }
+    None
+}
+
 fn decode_node_mixedwrite(
     payload: &[u8],
     element_count: u32,
@@ -4115,6 +4167,26 @@ fn decode_node_mixedwrite(
             .iter()
             .map(|t| (f32_widen(t, 0), f32_widen(t, 4), f32_widen(t, 8)))
             .collect();
+        // Fase 3 L2 (#72, the S6 Dodge store anatomy): the raw-vs-flat
+        // absorption tiebreak — the raw claim loses when a flat reading
+        // exists that absorbs the PAIRED pool group while the raw does
+        // not (evidence of absorption, not probe order; measured on
+        // the Dodge Challenger's 43.88 MB store: exactly 1 of the 501
+        // raw claims flips).  Stores whose raw region absorbs its
+        // paired pool keep their committed decode verbatim.
+        if !region_absorbs(&pts, poolv)
+            && let Some(flat_pts) = flat_reading(payload, element_count, counts_end)
+            && region_absorbs(&flat_pts, poolv)
+        {
+            return NodeMixedwrite {
+                law: Some("flat"),
+                elements: flat_pts.iter().map(|&pt| (0, Some(pt))).collect(),
+                pts: flat_pts,
+                region_end_rel: counts_end + 4 + 12 * element_count as usize,
+                write_count: 3 * element_count as usize,
+                failure: String::new(),
+            };
+        }
         return NodeMixedwrite {
             law: Some("raw"),
             // raw elements are all written, slot value 0
