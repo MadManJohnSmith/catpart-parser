@@ -9,11 +9,14 @@ Snapshot: `submarine-ssk-tr-1700-s42-ara-san-juan-1.snapshot.20` (757
 ## What L1 already fixed
 
 The Fase 3 L1 fail-closed relist skip (`3e178c7`, merged `84bd793`) took the
-submarine's `not-manifold` set from **357 to 240** parts: 117 fixed, 0 new.
-The 240 are a strict subset of the 357; 149 of them already failed before
-Phase 2, 91 were unlocked by #76 (`c796a08`) and expose the same native
-signature. All 240 carry `primary-loop-manifold-kept`; the L1 candidate was
-declined for them, not silently applied.
+submarine's `not-manifold` set from **357 to 240** parts: 117 no longer fail
+that check. Of those, **80 pass L2** and **37 land on `degenerate-triangles`**
+(the adopted candidate's triangulation), so the net L2 pass gain is **80**
+(366 → 446); the 37 remain L2 failures and are a named side effect of the
+current L1 gate. The 240 are a strict subset of the 357; 149 of them already
+failed before Phase 2, 91 were unlocked by #76 (`c796a08`) and expose the same
+native signature. All 240 carry `primary-loop-manifold-kept`; the L1 candidate
+was declined for them, not silently applied.
 
 ## Why the L1 candidate is declined
 
@@ -80,10 +83,11 @@ warning and provenance), not a silent L2 lever.
   of the 145 covered candidates are exact skins; the other 126 exceed `1e-4`
   relative deviation, so the skip is not surface-preserving for them. No L3
   code is added.
-* Issue #70's actionable part is delivered: L1 fixes 117 parts; the remaining
-  240 are documented native writer content (the NX→CATIA writer re-lists
-  skins with another diagonal and shares their edges), not a regression of
-  #74/#76.
+* Issue #70's actionable part is delivered: Phase 3 resolves 117
+  `not-manifold` parts (80 now pass L2, 37 land on `degenerate-triangles`);
+  the remaining 240 are documented native writer content (the NX→CATIA
+  writer re-lists skins with another diagonal and shares their edges), not a
+  regression of #74/#76.
 * The official L2 corpus is unaffected: its 1,442 files include 5
   `not-manifold` failures, none of them in this external residue. The
   submarine remains an external generalization set, not a fitness input.
