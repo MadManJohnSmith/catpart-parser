@@ -468,6 +468,47 @@ def test_composite_u24be_candidate_is_threshold_gated():
     assert all(r < 70_000 for _o, _mk, _n, _c, refs, _w in records for r in refs)
 
 
+# --- #66 (2026-11-20): the short-form refs gate --------------------------
+
+def _strip_record(marker: int, n: int, counts: bytes, ref_bytes: bytes) -> bytes:
+    return (
+        bytes([0x01, marker, 1, 0xFF])
+        + struct.pack("<I", n)
+        + counts
+        + ref_bytes
+    )
+
+
+def test_composite_short_vote_ranks_oob_before_repeats():
+    """#66 pin: the in-bounds candidate wins even when it repeats refs.
+
+    The old rank (exact, repeats, oob, ...) picked the w2be candidate:
+    it does not repeat (0x0708/0x0709/0x0506 and 0x010a/0x010b/0x010c
+    are distinct) while the w1 candidate repeats 7 — and all six w2
+    refs are >= 100, i.e. out of the element space. The committed gate
+    ranks oob first and then declines the winner if it is still OOB,
+    which is what stopped the Audi IndexError / submarine KeyError.
+    """
+    ref_bytes = bytes([7, 8, 7, 9, 5, 6, 0x01, 0x0A, 0x01, 0x0B, 0x01, 0x0C, 0, 0])
+    rec = _strip_record(0x42, 6, bytes([6]), ref_bytes)
+    records, n_hdrs = parse_strip_records(rec, 0, len(rec), 100)
+    assert n_hdrs == 1
+    assert len(records) == 1
+    _o, _mk, _normal, _counts, refs, width = records[0]
+    assert width == 1
+    assert refs == (7, 8, 7, 9, 5, 6)
+    assert all(r < 100 for r in refs)
+
+
+def test_composite_short_vote_declines_an_all_oob_winner():
+    """#66 post-vote gate: a record with no in-bounds reading stays
+    unresolved (it never reaches ``_triangulate``)."""
+    rec = _strip_record(0x41, 2, bytes([2]), bytes([200, 200, 201, 201]))
+    records, n_hdrs = parse_strip_records(rec, 0, len(rec), 100)
+    assert n_hdrs == 1
+    assert records == []
+
+
 # --- stage-6: the walk-mismatch residue's raw-array law (stage-4a,
 # integrated 2026-11-12, #34) -------------------------------------------
 

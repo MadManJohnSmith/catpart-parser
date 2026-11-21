@@ -948,13 +948,16 @@ fn parse_049_record(
 /// read junk past them: measured on the corpus A/B, 4 exported stores
 /// flip to OOB junk when u24be is offered below the threshold) x
 /// count-byte ``k`` (0..16) summing to ``n``, ending at or before the
-/// next header. Rank: exact tiling, then no-repeated-refs-within-a-
-/// loop, then no out-of-range refs, then non-coplanar
+/// next header. Rank: exact tiling, then no out-of-range refs, then
+/// no-repeated-refs-within-a-loop, then non-coplanar
 /// normal-carrying loops (only computed when ``elements`` — the
 /// decoded element space the refs index — is passed; a candidate
 /// whose loops are non-coplanar against the record's stored normal
 /// loses to one that is coplanar; without ``elements`` the rank is
-/// the committed stage-3b one), then the narrower width. Returns the
+/// the committed stage-3b one), then the narrower width. The winning
+/// parse is then gated fail-closed on the element space (#66,
+/// 2026-11-20): a record whose refs leave it stays unresolved, the
+/// same post-vote rule the extended family applies. Returns the
 /// records plus the header-candidate count.
 fn parse_strip_records(
     data: &[u8],
@@ -1111,8 +1114,8 @@ fn parse_strip_records(
                 }
                 let rank: Rank = (
                     if end == nxt { 0 } else { 1 },
-                    if repeats { 1 } else { 0 },
                     if oob { 1 } else { 0 },
+                    if repeats { 1 } else { 0 },
                     nonplanar,
                     width,
                     k as u32,
@@ -1123,6 +1126,14 @@ fn parse_strip_records(
             }
         }
         if let Some((_rank, counts, refs, width)) = best {
+            if refs.iter().any(|&r| r >= element_count) {
+                // Fail-closed refs gate (#66, 2026-11-20), twin of the
+                // Python post-vote rule: a record whose winning parse
+                // leaves the element space is not this family's record.
+                // The record stays unresolved instead of tripping the
+                // store-level refs gate.
+                continue;
+            }
             out.push(CompositeRecord {
                 offset: o,
                 marker: mk,
@@ -5058,5 +5069,44 @@ mod tests {
         let before = uses.clone();
         assert!(!mesh_safe(&mut uses, &[(0, 2, 9)]));
         assert_eq!(uses, before);
+    }
+
+    // --- #66 (2026-11-20): the short-form refs gate -------------------
+
+    fn strip_record(marker: u8, n: u32, counts: &[u8], refs: &[u8]) -> Vec<u8> {
+        let mut out = vec![0x01, marker, 1, 0xFF];
+        out.extend_from_slice(&n.to_le_bytes());
+        out.extend_from_slice(counts);
+        out.extend_from_slice(refs);
+        out
+    }
+
+    /// #66 pin: the in-bounds candidate wins even when it repeats refs.
+    /// The old rank (exact, repeats, oob, ...) picked the w2be candidate
+    /// (no repeat, but all refs >= 100); the committed gate ranks oob
+    /// first and declines the winner if it is still OOB.
+    #[test]
+    fn short_vote_ranks_oob_before_repeats() {
+        let rec = strip_record(
+            0x42,
+            6,
+            &[6],
+            &[7, 8, 7, 9, 5, 6, 0x01, 0x0A, 0x01, 0x0B, 0x01, 0x0C, 0, 0],
+        );
+        let (records, n_hdrs) = parse_strip_records(&rec, 0, rec.len(), 100, None);
+        assert_eq!(n_hdrs, 1);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].width, 1);
+        assert_eq!(records[0].refs, vec![7, 8, 7, 9, 5, 6]);
+    }
+
+    /// #66 post-vote gate: a record with no in-bounds reading stays
+    /// unresolved (it never reaches `triangulate`).
+    #[test]
+    fn short_vote_declines_an_all_oob_winner() {
+        let rec = strip_record(0x41, 2, &[2], &[200, 200, 201, 201]);
+        let (records, n_hdrs) = parse_strip_records(&rec, 0, rec.len(), 100, None);
+        assert_eq!(n_hdrs, 1);
+        assert!(records.is_empty());
     }
 }

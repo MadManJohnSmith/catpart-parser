@@ -518,7 +518,7 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
     as u8 pairs with a zero at every other entry, while every corpus
     record the extension admits carries a zero-free table) summing to
     n, ending at or before the next header.  Rank: exact tiling, then
-    no-repeated-refs-within-a-loop, then no out-of-range refs, then
+    no out-of-range refs, then no-repeated-refs-within-a-loop, then
     **non-coplanar normal-carrying loops** (only computed when
     ``elements`` — the decoded element space the refs index — is
     passed; a candidate whose loops are non-coplanar against the
@@ -526,9 +526,11 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
     2026-11-18 a skip-bearing loop is tested on its dup-pinned
     coordinates with the same battery, so the gap-edge width choice
     prefers the fully-written parse over a misread whose loops land on
-    skip slots), then the narrower width.  Returns ``(records,
-    n_headers)`` where each record is ``(offset, marker, normal,
-    counts, refs, width)``.
+    skip slots), then the narrower width.  The winning parse is then
+    gated fail-closed on the element space (#66, 2026-11-20): a record
+    whose refs leave it stays unresolved, the same post-vote rule the
+    extended family applies.  Returns ``(records, n_headers)`` where
+    each record is ``(offset, marker, normal, counts, refs, width)``.
     """
     hdrs = [m.start() for m in STRIP_RE.finditer(data, lo, hi)]
     widths = (1, 2, 3) if element_count > 65_535 else (1, 2)
@@ -636,8 +638,8 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
                             nonplanar += 1
                 rank = (
                     0 if end == nxt else 1,
-                    1 if repeats else 0,
                     1 if oob else 0,
+                    1 if repeats else 0,
                     nonplanar,
                     width,
                     k,
@@ -647,6 +649,20 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
         if best is None:
             continue
         _rank, counts, refs, width = best
+        if element_count is not None and any(r >= element_count for r in refs):
+            # Fail-closed refs gate (#66, 2026-11-20), symmetric to the
+            # extended family's post-vote rule (parse_extended_facet_
+            # records): a record whose winning parse leaves the element
+            # space is NOT this family's record. Before this gate the
+            # short-form vote ranked ``repeats`` above ``oob`` and never
+            # re-checked the winner, so a w2 big-endian misread of a
+            # relaxed 0x41/0x44 record (all refs >= element_count) could
+            # win against an in-bounds parse and reach ``_triangulate``,
+            # where it raised ``IndexError`` in ``_dup_pin_map`` (Audi
+            # R8) or ``KeyError`` in the RELAXED pass (5 submarine
+            # parts). The record stays unresolved instead of tripping
+            # the store-level refs gate.
+            continue
         out.append((o, mk, normal, counts, refs, width))
     return out, len(hdrs)
 
