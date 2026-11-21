@@ -95,6 +95,8 @@ pub enum PairingRule {
     DescBlock,
     /// Bare Pair: `<PartNumber> <InstanceName>`
     BarePair,
+    /// V5R26 name table: an interned name item, with no per-instance marker.
+    NameTable,
 }
 
 impl PairingRule {
@@ -103,8 +105,128 @@ impl PairingRule {
             Self::Triple => "triple",
             Self::DescBlock => "desc_block",
             Self::BarePair => "bare_pair",
+            Self::NameTable => "name_table",
         }
     }
+}
+
+/// Depth of the V5R26 schema head (items `0..22`, ending at `_Reps`).
+pub const NAME_TABLE_HEAD_DEPTH: usize = 22;
+
+/// Fixed V5R26 schema items that are never instance names.
+pub const NAME_TABLE_SCHEMA_TOKENS: &[&str] = &[
+    "ASMProduct",
+    "_BagRepsList",
+    "_PrdVersion",
+    "_PubConnectors",
+    "_AttrForLiterals",
+    "_RefProduct",
+    "_Disciplines",
+    "PRDBAGREP",
+    "3DIC",
+    "_Reps",
+    "_Version",
+    "IsRoot",
+    "PRDREP",
+    "TEMP",
+];
+
+/// Container whose presence marks the older COSO/SERVO pool generation.
+pub const CATMECH_PROD_CONTAINER: &str = "CATMechProdCont";
+
+/// A decoded V5R26 name table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NameTable {
+    /// Value of the first `_PartNumber` item (the document's own product name).
+    pub self_name: Option<String>,
+    /// Interned value items after the schema head, in table order.
+    pub names: Vec<String>,
+}
+
+/// Structural signature of a V5R26 name-table pool.
+///
+/// The caller must also require that the marker passes extracted zero
+/// instances (`read_name_table` is only the signature) so a document the
+/// existing pairing laws decode is never re-decided.
+pub fn has_name_table_signature(texts: &[String]) -> bool {
+    if texts.iter().take(24).any(|t| t == CATMECH_PROD_CONTAINER) {
+        return false;
+    }
+    let head = &texts[..texts.len().min(NAME_TABLE_HEAD_DEPTH)];
+    head.windows(2)
+        .any(|pair| pair[0] == "PRDBAGREP" && pair[1] == "3DIC")
+}
+
+/// Recognise the name-table signature and enumerate its interned names.
+///
+/// The body is a bag: it lists the document's own children and the leaves of
+/// the sub-products it references. Attribution is the walker's job
+/// (`ownership::own_children`); enumeration must not sort or reorder, because
+/// the table order is not an instance order (alphabetized in A1/A3, logical in
+/// B4/B2).
+pub fn read_name_table(texts: &[String]) -> Option<NameTable> {
+    if !has_name_table_signature(texts) {
+        return None;
+    }
+
+    let self_name = texts
+        .iter()
+        .position(|t| t == "_PartNumber")
+        .and_then(|i| texts.get(i + 1))
+        .filter(|t| !is_token(t) && !is_class_token(t) && *t != BINARY_SENTINEL)
+        .cloned();
+
+    let mut head_end = 0;
+    for (i, text) in texts.iter().take(NAME_TABLE_HEAD_DEPTH).enumerate() {
+        if is_token(text)
+            || is_class_token(text)
+            || NAME_TABLE_SCHEMA_TOKENS.contains(&text.as_str())
+        {
+            head_end = i + 1;
+        }
+    }
+
+    let mut names = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for text in texts.iter().skip(head_end) {
+        if text.is_empty()
+            || text == BINARY_SENTINEL
+            || is_token(text)
+            || is_class_token(text)
+            || NAME_TABLE_SCHEMA_TOKENS.contains(&text.as_str())
+            || self_name.as_ref() == Some(text)
+        {
+            continue;
+        }
+        if seen.insert(text.as_str()) {
+            names.push(text.clone());
+        }
+    }
+    Some(NameTable { self_name, names })
+}
+
+/// Enumerate one unplaced instance record per interned name.
+///
+/// Placement is filled by `binding::bind_name_table` (zero records -> identity,
+/// any record -> undecodable).
+pub fn extract_name_table_instances(texts: &[String]) -> Option<Vec<InstanceRecord>> {
+    let table = read_name_table(texts)?;
+    Some(
+        table
+            .names
+            .into_iter()
+            .map(|name| InstanceRecord {
+                instance_name: name.clone(),
+                part_number: name,
+                pairing_rule: PairingRule::NameTable,
+                has_position_attr: false,
+                placement_status: PlacementStatus::Identity,
+                transform: None,
+                object_tag: None,
+                classification_detail: None,
+            })
+            .collect(),
+    )
 }
 
 /// An instance record extracted from a CATProduct structure pool.
@@ -518,6 +640,81 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].instance_name, "Part2.1");
         assert_eq!(records[0].part_number, "Part2");
+    }
+
+    fn name_table_texts(names: &[&str]) -> Vec<String> {
+        let mut texts: Vec<String> = [
+            "CATCatalogManager",
+            "catalogManager",
+            "catalogLinks",
+            "",
+            "ASMPRODUCT",
+            "ASMProduct",
+            "_ViewsList",
+            "_Connectors",
+            "_RepresentedBy",
+            "_Component",
+            "_PartNumber",
+        ]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
+        texts.push("TableAssembly".to_string());
+        for text in [
+            "_BagRepsList",
+            "_PrdVersion",
+            "_PubConnectors",
+            "_AttrForLiterals",
+            "_RefProduct",
+            "_Disciplines",
+            "PRDBAGREP",
+            "3DIC",
+            "_Reps",
+            "_InstanceName",
+        ] {
+            texts.push(text.to_string());
+        }
+        texts.extend(names.iter().map(|s| (*s).to_string()));
+        texts.push("IsRoot".to_string());
+        texts
+    }
+
+    #[test]
+    fn name_table_signature_and_extraction() {
+        let texts = name_table_texts(&["Widget", "Bracket"]);
+        assert!(has_name_table_signature(&texts));
+
+        let table = read_name_table(&texts).expect("name table");
+        assert_eq!(table.self_name.as_deref(), Some("TableAssembly"));
+        assert_eq!(table.names, vec!["Widget", "Bracket"]);
+
+        let records = extract_name_table_instances(&texts).expect("instances");
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].instance_name, "Widget");
+        assert_eq!(records[0].part_number, "Widget");
+        assert_eq!(records[0].pairing_rule, PairingRule::NameTable);
+        assert!(!records[0].has_position_attr);
+    }
+
+    #[test]
+    fn name_table_keeps_table_order_and_drops_self_name() {
+        // A1/A3 shape: alphabetized pool, document order not recoverable from it.
+        let texts = name_table_texts(&["aardvark", "mike", "zulu", "TableAssembly"]);
+        let table = read_name_table(&texts).expect("name table");
+        assert_eq!(table.names, vec!["aardvark", "mike", "zulu"]);
+    }
+
+    #[test]
+    fn name_table_signature_rejects_other_generations() {
+        let mut with_mechprod = name_table_texts(&["Widget"]);
+        with_mechprod[6] = CATMECH_PROD_CONTAINER.to_string();
+        assert!(!has_name_table_signature(&with_mechprod));
+        assert!(read_name_table(&with_mechprod).is_none());
+
+        let mut without_bag = name_table_texts(&["Widget"]);
+        without_bag.retain(|t| t != "PRDBAGREP" && t != "3DIC");
+        assert!(!has_name_table_signature(&without_bag));
+        assert!(read_name_table(&without_bag).is_none());
     }
 
     #[test]
