@@ -108,6 +108,7 @@ pub const WARN_EXTENDED_DECLINED: &str = "extended-header-geometry-declined";
 pub const WARN_PRIMARY_SKIP: &str = "primary-loop-manifold-skip";
 pub const WARN_PRIMARY_DECLINED: &str = "primary-loop-manifold-declined";
 pub const WARN_PRIMARY_KEPT: &str = "primary-loop-manifold-kept";
+pub const WARN_PRIMARY_RELIST_SKIP: &str = "primary-loop-relist-skip";
 pub const WARN_DEDUP: &str = "duplicate-triangles-deduped";
 pub const WARN_DEDUP_DECLINED: &str = "duplicate-triangles-dedup-declined";
 /// The exact B-spline surface fallback (2026-11-19).
@@ -1493,6 +1494,10 @@ fn export_composite_store(
         // The dedup's internal keeper rank, already consumed by the
         // decode entry: never part of the export surface.
         space_offsets: _,
+        // Fase 3 L1 internals, consumed by the decode entry.
+        kept_loop_tris: _,
+        kept_loop_count: _,
+        relist_forced: _,
     } = composite::decode_composite_store(data, span, groups, kinds, allow_unrouted_elements)?;
     let stats = mesh::mesh_stats(&triangles);
     let mut warnings: Vec<Warning> = Vec::new();
@@ -1596,6 +1601,27 @@ fn export_composite_store(
                  before (the over-use is named, not hidden; owner \
                  decision, docs/evidence/\
                  2026-11-18-primary-emit-seam.md)"
+            ),
+        });
+    }
+    if let Some(skips) = info.primary_loop_relist_skips {
+        let boundary = info
+            .primary_loop_relist_boundary
+            .clone()
+            .unwrap_or_else(|| "?".to_string());
+        warnings.push(Warning {
+            class: WARN_PRIMARY_RELIST_SKIP.to_string(),
+            detail: format!(
+                "{skips} kept \
+                 primary facet loops skipped as re-listed skin: their \
+                 triangles re-list facets the surviving mesh already \
+                 carries (the NX->CATIA writer writes the same surface \
+                 twice, re-triangulated with the other diagonal), and \
+                 removing them leaves the store mesh manifold with the \
+                 boundary-edge set not growing ({boundary}) — the \
+                 Fase 3 L1 fail-closed post-pass, issue #70; the skip \
+                 is declined and the previous emission kept whenever \
+                 any condition fails"
             ),
         });
     }
