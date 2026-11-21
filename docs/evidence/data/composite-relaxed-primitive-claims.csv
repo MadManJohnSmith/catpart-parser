@@ -1,0 +1,10 @@
+claim,statement,label,scope,release,observations,passes,rate,value
+66-01_short_vote_gate,"the short-form vote ranks no-out-of-range refs before repeats and re-checks the winning parse against the element space (fail-closed)",fact,composite stores; the 6 diagnosed crashers,all,6,6,1.000000,
+66-02_oob_records_read_in_bounds,"the 10 out-of-range short records the diagnosis verified byte by byte: 8 are fully in bounds under the primitive (6 u16le + 2 u8); MB-chair 0x8899c keeps one marginal u16le ref and falls back to u8; the tenth is the Audi false header",fact,"Audi R8; MB-chair-A/B2; MB-hatch-tapa-MDC; MD-Running gear-B2/B4",all,10,8,0.800000,
+66-03_false_headers_declined,"the 2 Audi byte patterns that are not records (0x301e912; 0x2a3f1b7) are declined by the u16le-straddle and u8-half-read conditions",fact,Audi R8,all,2,2,1.000000,
+66-04_audi_r8_export,"Audi R8 exports with the primitive: 174303 triangles; 0 degenerate; L2 pass",measure,Audi R8 (AUDINSKLOPIC_AllCATPart.CATPart),all,1,1,1.000000,174303
+66-05_submarine_exports,"the five export-crash:KeyError submarine parts now export: MB-chair-A 1300; MB-chair-B2 1307; MB-hatch-tapa-MDC 1014; MD-Running gear-B2 4601 (L2 pass); MD-Running gear-B4 4198",fact,submarine snapshot.20,all,5,5,1.000000,
+66-06_corpus_l2_stable,"corpus A/B (1,442 parts; main 1f752f0 vs branch): L2 status changes 0; degenerate-count changes 0; error-class changes 0",fact,full corpus manifest,all,1442,1442,1.000000,
+66-07_corpus_triangle_correction,"corpus A/B: 4 parts change triangle count (net -83) because their u8 reading was a half-read of a u16le stream; all stay L2 pass with identical vertex counts",measure,full corpus manifest,all,1442,1438,0.997226,-83
+66-08_straddle_census,"accepted relaxed records whose u16 block straddles a 6-byte extended header over 1,442 parts: 5 (2 big-endian winners unchanged; 3 u8 winners: SP02 and M3x10 straddle by one header byte; tn.1.1.1 is the one ambiguous decline)",fact,full corpus manifest,all,5,5,1.000000,
+66-09_rust_parity,"Rust port returns the Python triangle/vertex counts exactly on the six target parts",fact,"Audi R8; the 5 submarine crash parts",all,6,6,1.000000,
