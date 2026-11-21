@@ -1618,7 +1618,11 @@ fn export_composite_store(
                  carries (the NX->CATIA writer writes the same surface \
                  twice, re-triangulated with the other diagonal), and \
                  removing them leaves the store mesh manifold with the \
-                 boundary-edge set not growing ({boundary}) — the \
+                 boundary-edge set not growing ({boundary}) and the \
+                 candidate carrying no degenerate-triangle skips at all \
+                 (L1.1, 2026-11-21: the kept emission's own skips are \
+                 what the degenerate-triangles class names once the mesh \
+                 turns manifold) — the \
                  Fase 3 L1 fail-closed post-pass, issue #70; the skip \
                  is declined and the previous emission kept whenever \
                  any condition fails"

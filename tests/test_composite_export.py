@@ -1928,6 +1928,41 @@ DEDUP_COORD_CASE = {"545707b9871a535c": 2978}
 # 2026-11-20); the manifold/no-dedup-outcome pins are unchanged.
 DEDUP_COORD_NO_REGRESSION = {"b912cbef805c541b": 51369}
 
+# --- 2026-11-21: the L1.1 adoption condition (#70) -------------------------
+#
+# The relist post-pass adopts its candidate only when the candidate
+# mesh is manifold, its boundary-edge set does not grow, every skipped
+# loop's vertex coordinates survive AND (L1.1) it carries no more
+# degenerate-triangle skips than the kept emission — the 37
+# `degenerate-triangles` side effects of L1 live in the EXTERNAL
+# submarine snapshot (docs/evidence/2026-11-21-phase3-l3-residue.md;
+# the external probe pins their return to not-manifold), while the ONE
+# official-corpus part the pass fires on carries a degenerate-free
+# candidate and must keep its adopted emission.
+RELIST_ADOPTED_PIN = {"cd88ae9d4d51a439": 3386}
+
+
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parents[1] / "corpus").exists(),
+    reason="corpus is gitignored / absent (the corpus-gated L1.1 pin)",
+)
+def test_relist_adoption_survives_the_degenerate_condition(tmp_path):
+    """The one corpus relist adopter keeps its adoption under L1.1: its
+    candidate is degenerate-free (0 <= chosen), so the part stays L2
+    pass at its pinned triangle count with the relist outcome named."""
+    from catpart.geometry import build_export
+
+    paths = _corpus_part_paths(RELIST_ADOPTED_PIN)
+    assert set(paths) == set(RELIST_ADOPTED_PIN), "manifest/corpus rows missing"
+    for sha, path in paths.items():
+        summary = build_export(path, tmp_path / f"{sha}.ply")
+        assert summary["triangle_count"] == RELIST_ADOPTED_PIN[sha]
+        assert summary["degenerate_triangle_count"] == 0
+        assert summary["mesh"]["manifold"] is True
+        composite = summary["composite"]
+        assert composite["primary_loop_relist_skips"] >= 1
+        assert "primary_loop_relist_boundary" in composite
+
 
 def _triangle_area(vertices, tri):
     """One PLY triangle's area."""

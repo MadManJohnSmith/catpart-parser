@@ -53,9 +53,10 @@
 //! for the full policy.
 #![allow(clippy::suboptimal_flops)]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use super::grid::COORD_CEIL;
+use super::mesh;
 use super::store::find_all;
 
 /// The route's source label (the twin's ``face_gp.SOURCE``).
@@ -426,43 +427,6 @@ pub fn decode_sub_record(data: &[u8], start: usize, end: usize) -> SubRecord {
     }
 }
 
-fn edge_key(a: u32, b: u32) -> (u32, u32) {
-    if a <= b { (a, b) } else { (b, a) }
-}
-
-/// Undirected edge-use histogram (the mesh invariant's key; the
-/// composite lever's ``_edge_uses``).
-fn edge_uses(triangles: &[(u32, u32, u32)]) -> HashMap<(u32, u32), u32> {
-    let mut uses: HashMap<(u32, u32), u32> = HashMap::new();
-    for &(a, b, c) in triangles {
-        for key in [edge_key(a, b), edge_key(b, c), edge_key(c, a)] {
-            *uses.entry(key).or_insert(0) += 1;
-        }
-    }
-    uses
-}
-
-/// The incremental manifold guard — the twin's
-/// :func:`catpart.geometry.face_gp._mesh_safe` (the composite
-/// ``_mesh_safe`` lever, verbatim semantics).
-///
-/// True when adding ``tris`` keeps every undirected edge at two uses
-/// or fewer, in which case the edges are folded into ``edge_uses``; a
-/// refused unit leaves the histogram untouched (fail-closed).
-fn mesh_safe(acc: &mut HashMap<(u32, u32), u32>, tris: &[(u32, u32, u32)]) -> bool {
-    let candidate = edge_uses(tris);
-    if candidate
-        .iter()
-        .any(|(edge, &n)| acc.get(edge).copied().unwrap_or(0) + n > 2)
-    {
-        return false;
-    }
-    for (edge, n) in candidate {
-        *acc.entry(edge).or_insert(0) += n;
-    }
-    true
-}
-
 /// The strict per-sub-record gate (the approved design) — the twin's
 /// :func:`catpart.geometry.face_gp._gate_sub_record`.
 ///
@@ -494,7 +458,7 @@ fn gate_sub_record(sub: &SubRecord, n_declared: u32) -> bool {
     {
         return false;
     }
-    mesh_safe(&mut HashMap::new(), &sub.triangles)
+    mesh::EdgeGuard::default().admit(&sub.triangles)
 }
 
 /// Fold the gated sub-records in order: unordered dedup + guard — the
@@ -505,7 +469,7 @@ fn gate_sub_record(sub: &SubRecord, n_declared: u32) -> bool {
 fn assemble(members: &[Vec<(u32, u32, u32)>]) -> (Vec<(u32, u32, u32)>, usize, usize) {
     let mut folded: Vec<(u32, u32, u32)> = Vec::new();
     let mut seen: HashSet<[u32; 3]> = HashSet::new();
-    let mut edge_uses_acc: HashMap<(u32, u32), u32> = HashMap::new();
+    let mut guard = mesh::EdgeGuard::default();
     let mut dedup_dropped = 0usize;
     let mut guard_refused = 0usize;
     for tris in members {
@@ -519,16 +483,9 @@ fn assemble(members: &[Vec<(u32, u32, u32)>]) -> (Vec<(u32, u32, u32)>, usize, u
             }
             fresh.push(tri);
         }
-        let candidate = edge_uses(&fresh);
-        if candidate
-            .iter()
-            .any(|(edge, &n)| edge_uses_acc.get(edge).copied().unwrap_or(0) + n > 2)
-        {
+        if !guard.admit(&fresh) {
             guard_refused += 1;
             continue;
-        }
-        for (edge, n) in candidate {
-            *edge_uses_acc.entry(edge).or_insert(0) += n;
         }
         for &tri in &fresh {
             let mut key = [tri.0, tri.1, tri.2];

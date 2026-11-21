@@ -97,6 +97,7 @@ import math
 import struct
 
 from catpart.geometry import grid
+from catpart.geometry import mesh
 
 #: The route's source label (the summary block and the warning detail).
 SOURCE = "bagrep-face-gp"
@@ -415,41 +416,7 @@ def _gate_sub_record(sub: SubRecord, n_declared: int) -> bool:
         for tri in sub.triangles
     ):
         return False
-    return _mesh_safe({}, sub.triangles)
-
-
-def _edge_uses(triangles) -> dict[tuple[int, int], int]:
-    """Undirected edge-use histogram (the mesh invariant's key; the
-    composite lever's ``_edge_uses``)."""
-    uses: dict[tuple[int, int], int] = {}
-    for a, b, c in triangles:
-        for key in (
-            _edge_key(a, b),
-            _edge_key(b, c),
-            _edge_key(c, a),
-        ):
-            uses[key] = uses.get(key, 0) + 1
-    return uses
-
-
-def _edge_key(a: int, b: int) -> tuple[int, int]:
-    return (a, b) if a <= b else (b, a)
-
-
-def _mesh_safe(edge_uses, tris):
-    """The incremental manifold guard — :meth:`catpart.geometry.
-    composite._mesh_safe`'s lever, verbatim semantics.
-
-    True when adding ``tris`` keeps every undirected edge at two uses
-    or fewer, in which case the edges are folded into ``edge_uses``;
-    a refused unit leaves the histogram untouched (fail-closed).
-    """
-    candidate = _edge_uses(tris)
-    if any(edge_uses.get(edge, 0) + n > 2 for edge, n in candidate.items()):
-        return False
-    for edge, n in candidate.items():
-        edge_uses[edge] = edge_uses.get(edge, 0) + n
-    return True
+    return mesh.EdgeGuard().admit(sub.triangles)
 
 
 def _assemble(members) -> tuple[list, int, int]:
@@ -458,10 +425,12 @@ def _assemble(members) -> tuple[list, int, int]:
     Returns ``(folded, dedup_dropped, guard_refused)``.  The dedup keys
     and the edge histogram update only on ACCEPT — a refused member
     leaves no trace (fail-closed, deterministic in sub-record order).
+    The guard is the composite lever's ONE topology lever
+    (:meth:`catpart.geometry.mesh.EdgeGuard.admit`).
     """
     folded: list[tuple[int, int, int]] = []
     seen: set[tuple[int, int, int]] = set()
-    edge_uses: dict[tuple[int, int], int] = {}
+    guard = mesh.EdgeGuard()
     dedup_dropped = 0
     guard_refused = 0
     for tris in members:
@@ -472,12 +441,9 @@ def _assemble(members) -> tuple[list, int, int]:
                 dedup_dropped += 1
                 continue
             fresh.append(tri)
-        candidate = _edge_uses(fresh)
-        if any(edge_uses.get(edge, 0) + n > 2 for edge, n in candidate.items()):
+        if not guard.admit(fresh):
             guard_refused += 1
             continue
-        for edge, n in candidate.items():
-            edge_uses[edge] = edge_uses.get(edge, 0) + n
         seen.update(tuple(sorted(tri)) for tri in fresh)
         folded.extend(fresh)
     return folded, dedup_dropped, guard_refused

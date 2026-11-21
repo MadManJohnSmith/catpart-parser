@@ -118,9 +118,10 @@ use serde::Serialize;
 
 use super::errors::{ExportError, UNDECODED_VARIANT};
 use super::facets;
-use super::mesh;
+use super::mesh::{self, EdgeGuard, loop_area};
 use super::pool::{EDGE_SUBKIND, PoolGroup};
 use super::store::{StoreSpan, find};
+use super::vote::{RefVote, WidthCandidate, dup_pin_map, loop_plane_status, vote_ref_width};
 
 /// The scene-graph node record magic (twin: ``NODE_MAGIC``).
 pub const NODE_MAGIC: &[u8; 4] = b"\x04\x04\xfd\xff";
@@ -151,10 +152,9 @@ pub const MAX_LOOP_COUNTS: usize = 64;
 /// 2-bit slot value (twin: ``SHAPES = {0: 3, 1: 0, 2: 1, 3: 2}``).
 pub const SHAPES: [usize; 4] = [3, 0, 1, 2];
 
-/// Plane tolerance of the committed loop battery (stage 3b): the
-/// per-coordinate normal distance bound; f32 coordinate rounding
-/// ~1e-4 (twin: ``PLANE_TOL``, composite.py:524).
-pub const PLANE_TOL: f64 = 2e-3;
+// Plane tolerance of the committed loop battery (stage 3b): see
+// `super::vote::PLANE_TOL` — the battery moved there with the width
+// vote (twin: the composite.py guard/vote split).
 
 /// The gated families whose references must resolve in-bounds (the
 /// exported markers plus the normal-carrying 0x49, the stage-2c gate
@@ -813,42 +813,9 @@ pub fn decode_node_points(
     Ok((points, skip_count, info))
 }
 
-/// Coplanarity of one fully-resolved loop against the record's stored
-/// normal (the stage-3b battery criterion; ported from the stage-4b
-/// width re-test, ``not_manifold_audit.py``) — the twin's
-/// ``_loop_plane_status``. Returns ``("coplanar", worst)`` or
-/// ``("nonplanar", max_distance)``. See the module header for the
-/// ``powf`` probe.
-fn loop_plane_status(
-    loop_refs: &[u32],
-    normal: (f64, f64, f64),
-    elements: &[Element],
-) -> (&'static str, f64) {
-    let nn = (normal.0.powf(2.0) + normal.1.powf(2.0) + normal.2.powf(2.0)).powf(0.5);
-    if nn == 0.0 {
-        return ("nonplanar", 0.0);
-    }
-    let pts: Vec<(f64, f64, f64)> = loop_refs
-        .iter()
-        .map(|&r| {
-            elements[r as usize]
-                .1
-                .expect("guarded: the caller skips loops with skip slots or out-of-space refs")
-        })
-        .collect();
-    let p0 = pts[0];
-    let mut worst = 0.0f64;
-    for p in &pts[1..] {
-        let d = ((p.0 - p0.0) * normal.0 + (p.1 - p0.1) * normal.1 + (p.2 - p0.2) * normal.2) / nn;
-        if d.abs() > worst {
-            worst = d.abs();
-        }
-        if d.abs() > PLANE_TOL {
-            return ("nonplanar", d.abs());
-        }
-    }
-    ("coplanar", worst)
-}
+// ``PLANE_TOL``, ``loop_plane_status`` and ``dup_pin_map`` live in
+// `super::vote` (the battery is shared with the width vote) — twin:
+// the composite.py guard/vote split.
 
 /// One exported loop's triangles under the strip/polygon semantics
 /// (G3) — the twin's ``_loop_triangles``: 0x4c polygon fans
@@ -1012,13 +979,6 @@ fn parse_strip_records(
     } else {
         &[1, 2]
     };
-    let skips: Option<HashSet<usize>> = elements.map(|els| {
-        els.iter()
-            .enumerate()
-            .filter(|(_, (_, pt))| pt.is_none())
-            .map(|(i, _)| i)
-            .collect()
-    });
     let mut out = Vec::new();
     for (i, &o) in hdrs.iter().enumerate() {
         let nxt = if i + 1 < hdrs.len() { hdrs[i + 1] } else { hi };
@@ -1065,15 +1025,19 @@ fn parse_strip_records(
             }
             continue;
         }
-        type Rank = (u8, u8, u8, u32, u8, u8, u8, u32);
-        type Best = (Rank, Vec<u32>, Vec<u32>, u8, usize);
         let relaxed = RELAXED_SHORT_MARKERS.contains(&mk);
         let h6: Option<usize> = if relaxed {
             ext_hdrs.get(ext_hdrs.partition_point(|&h| h <= o)).copied()
         } else {
             None
         };
-        let mut best: Option<Best> = None;
+        // The ONE width vote (`vote_ref_width`): the candidates this
+        // record's (width, endian, k) discovery admits, ranked by the
+        // shared tuple (exact tiling, OOB, repeats, non-coplanar
+        // loops, u16-over-u8, endian, width, k). The u16le-swallow
+        // gate and the #65 zero gate stay discovery-level; the #66
+        // OOB post-gate lives in the vote itself.
+        let mut candidates: Vec<WidthCandidate> = Vec::new();
         for &width in widths {
             let endians: &[bool] = if relaxed && width == 2 {
                 &[false, true]
@@ -1110,127 +1074,64 @@ fn parse_strip_records(
                         // headers end inside a real 0x47 this way).
                         continue;
                     }
-                    let refs: Vec<u32> = (0..n)
-                        .map(|j| {
-                            let at = counts_end + width as usize * j as usize;
-                            match width {
-                                1 => u32::from(data[at]),
-                                2 if little => {
-                                    u32::from(u16::from_le_bytes([data[at], data[at + 1]]))
-                                }
-                                2 => u32::from(u16::from_be_bytes([data[at], data[at + 1]])),
-                                _ => u32::from_be_bytes([0, data[at], data[at + 1], data[at + 2]]),
-                            }
-                        })
-                        .collect();
-                    let mut repeats = false;
-                    let mut off = 0usize;
-                    for c in &counts {
-                        let loop_refs = &refs[off..off + *c as usize];
-                        if *c > 0 {
-                            let distinct: HashSet<u32> = loop_refs.iter().copied().collect();
-                            if distinct.len() < loop_refs.len() {
-                                repeats = true;
-                            }
-                        }
-                        off += *c as usize;
-                    }
-                    let oob = refs.iter().any(|&r| r >= element_count);
-                    let mut nonplanar = 0u32;
-                    if let (Some(nm), Some(els), Some(sk)) = (normal, elements, skips.as_ref()) {
-                        let mut off = 0usize;
-                        for c in &counts {
-                            let loop_refs = &refs[off..off + *c as usize];
-                            off += *c as usize;
-                            if loop_refs.is_empty() {
-                                continue;
-                            }
-                            if loop_refs.iter().any(|&r| r as usize >= els.len()) {
-                                continue;
-                            }
-                            let resolved: Vec<u32>;
-                            let test: &[u32] =
-                                if loop_refs.iter().any(|&r| sk.contains(&(r as usize))) {
-                                    // Gap-edge width choice (2026-11-18): a
-                                    // parse whose loop lands on skip slots is
-                                    // the usual misread. Test it on its
-                                    // dup-pinned coordinates with the SAME
-                                    // battery; a wrong width is nonplanar
-                                    // there while a real curve loop stays
-                                    // coplanar, so the fully-written width wins
-                                    // the rank.
-                                    let Some(pin) = dup_pin_map(els, sk, loop_refs) else {
-                                        continue; // untestable: no battery
-                                    };
-                                    resolved = loop_refs
-                                        .iter()
-                                        .map(|&r| pin.get(&r).copied().unwrap_or(r))
-                                        .collect();
-                                    &resolved
-                                } else {
-                                    loop_refs
-                                };
-                            let (st, _m) = loop_plane_status(test, nm, els);
-                            if st == "nonplanar" {
-                                nonplanar += 1;
-                            }
-                        }
-                    }
-                    let rank: Rank = (
-                        if end == nxt { 0 } else { 1 },
-                        if oob { 1 } else { 0 },
-                        if repeats { 1 } else { 0 },
-                        nonplanar,
-                        // #66: the relaxed family's pinned primitive is u16
-                        // (little-endian first); u8 is its compact fallback,
-                        // so a u16 reading that passes the gates outranks a
-                        // u8 one. Nothing changes for the other markers.
-                        if !relaxed || width == 2 { 0 } else { 1 },
-                        if little { 1 } else { 0 },
+                    candidates.push(WidthCandidate {
                         width,
-                        k as u32,
-                    );
-                    if best.as_ref().is_none_or(|(b, _, _, _, _)| rank < *b) {
-                        best = Some((rank, counts, refs, width, end));
-                    }
+                        little,
+                        counts,
+                        counts_end,
+                        end,
+                        exact: end == nxt,
+                        tri_count: 0,
+                        relaxed_u16: relaxed,
+                        k: k as u32,
+                    });
                 }
             }
         }
-        if let Some((_rank, counts, refs, width, end)) = best {
-            if relaxed
-                && width == 1
-                && h6.is_some_and(|h| {
-                    end < h
-                        && h < end + n as usize
-                        && h + 2 <= end + n as usize
-                        && (end - n as usize..end + n as usize).step_by(2).all(|p| {
-                            u32::from(u16::from_le_bytes([data[p], data[p + 1]])) < element_count
-                        })
-                })
-            {
-                // #66: a u8 winner whose u16le reading is a complete,
-                // in-bounds ref stream reaching at least one whole ref
-                // past a 6-byte header is a half-read of that stream,
-                // not a u8 record (the Audi 0x301e912 false header).
-                continue;
-            }
-            if refs.iter().any(|&r| r >= element_count) {
-                // Fail-closed refs gate (#66, 2026-11-20), twin of the
-                // Python post-vote rule: a record whose winning parse
-                // leaves the element space is not this family's record.
-                // The record stays unresolved instead of tripping the
-                // store-level refs gate.
-                continue;
-            }
-            out.push(CompositeRecord {
-                offset: o,
-                marker: mk,
-                normal,
-                counts,
-                refs,
-                width,
-            });
+        let Some(RefVote {
+            refs,
+            counts,
+            width,
+            end,
+        }) = vote_ref_width(
+            data,
+            n,
+            candidates,
+            element_count,
+            normal,
+            elements,
+            // the short-form law RANKS repeats (the misread-detection
+            // slot); the u16-over-u8 slot arms on the relaxed markers
+            true,
+        )
+        else {
+            continue;
+        };
+        if relaxed
+            && width == 1
+            && h6.is_some_and(|h| {
+                end < h
+                    && h < end + n as usize
+                    && h + 2 <= end + n as usize
+                    && (end - n as usize..end + n as usize).step_by(2).all(|p| {
+                        u32::from(u16::from_le_bytes([data[p], data[p + 1]])) < element_count
+                    })
+            })
+        {
+            // #66: a u8 winner whose u16le reading is a complete,
+            // in-bounds ref stream reaching at least one whole ref
+            // past a 6-byte header is a half-read of that stream,
+            // not a u8 record (the Audi 0x301e912 false header).
+            continue;
         }
+        out.push(CompositeRecord {
+            offset: o,
+            marker: mk,
+            normal,
+            counts,
+            refs,
+            width,
+        });
     }
     (out, hdrs.len())
 }
@@ -1311,13 +1212,6 @@ fn parse_escaped_extended_records(
     bounds.push(hi);
     bounds.sort_unstable();
     bounds.dedup();
-    let skips: Option<HashSet<usize>> = elements.map(|els| {
-        els.iter()
-            .enumerate()
-            .filter(|(_, (_, pt))| pt.is_none())
-            .map(|(i, _)| i)
-            .collect()
-    });
     let widths: &[u8] = if element_count > 65_535 {
         &[1, 2, 3]
     } else {
@@ -1381,92 +1275,32 @@ fn parse_escaped_extended_records(
             continue;
         }
         let nxt = bounds.iter().copied().find(|&b| b > o).unwrap_or(hi);
-        type Rank = (u8, u8, u8, u32, u8);
-        let mut best: Option<(Rank, Vec<u32>, u8, usize)> = None;
-        for &width in widths {
+        // The ONE width vote (`vote_ref_width`); the escaped family's
+        // strip joins are legitimate repeats, so they RANK (the #64
+        // semantic). The OOB post-gate lives in the vote.
+        let candidates = widths.iter().filter_map(|&width| {
             let end = refs_start + width as usize * n as usize;
             if end > nxt.min(hi) {
-                continue;
+                return None;
             }
-            let refs: Vec<u32> = (0..n)
-                .map(|j| {
-                    let at = refs_start + width as usize * j as usize;
-                    match width {
-                        1 => u32::from(data[at]),
-                        2 => u32::from(u16::from_be_bytes([data[at], data[at + 1]])),
-                        _ => u32::from_be_bytes([0, data[at], data[at + 1], data[at + 2]]),
-                    }
-                })
-                .collect();
-            let mut repeats = false;
-            for start in (0..3 * ty as usize).step_by(3) {
-                let tri = &refs[start..start + 3];
-                let distinct: HashSet<u32> = tri.iter().copied().collect();
-                if distinct.len() < 3 {
-                    repeats = true;
-                    break;
-                }
-            }
-            if !repeats {
-                let mut off = 3 * ty as usize;
-                for c in &counts {
-                    let loop_refs = &refs[off..off + *c as usize];
-                    if *c > 0 {
-                        let distinct: HashSet<u32> = loop_refs.iter().copied().collect();
-                        if distinct.len() < loop_refs.len() {
-                            repeats = true;
-                            break;
-                        }
-                    }
-                    off += *c as usize;
-                }
-            }
-            let oob = refs.iter().any(|&r| r >= element_count);
-            let mut nonplanar = 0u32;
-            if let (Some(nm), Some(els), Some(sk)) = (normal, elements, skips.as_ref()) {
-                let mut off = 3 * ty as usize;
-                for c in &counts {
-                    let loop_refs = &refs[off..off + *c as usize];
-                    off += *c as usize;
-                    if loop_refs.is_empty() || loop_refs.iter().any(|&r| r as usize >= els.len()) {
-                        continue;
-                    }
-                    let resolved: Vec<u32>;
-                    let test: &[u32] = if loop_refs.iter().any(|&r| sk.contains(&(r as usize))) {
-                        let Some(pin) = dup_pin_map(els, sk, loop_refs) else {
-                            continue;
-                        };
-                        resolved = loop_refs
-                            .iter()
-                            .map(|&r| pin.get(&r).copied().unwrap_or(r))
-                            .collect();
-                        &resolved
-                    } else {
-                        loop_refs
-                    };
-                    let (st, _m) = loop_plane_status(test, nm, els);
-                    if st == "nonplanar" {
-                        nonplanar += 1;
-                    }
-                }
-            }
-            let rank: Rank = (
-                if end == nxt { 0 } else { 1 },
-                if oob { 1 } else { 0 },
-                if repeats { 1 } else { 0 },
-                nonplanar,
+            Some(WidthCandidate {
                 width,
-            );
-            if best.as_ref().is_none_or(|(b, _, _, _)| rank < *b) {
-                best = Some((rank, refs, width, end));
-            }
-        }
-        let Some((_rank, refs, width, end)) = best else {
+                little: false,
+                counts: counts.clone(),
+                counts_end: refs_start,
+                end,
+                exact: end == nxt,
+                tri_count: ty,
+                relaxed_u16: false,
+                k: 0,
+            })
+        });
+        let Some(RefVote {
+            refs, width, end, ..
+        }) = vote_ref_width(data, n, candidates, element_count, normal, elements, true)
+        else {
             continue;
         };
-        if refs.iter().any(|&r| r >= element_count) {
-            continue;
-        }
         accepted.push((o, end));
         records.push(ExtendedFacetRecord {
             offset: o,
@@ -1565,13 +1399,6 @@ fn parse_extended_facet_records(
     } else {
         &[1, 2]
     };
-    let skips: Option<HashSet<usize>> = elements.map(|els| {
-        els.iter()
-            .enumerate()
-            .filter(|(_, (_, pt))| pt.is_none())
-            .map(|(i, _)| i)
-            .collect()
-    });
     // The #65 own-accept spans: an extended candidate inside an earlier
     // extended record's span is a false-positive byte pattern in its
     // refs.
@@ -1638,13 +1465,21 @@ fn parse_extended_facet_records(
         // keeps the misread disqualification while the #65 fallback
         // readings rank them; the emission keeps the per-record
         // ``mesh_safe`` guard either way.
-        type ExtVote = ((u8, u8, u8, u32, u8), Vec<u32>, u8, usize, Vec<u32>);
-        let vote = |counts: &[u32], refs_start: usize, repeats_ranked: bool| -> Option<ExtVote> {
-            let mut best: Option<ExtVote> = None;
-            for &width in widths {
+        let vote = |counts: &[u32],
+                    refs_start: usize,
+                    repeats_ranked: bool|
+         -> Option<(Vec<u32>, u8, usize, Vec<u32>)> {
+            // The ONE width vote (`vote_ref_width`). ``repeats_ranked``
+            // is the #64 escaped law's semantic — repeats are
+            // legitimate strip joins on the escaped-form family — so
+            // the committed u8 reading keeps the misread
+            // disqualification while the #65 fallback readings rank
+            // them; the emission keeps the per-record ``mesh_safe``
+            // guard either way. The OOB post-gate lives in the vote.
+            let candidates = widths.iter().filter_map(|&width| {
                 let end = refs_start + width as usize * n as usize;
                 if end > hi {
-                    continue;
+                    return None;
                 }
                 if end > nxt.min(hi) {
                     // #65: past the next candidate header only the
@@ -1652,106 +1487,31 @@ fn parse_extended_facet_records(
                     // exactly on a later candidate header, and swallows no
                     // accepted record.
                     if end != nxt_eff(end) || overlaps(end) {
-                        continue;
+                        return None;
                     }
                 }
-                let refs: Vec<u32> = (0..n)
-                    .map(|j| {
-                        let at = refs_start + width as usize * j as usize;
-                        match width {
-                            1 => u32::from(data[at]),
-                            2 => u32::from(u16::from_be_bytes([data[at], data[at + 1]])),
-                            _ => u32::from_be_bytes([0, data[at], data[at + 1], data[at + 2]]),
-                        }
-                    })
-                    .collect();
-                // Per-group repeats: the 3*ty soup triangles, then the
-                // counts-delimited loops (the emission's split).
-                let mut repeats = false;
-                for start in (0..3 * ty as usize).step_by(3) {
-                    // n >= 3*ty by the counts law, so every slice is a
-                    // full triangle.
-                    let tri = &refs[start..start + 3];
-                    let distinct: HashSet<u32> = tri.iter().copied().collect();
-                    if distinct.len() < 3 {
-                        repeats = true;
-                        break;
-                    }
-                }
-                let mut off = 3 * ty as usize;
-                for c in counts {
-                    let loop_refs = &refs[off..off + *c as usize];
-                    if *c > 0 {
-                        let distinct: HashSet<u32> = loop_refs.iter().copied().collect();
-                        if distinct.len() < loop_refs.len() {
-                            repeats = true;
-                            break;
-                        }
-                    }
-                    off += *c as usize;
-                }
-                if repeats && !repeats_ranked {
-                    // The misread detector (the short-form width law's
-                    // signal): a narrow misread of a wider record repeats
-                    // refs inside the loop, and a legitimate record never
-                    // repeats (a repeated ref emits a degenerate triangle
-                    // the battery declines anyway). The committed u8
-                    // reading keeps this disqualification. Measured (#62
-                    // CAASdd*Stiffener check): without it, the u8 misreads
-                    // of the non-tiling CAASddEditStiffener records win the
-                    // rank on in-bounds and the store exports 50,779 m2 of
-                    // area outside its own 104.6 m bbox — km-scale garbage.
-                    continue;
-                }
-                let oob = refs.iter().any(|&r| r >= element_count);
-                let mut nonplanar = 0u32;
-                if let (Some(nm), Some(els), Some(sk)) = (normal, elements, skips.as_ref()) {
-                    let mut off = 3 * ty as usize;
-                    for c in counts {
-                        let loop_refs = &refs[off..off + *c as usize];
-                        off += *c as usize;
-                        if loop_refs.is_empty() {
-                            continue;
-                        }
-                        if loop_refs.iter().any(|&r| r as usize >= els.len()) {
-                            continue;
-                        }
-                        let resolved: Vec<u32>;
-                        let test: &[u32] = if loop_refs.iter().any(|&r| sk.contains(&(r as usize)))
-                        {
-                            // The same gap-edge battery as the short
-                            // records: a skip-bearing loop is tested on its
-                            // dup-pinned coordinates; untestable loops stay
-                            // silent.
-                            let Some(pin) = dup_pin_map(els, sk, loop_refs) else {
-                                continue;
-                            };
-                            resolved = loop_refs
-                                .iter()
-                                .map(|&r| pin.get(&r).copied().unwrap_or(r))
-                                .collect();
-                            &resolved
-                        } else {
-                            loop_refs
-                        };
-                        let (st, _m) = loop_plane_status(test, nm, els);
-                        if st == "nonplanar" {
-                            nonplanar += 1;
-                        }
-                    }
-                }
-                let rank: (u8, u8, u8, u32, u8) = (
-                    if end == nxt_eff(end) { 0 } else { 1 },
-                    if oob { 1 } else { 0 },
-                    if repeats { 1 } else { 0 },
-                    nonplanar,
+                Some(WidthCandidate {
                     width,
-                );
-                if best.as_ref().is_none_or(|(b, _, _, _, _)| rank < *b) {
-                    best = Some((rank, refs, width, end, counts.to_vec()));
-                }
-            }
-            best
+                    little: false,
+                    counts: counts.to_vec(),
+                    counts_end: refs_start,
+                    end,
+                    exact: end == nxt_eff(end),
+                    tri_count: ty,
+                    relaxed_u16: false,
+                    k: 0,
+                })
+            });
+            vote_ref_width(
+                data,
+                n,
+                candidates,
+                element_count,
+                normal,
+                elements,
+                repeats_ranked,
+            )
+            .map(|won| (won.refs, won.width, won.end, counts.to_vec()))
         };
         // The counts-table reading chain (#65, 2026-11-20). The
         // committed u8 reading (the #62 law) runs first and alone on
@@ -1790,16 +1550,9 @@ fn parse_extended_facet_records(
                 best = vote(&counts16, base + 2 * k, true);
             }
         }
-        let Some((_rank, refs, width, end, counts)) = best else {
+        let Some((refs, width, end, counts)) = best else {
             continue;
         };
-        if refs.iter().any(|&r| r >= element_count) {
-            // The winning parse's refs leave the element space: not
-            // this family (the false-positive rule; the record stays
-            // unresolved instead of tripping the store-level refs
-            // gate).
-            continue;
-        }
         accepted.push((o, end));
         records.push(ExtendedFacetRecord {
             offset: o,
@@ -1884,9 +1637,9 @@ struct EmitState {
     loops_exported: u32,
     loops_curve_entry: u32,
     dropped_loops: Vec<DroppedLoop>,
-    /// The undirected edge-use histogram of the primary loops emitted
-    /// so far (the incremental guard's state; the twin's ``edge_uses``).
-    edge_uses: HashMap<(u32, u32), u32>,
+    /// The incremental manifold guard over the units emitted so far
+    /// (the twin's ``edge_uses`` histogram inside ``EdgeGuard``).
+    guard: EdgeGuard,
     /// The primary-emit seam counters (the twin's stats keys).
     primary_loop_skips: u32,
     primary_loop_kept: u32,
@@ -1959,7 +1712,7 @@ impl EmitCtx<'_> {
         // counted and named.
         if guard {
             let area = loop_area(&tris, self.points);
-            if !mesh_safe(&mut st.edge_uses, &tris) {
+            if !st.guard.admit(&tris) {
                 if let Some(reference) = seam_area
                     && area <= PRIMARY_LOOP_AREA_REL * reference
                 {
@@ -1973,7 +1726,7 @@ impl EmitCtx<'_> {
                     return;
                 }
                 st.primary_loop_kept += 1;
-                fold_edge_uses(&mut st.edge_uses, &tris);
+                st.guard.fold(&tris);
             }
         }
         st.triangles.extend(tris);
@@ -2032,7 +1785,10 @@ fn triangulate(
     // dropped (never weld candidates of a declined record).
     let mut extended_triangles = 0u32;
     let mut extended_declined = 0u32;
-    let mut edge_uses = st.edge_uses.clone();
+    // The extended/relaxed lineage folds into a CLONE of the primary
+    // guard (the twin's shared dict reaches both passes through the
+    // same histogram; the clone keeps the primary state untouched).
+    let mut lineage = st.guard.clone();
     for rec in extended {
         let mut rec_st = EmitState::default();
         for j in (0..3 * rec.triangles as usize).step_by(3) {
@@ -2064,7 +1820,7 @@ fn triangulate(
             );
             o += *c as usize;
         }
-        if rec_st.degenerate == 0 && mesh_safe(&mut edge_uses, &rec_st.triangles) {
+        if rec_st.degenerate == 0 && lineage.admit(&rec_st.triangles) {
             extended_triangles += rec_st.triangles.len() as u32;
             st.triangles.extend(rec_st.triangles);
             st.degenerate += rec_st.degenerate;
@@ -2121,7 +1877,7 @@ fn triangulate(
                 relaxed_declined += 1;
                 continue;
             }
-            if mesh_safe(&mut edge_uses, &tris) {
+            if lineage.admit(&tris) {
                 st.triangles.extend(tris);
                 relaxed_accepted += 1;
             } else {
@@ -2701,108 +2457,12 @@ fn decode_per_rep(
     })
 }
 
-/// The undirected edge key of the mesh invariant (twin:
-/// ``_edge_key``; ``manifold`` == every use count <= 2).
-fn edge_key(a: u32, b: u32) -> (u32, u32) {
-    if a <= b { (a, b) } else { (b, a) }
-}
-
-/// The undirected edge-use histogram of a triangle list (twin:
-/// ``_edge_uses``).
-/// The incremental manifold guard (2026-11-18) — ONE topology lever:
-/// true when adding ``tris`` keeps every undirected edge at two uses or
-/// fewer (folding the edges in on success). The dup-pin weld and the
-/// extended-header emission share this single check; a refused unit
-/// leaves the histogram untouched (fail-closed, deterministic order).
-fn mesh_safe(edge_uses: &mut HashMap<(u32, u32), u32>, tris: &[(u32, u32, u32)]) -> bool {
-    let candidate = edge_uses_of(tris);
-    if candidate
-        .iter()
-        .any(|(edge, count)| edge_uses.get(edge).copied().unwrap_or(0) + count > 2)
-    {
-        return false;
-    }
-    for (edge, count) in candidate {
-        *edge_uses.entry(edge).or_insert(0) += count;
-    }
-    true
-}
-
-fn edge_uses_of(triangles: &[(u32, u32, u32)]) -> HashMap<(u32, u32), u32> {
-    let mut uses: HashMap<(u32, u32), u32> = HashMap::new();
-    for &(a, b, c) in triangles {
-        for key in [edge_key(a, b), edge_key(b, c), edge_key(c, a)] {
-            *uses.entry(key).or_insert(0) += 1;
-        }
-    }
-    uses
-}
-
-/// Fold one unit's edge uses into the assembled histogram (the accept
-/// arm of :fn:`mesh_safe`; the primary seam also uses it for a kept
-/// over-use loop) — twin: ``_fold_edge_uses``.
-fn fold_edge_uses(edge_uses: &mut HashMap<(u32, u32), u32>, tris: &[(u32, u32, u32)]) {
-    for (edge, count) in edge_uses_of(tris) {
-        *edge_uses.entry(edge).or_insert(0) += count;
-    }
-}
-
-/// One triangle's area from the written points (mm²) — twin:
-/// ``_triangle_area``.
-fn triangle_area(tri: (u32, u32, u32), points: &[(f64, f64, f64)]) -> f64 {
-    let a = points[tri.0 as usize];
-    let b = points[tri.1 as usize];
-    let c = points[tri.2 as usize];
-    let (ux, uy, uz) = (b.0 - a.0, b.1 - a.1, b.2 - a.2);
-    let (vx, vy, vz) = (c.0 - a.0, c.1 - a.1, c.2 - a.2);
-    let cx = uy * vz - uz * vy;
-    let cy = uz * vx - ux * vz;
-    let cz = ux * vy - uy * vx;
-    0.5 * (cx * cx + cy * cy + cz * cz).sqrt()
-}
-
-/// A candidate loop's area (the sum over its emitted triangles) —
-/// twin: ``_loop_area``.
-fn loop_area(tris: &[(u32, u32, u32)], points: &[(f64, f64, f64)]) -> f64 {
-    tris.iter().map(|&tri| triangle_area(tri, points)).sum()
-}
-
-/// The assembled mesh's area — the primary seam's reference (the
-/// store-level mesh area, so the rule is order-independent) — twin:
-/// ``_mesh_area``.
-fn mesh_area(triangles: &[(u32, u32, u32)], points: &[(f64, f64, f64)]) -> f64 {
-    triangles
-        .iter()
-        .map(|&tri| triangle_area(tri, points))
-        .sum()
-}
-
-/// The dup-pin weld targets for one loop — ``{skip slot: written
-/// element}`` — or ``None`` when a referenced skip slot has no
-/// preceding written element (unpinnable: the weld's fail-closed arm).
-/// The U4-D dup law (twin: ``_dup_pin_map``).
-fn dup_pin_map(
-    elements: &[Element],
-    skips: &HashSet<usize>,
-    loop_refs: &[u32],
-) -> Option<HashMap<u32, u32>> {
-    let mut pin: HashMap<u32, u32> = HashMap::new();
-    for &r in loop_refs {
-        let r = r as usize;
-        if !skips.contains(&r) {
-            continue;
-        }
-        let mut j = r as i64 - 1;
-        while j >= 0 && elements[j as usize].1.is_none() {
-            j -= 1;
-        }
-        if j < 0 {
-            return None;
-        }
-        pin.insert(r as u32, j as u32);
-    }
-    Some(pin)
-}
+// The emission guards moved to `super::mesh` (`EdgeGuard` — the ONE
+// topology lever behind the weld, the extended records, the relaxed
+// loops and the primary seam — plus `triangle_area` / `loop_area` /
+// `mesh_area`), and the dup-pin targets and plane battery to
+// `super::vote`; they are imported above under their historical
+// semantics (twin: the composite.py guard/vote split).
 
 /// The per-loop dup-pin weld behind the battery and mesh guard — the
 /// twin's ``_e0b_dup_pin`` (2026-11-18; the curve-entry coordinate
@@ -2838,7 +2498,7 @@ fn e0b_dup_pin(
     let mut degenerate = 0u32;
     let mut welded = 0u32;
     let mut refused = 0u32;
-    let mut edge_uses = edge_uses_of(base_triangles);
+    let mut guard = EdgeGuard::from_triangles(base_triangles);
     for (mk, normal, loop_refs) in dropped {
         let Some(pin) = dup_pin_map(elements, &skips, loop_refs) else {
             refused += 1;
@@ -2871,7 +2531,7 @@ fn e0b_dup_pin(
             refused += 1;
             continue;
         }
-        if !mesh_safe(&mut edge_uses, &tris) {
+        if !guard.admit(&tris) {
             refused += 1;
             continue;
         }
@@ -3060,7 +2720,7 @@ pub fn decode_composite_store(
         None,
         false,
     )?;
-    let area = mesh_area(&baseline.triangles, &baseline.points);
+    let area = mesh::mesh_area(&baseline.triangles, &baseline.points);
     let seam = decode_store_once(
         data,
         span,
@@ -3121,8 +2781,17 @@ pub fn decode_composite_store(
     // does not grow against the chosen emission AND every skipped
     // loop's vertex coordinates survive in the candidate (the skin
     // signature; a unique-surface loop with its own apex coordinates
-    // is declined).  Any failed condition keeps the previous emission
-    // byte-for-byte — fail-closed, PRIMARY_LOOP_AREA_REL untouched.
+    // is declined) AND — L1.1 (#70, 2026-11-21) — the candidate is
+    // DEGENERATE-FREE: the 37 parts L1 landed on
+    // ``degenerate-triangles`` carry degenerate skips in the KEPT
+    // emission itself (chosen == candidate, measured 37/37 on the
+    // submarine snapshot), so adopting a manifold candidate whose
+    // emission still skips degenerates only trades the named
+    // manifold failure for the L2 degenerate gate.  The condition
+    // returns them to their previous (not-manifold) class without
+    // touching the 80 adopters whose candidates are degenerate-free.
+    // Any failed condition keeps the previous emission byte-for-byte —
+    // fail-closed, PRIMARY_LOOP_AREA_REL untouched.
     let chosen_stats = mesh::mesh_stats(&chosen.triangles);
     if !chosen_stats.manifold
         && (seam_kept > 0 || chosen.info.primary_loop_kept.unwrap_or(0) > 0)
@@ -3152,6 +2821,7 @@ pub fn decode_composite_store(
         if cand_stats.manifold
             && cand_stats.boundary_edges <= chosen_stats.boundary_edges
             && covered
+            && rel.degenerate == 0
         {
             let mut info = rel.info;
             info.primary_loop_relist_skips = Some(rel.relist_forced);
@@ -5399,13 +5069,13 @@ mod tests {
     /// touching the histogram.
     #[test]
     fn mesh_safe_is_the_incremental_edge_use_lever() {
-        let mut uses = HashMap::new();
-        assert!(mesh_safe(&mut uses, &[(0, 1, 2)]));
-        assert!(mesh_safe(&mut uses, &[(0, 2, 3)]));
+        let mut guard = mesh::EdgeGuard::default();
+        assert!(guard.admit(&[(0, 1, 2)]));
+        assert!(guard.admit(&[(0, 2, 3)]));
         // (0, 2) is already used twice -> refused and not folded in.
-        let before = uses.clone();
-        assert!(!mesh_safe(&mut uses, &[(0, 2, 9)]));
-        assert_eq!(uses, before);
+        let before = guard.uses.clone();
+        assert!(!guard.admit(&[(0, 2, 9)]));
+        assert_eq!(guard.uses, before);
     }
 
     // --- #66 (2026-11-20): short-form refs gate + the 0x41/0x44

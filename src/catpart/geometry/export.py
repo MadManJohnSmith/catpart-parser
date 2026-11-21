@@ -1086,10 +1086,14 @@ def _export_composite_store(
                 "twice, re-triangulated with the other diagonal), and "
                 "removing them leaves the store mesh manifold with the "
                 "boundary-edge set not growing "
-                f"({info.get('primary_loop_relist_boundary', '?')}) — "
-                "the Fase 3 L1 fail-closed post-pass, issue #70; the "
+                f"({info.get('primary_loop_relist_boundary', '?')}) and "
+                "carrying no degenerate-triangle skips at all (L1.1, "
+                "2026-11-21: the kept emission's own skips are what the "
+                "degenerate-triangles class names once the mesh turns "
+                "manifold) — the Fase 3 L1 "
+                "fail-closed post-pass, issue #70; the "
                 "skip is declined and the previous emission kept "
-                "whenever either condition fails",
+                "whenever any condition fails",
             }
         )
     if info.get("unordered_dedup_dropped"):

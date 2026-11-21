@@ -221,7 +221,6 @@ from __future__ import annotations
 
 import bisect
 import dataclasses
-import math
 import struct
 
 from catpart.geometry.errors import ExportError
@@ -237,6 +236,13 @@ from catpart.geometry.facets import (
     read_counts,
 )
 from catpart.geometry import mesh
+from catpart.geometry.mesh import EdgeGuard, loop_area, mesh_area
+from catpart.geometry.vote import (
+    WidthCandidate,
+    dup_pin_map as _dup_pin_map,
+    loop_plane_status as _loop_plane_status,
+    vote_ref_width,
+)
 
 NODE_MAGIC = b"\x04\x04\xfd\xff"
 LIST_TOKEN = b"\xff\xff\x02\x00\x01"
@@ -563,11 +569,6 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
         if any(data[h + 1] in RELAXED_SHORT_MARKERS for h in hdrs)
         else []
     )
-    skips = (
-        {i for i, (_v, pt) in enumerate(elements) if pt is None}
-        if elements is not None
-        else None
-    )
     out = []
     for i, o in enumerate(hdrs):
         nxt = hdrs[i + 1] if i + 1 < len(hdrs) else hi
@@ -599,109 +600,68 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
                 if rec is not None:
                     out.append(rec)
             continue
-        best = None
         relaxed = mk in RELAXED_SHORT_MARKERS
         i6 = bisect.bisect_right(ext_hdrs, o) if relaxed else len(ext_hdrs)
         h6 = ext_hdrs[i6] if i6 < len(ext_hdrs) else None
-        for width in widths:
-            endians = ("big", "little") if (relaxed and width == 2) else ("big",)
-            for endian in endians:
-                for k in range(0, MAX_LOOP_COUNTS + 1):
-                    read = read_counts(data, base, k, nxt)
-                    if read is None:
-                        break
-                    counts, counts_bytes = read
-                    if sum(counts) != n:
-                        continue
-                    if k > BASE_LOOP_COUNTS and 0 in counts:
-                        # #65 zero gate on the k extension: a u16be count
-                        # table misreads as u8 pairs with a zero at every
-                        # other entry (CAAGsiStartVolume: 16/32 zeros, a
-                        # not-manifold mesh); every corpus record the
-                        # extension admits is zero-free.
-                        continue
-                    counts_end = base + counts_bytes
-                    end = counts_end + width * n
-                    if end > nxt:
-                        continue
-                    if endian == "little" and h6 is not None and counts_end < h6 < end:
-                        # #66 fail-closed on the u16le hypothesis: a
-                        # block that would swallow a 6-byte extended
-                        # header candidate is a misread. The two Audi
-                        # false headers (0x301e912, 0x2a3f1b7) end
-                        # inside a real 0x47 this way; every verified
-                        # u16le/u8 record clears its next extended
-                        # candidate (corpus census: 5 straddling
-                        # records, the two false headers among them).
-                        continue
-                    refs = [
-                        int.from_bytes(
-                            data[
-                                counts_end + width * j : counts_end + width * (j + 1)
-                            ],
-                            endian,
+
+        def _candidates():
+            for width in widths:
+                endians = ("big", "little") if (relaxed and width == 2) else ("big",)
+                for endian in endians:
+                    for k in range(0, MAX_LOOP_COUNTS + 1):
+                        read = read_counts(data, base, k, nxt)
+                        if read is None:
+                            break
+                        counts, counts_bytes = read
+                        if sum(counts) != n:
+                            continue
+                        if k > BASE_LOOP_COUNTS and 0 in counts:
+                            # #65 zero gate on the k extension: a u16be count
+                            # table misreads as u8 pairs with a zero at every
+                            # other entry (CAAGsiStartVolume: 16/32 zeros, a
+                            # not-manifold mesh); every corpus record the
+                            # extension admits is zero-free.
+                            continue
+                        counts_end = base + counts_bytes
+                        end = counts_end + width * n
+                        if end > nxt:
+                            continue
+                        if (
+                            endian == "little"
+                            and h6 is not None
+                            and counts_end < h6 < end
+                        ):
+                            # #66 fail-closed on the u16le hypothesis: a
+                            # block that would swallow a 6-byte extended
+                            # header candidate is a misread. The two Audi
+                            # false headers (0x301e912, 0x2a3f1b7) end
+                            # inside a real 0x47 this way; every verified
+                            # u16le/u8 record clears its next extended
+                            # candidate (corpus census: 5 straddling
+                            # records, the two false headers among them).
+                            continue
+                        yield WidthCandidate(
+                            width=width,
+                            little=(endian == "little"),
+                            counts=tuple(counts),
+                            counts_end=counts_end,
+                            end=end,
+                            exact=(end == nxt),
+                            relaxed_u16=relaxed,
+                            k=k,
                         )
-                        for j in range(n)
-                    ]
-                    repeats = False
-                    off = 0
-                    for c in counts:
-                        loop = refs[off : off + c]
-                        if c > 0 and len(set(loop)) < c:
-                            repeats = True
-                        off += c
-                    oob = any(r >= element_count for r in refs)
-                    nonplanar = 0
-                    if normal is not None and elements is not None:
-                        off = 0
-                        for c in counts:
-                            loop = refs[off : off + c]
-                            off += c
-                            if not loop:
-                                continue
-                            if any(r >= len(elements) for r in loop):
-                                continue
-                            if any(r in skips for r in loop):
-                                # Gap-edge width choice (2026-11-18): a
-                                # parse whose loop lands on skip slots is
-                                # the usual misread.  Test it on its
-                                # dup-pinned coordinates with the SAME
-                                # battery — a wrong width is nonplanar
-                                # there (measured 2e-2..8 on the 3 bad
-                                # labios/main loops) while a real curve
-                                # loop stays coplanar (<= 1.4e-6), so a
-                                # fully-written width wins the rank
-                                # without a blanket no-skip-ref penalty
-                                # that would hurt legitimate curve loops.
-                                pin = _dup_pin_map(elements, loop)
-                                if pin is None:
-                                    continue  # untestable: no battery
-                                test = [pin.get(r, r) for r in loop]
-                            else:
-                                test = loop
-                            st, _res = _loop_plane_status(test, normal, elements)
-                            if st == "nonplanar":
-                                nonplanar += 1
-                    rank = (
-                        0 if end == nxt else 1,
-                        1 if oob else 0,
-                        1 if repeats else 0,
-                        nonplanar,
-                        # #66: the relaxed family's pinned primitive is
-                        # u16 (little-endian first); u8 is its compact
-                        # fallback, so a u16 reading that passes the
-                        # gates outranks a u8 one. Nothing changes for
-                        # the other markers (both slots stay 0).
-                        0 if (not relaxed or width == 2) else 1,
-                        0 if endian == "big" else 1,
-                        width,
-                        k,
-                    )
-                    if best is None or rank < best[0]:
-                        best = (rank, tuple(counts), tuple(refs), width, end)
-        if best is None:
+
+        won = vote_ref_width(
+            data,
+            n,
+            _candidates(),
+            element_count=element_count,
+            normal=normal,
+            elements=elements,
+        )
+        if won is None:
             continue
-        _rank, counts, refs, width, end = best
+        refs, counts, width, end = won
         if (
             relaxed
             and width == 1
@@ -723,20 +683,6 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
             # either straddle it by the single header byte (SP02,
             # M3x10) or leave OOB u16 refs (tn.1.1.1) — corpus census,
             # so this declines no measured record.
-            continue
-        if element_count is not None and any(r >= element_count for r in refs):
-            # Fail-closed refs gate (#66, 2026-11-20), symmetric to the
-            # extended family's post-vote rule (parse_extended_facet_
-            # records): a record whose winning parse leaves the element
-            # space is NOT this family's record. Before this gate the
-            # short-form vote ranked ``repeats`` above ``oob`` and never
-            # re-checked the winner, so a w2 big-endian misread of a
-            # relaxed 0x41/0x44 record (all refs >= element_count) could
-            # win against an in-bounds parse and reach ``_triangulate``,
-            # where it raised ``IndexError`` in ``_dup_pin_map`` (Audi
-            # R8) or ``KeyError`` in the RELAXED pass (5 submarine
-            # parts). The record stays unresolved instead of tripping
-            # the store-level refs gate.
             continue
         out.append((o, mk, normal, counts, refs, width))
     return out, len(hdrs)
@@ -865,11 +811,6 @@ def _parse_escaped_extended_records(data, lo, hi, hdrs, element_count, elements,
     if not positions:
         return [], 0
     bounds = sorted(set(hdrs) | positions | {hi})
-    skips = (
-        {i for i, (_v, pt) in enumerate(elements) if pt is None}
-        if elements is not None
-        else None
-    )
     widths = (1, 2, 3) if element_count is not None and element_count > 65_535 else (1, 2)
     shipped_spans = [(r.offset, r.end) for r in shipped]
     records = []
@@ -916,68 +857,32 @@ def _parse_escaped_extended_records(data, lo, hi, hdrs, element_count, elements,
         except (IndexError, struct.error):
             continue
         nxt = min((b for b in bounds if b > o), default=hi)
-        best = None
-        for width in widths:
-            end = refs_start + width * n
-            if end > min(nxt, hi):
-                continue
-            refs = [
-                int.from_bytes(
-                    data[refs_start + width * j : refs_start + width * (j + 1)],
-                    "big",
+        won = vote_ref_width(
+            data,
+            n,
+            (
+                WidthCandidate(
+                    width=width,
+                    little=False,
+                    counts=counts,
+                    counts_end=refs_start,
+                    end=refs_start + width * n,
+                    exact=(refs_start + width * n == nxt),
+                    tri_count=ty,
                 )
-                for j in range(n)
-            ]
-            repeats = False
-            for start in range(0, 3 * ty, 3):
-                if len(set(refs[start : start + 3])) < 3:
-                    repeats = True
-                    break
-            off = 3 * ty
-            for c in counts:
-                if c > 0 and len(set(refs[off : off + c])) < c:
-                    repeats = True
-                    break
-                off += c
-            oob = (
-                any(r >= element_count for r in refs)
-                if element_count is not None
-                else False
-            )
-            nonplanar = 0
-            if normal is not None and elements is not None:
-                off = 3 * ty
-                for c in counts:
-                    loop = refs[off : off + c]
-                    off += c
-                    if not loop:
-                        continue
-                    if any(r >= len(elements) for r in loop):
-                        continue
-                    if any(r in skips for r in loop):
-                        pin = _dup_pin_map(elements, loop)
-                        if pin is None:
-                            continue
-                        test = [pin.get(r, r) for r in loop]
-                    else:
-                        test = loop
-                    st, _dev = _loop_plane_status(test, normal, elements)
-                    if st == "nonplanar":
-                        nonplanar += 1
-            rank = (
-                0 if end == nxt else 1,
-                1 if oob else 0,
-                1 if repeats else 0,
-                nonplanar,
-                width,
-            )
-            if best is None or rank < best[0]:
-                best = (rank, tuple(refs), width, end)
-        if best is None:
+                for width in widths
+                if refs_start + width * n <= min(nxt, hi)
+            ),
+            element_count=element_count,
+            normal=normal,
+            elements=elements,
+            # The escaped family's strip joins are legitimate repeats:
+            # they RANK (the #64 semantic), never disqualify.
+            repeats_ranked=True,
+        )
+        if won is None:
             continue
-        _rank, refs, width, end = best
-        if element_count is not None and any(r >= element_count for r in refs):
-            continue
+        refs, _counts, width, end = won
         records.append(
             ExtendedFacetRecord(
                 offset=o,
@@ -1134,11 +1039,6 @@ def parse_extended_facet_records(
         + facet_headers(data, lo, hi)
     )
     widths = (1, 2, 3) if element_count is not None and element_count > 65_535 else (1, 2)
-    skips = (
-        {i for i, (_v, pt) in enumerate(elements) if pt is None}
-        if elements is not None
-        else None
-    )
     accepted: list[tuple[int, int]] = []
     for i, o in enumerate(hdrs):
         if header_len(data, o) != 6:
@@ -1188,96 +1088,48 @@ def parse_extended_facet_records(
 
         def _vote(counts, refs_start, repeats_ranked):
             # The #62 width vote (exact tiling, in-bounds, repeats,
-            # loop plane law, narrower width). ``repeats_ranked`` is
-            # the #64 escaped law's semantic — repeats are legitimate
+            # loop plane law, narrower width) — the ONE rank in
+            # :mod:`catpart.geometry.vote`. ``repeats_ranked`` is the
+            # #64 escaped law's semantic — repeats are legitimate
             # strip joins on the escaped-form family — so the committed
             # u8 reading keeps the misread disqualification while the
             # #65 fallback readings rank them; the emission keeps the
             # per-record ``_mesh_safe`` guard either way.
-            best = None
-            for width in widths:
-                end = refs_start + width * n
-                if end > hi:
-                    continue
-                if end > min(nxt, hi):
-                    # #65: past the next candidate header only the
-                    # exact-tiling exception is viable — the record ends
-                    # exactly on a later candidate header, and swallows
-                    # no accepted record.
-                    if end != _nxt_eff(end) or _overlaps(end):
+            def _candidates():
+                for width in widths:
+                    end = refs_start + width * n
+                    if end > hi:
                         continue
-                refs = [
-                    int.from_bytes(
-                        data[refs_start + width * j : refs_start + width * (j + 1)],
-                        "big",
+                    if end > min(nxt, hi):
+                        # #65: past the next candidate header only the
+                        # exact-tiling exception is viable — the record
+                        # ends exactly on a later candidate header, and
+                        # swallows no accepted record.
+                        if end != _nxt_eff(end) or _overlaps(end):
+                            continue
+                    yield WidthCandidate(
+                        width=width,
+                        little=False,
+                        counts=tuple(counts),
+                        counts_end=refs_start,
+                        end=end,
+                        exact=(end == _nxt_eff(end)),
+                        tri_count=ty,
                     )
-                    for j in range(n)
-                ]
-                repeats = False
-                for start in range(0, 3 * ty, 3):
-                    if len(set(refs[start : start + 3])) < 3:
-                        repeats = True
-                        break
-                off = 3 * ty
-                for c in counts:
-                    if c > 0 and len(set(refs[off : off + c])) < c:
-                        repeats = True
-                        break
-                    off += c
-                if repeats and not repeats_ranked:
-                    # The misread detector (the same signal the
-                    # short-form width law ranks on): a narrow misread
-                    # of a wider record repeats refs inside the loop,
-                    # and a legitimate record never repeats (a repeated
-                    # ref emits a degenerate triangle the battery
-                    # declines anyway). The committed u8 reading keeps
-                    # this disqualification.  Measured (#62
-                    # CAASdd*Stiffener check): without it, the u8
-                    # misreads of the non-tiling CAASddEditStiffener
-                    # records win the rank on in-bounds (their narrow
-                    # refs stay under the 640-element space) and the
-                    # store exports 50,779 m2 of area outside its own
-                    # 104.6 m bbox — km-scale garbage.
-                    continue
-                oob = (
-                    any(r >= element_count for r in refs)
-                    if element_count is not None
-                    else False
-                )
-                nonplanar = 0
-                if normal is not None and elements is not None:
-                    off = 3 * ty
-                    for c in counts:
-                        loop = refs[off : off + c]
-                        off += c
-                        if not loop:
-                            continue
-                        if any(r >= len(elements) for r in loop):
-                            continue
-                        if any(r in skips for r in loop):
-                            # The same gap-edge battery as the short
-                            # records: a skip-bearing loop is tested on
-                            # its dup-pinned coordinates; untestable
-                            # loops stay silent.
-                            pin = _dup_pin_map(elements, loop)
-                            if pin is None:
-                                continue
-                            test = [pin.get(r, r) for r in loop]
-                        else:
-                            test = loop
-                        st, _dev = _loop_plane_status(test, normal, elements)
-                        if st == "nonplanar":
-                            nonplanar += 1
-                rank = (
-                    0 if end == _nxt_eff(end) else 1,
-                    1 if oob else 0,
-                    1 if repeats else 0,
-                    nonplanar,
-                    width,
-                )
-                if best is None or rank < best[0]:
-                    best = (rank, tuple(refs), width, end, tuple(counts))
-            return best
+
+            won = vote_ref_width(
+                data,
+                n,
+                _candidates(),
+                element_count=element_count,
+                normal=normal,
+                elements=elements,
+                repeats_ranked=repeats_ranked,
+            )
+            if won is None:
+                return None
+            refs, _counts, width, end = won
+            return refs, width, end, tuple(counts)
 
         # The counts-table reading chain (#65, 2026-11-20). The
         # committed u8 reading (the #62 law) runs first and alone on
@@ -1311,7 +1163,7 @@ def parse_extended_facet_records(
                 best = _vote(counts16, base + 2 * k, repeats_ranked=True)
         if best is None:
             continue
-        _rank, refs, width, end, counts = best
+        refs, width, end, counts = best
         if element_count is not None and any(r >= element_count for r in refs):
             # The winning parse's refs leave the element space: not this
             # family (the false-positive rule; the record stays
@@ -1350,31 +1202,9 @@ def parse_extended_facet_records(
 
 # Plane tolerance of the committed loop battery (stage 3b): the
 # per-coordinate normal distance bound; f32 coordinate rounding ~1e-4.
-PLANE_TOL = 2e-3
-
-
-def _loop_plane_status(loop, normal, elements):
-    """Coplanarity of one fully-resolved loop against the record's
-    stored normal (the stage-3b battery criterion; ported from the
-    stage-4b width re-test, ``not_manifold_audit.py``).  Returns
-    ``("coplanar", 0.0)`` or ``("nonplanar", max_distance)``."""
-    nn = (normal[0] ** 2 + normal[1] ** 2 + normal[2] ** 2) ** 0.5
-    if nn == 0:
-        return "nonplanar", 0.0
-    pts = [elements[r][1] for r in loop]
-    p0 = pts[0]
-    worst = 0.0
-    for p in pts[1:]:
-        d = (
-            (p[0] - p0[0]) * normal[0]
-            + (p[1] - p0[1]) * normal[1]
-            + (p[2] - p0[2]) * normal[2]
-        ) / nn
-        if abs(d) > worst:
-            worst = abs(d)
-        if abs(d) > PLANE_TOL:
-            return "nonplanar", abs(d)
-    return "coplanar", worst
+# PLANE_TOL, :func:`_loop_plane_status` and :func:`_dup_pin_map` live in
+# :mod:`catpart.geometry.vote` (the battery is shared with the width
+# vote) and are imported above under their historical names.
 
 
 def _loop_triangles(mk, idxs, points):
@@ -1415,91 +1245,11 @@ def _loop_triangles(mk, idxs, points):
     return triangles, degenerate
 
 
-def _dup_pin_map(elements, loop):
-    """The dup-pin weld targets for one loop — ``{skip_slot: written
-    element}`` for every referenced skip slot — or ``None`` when a
-    referenced skip slot has no preceding written element (unpinnable:
-    the weld's fail-closed arm).
-
-    The U4-D dup law (ported from the stage-4a decoder's ``dup_prev``,
-    decode_curve_entries.py — not re-derived): a loop-referenced skip
-    slot carries the bit-exact coordinates of the written vertex of its
-    immediately preceding written element (the per-face copy — no new
-    vertices)."""
-    pin: dict[int, int] = {}
-    for r in loop:
-        if elements[r][1] is not None:
-            continue
-        j = r - 1
-        while j >= 0 and elements[j][1] is None:
-            j -= 1
-        if j < 0:
-            return None
-        pin[r] = j
-    return pin
-
-
-def _edge_key(a, b):
-    """The undirected edge key (the mesh-stat edge histogram's key)."""
-    return (a, b) if a <= b else (b, a)
-
-
-def _edge_uses(triangles):
-    """Undirected edge-use histogram of a triangle list (the mesh
-    invariant's key; ``manifold`` == every value <= 2)."""
-    uses: dict[tuple[int, int], int] = {}
-    for tri in triangles:
-        a, b, c = tri
-        for key in (_edge_key(a, b), _edge_key(b, c), _edge_key(c, a)):
-            uses[key] = uses.get(key, 0) + 1
-    return uses
-
-
-def _mesh_safe(edge_uses, tris):
-    """The incremental manifold guard (2026-11-18) — ONE topology lever.
-
-    True when adding ``tris`` keeps every undirected edge at two uses or
-    fewer, in which case the edges are folded into ``edge_uses``.  The
-    dup-pin weld (:func:`_e0b_dup_pin`), the extended-header emission
-    and the primary-loop seam (:func:`_triangulate`) share this single
-    check; a refused unit leaves the histogram untouched (fail-closed,
-    deterministic in record/loop order).  ``False`` means the unit would
-    tip the assembled mesh past the G3 manifold invariant."""
-    candidate = _edge_uses(tris)
-    if any(edge_uses.get(edge, 0) + n > 2 for edge, n in candidate.items()):
-        return False
-    _fold_edge_uses(edge_uses, candidate)
-    return True
-
-
-def _fold_edge_uses(edge_uses, candidate):
-    """Fold one unit's edge-use histogram into the assembled one (the
-    accept arm of :func:`_mesh_safe`).  The primary seam also uses it for
-    an over-use loop it deliberately keeps (the large-loop arm)."""
-    for edge, n in candidate.items():
-        edge_uses[edge] = edge_uses.get(edge, 0) + n
-
-
-def _triangle_area(tri, points):
-    """One triangle's area from the written points (mm²)."""
-    a, b, c = points[tri[0]], points[tri[1]], points[tri[2]]
-    ux, uy, uz = b[0] - a[0], b[1] - a[1], b[2] - a[2]
-    vx, vy, vz = c[0] - a[0], c[1] - a[1], c[2] - a[2]
-    cx = uy * vz - uz * vy
-    cy = uz * vx - ux * vz
-    cz = ux * vy - uy * vx
-    return 0.5 * math.sqrt(cx * cx + cy * cy + cz * cz)
-
-
-def _loop_area(tris, points):
-    """A candidate loop's area (the sum over its emitted triangles)."""
-    return sum(_triangle_area(tri, points) for tri in tris)
-
-
-def _mesh_area(triangles, points):
-    """The assembled mesh's area — the primary seam's reference (the
-    store-level mesh area, so the rule is order-independent)."""
-    return sum(_triangle_area(tri, points) for tri in triangles)
+# The emission guards moved to :mod:`catpart.geometry.mesh`
+# (:class:`EdgeGuard` — the ONE topology lever behind the weld, the
+# extended records, the relaxed loops and the primary seam — plus
+# :func:`triangle_area` / :func:`loop_area` / :func:`mesh_area`); they
+# are imported above under their historical names.
 
 
 # The primary-loop seam's keep threshold (2026-11-18, #34).  A refused
@@ -1569,7 +1319,7 @@ def _e0b_dup_pin(elements, points, written_rank, dropped, triangles):
     degenerate = 0
     welded = 0
     refused = 0
-    edge_uses = _edge_uses(triangles)
+    guard = EdgeGuard.from_triangles(triangles)
     for mk, normal, loop in dropped:
         pin = _dup_pin_map(elements, loop)
         if pin is None:
@@ -1589,10 +1339,10 @@ def _e0b_dup_pin(elements, points, written_rank, dropped, triangles):
             # is not a clean facet — do not weld it.
             refused += 1
             continue
-        # Incremental manifold guard (the shared _mesh_safe lever): any
+        # Incremental manifold guard (the shared EdgeGuard lever): any
         # edge the candidate loop would push past two uses rejects the
         # whole loop (no partial weld).
-        if not _mesh_safe(edge_uses, tris):
+        if not guard.admit(tris):
             refused += 1
             continue
         welded_triangles += tris
@@ -1691,7 +1441,7 @@ def _triangulate(
     extended_triangles = 0
     primary_skips = 0
     primary_kept = 0
-    edge_uses: dict[tuple[int, int], int] = {}
+    guard = EdgeGuard()
     dropped = []
     # The re-listed-keep skip (Fase 3 L1, #70): with ``relist_skip`` a
     # refused loop above the sliver bound is SKIPPED at decision time
@@ -1716,14 +1466,14 @@ def _triangulate(
         idxs = [written_rank[r] for r in loop]
         tris, deg = _loop_triangles(kind, idxs, points)
         degenerate += deg
-        area = _loop_area(tris, points)
+        area = loop_area(tris, points)
         # The primary-loop seam (2026-11-18, #34): the same incremental
         # manifold guard the weld and the extended family use, made
         # fidelity-neutral by the area rule — a refused loop is dropped
         # only when it is <= PRIMARY_LOOP_AREA_REL of the store mesh's
         # area (a sliver over-using an edge); a larger over-use is real
         # surface and is kept as before, counted and named.
-        if not _mesh_safe(edge_uses, tris):
+        if not guard.admit(tris):
             if seam_area is not None and area <= PRIMARY_LOOP_AREA_REL * seam_area:
                 primary_skips += 1
                 return
@@ -1733,7 +1483,7 @@ def _triangulate(
                 kept_tris.extend(tris)
                 return
             primary_kept += 1
-            _fold_edge_uses(edge_uses, _edge_uses(tris))
+            guard.fold(tris)
         triangles.extend(tris)
 
     for _off, mk, normal, counts, refs, _w in records:
@@ -1774,7 +1524,7 @@ def _triangulate(
             rec_triangles += tris
             rec_degenerate += deg
             rec_loops += 1
-        if rec_degenerate == 0 and _mesh_safe(edge_uses, rec_triangles):
+        if rec_degenerate == 0 and guard.admit(rec_triangles):
             triangles += rec_triangles
             degenerate += rec_degenerate
             loops_exported += rec_loops
@@ -1818,12 +1568,12 @@ def _triangulate(
                 # on passing parts is preserved by construction.
                 relaxed_declined += 1
                 continue
-            if _mesh_safe(edge_uses, tris):
+            if guard.admit(tris):
                 triangles.extend(tris)
-                # (the fold already happened inside :func:`_mesh_safe`'s
-                # accept arm; the T3 commit's extra ``_fold_edge_uses``
-                # here double-counted every accepted relaxed loop's
-                # edges, over-refusing later relaxed loops on the same
+                # (the fold already happened inside :meth:`EdgeGuard.
+                # admit`'s accept arm; the T3 commit's extra fold here
+                # double-counted every accepted relaxed loop's edges,
+                # over-refusing later relaxed loops on the same
                 # histogram — a Python-twin-only bug the port never
                 # copied; surfaced by the Dodge store's relaxed loops,
                 # Fase 3 L2 #72)
@@ -2106,7 +1856,7 @@ def decode_composite_store(
             _seam_area=None,
         )
         base_offsets = info.pop("_space_offsets", ())
-        area = _mesh_area(triangles, points)
+        area = mesh_area(triangles, points)
         seam_points, seam_triangles, seam_degenerate, seam_info = (
             decode_composite_store(
                 data,
@@ -2159,8 +1909,16 @@ def decode_composite_store(
         # boundary-edge count does not grow against the chosen emission
         # AND every skipped loop's vertex coordinates survive in the
         # candidate (the skin signature; a unique-surface loop with its
-        # own apex coordinates is declined).  Any failed condition keeps
-        # the previous emission byte-for-byte — fail-closed,
+        # own apex coordinates is declined) AND — L1.1 (#70, 2026-11-21)
+        # — the candidate carries no more degenerate-triangle skips
+        # than the chosen emission: 37 of the 117 parts L1 resolved
+        # landed on ``degenerate-triangles`` because the adopted
+        # candidate's triangulation skips degenerates the kept mesh
+        # never produced, trading a named manifold failure for an L2
+        # gate failure.  The condition returns them to their previous
+        # (not-manifold) class without touching the 80 whose candidates
+        # were degenerate-free.  Any failed condition keeps the previous
+        # emission byte-for-byte — fail-closed,
         # PRIMARY_LOOP_AREA_REL untouched.  Measured on the submarine's
         # 357 kept-loop stores: restores manifold on the clean
         # stratified bucket without opening boundary edges (docs/
@@ -2201,6 +1959,7 @@ def decode_composite_store(
                     cand_stats.manifold
                     and cand_stats.boundary_edges <= chosen_stats.boundary_edges
                     and covered
+                    and rel_degenerate == 0
                 )
                 if adopted:
                     points, triangles, degenerate = (

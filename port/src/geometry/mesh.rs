@@ -83,6 +83,114 @@ pub fn used_vertex_count(triangles: &[(u32, u32, u32)], n_vertices: usize) -> us
         .count()
 }
 
+// --- the emission guards (2026-11-18, #34) --------------------------------
+//
+// ONE topology lever and its area measures, shared by every emission
+// site of the composite decode: the dup-pin weld, the extended-header
+// records, the T3 relaxed loops and the primary-emit seam all admit
+// units through `EdgeGuard`, and the seam's sliver rule reads the
+// loop/store areas below.  They were composite-private helpers before
+// the vote/guard split; the behavior is unchanged.
+
+/// The undirected edge key (the mesh-stat edge histogram's key) —
+/// twin: ``edge_key``.
+#[inline]
+pub fn edge_key(a: u32, b: u32) -> (u32, u32) {
+    if a <= b { (a, b) } else { (b, a) }
+}
+
+/// Undirected edge-use histogram of a triangle list (the mesh
+/// invariant's key; ``manifold`` == every value <= 2) — twin:
+/// ``edge_uses``.
+pub fn edge_uses(triangles: &[(u32, u32, u32)]) -> HashMap<(u32, u32), u32> {
+    let mut uses: HashMap<(u32, u32), u32> = HashMap::new();
+    for &(a, b, c) in triangles {
+        for key in [edge_key(a, b), edge_key(b, c), edge_key(c, a)] {
+            *uses.entry(key).or_insert(0) += 1;
+        }
+    }
+    uses
+}
+
+/// The incremental manifold guard — ONE topology lever (twin:
+/// ``EdgeGuard``).  `admit` is true when adding ``tris`` keeps every
+/// undirected edge at two uses or fewer, in which case the edges are
+/// folded in; a refused unit leaves the histogram untouched
+/// (fail-closed, deterministic in record/loop order).  A caller that
+/// deliberately KEEPS an over-using unit (the primary seam's
+/// large-loop arm) folds it explicitly with `fold`.
+#[derive(Clone, Default)]
+pub struct EdgeGuard {
+    /// The undirected edge-use histogram of the units emitted so far.
+    pub uses: HashMap<(u32, u32), u32>,
+}
+
+impl EdgeGuard {
+    /// The histogram of an already-emitted triangle list (the weld's
+    /// starting state) — twin: ``EdgeGuard.from_triangles``.
+    pub fn from_triangles(triangles: &[(u32, u32, u32)]) -> Self {
+        let mut guard = Self::default();
+        guard.fold(triangles);
+        guard
+    }
+
+    /// True when adding ``tris`` keeps every undirected edge at two
+    /// uses or fewer, in which case the edges are folded in (the
+    /// accept arm); a refused unit leaves the histogram untouched —
+    /// twin: ``_mesh_safe`` / ``admit``.
+    pub fn admit(&mut self, tris: &[(u32, u32, u32)]) -> bool {
+        let candidate = edge_uses(tris);
+        if candidate
+            .iter()
+            .any(|(edge, count)| self.uses.get(edge).copied().unwrap_or(0) + count > 2)
+        {
+            return false;
+        }
+        for (edge, count) in candidate {
+            *self.uses.entry(edge).or_insert(0) += count;
+        }
+        true
+    }
+
+    /// Fold one unit's edge uses into the histogram (the accept arm of
+    /// `admit`; the seam's keep arm) — twin: ``fold``.
+    pub fn fold(&mut self, tris: &[(u32, u32, u32)]) {
+        for (edge, count) in edge_uses(tris) {
+            *self.uses.entry(edge).or_insert(0) += count;
+        }
+    }
+}
+
+/// One triangle's area from the written points (mm²) — twin:
+/// ``triangle_area``.
+pub fn triangle_area(tri: (u32, u32, u32), points: &[(f64, f64, f64)]) -> f64 {
+    let a = points[tri.0 as usize];
+    let b = points[tri.1 as usize];
+    let c = points[tri.2 as usize];
+    let (ux, uy, uz) = (b.0 - a.0, b.1 - a.1, b.2 - a.2);
+    let (vx, vy, vz) = (c.0 - a.0, c.1 - a.1, c.2 - a.2);
+    let cx = uy * vz - uz * vy;
+    let cy = uz * vx - ux * vz;
+    let cz = ux * vy - uy * vx;
+    0.5 * (cx * cx + cy * cy + cz * cz).sqrt()
+}
+
+/// A candidate loop's area (the sum over its emitted triangles) —
+/// twin: ``loop_area``.
+pub fn loop_area(tris: &[(u32, u32, u32)], points: &[(f64, f64, f64)]) -> f64 {
+    tris.iter().map(|&tri| triangle_area(tri, points)).sum()
+}
+
+/// The assembled mesh's area — the primary seam's reference (the
+/// store-level mesh area, so the rule is order-independent) — twin:
+/// ``mesh_area``.
+pub fn mesh_area(triangles: &[(u32, u32, u32)], points: &[(f64, f64, f64)]) -> f64 {
+    triangles
+        .iter()
+        .map(|&tri| triangle_area(tri, points))
+        .sum()
+}
+
 /// The pool coordinate extents as ``(min, max)`` triples — the twin's
 /// :func:`catpart.geometry.mesh.bounding_box`. ``None`` mirrors the
 /// twin's ``zip(*pool)`` unpacking ``ValueError`` on an empty pool —
