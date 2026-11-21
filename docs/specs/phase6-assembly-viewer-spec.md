@@ -515,7 +515,7 @@ pub struct ProductStructureDocument {
 pub struct ProductInstanceRecord {
     pub instance_name: String,
     pub part_number: String,
-    pub pairing_rule: String,    // "triple" | "desc_block" | "bare_pair"
+    pub pairing_rule: String,    // "triple" | "desc_block" | "bare_pair" | "name_table"
     pub has_position_attr: bool, // True if _Position token declared
     pub placement_status: String,// "placed" | "identity" | "undecodable"
     pub transform: Option<[f64; 7]>, // [tx, ty, tz, qw, qx, qy, qz]
@@ -577,7 +577,7 @@ export interface ProductStructureDocument {
 export interface ProductInstanceRecord {
   instance_name: string;
   part_number: string;
-  pairing_rule: "triple" | "desc_block" | "bare_pair";
+  pairing_rule: "triple" | "desc_block" | "bare_pair" | "name_table";
   has_position_attr: bool;
   placement_status: "placed" | "identity" | "undecodable";
   transform: [number, number, number, number, number, number, number] | null;
