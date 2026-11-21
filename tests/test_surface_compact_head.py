@@ -10,7 +10,14 @@ These tests pin:
 - the lane tokens, the pole law ``sum(mult) - degree - 1`` and the grid
   offset predicted by the head (textbook hex of two measured frames);
 - the tail is *not* a closure law for this grammar (0, 141 and 3597 bytes
-  all decode), while the legacy 152/154 law stays in force.
+  all decode), while the legacy 152/154 law stays in force;
+- the compact branch does not apply the chord-length band, whose
+  parameterisation this grammar does not use, while the legacy branch keeps
+  the band exactly as shipped;
+- the three ``d7ed0772`` frames that decode but do not evaluate still
+  refuse on the legacy battery (their measured shapes reproduced
+  synthetically: a kilometre-scale net, a merged numeric allocation, and a
+  folded, non-station-constant net).
 
 Fixtures are synthetic; no corpus binary is read.
 """
@@ -18,10 +25,13 @@ Fixtures are synthetic; no corpus binary is read.
 from __future__ import annotations
 
 import struct
+from pathlib import Path
 
 import pytest
 
-from catpart.geometry import surface
+from catpart.geometry import build_export, surface
+
+import fixtures_gen
 
 
 def f64(*values: float) -> bytes:
@@ -80,6 +90,35 @@ def compact_payload(
         # The default head's law: 3+1+(2-2) = 4 poles in u, 1+1 = 2 in v.
         poles = compact_poles(4, 2)
     return head + pole_bytes(poles) + bytes(tail)
+
+
+def legacy_head(
+    knots_u: tuple[float, ...] = (0.0, 30.0, 60.0, 110.0),
+    knots_v: tuple[float, ...] = (0.0, 24.0, 64.0),
+    mode_u: int = 2,
+    mode_v: int = 2,
+) -> bytes:
+    return (
+        struct.pack("<IIBI", surface.HEAD_TAG, len(knots_u), 0, mode_u)
+        + f64(*knots_u)
+        + bytes([surface.LANE_TAG])
+        + struct.pack("<IIBI", surface.HEAD_TAG, len(knots_v), 0, mode_v)
+        + f64(*knots_v)
+        + surface.CLOSING
+    )
+
+
+def legacy_payload(poles, knots_u, knots_v, tail: int = 152) -> bytes:
+    return legacy_head(knots_u, knots_v) + pole_bytes(poles) + bytes(tail)
+
+
+def frame(blob: bytes) -> bytes:
+    return surface.SURFACE_MARKER + struct.pack("<I", len(blob)) + b"\x0f" + blob
+
+
+def compact_part(blob: bytes) -> bytes:
+    block = fixtures_gen.storage_property_block(b"CATPrtCont", b"CATContainer")
+    return block + b"\x00" * 64 + frame(blob)
 
 
 # --------------------------------------------------------------- head
@@ -178,3 +217,109 @@ def test_compact_refuses_a_broken_lane() -> None:
     assert surface.parse_surface_head(non_monotone, 0, len(non_monotone)) is None
     overrun = compact_payload()[:-141 - 8]
     assert surface.parse_surface_head(overrun, 0, len(overrun)) is None
+
+
+# ------------------------------------------------- chord-length scoping
+
+
+def test_compact_arc_band_is_not_applied_while_legacy_keeps_it() -> None:
+    # Identical geometry, normalised knots: the pole polygon is tens of mm
+    # long while the u span is 1.0, so the legacy band (0.5..2.0) refuses.
+    grid = [[(10.0 * i, 8.0 * j, 0.0) for j in range(6)] for i in range(6)]
+    legacy = legacy_payload(grid, (0.0, 1.0), (0.0, 1.0))
+    legacy_decoded = surface.parse_surface_head(legacy, 0, len(legacy))
+    legacy_fit = surface.assess(legacy_decoded, surface.pole_net(legacy, legacy_decoded))
+    assert not legacy_fit.arc_coherent
+    assert legacy_fit.arc_applicable
+    assert not legacy_fit.evaluable
+
+    blob = compact_payload(
+        head=compact_head(degree_u=5, degree_v=5),
+        poles=grid,
+    )
+    head = surface.parse_surface_head(blob, 0, len(blob))
+    fit = surface.assess(head, surface.pole_net(blob, head))
+    assert fit.arc_ratio == legacy_fit.arc_ratio
+    assert not fit.arc_coherent
+    assert not fit.arc_applicable
+    assert fit.arc_ok
+    assert fit.evaluable
+    assert surface.tessellate(head, surface.pole_net(blob, head)) is not None
+
+
+# ------------------------------------------------- legacy non-regression
+
+
+def test_d7ed0772_legacy_frames_stay_refused() -> None:
+    """The three measured ``d7ed0772`` frames keep the shipped refusal.
+
+    ``SH-15`` measures them at abs 669,430 / 1,271,468 / 1,416,850: two nets
+    reach ~993 m (a merged allocation), the third has no station-constant
+    pole order (arc ratio 63.7, 59 folds).  The compact branch must not
+    weaken the legacy battery, so these shapes are rebuilt here and each
+    must still fail ``assess``.
+    """
+    n_u, n_v = 5, 3
+    poles_u, poles_v = 3 * n_u, 3 * n_v
+    knots_u = tuple(10.0 * (poles_u - 1) * i / (n_u - 1) for i in range(n_u))
+    knots_v = tuple(8.0 * (poles_v - 1) * j / (n_v - 1) for j in range(n_v))
+
+    in_scale = [
+        [(10.0 * i, 8.0 * j, 0.02 * i * i) for j in range(poles_v)]
+        for i in range(poles_u)
+    ]
+    # Frame 669430 / 1271468: a 1000x net with identical lanes.
+    kilometre = [
+        [(1000.0 * x, 1000.0 * y, 1000.0 * z) for x, y, z in row] for row in in_scale
+    ]
+    blob = legacy_payload(kilometre, knots_u, knots_v)
+    head = surface.parse_surface_head(blob, 0, len(blob))
+    assert head is not None
+    fit = surface.assess(head, surface.pole_net(blob, head))
+    assert not fit.plausible_scale
+    assert not fit.evaluable
+
+    # Frame 8212d: the merged run decodes to non-numeric doubles.
+    junk = [[(1.47e308, 1.47e308, 1.47e308) for _ in range(poles_v)] for _ in range(poles_u)]
+    blob = legacy_payload(junk, knots_u, knots_v)
+    head = surface.parse_surface_head(blob, 0, len(blob))
+    assert not surface.plausible_net(surface.pole_net(blob, head))
+
+    # Frame 1416850: rows double back and the lane is not in the net's
+    # parameter space (arc ratio ~63.7, folds 59).
+    folded = [
+        [(10.0 * (i if i < poles_u // 2 else poles_u - 1 - i), 8.0 * j, 0.0)
+         for j in range(poles_v)]
+        for i in range(poles_u)
+    ]
+    wide = tuple(14000.0 * i / (n_u - 1) for i in range(n_u))
+    blob = legacy_payload(folded, wide, knots_v)
+    head = surface.parse_surface_head(blob, 0, len(blob))
+    fit = surface.assess(head, surface.pole_net(blob, head))
+    assert fit.folds > 0
+    assert not fit.arc_coherent
+    assert not fit.evaluable
+
+
+# ---------------------------------------------------- scan and export
+
+
+def test_scan_part_censuses_the_compact_record() -> None:
+    scan = surface.scan_part(compact_part(compact_payload()))
+    assert scan.candidates == 1
+    assert scan.decoded == 1
+    assert scan.evaluable == 1
+    assert scan.tessellated == 1
+    assert scan.refused == 0
+    assert scan.has_mesh
+
+
+def test_compact_part_exports_a_mesh(tmp_path: Path) -> None:
+    path = tmp_path / "compact.CATPart"
+    path.write_bytes(compact_part(compact_payload()))
+    summary = build_export(path, tmp_path / "compact.ply")
+    assert summary["triangle_count"] > 0
+    assert summary["surface_tessellation"]["frames"] == 1
+    assert summary["surface_tessellation"]["decoded"] == 1
+    assert summary["surface_tessellation"]["tessellated"] == 1
+    assert summary["mesh"]["manifold"] is True

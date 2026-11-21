@@ -24,6 +24,8 @@ multiplicities or an explicit multiplicity vector, so its pole net is
 ``sum(mult_u) - degree_u - 1`` by ``sum(mult_v) - degree_v - 1``.  Its tail
 is not a closure law (141..3597 bytes measured); the grid is still
 predicted by the head and validated by the net, never by a tail size.
+This grammar's knots are not chord-length, so it is also the only branch
+that does not apply the chord-length band.
 
 The tessellator subdivides each knot span by a bounded adaptive tensor
 grid: cells whose centre departs from the bilinear cell by more than
@@ -200,7 +202,13 @@ class SurfaceHead:
 
 @dataclasses.dataclass(frozen=True)
 class SurfaceAssessment:
-    """The evaluable battery's measurements for one decoded surface."""
+    """The evaluable battery's measurements for one decoded surface.
+
+    ``arc_applicable`` is false only on the compact grammar, whose knots are
+    not chord-length (measured median ratio 3.14, 25.4 % inside the band):
+    there the corner residual, hull, folds, finiteness and scale remain the
+    grid-integrity gates and the band is not a coherency law.
+    """
 
     corner_residual: float
     finite: bool
@@ -209,6 +217,7 @@ class SurfaceAssessment:
     arc_ratio: float
     bbox: tuple[float, float, float, float, float, float]
     scale_ok: bool = True
+    arc_applicable: bool = True
 
     @property
     def plausible_scale(self) -> bool:
@@ -220,6 +229,10 @@ class SurfaceAssessment:
         return low <= self.arc_ratio <= high
 
     @property
+    def arc_ok(self) -> bool:
+        return self.arc_coherent or not self.arc_applicable
+
+    @property
     def evaluable(self) -> bool:
         return (
             self.corner_residual <= CORNER_TOL
@@ -227,7 +240,7 @@ class SurfaceAssessment:
             and self.hull_violations == 0
             and self.folds == 0
             and self.plausible_scale
-            and self.arc_coherent
+            and self.arc_ok
         )
 
 
@@ -340,9 +353,9 @@ def _parse_compact_lane(data, pos: int, end: int):
     """
     if pos + 3 > end:
         return None
-    token_degree, token_count, marker = _u8(data, pos), _u8(data, pos + 1), _u8(
-        data, pos + 2
-    )
+    token_degree = _u8(data, pos)
+    token_count = _u8(data, pos + 1)
+    marker = _u8(data, pos + 2)
     if marker not in (COMPACT_KNOTS_IMPLICIT, COMPACT_KNOTS_EXPLICIT):
         return None
     if token_degree & 3 != 1 or token_count & 3 != 1:
@@ -830,6 +843,7 @@ def assess(head: SurfaceHead, poles, weights=None) -> SurfaceAssessment:
         arc_ratio=arc_ratio,
         bbox=box,
         scale_ok=max(abs(c) for c in box) <= head.scale_limit,
+        arc_applicable=head.subtype != SUBTYPE_COMPACT,
     )
 
 
