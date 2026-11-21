@@ -35,6 +35,7 @@ import os
 import re
 import struct
 import zipfile
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -101,6 +102,33 @@ CLASS_TOKENS: frozenset[str] = frozenset({
     "AdaptativeSupport",
     "R15HEADER",
 })
+
+# V5R26 name-table pools (ticket #68). In this generation the structure pool
+# body is an interned **name table**: `_InstanceName` appears once as schema
+# vocabulary and the value items are the names of the components the document
+# lists. No per-instance markers exist, so the pairing passes above extract
+# nothing and this branch fills the gap. The gate is deliberately narrow:
+# framed pool without the `CATMechProdCont` container, carrying the
+# `PRDBAGREP` + `3DIC` bag schema, and only when the passes found zero
+# instances (a file the existing laws already decode is never re-decided).
+NAME_TABLE_HEAD_DEPTH = 22
+NAME_TABLE_SCHEMA_TOKENS: frozenset[str] = frozenset({
+    "ASMProduct",
+    "_BagRepsList",
+    "_PrdVersion",
+    "_PubConnectors",
+    "_AttrForLiterals",
+    "_RefProduct",
+    "_Disciplines",
+    "PRDBAGREP",
+    "3DIC",
+    "_Reps",
+    "_Version",
+    "IsRoot",
+    "PRDREP",
+    "TEMP",
+})
+CATMECH_PROD_CONTAINER = "CATMechProdCont"
 
 CONSTRAINT_PREFIXES: tuple[str, ...] = (
     "coincidence",
@@ -982,6 +1010,213 @@ def parse_position_matrix_records(data: bytes) -> list[dict[str, Any]]:
     return records
 
 
+def _name_table_placement(n_records: int) -> dict[str, Any]:
+    """Placement fields for a name-table instance under the fail-closed law.
+
+    `_Position` presence and the non-root `8d81` record count coincide in
+    199/199 files of the V5R26 snapshot, so zero records is a sound identity
+    signal. Any record means a position exists that the name table cannot
+    attribute (its order is not an instance order); those are undecodable,
+    never identity (anti-masking).
+    """
+    if n_records == 0:
+        return {
+            "has_position_attr": False,
+            "placement_status": "identity",
+            "transform": list(IDENTITY_TRANSFORM),
+            "object_tag": None,
+            "classification_detail": (
+                "name-table enumeration: no _Position transform records "
+                "(identity at origin)"
+            ),
+        }
+    return {
+        "has_position_attr": True,
+        "placement_status": "undecodable",
+        "transform": None,
+        "object_tag": None,
+        "classification_detail": (
+            f"name-table enumeration: {n_records} transform record(s) cannot be "
+            "attributed to names (the name table carries no instance order)"
+        ),
+    }
+
+
+def read_product_name_table(texts: Sequence[str]) -> dict[str, Any] | None:
+    """Recognize a V5R26 name-table pool and return `{"self_name", "names"}`.
+
+    This is the structural signature, not the full branch gate: the caller
+    must also have enumerated zero instances with the marker passes (see
+    `read_product_structure`) so a file the existing pairing laws decode is
+    never re-decided.
+
+    The body of the table is a bag: it lists the document's own children and
+    the leaves of the sub-products it references. Attribution is the walker's
+    job (`own_instance_names`); enumeration must not sort or reorder, because
+    the table order is not an instance order (alphabetized in A1/A3, logical
+    in B4/B2).
+    """
+    if CATMECH_PROD_CONTAINER in texts[:24]:
+        return None
+    head = texts[:NAME_TABLE_HEAD_DEPTH]
+    has_bag_schema = any(
+        text == "PRDBAGREP" and i + 1 < len(head) and head[i + 1] == "3DIC"
+        for i, text in enumerate(head)
+    )
+    if not has_bag_schema:
+        return None
+
+    self_name: str | None = None
+    for i, text in enumerate(texts):
+        if text == "_PartNumber" and i + 1 < len(texts):
+            candidate = texts[i + 1]
+            if candidate and not is_token(candidate) and not is_class_token(candidate):
+                self_name = candidate
+            break
+
+    head_end = 0
+    for i, text in enumerate(texts[:NAME_TABLE_HEAD_DEPTH]):
+        if is_token(text) or is_class_token(text) or text in NAME_TABLE_SCHEMA_TOKENS:
+            head_end = i + 1
+
+    names: list[str] = []
+    seen: set[str] = set()
+    for text in texts[head_end:]:
+        if (
+            not text
+            or text == BINARY_SENTINEL
+            or is_token(text)
+            or is_class_token(text)
+            or text in NAME_TABLE_SCHEMA_TOKENS
+            or text == self_name
+        ):
+            continue
+        if text in seen:
+            continue
+        names.append(text)
+        seen.add(text)
+    return {"self_name": self_name, "names": names}
+
+
+def _name_table_instances(
+    table: dict[str, Any], data: bytes
+) -> list[dict[str, Any]]:
+    """Enumerate one record per interned name, with fail-closed placement."""
+    n_records = len(parse_position_matrix_records(data))
+    instances = []
+    for name in table["names"]:
+        inst = {
+            "instance_name": name,
+            "part_number": name,
+            "pairing_rule": "name_table",
+        }
+        inst.update(_name_table_placement(n_records))
+        instances.append(inst)
+    return instances
+
+
+def own_instance_names(
+    names: Sequence[str], child_name_tables: Mapping[str, Sequence[str]]
+) -> list[str]:
+    """Ownership law `own(D) = names(D) − ⋃ names(P)` for the listed products P.
+
+    `child_name_tables` maps a name to that child product's enumerated table
+    (only entries that resolve to a `.CATProduct` belong in it); a name that
+    resolves to a part, or to nothing, stays own. Order is preserved.
+    """
+    covered: set[str] = set()
+    for name in names:
+        child_names = child_name_tables.get(name)
+        if child_names is not None:
+            covered.update(child_names)
+    return [name for name in names if name not in covered]
+
+
+def resolve_owned_assembly(
+    root: str, documents: Mapping[str, bytes]
+) -> dict[str, Any]:
+    """Walk the V5R26 name-table tree under `root` with own(D) attribution.
+
+    `documents` maps product stems (or bare `.CATProduct` filenames) to their
+    bytes. Each document contributes only the names its listed child products
+    do not account for; the walker then recurses into those children. Rows are
+    emitted in table order at each level, so the result follows the documents,
+    never a guessed ordinal.
+
+    A document that does not carry the name-table signature contributes no
+    names and its subtree is not descended: the law never invents instances.
+    """
+    docs: dict[str, bytes] = {}
+    for key, data in documents.items():
+        stem = os.path.basename(key)
+        if stem.lower().endswith(".catproduct"):
+            stem = stem[: -len(".catproduct")]
+        docs[stem] = data
+
+    table_cache: dict[str, dict[str, Any] | None] = {}
+
+    def table_for(name: str) -> dict[str, Any] | None:
+        if name not in table_cache:
+            data = docs.get(name)
+            pool = scan_structure_pool(data) if data is not None else None
+            table_cache[name] = (
+                read_product_name_table(pool[2]) if pool is not None else None
+            )
+        return table_cache[name]
+
+    rows: list[dict[str, Any]] = []
+    visiting: set[str] = set()
+
+    def visit(name: str, depth: int, parent_index: int | None) -> None:
+        table = table_for(name)
+        data = docs.get(name)
+        if table is None or data is None or name in visiting:
+            return
+        n_records = len(parse_position_matrix_records(data))
+        child_tables = {
+            child: child_table["names"]
+            for child in table["names"]
+            if (child_table := table_for(child)) is not None
+        }
+        own = own_instance_names(table["names"], child_tables)
+
+        visiting.add(name)
+        try:
+            for child in own:
+                row = {
+                    "instance_name": child,
+                    "part_number": child,
+                    "pairing_rule": "name_table",
+                    "depth": depth,
+                    "parent_index": parent_index,
+                    "child_product": child if child in docs else None,
+                }
+                row.update(_name_table_placement(n_records))
+                rows.append(row)
+                index = len(rows) - 1
+                if child in docs:
+                    visit(child, depth + 1, index)
+        finally:
+            visiting.remove(name)
+
+    visit(root, 0, None)
+    return {
+        "schema_version": 1,
+        "root": root,
+        "total_instances": len(rows),
+        "placed_instances": sum(
+            1 for row in rows if row["placement_status"] == "placed"
+        ),
+        "identity_instances": sum(
+            1 for row in rows if row["placement_status"] == "identity"
+        ),
+        "undecodable_instances": sum(
+            1 for row in rows if row["placement_status"] == "undecodable"
+        ),
+        "instances": rows,
+    }
+
+
 def _bind_legacy_129b(
     instances: list[dict[str, Any]],
     records: list[dict[str, Any]],
@@ -1143,6 +1378,67 @@ def _bind_position_layer(
     return "position_stream_8d81"
 
 
+def _bind_framed_instances(
+    data: bytes,
+    instances: list[dict[str, Any]],
+    pool_has_position: bool,
+) -> tuple[str | None, list[dict[str, Any]]]:
+    """Bind marker-enumerated instances to the counted transform layers.
+
+    The 129-byte layer is a constraint/connector frame on dual-layer files;
+    prefer the `_Position` 8d81 layer when the legacy gate would place. Count
+    mismatches fail closed to undecodable.
+
+    Returns the binding `mode` (for the warning) and the position records used
+    (empty when the layer did not participate).
+    """
+    raw_recs = parse_129b_transform_records(data)
+    mode = None
+    position_recs: list[dict[str, Any]] = []
+    if raw_recs:
+        n_pos = sum(1 for inst in instances if inst["has_position_attr"])
+        last_is_root_ref = bool(instances) and instances[-1]["has_position_attr"] and (
+            instances[-1]["instance_name"].startswith("main")
+            or instances[-1]["part_number"].startswith("main")
+        )
+        legacy_places = (
+            len(raw_recs) == n_pos
+            or len(raw_recs) == n_pos + 1
+            or (len(raw_recs) == 2 and n_pos == 3 and last_is_root_ref)
+        )
+        position_recs = (
+            parse_position_matrix_records(data) if legacy_places else []
+        )
+        if position_recs:
+            mode = _bind_position_layer(instances, position_recs)
+        if mode is not None:
+            pass
+        elif position_recs:
+            n_explicit = sum(1 for r in position_recs if r["kind"] == "explicit")
+            n_identity = len(position_recs) - n_explicit
+            for inst in instances:
+                if not inst["has_position_attr"]:
+                    continue
+                inst["placement_status"] = "undecodable"
+                inst["transform"] = None
+                inst["object_tag"] = None
+                inst["classification_detail"] = (
+                    f"position layer count mismatch: {n_explicit} explicit + "
+                    f"{n_identity} identity records for {n_pos} positioned instances"
+                )
+        else:
+            _bind_legacy_129b(instances, raw_recs, pool_has_position)
+    elif pool_has_position:
+        for inst in instances:
+            if not inst["has_position_attr"]:
+                inst["placement_status"] = "identity"
+                inst["transform"] = list(IDENTITY_TRANSFORM)
+                inst["classification_detail"] = (
+                    "instance lacks _Position attribute (identity at origin)"
+                )
+    return mode, position_recs
+
+
 def read_product_structure(data: bytes) -> dict[str, Any]:
     """Parse a .CATProduct binary buffer into a structured document.
 
@@ -1258,62 +1554,37 @@ def read_product_structure(data: bytes) -> dict[str, Any]:
             if is_colon and i + 1 < n and USCORE_SHAPE.match(texts[i + 1]):
                 consumed.add(i + 1)
 
-        # Bind decoded transforms. The 129-byte layer is a constraint/connector
-        # frame on dual-layer files; prefer the `_Position` 8d81 layer when the
-        # legacy gate would place. Count mismatches fail closed to undecodable.
-        raw_recs = parse_129b_transform_records(data)
-        mode = None
-        if raw_recs:
-            n_pos = sum(1 for inst in instances if inst["has_position_attr"])
-            last_is_root_ref = bool(instances) and instances[-1]["has_position_attr"] and (
-                instances[-1]["instance_name"].startswith("main")
-                or instances[-1]["part_number"].startswith("main")
-            )
-            legacy_places = (
-                len(raw_recs) == n_pos
-                or len(raw_recs) == n_pos + 1
-                or (len(raw_recs) == 2 and n_pos == 3 and last_is_root_ref)
-            )
-            position_recs = (
-                parse_position_matrix_records(data) if legacy_places else []
-            )
-            mode = None
-            if position_recs:
-                mode = _bind_position_layer(instances, position_recs)
-            if mode is not None:
-                pass
-            elif position_recs:
-                n_explicit = sum(1 for r in position_recs if r["kind"] == "explicit")
-                n_identity = len(position_recs) - n_explicit
-                for inst in instances:
-                    if not inst["has_position_attr"]:
-                        continue
-                    inst["placement_status"] = "undecodable"
-                    inst["transform"] = None
-                    inst["object_tag"] = None
-                    inst["classification_detail"] = (
-                        f"position layer count mismatch: {n_explicit} explicit + "
-                        f"{n_identity} identity records for {n_pos} positioned instances"
-                    )
-            else:
-                _bind_legacy_129b(instances, raw_recs, pool_has_position)
-        elif pool_has_position:
-            for inst in instances:
-                if not inst["has_position_attr"]:
-                    inst["placement_status"] = "identity"
-                    inst["transform"] = list(IDENTITY_TRANSFORM)
-                    inst["classification_detail"] = (
-                        "instance lacks _Position attribute (identity at origin)"
-                    )
-
-        if mode == "position_stream_8d81":
+        name_table = read_product_name_table(texts) if not instances else None
+        if name_table is not None:
+            instances = _name_table_instances(name_table, data)
             warnings.append({
-                "class": "position-stream-8d81",
+                "class": "name-table-v5r26",
                 "detail": (
-                    "placement bound from the _Position 8d81 layer "
-                    f"({len(position_recs)} records; 129-byte layer not used)"
+                    f"V5R26 name-table pool: {len(instances)} interned names "
+                    "enumerated from the pool body"
                 ),
             })
+            if any(i["placement_status"] == "undecodable" for i in instances):
+                warnings.append({
+                    "class": "position-binding-open-v5r26",
+                    "detail": (
+                        "the document carries _Position transform records but "
+                        "the name table has no instance order; placement stays "
+                        "undecodable (never identity)"
+                    ),
+                })
+        else:
+            mode, position_recs = _bind_framed_instances(
+                data, instances, pool_has_position
+            )
+            if mode == "position_stream_8d81":
+                warnings.append({
+                    "class": "position-stream-8d81",
+                    "detail": (
+                        "placement bound from the _Position 8d81 layer "
+                        f"({len(position_recs)} records; 129-byte layer not used)"
+                    ),
+                })
 
     elif pool_form == "r15-ref":
         warnings.append({
