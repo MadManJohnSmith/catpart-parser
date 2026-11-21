@@ -42,6 +42,7 @@ const els = {
   displayLabelText: document.getElementById("display-label-text"),
   curvesBtn: document.getElementById("curve-toggle"),
   wireBtn: document.getElementById("wire-toggle"),
+  edgesBtn: document.getElementById("edges-toggle"),
   curveState: document.getElementById("curve-state"),
   assemblyPanel: document.getElementById("assembly-panel"),
   inspectorPanel: document.getElementById("inspector-panel"),
@@ -72,6 +73,8 @@ let displayGroup = null;
 let solidMaterial = null;
 let showCurves = false;
 let showWireframe = false;
+let showEdges = true; // CATIA-style crease edges: on by default
+let edgesObject = null;
 
 /* ---- Assembly Subsystems (Phase 6) ---- */
 
@@ -149,7 +152,7 @@ function setUIMode(mode) {
 }
 
 function clearScene() {
-  for (const obj of [meshObject, curveGroup, displayGroup]) {
+  for (const obj of [meshObject, edgesObject, curveGroup, displayGroup]) {
     if (!obj) continue;
     scene.remove(obj);
     obj.traverse((child) => {
@@ -158,6 +161,7 @@ function clearScene() {
     });
   }
   meshObject = null;
+  edgesObject = null;
   curveGroup = null;
   displayGroup = null;
   assemblyScene.clear();
@@ -184,6 +188,23 @@ function buildMesh(vertices, triangles) {
   });
   meshObject = new THREE.Mesh(geometry, solidMaterial);
   scene.add(meshObject);
+
+  // The CATIA-style crease-edge overlay (2026-11-21): dark subtle lines
+  // along face pairs meeting past 25 degrees (EdgesGeometry's threshold
+  // angle), on by default next to the Wireframe toggle. A sibling
+  // object, not a child: the mesh's DoubleSide shading is untouched and
+  // the overlay disposes with the file's scene (clearScene).
+  const edgesGeometry = new THREE.EdgesGeometry(geometry, 25);
+  edgesObject = new THREE.LineSegments(
+    edgesGeometry,
+    new THREE.LineBasicMaterial({
+      color: 0x16202e,
+      transparent: true,
+      opacity: 0.85,
+    }),
+  );
+  edgesObject.visible = showEdges;
+  scene.add(edgesObject);
 
   // Frame the bounding sphere the summary reports (already the pool's
   // extents; the Float32Array coordinates are the same values).
@@ -348,6 +369,7 @@ function refreshToggles(curveCount) {
   els.curvesBtn.disabled = curveCount === 0;
   els.curvesBtn.setAttribute("aria-pressed", showCurves ? "true" : "false");
   els.wireBtn.setAttribute("aria-pressed", showWireframe ? "true" : "false");
+  els.edgesBtn.setAttribute("aria-pressed", showEdges ? "true" : "false");
 }
 
 /* The scripted-check surface (window.viewer): the same state the
@@ -365,6 +387,7 @@ const viewerState = {
   curveCount: 0,
   curvesVisible: false,
   wireframe: false,
+  edgesVisible: true,
   display: null,
   assembly: null,
 };
@@ -372,6 +395,7 @@ const viewerState = {
 function publishState() {
   viewerState.curvesVisible = showCurves;
   viewerState.wireframe = showWireframe;
+  viewerState.edgesVisible = showEdges;
   window.viewer = viewerState;
 }
 
@@ -723,6 +747,14 @@ els.wireBtn.addEventListener("click", () => {
   showWireframe = !showWireframe;
   if (solidMaterial) solidMaterial.wireframe = showWireframe;
   assemblyScene.setWireframe(showWireframe);
+  refreshToggles(viewerState.curveCount);
+  publishState();
+});
+
+els.edgesBtn.addEventListener("click", () => {
+  showEdges = !showEdges;
+  if (edgesObject) edgesObject.visible = showEdges;
+  assemblyScene.setEdges(showEdges);
   refreshToggles(viewerState.curveCount);
   publishState();
 });

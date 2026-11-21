@@ -497,6 +497,171 @@
           "pending-merge": 0
         }
       }
+    },
+    {
+      "run_id": "20261120T183229Z-d503ff",
+      "timestamp": "2026-11-20T18:32:29Z",
+      "dev": {
+        "clean": 1745,
+        "total": 1751,
+        "pct": 99.66
+      },
+      "l2": {
+        "dev": {
+          "pass": 1113,
+          "total": 1381,
+          "pct": 80.59
+        },
+        "held-out": {
+          "pass": 57,
+          "total": 61,
+          "pct": 93.44
+        }
+      },
+      "l3": {
+        "resolved": 23,
+        "total": 23,
+        "pct": 100.0,
+        "by_outcome": {
+          "decoded": 14,
+          "documented-negative": 3,
+          "documented-open": 6,
+          "candidate": 0,
+          "pending-merge": 0
+        }
+      }
+    },
+    {
+      "run_id": "20261120T205938Z-6bbd19",
+      "timestamp": "2026-11-20T20:59:38Z",
+      "dev": {
+        "clean": 1745,
+        "total": 1751,
+        "pct": 99.66
+      },
+      "l2": {
+        "dev": {
+          "pass": 1122,
+          "total": 1381,
+          "pct": 81.25
+        },
+        "held-out": {
+          "pass": 57,
+          "total": 61,
+          "pct": 93.44
+        }
+      },
+      "l3": {
+        "resolved": 23,
+        "total": 23,
+        "pct": 100.0,
+        "by_outcome": {
+          "decoded": 14,
+          "documented-negative": 3,
+          "documented-open": 6,
+          "candidate": 0,
+          "pending-merge": 0
+        }
+      }
+    },
+    {
+      "run_id": "20261120T221222Z-6aa551",
+      "timestamp": "2026-11-20T22:12:22Z",
+      "dev": {
+        "clean": 1745,
+        "total": 1751,
+        "pct": 99.66
+      },
+      "l2": {
+        "dev": {
+          "pass": 1124,
+          "total": 1381,
+          "pct": 81.39
+        },
+        "held-out": {
+          "pass": 57,
+          "total": 61,
+          "pct": 93.44
+        }
+      },
+      "l3": {
+        "resolved": 23,
+        "total": 23,
+        "pct": 100.0,
+        "by_outcome": {
+          "decoded": 14,
+          "documented-negative": 3,
+          "documented-open": 6,
+          "candidate": 0,
+          "pending-merge": 0
+        }
+      }
+    },
+    {
+      "run_id": "20261121T022927Z-cfb51d",
+      "timestamp": "2026-11-21T02:29:27Z",
+      "dev": {
+        "clean": 1745,
+        "total": 1751,
+        "pct": 99.66
+      },
+      "l2": {
+        "dev": {
+          "pass": 1137,
+          "total": 1381,
+          "pct": 82.33
+        },
+        "held-out": {
+          "pass": 57,
+          "total": 61,
+          "pct": 93.44
+        }
+      },
+      "l3": {
+        "resolved": 23,
+        "total": 23,
+        "pct": 100.0,
+        "by_outcome": {
+          "decoded": 14,
+          "documented-negative": 3,
+          "documented-open": 6,
+          "candidate": 0,
+          "pending-merge": 0
+        }
+      }
+    },
+    {
+      "run_id": "20261121T103944Z-d2c9ff",
+      "timestamp": "2026-11-21T10:39:44Z",
+      "dev": {
+        "clean": 1745,
+        "total": 1751,
+        "pct": 99.66
+      },
+      "l2": {
+        "dev": {
+          "pass": 1138,
+          "total": 1381,
+          "pct": 82.4
+        },
+        "held-out": {
+          "pass": 57,
+          "total": 61,
+          "pct": 93.44
+        }
+      },
+      "l3": {
+        "resolved": 23,
+        "total": 23,
+        "pct": 100.0,
+        "by_outcome": {
+          "decoded": 14,
+          "documented-negative": 3,
+          "documented-open": 6,
+          "candidate": 0,
+          "pending-merge": 0
+        }
+      }
     }
   ]
 }
