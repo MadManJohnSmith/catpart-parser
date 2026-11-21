@@ -1713,20 +1713,26 @@ def test_triangulate_extended_record_soup_strips_polygons() -> None:
 # ``fidelity-cli``) and pins parsed-summary equality plus
 # byte-identical PLY; elsewhere it skips.
 PRIMARY_SEAM_FLIPS = {
-    "13bb5c0c49616ade": 215775,
+    # 13bb5c0c gained its 120 k=17/18 0x42 records (#65's MAX_LOOP_COUNTS
+    # raise; all in-bounds, 90 exact-tiling, the store stays manifold) —
+    # 215775 -> 224435. The 4abf3eea / c9fdd852 / d31ea2c1 gains ride the
+    # #65 exact-tiling exception on the u8 extended path (their wins end
+    # past an internal false-positive STRIP_RE match and land exactly on
+    # the next real boundary).
+    "13bb5c0c49616ade": 224435,
     "2fb5b092857f70ec": 1753,
     "44e63faa2d9abf84": 2520,
     "4a32f59c1e637acd": 2451,
-    "4abf3eeaf892be44": 1931,
+    "4abf3eeaf892be44": 1973,
     "612c5e7cc7291c71": 4505,
     "6ab9e107b7f30308": 959,
     "97a0a420923c5c67": 8641,
     "a61588e5fe2cca5f": 3017,
     "ba0900267e2072e1": 4395,
     "bc235805f71fdf5a": 1753,
-    "c9fdd85256ae1eba": 17239,
+    "c9fdd85256ae1eba": 17598,
     "cd76cab52cf2fbe5": 1563,
-    "d31ea2c17d63c041": 2574,
+    "d31ea2c17d63c041": 2633,
     "d4127e6b5cc39236": 5080,
 }
 
@@ -1804,18 +1810,22 @@ def test_primary_seam_port_parity_on_the_flips(tmp_path):
 # its own, and the dedup's fire gate (a NOT-manifold assembled mesh)
 # never engages — no dedup outcome at all.  Measured on 2026-11-19
 # (docs/evidence/2026-11-19-b3-pairing.md §3): 2,266 triangles,
-# 16,063.010778 mm², 5/5 reps, no dedup key.  The dedup law itself is
+# 16,063.010778 mm², 5/5 reps, no dedup key.  #65's MAX_LOOP_COUNTS
+# raise admitted the store's two k=25 0x42 records (2,266 -> 2,978
+# triangles, 16,192.314366 mm² listed; still 5/5 reps, manifold, no
+# dedup key).  The dedup law itself is
 # unchanged and stays pinned by the fixture arm
 # (test_composite_dedup_coordinate_relist_across_reps).
 
-DEDUP_COORD_CASE = {"545707b9871a535c": 2266}
+DEDUP_COORD_CASE = {"545707b9871a535c": 2978}
 # The zero-regression direction on the same seam: a store the primary
 # seam resolves keeps its committed geometry (the dedup never sees
 # a passing assembled mesh).  The #62 width vote admitted the store's
 # extended-header record (31203 -> 31298) and #64's escaped header form
-# admitted two more (31298 -> 49780, 2026-11-20); the manifold/
-# no-dedup-outcome pins are unchanged.
-DEDUP_COORD_NO_REGRESSION = {"b912cbef805c541b": 49780}
+# admitted two more (31298 -> 49780, 2026-11-20); #65's MAX_LOOP_COUNTS
+# raise admitted the store's two k=25 0x42 records (49780 -> 51369,
+# 2026-11-20); the manifold/no-dedup-outcome pins are unchanged.
+DEDUP_COORD_NO_REGRESSION = {"b912cbef805c541b": 51369}
 
 
 def _triangle_area(vertices, tri):
@@ -1895,12 +1905,12 @@ def test_coordinate_dedup_case_and_port_parity(tmp_path):
                     continue
                 seen_facets.add(key)
                 unique += area
-            assert math.isclose(listed, 16063.010778, rel_tol=1e-9)
+            assert math.isclose(listed, 16192.314366, rel_tol=1e-9)
             # B3 exports the store's own reps: 384 facets are coincident
             # copies with identical winding, so the listed area counts
             # them twice while the unique surface does not.
             assert copies == 384
-            assert math.isclose(unique, 12151.12, rel_tol=1e-4)
+            assert math.isclose(unique, 12280.4249, rel_tol=1e-4)
         else:
             assert "unordered_dedup_dropped" not in summary["composite"]
             assert "unordered_dedup_declined" not in summary["composite"]

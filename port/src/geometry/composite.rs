@@ -131,8 +131,20 @@ pub const LIST_TOKEN: &[u8; 5] = b"\xff\xff\x02\x00\x01";
 pub const MAX_ELEMENT_COUNT: u32 = 10_000_000;
 /// The 2-bit table sanity cap (twin: ``MAX_TABLE_BYTES``).
 pub const MAX_TABLE_BYTES: usize = 1 << 20;
+/// The #34-era loop-count byte cap of the width rank: the base the #65
+/// extension gates on (twin: ``BASE_LOOP_COUNTS``).
+pub const BASE_LOOP_COUNTS: usize = 16;
 /// The loop-count byte cap of the width rank (twin: ``MAX_LOOP_COUNTS``).
-pub const MAX_LOOP_COUNTS: usize = 16;
+/// 16 through the #34 era (the corpus's clean stores carry k <= 16); 64
+/// from #65 (2026-11-20): the Trappe_Parachute gap records carry k == ty
+/// 24..39 — the cap was their only blocker (565 unresolved 0x42
+/// candidates on 77 parts parse at (w2, k = ty), 379 of them
+/// exact-tiling + in-bounds). The extension is zero-gated: a u16be
+/// count table misreads as u8 pairs with a zero at every other entry
+/// (the CAAGsiStartVolume regression measured 16/32 zeros and a
+/// not-manifold mesh), while every corpus record the extension admits
+/// carries a zero-free table.
+pub const MAX_LOOP_COUNTS: usize = 64;
 
 /// Table value -> f32 words written (0 = skip: the element carries no
 /// coordinates in the region — the curve entries, U4). Index = the
@@ -1021,6 +1033,14 @@ fn parse_strip_records(
                 if sum != n {
                     continue;
                 }
+                if k > BASE_LOOP_COUNTS && counts.contains(&0) {
+                    // #65 zero gate on the k extension: a u16be count
+                    // table misreads as u8 pairs with a zero at every
+                    // other entry (CAAGsiStartVolume: 16/32 zeros, a
+                    // not-manifold mesh); every corpus record the
+                    // extension admits is zero-free.
+                    continue;
+                }
                 let counts_end = base + counts_bytes;
                 let end = counts_end + width as usize * n as usize;
                 if end > nxt {
@@ -1403,12 +1423,38 @@ fn parse_escaped_extended_records(
 /// in-bounds slot; the repeats disqualification declines them (measured
 /// 50,779 m2 of km-scale garbage exported without it — the documented
 /// decline: no exact tiling, area 4-60x beyond bbox_diag^2).
+/// The (start, end) spans of the accepted short records — the #65
+/// exact-tiling exception's overlap-guard input (twin:
+/// ``_short_record_spans``). Ends are recomputed from the same
+/// deterministic walk the vote used; 0x49 has no count table and its
+/// law pins ``o + 20 + 2*n``.
+fn short_record_spans(data: &[u8], hi: usize, records: &[CompositeRecord]) -> Vec<(usize, usize)> {
+    let mut spans = Vec::with_capacity(records.len());
+    for r in records {
+        if r.marker == 0x49 {
+            let n: u32 = r.counts.iter().copied().sum();
+            spans.push((r.offset, r.offset + 20 + 2 * n as usize));
+            continue;
+        }
+        let hlen = facets::header_len(data, r.offset).unwrap_or(4);
+        let has_normal = facets::NORMAL_MARKERS_ALL.contains(&r.marker);
+        let base = r.offset + hlen + 4 + if has_normal { 12 } else { 0 };
+        let clen = facets::read_counts(data, base, r.counts.len(), hi)
+            .map(|(_, clen)| clen)
+            .unwrap_or(0);
+        let n: u32 = r.counts.iter().copied().sum();
+        spans.push((r.offset, base + clen + r.width as usize * n as usize));
+    }
+    spans
+}
+
 fn parse_extended_facet_records(
     data: &[u8],
     lo: usize,
     hi: usize,
     element_count: u32,
     elements: Option<&[Element]>,
+    shipped: &[(usize, usize)],
 ) -> (Vec<ExtendedFacetRecord>, usize) {
     let mut records = Vec::new();
     let mut candidates = 0usize;
@@ -1427,8 +1473,21 @@ fn parse_extended_facet_records(
             .map(|(i, _)| i)
             .collect()
     });
+    // The #65 own-accept spans: an extended candidate inside an earlier
+    // extended record's span is a false-positive byte pattern in its
+    // refs.
+    let mut accepted: Vec<(usize, usize)> = Vec::new();
     for (i, &o) in hdrs.iter().enumerate() {
         if facets::header_len(data, o) != Some(6) {
+            continue;
+        }
+        if shipped.iter().any(|&(a, e)| a <= o && o < e)
+            || accepted.iter().any(|&(a, e)| a <= o && o < e)
+        {
+            // #65 (2026-11-20): a candidate inside an already-accepted
+            // record's span (a shipped short record, or an earlier
+            // extended one) is a false-positive byte pattern in that
+            // record's refs, not a record of its own.
             continue;
         }
         candidates += 1;
@@ -1457,115 +1516,182 @@ fn parse_extended_facet_records(
         } else {
             None
         };
-        let counts: Vec<u32> = data[base..refs_start]
-            .iter()
-            .map(|&c| u32::from(c))
-            .collect();
-        if n != 3 * ty + counts.iter().copied().sum::<u32>() {
-            continue;
-        }
-        type Rank = (u8, u8, u32, u8);
-        let mut best: Option<(Rank, Vec<u32>, u8, usize)> = None;
-        for &width in widths {
-            let end = refs_start + width as usize * n as usize;
-            if end > nxt.min(hi) {
-                continue;
-            }
-            let refs: Vec<u32> = (0..n)
-                .map(|j| {
-                    let at = refs_start + width as usize * j as usize;
-                    match width {
-                        1 => u32::from(data[at]),
-                        2 => u32::from(u16::from_be_bytes([data[at], data[at + 1]])),
-                        _ => u32::from_be_bytes([0, data[at], data[at + 1], data[at + 2]]),
-                    }
-                })
-                .collect();
-            // Per-group repeats: the 3*ty soup triangles, then the
-            // counts-delimited loops (the emission's split).
-            let mut repeats = false;
-            for start in (0..3 * ty as usize).step_by(3) {
-                // n >= 3*ty by the counts law, so every slice is a
-                // full triangle.
-                let tri = &refs[start..start + 3];
-                let distinct: HashSet<u32> = tri.iter().copied().collect();
-                if distinct.len() < 3 {
-                    repeats = true;
-                    break;
+        // The exact-tiling boundary past the internal false positives
+        // (#65): the first candidate header at or after ``end`` (hi
+        // when none). An ``end`` that IS a header is an exact tile; the
+        // candidates strictly inside (o, end) are the record's own ref
+        // bytes (its internal STRIP_RE matches), not record boundaries.
+        let nxt_eff = |end: usize| -> usize {
+            let j = hdrs.partition_point(|&h| h < end);
+            if j < hdrs.len() { hdrs[j] } else { hi }
+        };
+        // The exact-tiling exception must never swallow an
+        // already-accepted record: the shipped short spans and this
+        // law's own earlier accepts bound it.
+        let overlaps = |end: usize| -> bool {
+            shipped.iter().any(|&(a, e)| o < e && a < end)
+                || accepted.iter().any(|&(a, e)| o < e && a < end)
+        };
+        // The #62 width vote (exact tiling, in-bounds, repeats, loop
+        // plane law, narrower width). ``repeats_ranked`` is the #64
+        // escaped law's semantic — repeats are legitimate strip joins
+        // on the escaped-form family — so the committed u8 reading
+        // keeps the misread disqualification while the #65 fallback
+        // readings rank them; the emission keeps the per-record
+        // ``mesh_safe`` guard either way.
+        type ExtVote = ((u8, u8, u8, u32, u8), Vec<u32>, u8, usize, Vec<u32>);
+        let vote = |counts: &[u32], refs_start: usize, repeats_ranked: bool| -> Option<ExtVote> {
+            let mut best: Option<ExtVote> = None;
+            for &width in widths {
+                let end = refs_start + width as usize * n as usize;
+                if end > hi {
+                    continue;
                 }
-            }
-            let mut off = 3 * ty as usize;
-            for c in &counts {
-                let loop_refs = &refs[off..off + *c as usize];
-                if *c > 0 {
-                    let distinct: HashSet<u32> = loop_refs.iter().copied().collect();
-                    if distinct.len() < loop_refs.len() {
+                if end > nxt.min(hi) {
+                    // #65: past the next candidate header only the
+                    // exact-tiling exception is viable — the record ends
+                    // exactly on a later candidate header, and swallows no
+                    // accepted record.
+                    if end != nxt_eff(end) || overlaps(end) {
+                        continue;
+                    }
+                }
+                let refs: Vec<u32> = (0..n)
+                    .map(|j| {
+                        let at = refs_start + width as usize * j as usize;
+                        match width {
+                            1 => u32::from(data[at]),
+                            2 => u32::from(u16::from_be_bytes([data[at], data[at + 1]])),
+                            _ => u32::from_be_bytes([0, data[at], data[at + 1], data[at + 2]]),
+                        }
+                    })
+                    .collect();
+                // Per-group repeats: the 3*ty soup triangles, then the
+                // counts-delimited loops (the emission's split).
+                let mut repeats = false;
+                for start in (0..3 * ty as usize).step_by(3) {
+                    // n >= 3*ty by the counts law, so every slice is a
+                    // full triangle.
+                    let tri = &refs[start..start + 3];
+                    let distinct: HashSet<u32> = tri.iter().copied().collect();
+                    if distinct.len() < 3 {
                         repeats = true;
                         break;
                     }
                 }
-                off += *c as usize;
-            }
-            if repeats {
-                // The misread detector (the short-form width law's
-                // signal): a narrow misread of a wider record repeats
-                // refs inside the loop, and a legitimate record never
-                // repeats (a repeated ref emits a degenerate triangle
-                // the battery declines anyway). Disqualify the
-                // candidate. Measured (#62 CAASdd*Stiffener check):
-                // without this, the u8 misreads of the non-tiling
-                // CAASddEditStiffener records win the rank on in-bounds
-                // and the store exports 50,779 m2 of area outside its
-                // own 104.6 m bbox — km-scale garbage.
-                continue;
-            }
-            let oob = refs.iter().any(|&r| r >= element_count);
-            let mut nonplanar = 0u32;
-            if let (Some(nm), Some(els), Some(sk)) = (normal, elements, skips.as_ref()) {
                 let mut off = 3 * ty as usize;
-                for c in &counts {
+                for c in counts {
                     let loop_refs = &refs[off..off + *c as usize];
+                    if *c > 0 {
+                        let distinct: HashSet<u32> = loop_refs.iter().copied().collect();
+                        if distinct.len() < loop_refs.len() {
+                            repeats = true;
+                            break;
+                        }
+                    }
                     off += *c as usize;
-                    if loop_refs.is_empty() {
-                        continue;
-                    }
-                    if loop_refs.iter().any(|&r| r as usize >= els.len()) {
-                        continue;
-                    }
-                    let resolved: Vec<u32>;
-                    let test: &[u32] = if loop_refs.iter().any(|&r| sk.contains(&(r as usize))) {
-                        // The same gap-edge battery as the short
-                        // records: a skip-bearing loop is tested on its
-                        // dup-pinned coordinates; untestable loops stay
-                        // silent.
-                        let Some(pin) = dup_pin_map(els, sk, loop_refs) else {
+                }
+                if repeats && !repeats_ranked {
+                    // The misread detector (the short-form width law's
+                    // signal): a narrow misread of a wider record repeats
+                    // refs inside the loop, and a legitimate record never
+                    // repeats (a repeated ref emits a degenerate triangle
+                    // the battery declines anyway). The committed u8
+                    // reading keeps this disqualification. Measured (#62
+                    // CAASdd*Stiffener check): without it, the u8 misreads
+                    // of the non-tiling CAASddEditStiffener records win the
+                    // rank on in-bounds and the store exports 50,779 m2 of
+                    // area outside its own 104.6 m bbox — km-scale garbage.
+                    continue;
+                }
+                let oob = refs.iter().any(|&r| r >= element_count);
+                let mut nonplanar = 0u32;
+                if let (Some(nm), Some(els), Some(sk)) = (normal, elements, skips.as_ref()) {
+                    let mut off = 3 * ty as usize;
+                    for c in counts {
+                        let loop_refs = &refs[off..off + *c as usize];
+                        off += *c as usize;
+                        if loop_refs.is_empty() {
                             continue;
+                        }
+                        if loop_refs.iter().any(|&r| r as usize >= els.len()) {
+                            continue;
+                        }
+                        let resolved: Vec<u32>;
+                        let test: &[u32] = if loop_refs.iter().any(|&r| sk.contains(&(r as usize)))
+                        {
+                            // The same gap-edge battery as the short
+                            // records: a skip-bearing loop is tested on its
+                            // dup-pinned coordinates; untestable loops stay
+                            // silent.
+                            let Some(pin) = dup_pin_map(els, sk, loop_refs) else {
+                                continue;
+                            };
+                            resolved = loop_refs
+                                .iter()
+                                .map(|&r| pin.get(&r).copied().unwrap_or(r))
+                                .collect();
+                            &resolved
+                        } else {
+                            loop_refs
                         };
-                        resolved = loop_refs
-                            .iter()
-                            .map(|&r| pin.get(&r).copied().unwrap_or(r))
-                            .collect();
-                        &resolved
-                    } else {
-                        loop_refs
-                    };
-                    let (st, _m) = loop_plane_status(test, nm, els);
-                    if st == "nonplanar" {
-                        nonplanar += 1;
+                        let (st, _m) = loop_plane_status(test, nm, els);
+                        if st == "nonplanar" {
+                            nonplanar += 1;
+                        }
                     }
                 }
+                let rank: (u8, u8, u8, u32, u8) = (
+                    if end == nxt_eff(end) { 0 } else { 1 },
+                    if oob { 1 } else { 0 },
+                    if repeats { 1 } else { 0 },
+                    nonplanar,
+                    width,
+                );
+                if best.as_ref().is_none_or(|(b, _, _, _, _)| rank < *b) {
+                    best = Some((rank, refs, width, end, counts.to_vec()));
+                }
             }
-            let rank: Rank = (
-                if end == nxt { 0 } else { 1 },
-                if oob { 1 } else { 0 },
-                nonplanar,
-                width,
-            );
-            if best.as_ref().is_none_or(|(b, _, _, _)| rank < *b) {
-                best = Some((rank, refs, width, end));
+            best
+        };
+        // The counts-table reading chain (#65, 2026-11-20). The
+        // committed u8 reading (the #62 law) runs first and alone on
+        // every candidate it covers — every store the #62 law handled
+        // keeps its exact parse. A candidate whose u8 table fails the
+        // counts law retries the SAME table as P1g counts (u8 or
+        // ``ff + u32le`` — the #64 encoding; the povdoigt
+        // _NPart#194287 / MINI_RESSORTS gap records carry 16/211 and
+        // 22/220 escaped counts and exact-tile at w2 under it), then as
+        // ``k`` u16be words (the BundleSegment3 gap records: the table
+        // IS 2-byte big-endian there — n-law exact at 767 = 3*18 + 713).
+        // The fallback variants join with repeats RANKED and the same
+        // gates (in-bounds refs, emission ``mesh_safe``).
+        let counts_u8: Vec<u32> = data[base..base + k].iter().map(|&c| u32::from(c)).collect();
+        let mut best = if n == 3 * ty + counts_u8.iter().copied().sum::<u32>() {
+            vote(&counts_u8, base + k, false)
+        } else {
+            None
+        };
+        if best.is_none()
+            && let Some((counts_p1g, clen)) = facets::read_counts(data, base, k, hi)
+            && n == 3 * ty + counts_p1g.iter().copied().sum::<u32>()
+        {
+            best = vote(&counts_p1g, base + clen, true);
+        }
+        if best.is_none() && base + 2 * k <= hi {
+            let counts16: Vec<u32> = (0..k)
+                .map(|j| {
+                    u32::from(u16::from_be_bytes([
+                        data[base + 2 * j],
+                        data[base + 2 * j + 1],
+                    ]))
+                })
+                .collect();
+            if n == 3 * ty + counts16.iter().copied().sum::<u32>() {
+                best = vote(&counts16, base + 2 * k, true);
             }
         }
-        let Some((_rank, refs, width, end)) = best else {
+        let Some((_rank, refs, width, end, counts)) = best else {
             continue;
         };
         if refs.iter().any(|&r| r >= element_count) {
@@ -1575,6 +1701,7 @@ fn parse_extended_facet_records(
             // gate).
             continue;
         }
+        accepted.push((o, end));
         records.push(ExtendedFacetRecord {
             offset: o,
             marker: mk,
@@ -2252,8 +2379,14 @@ fn decode_per_rep(
             .unwrap_or(hi);
         let (records, n_hdrs) =
             parse_strip_records(data, d.region_end, nxt, d.elem, Some(&d.elements));
-        let (ext_k, ext_cands) =
-            parse_extended_facet_records(data, d.region_end, nxt, d.elem, Some(&d.elements));
+        let (ext_k, ext_cands) = parse_extended_facet_records(
+            data,
+            d.region_end,
+            nxt,
+            d.elem,
+            Some(&d.elements),
+            &short_record_spans(data, nxt, &records),
+        );
         let mut grefs: Vec<u32> = records
             .iter()
             .filter(|r| GATED.contains(&r.marker))
@@ -2949,8 +3082,14 @@ fn decode_store_once(
     }
 
     let (records, n_hdrs) = parse_strip_records(data, lo, hi, elem_decl, Some(&elements));
-    let (extended, ext_candidates) =
-        parse_extended_facet_records(data, lo, hi, elem_decl, Some(&elements));
+    let (extended, ext_candidates) = parse_extended_facet_records(
+        data,
+        lo,
+        hi,
+        elem_decl,
+        Some(&elements),
+        &short_record_spans(data, hi, &records),
+    );
     // Refs are 0-based element indices: every gated family's references
     // must resolve inside the element space (the exported markers plus
     // the normal-carrying 0x49, the stage-2c gate set). The extended
@@ -3326,8 +3465,14 @@ fn decode_raw_array_path(
     // the twin's ``[(0, pt) for pt in points]``), no skip slots.
     let elements: Vec<Element> = points.iter().map(|&pt| (0, Some(pt))).collect();
     let (records, n_hdrs) = parse_strip_records(data, lo, hi, elem_decl, Some(&elements));
-    let (extended, ext_candidates) =
-        parse_extended_facet_records(data, lo, hi, elem_decl, Some(&elements));
+    let (extended, ext_candidates) = parse_extended_facet_records(
+        data,
+        lo,
+        hi,
+        elem_decl,
+        Some(&elements),
+        &short_record_spans(data, hi, &records),
+    );
     let mut all_refs: Vec<u32> = records
         .iter()
         .filter(|r| GATED.contains(&r.marker))
@@ -4017,8 +4162,14 @@ fn decode_mixedwrite(
             .unwrap_or(hi);
         let (records, n_hdrs) =
             parse_strip_records(data, d.region_end, nxt, d.elem, Some(&d.elements));
-        let (ext_k, ext_cands) =
-            parse_extended_facet_records(data, d.region_end, nxt, d.elem, Some(&d.elements));
+        let (ext_k, ext_cands) = parse_extended_facet_records(
+            data,
+            d.region_end,
+            nxt,
+            d.elem,
+            Some(&d.elements),
+            &short_record_spans(data, nxt, &records),
+        );
         let mut grefs: Vec<u32> = records
             .iter()
             .filter(|r| GATED.contains(&r.marker))
@@ -4622,7 +4773,8 @@ mod tests {
         for r in [0u32, 1, 2, 3, 1, 4] {
             body.extend_from_slice(&(r as u16).to_be_bytes());
         }
-        let (records, candidates) = parse_extended_facet_records(&body, 0, body.len(), 64, None);
+        let (records, candidates) =
+            parse_extended_facet_records(&body, 0, body.len(), 64, None, &[]);
         assert_eq!(candidates, 1);
         assert_eq!(records.len(), 1);
         let rec = &records[0];
@@ -4639,7 +4791,7 @@ mod tests {
         for r in [0u32, 1, 2, 3, 1, 0xFFFF] {
             bad.extend_from_slice(&(r as u16).to_be_bytes());
         }
-        let (records, candidates) = parse_extended_facet_records(&bad, 0, bad.len(), 64, None);
+        let (records, candidates) = parse_extended_facet_records(&bad, 0, bad.len(), 64, None, &[]);
         assert_eq!(candidates, 1);
         assert!(records.is_empty());
         // The b3-escaped (+3) and b4-escaped (+4) shapes.
@@ -4652,7 +4804,7 @@ mod tests {
         for r in [0u32, 1, 2, 3, 4, 5] {
             b3esc.extend_from_slice(&(r as u16).to_be_bytes());
         }
-        let (records, _c) = parse_extended_facet_records(&b3esc, 0, b3esc.len(), 64, None);
+        let (records, _c) = parse_extended_facet_records(&b3esc, 0, b3esc.len(), 64, None, &[]);
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].strips, 1);
         assert_eq!(records[0].normal, Some((0.0, 0.0, 1.0)));
@@ -4663,7 +4815,7 @@ mod tests {
         for r in [0u32, 1, 2, 3, 4, 5] {
             b4esc.extend_from_slice(&(r as u16).to_be_bytes());
         }
-        let (records, _c) = parse_extended_facet_records(&b4esc, 0, b4esc.len(), 64, None);
+        let (records, _c) = parse_extended_facet_records(&b4esc, 0, b4esc.len(), 64, None, &[]);
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].polygons, 1);
     }
@@ -4675,7 +4827,8 @@ mod tests {
     fn parse_extended_records_pins_the_header_law() {
         let refs: Vec<u16> = (0..18).collect();
         let body = extended_record(0x4F, 2, 1, 1, &[5, 7], Some((0.0, 0.0, 1.0)), &refs);
-        let (records, candidates) = parse_extended_facet_records(&body, 0, body.len(), 64, None);
+        let (records, candidates) =
+            parse_extended_facet_records(&body, 0, body.len(), 64, None, &[]);
         assert_eq!(candidates, 1);
         let rec = &records[0];
         assert_eq!(rec.marker, 0x4F);
@@ -4692,13 +4845,13 @@ mod tests {
         // The sum law is load-bearing: one extra ref is not the family.
         let bad = extended_record(0x47, 2, 1, 1, &[5, 7], None, &(0..19).collect::<Vec<_>>());
         assert!(
-            parse_extended_facet_records(&bad, 0, bad.len(), 64, None)
+            parse_extended_facet_records(&bad, 0, bad.len(), 64, None, &[])
                 .0
                 .is_empty()
         );
         // Out-of-range refs: the candidate stays unresolved.
         let oob = extended_record(0x47, 1, 1, 0, &[3], None, &[0, 1, 2, 0, 1, 0xFFFF]);
-        let (records, candidates) = parse_extended_facet_records(&oob, 0, oob.len(), 64, None);
+        let (records, candidates) = parse_extended_facet_records(&oob, 0, oob.len(), 64, None, &[]);
         assert_eq!(candidates, 1);
         assert!(records.is_empty());
     }

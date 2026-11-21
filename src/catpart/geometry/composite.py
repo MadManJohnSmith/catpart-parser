@@ -243,7 +243,21 @@ LIST_TOKEN = b"\xff\xff\x02\x00\x01"
 
 MAX_ELEMENT_COUNT = 10_000_000
 MAX_TABLE_BYTES = 1 << 20
-MAX_LOOP_COUNTS = 16
+#: The #34-era strip vote's count-table length cap: the base the #65
+#: extension gates on (see :data:`MAX_LOOP_COUNTS`).
+BASE_LOOP_COUNTS = 16
+#: The strip vote's count-table length cap. 16 through the #34 era (the
+#: corpus's clean stores carry k <= 16); 64 from #65 (2026-11-20): the
+#: Trappe_Parachute gap records carry k == ty 24..39 — the cap was their
+#: only blocker (565 unresolved 0x42 candidates on 77 parts parse at
+#: (w2, k = ty), 379 of them exact-tiling + in-bounds; probe
+#: scripts/triage/probe_top10_mesh_gap_dump.py --census-42). The
+#: extension is zero-gated: a u16be count table misreads as u8 pairs
+#: with a zero at every other entry (the CAAGsiStartVolume regression
+#: measured 16/32 zeros and a not-manifold mesh), while every corpus
+#: record the extension admits carries a zero-free table — a strip
+#: writer never emits an empty loop.
+MAX_LOOP_COUNTS = 64
 
 _F32 = struct.Struct("<f")
 
@@ -499,16 +513,20 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
     element space, and on smaller spaces a 3-byte candidate can only
     read junk past them: measured on the corpus A/B, 4 exported stores
     flip to OOB junk when u24be is offered below the threshold) x
-    count-byte k (0..16) summing to n, ending at or before the next
-    header.  Rank: exact tiling, then no-repeated-refs-within-a-loop,
-    then no out-of-range refs, then **non-coplanar normal-carrying
-    loops** (only computed when ``elements`` — the decoded element
-    space the refs index — is passed; a candidate whose loops are
-    non-coplanar against the record's stored normal loses to one that
-    is coplanar; from 2026-11-18 a skip-bearing loop is tested on its
-    dup-pinned coordinates with the same battery, so the gap-edge width
-    choice prefers the fully-written parse over a misread whose loops
-    land on skip slots), then the narrower width.  Returns ``(records,
+    count-byte k (0..16 through the #34 era; 0..64 from #65,
+    2026-11-20 — the extension zero-gated: a u16be count table misreads
+    as u8 pairs with a zero at every other entry, while every corpus
+    record the extension admits carries a zero-free table) summing to
+    n, ending at or before the next header.  Rank: exact tiling, then
+    no-repeated-refs-within-a-loop, then no out-of-range refs, then
+    **non-coplanar normal-carrying loops** (only computed when
+    ``elements`` — the decoded element space the refs index — is
+    passed; a candidate whose loops are non-coplanar against the
+    record's stored normal loses to one that is coplanar; from
+    2026-11-18 a skip-bearing loop is tested on its dup-pinned
+    coordinates with the same battery, so the gap-edge width choice
+    prefers the fully-written parse over a misread whose loops land on
+    skip slots), then the narrower width.  Returns ``(records,
     n_headers)`` where each record is ``(offset, marker, normal,
     counts, refs, width)``.
     """
@@ -558,6 +576,13 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
                     break
                 counts, counts_bytes = read
                 if sum(counts) != n:
+                    continue
+                if k > BASE_LOOP_COUNTS and 0 in counts:
+                    # #65 zero gate on the k extension: a u16be count
+                    # table misreads as u8 pairs with a zero at every
+                    # other entry (CAAGsiStartVolume: 16/32 zeros, a
+                    # not-manifold mesh); every corpus record the
+                    # extension admits is zero-free.
                     continue
                 counts_end = base + counts_bytes
                 end = counts_end + width * n
@@ -878,7 +903,32 @@ def _parse_escaped_extended_records(data, lo, hi, hdrs, element_count, elements,
     return records, tried
 
 
-def parse_extended_facet_records(data, lo: int, hi: int, element_count=None, elements=None):
+def _short_record_spans(data, lo, hi, records):
+    """(start, end) spans of the accepted short records.
+
+    The #65 exact-tiling exception's overlap guard reads these: an
+    extended candidate whose winning span would swallow an accepted
+    short record stays unresolved. Ends are recomputed from the same
+    deterministic walk the vote used (0x49 has no count table; its law
+    pins ``o + 20 + 2*n``).
+    """
+    spans = []
+    for o, mk, _normal, counts, _refs, width in records:
+        if mk == 0x49:
+            spans.append((o, o + 20 + 2 * sum(counts)))
+            continue
+        hlen = header_len(data, o)
+        has_normal = mk in NORMAL_MARKERS_ALL
+        base = o + hlen + 4 + (12 if has_normal else 0)
+        read = read_counts(data, base, len(counts), hi)
+        clen = read[1] if read else 0
+        spans.append((o, base + clen + width * sum(counts)))
+    return spans
+
+
+def parse_extended_facet_records(
+    data, lo: int, hi: int, element_count=None, elements=None, shipped_spans=()
+):
     """Every extended-header record in ``[lo, hi)`` under the 2026-11-18 law.
 
     Returns ``(records, candidates)``: ``candidates`` counts the
@@ -956,6 +1006,33 @@ def parse_extended_facet_records(data, lo: int, hi: int, element_count=None, ele
     triangles per Stiffener file (manifold; used_vertex_fraction
     0.037 -> 0.076 / 0.076 -> 0.111); the head/frente files carry no
     escaped-form records (measured negative).
+
+    #65 (2026-11-20, the counts-table reading chain + the exact-tiling
+    exception): the top-10 MESH gap probe
+    (``scripts/triage/probe_top10_mesh_gap_dump.py``) measured two
+    further readings of the SAME 6-byte form. The povdoigt
+    _NPart#194287 / SP02_ALPHA5_SEPA2_MINI_RESSORTS gap (2 records,
+    46,835 B) carries a plain u8 header whose COUNTS TABLE escapes via
+    :func:`read_counts` (16/211 and 22/220 counts are ``ff + u32le``) —
+    the #62 raw-u8 counts law breaks the n-law on it (+6,951 / +9,755)
+    and the #64 escaped pass skips ``hlen == 6`` candidates, so the
+    record fell between the two passes. The CAAEwrFilter BundleSegment3
+    gap (2 records + an open 0x43, 3,729 B) carries a **u16be counts
+    table** (n-law exact: 767 = 3*18 + 713, 765 = 3*17 + 714). Both
+    exact-tile at w2 in-bounds. The law therefore retries the SAME
+    table as P1g counts, then as ``k`` u16be words, only when the u8
+    reading fails the counts law (byte-identical for every store the
+    #62 law handled), ranks repeats instead of disqualifying them on
+    the fallback readings (the #64 semantic), and adds the
+    exact-tiling exception: a width whose end runs past the next
+    candidate header is viable only when the record ends exactly on a
+    later candidate header — the internal STRIP_RE matches are the
+    record's own ref bytes (the MINI_RESSORTS 0x4f pair sits inside the
+    second 0x47's refs) — and swallows no already-accepted record
+    (``shipped_spans`` + this law's own accepts). The committed u8
+    path's semantics are provably unchanged: with ``end <= nxt`` the
+    ``_nxt_eff`` boundary degenerates to ``nxt`` and no candidate can
+    sit inside the span.
     """
     records = []
     candidates = 0
@@ -969,8 +1046,17 @@ def parse_extended_facet_records(data, lo: int, hi: int, element_count=None, ele
         if elements is not None
         else None
     )
+    accepted: list[tuple[int, int]] = []
     for i, o in enumerate(hdrs):
         if header_len(data, o) != 6:
+            continue
+        if any(a <= o < e for a, e in shipped_spans) or any(
+            a <= o < e for a, e in accepted
+        ):
+            # #65 (2026-11-20): a candidate inside an already-accepted
+            # record's span (a shipped short record, or an earlier
+            # extended one) is a false-positive byte pattern in that
+            # record's refs, not a record of its own.
             continue
         candidates += 1
         nxt = hdrs[i + 1] if i + 1 < len(hdrs) else hi
@@ -988,87 +1074,151 @@ def parse_extended_facet_records(data, lo: int, hi: int, element_count=None, ele
         if refs_start > hi:
             continue
         n = int.from_bytes(data[o + 6 : o + 10], "little")
-        counts = tuple(data[base:refs_start])
-        if n != 3 * ty + sum(counts):
-            continue
-        # Per-loop repeat groups: the 3*ty soup triangles, then the
-        # counts-delimited loops (the same split the emission uses).
-        best = None
-        for width in widths:
-            end = refs_start + width * n
-            if end > min(nxt, hi):
-                continue
-            refs = [
-                int.from_bytes(
-                    data[refs_start + width * j : refs_start + width * (j + 1)],
-                    "big",
-                )
-                for j in range(n)
-            ]
-            repeats = False
-            for start in range(0, 3 * ty, 3):
-                if len(set(refs[start : start + 3])) < 3:
-                    repeats = True
-                    break
-            off = 3 * ty
-            for c in counts:
-                if c > 0 and len(set(refs[off : off + c])) < c:
-                    repeats = True
-                    break
-                off += c
-            if repeats:
-                # The misread detector (the same signal the short-form
-                # width law ranks on): a narrow misread of a wider record
-                # repeats refs inside the loop, and a legitimate record
-                # never repeats (a repeated ref emits a degenerate
-                # triangle the battery declines anyway).  A width whose
-                # parse repeats is not the record's reading — disqualify
-                # the candidate.  Measured (#62 CAASdd*Stiffener check):
-                # without this, the u8 misreads of the non-tiling
-                # CAASddEditStiffener records win the rank on in-bounds
-                # (their narrow refs stay under the 640-element space)
-                # and the store exports 50,779 m2 of area outside its
-                # own 104.6 m bbox — km-scale garbage.
-                continue
-            oob = (
-                any(r >= element_count for r in refs)
-                if element_count is not None
-                else False
+
+        def _nxt_eff(end):
+            # The exact-tiling boundary past the internal false
+            # positives (#65): the first candidate header at or after
+            # ``end`` (hi when none). An ``end`` that IS a header is an
+            # exact tile; the candidates strictly inside (o, end) are
+            # the record's own ref bytes (its internal STRIP_RE
+            # matches), not record boundaries.
+            j = bisect.bisect_left(hdrs, end)
+            return hdrs[j] if j < len(hdrs) else hi
+
+        def _overlaps(end):
+            # The exact-tiling exception must never swallow an
+            # already-accepted record: the shipped short spans and this
+            # law's own earlier accepts bound it.
+            return any(o < e and a < end for a, e in shipped_spans) or any(
+                o < e and a < end for a, e in accepted
             )
-            nonplanar = 0
-            if normal is not None and elements is not None:
+
+        def _vote(counts, refs_start, repeats_ranked):
+            # The #62 width vote (exact tiling, in-bounds, repeats,
+            # loop plane law, narrower width). ``repeats_ranked`` is
+            # the #64 escaped law's semantic — repeats are legitimate
+            # strip joins on the escaped-form family — so the committed
+            # u8 reading keeps the misread disqualification while the
+            # #65 fallback readings rank them; the emission keeps the
+            # per-record ``_mesh_safe`` guard either way.
+            best = None
+            for width in widths:
+                end = refs_start + width * n
+                if end > hi:
+                    continue
+                if end > min(nxt, hi):
+                    # #65: past the next candidate header only the
+                    # exact-tiling exception is viable — the record ends
+                    # exactly on a later candidate header, and swallows
+                    # no accepted record.
+                    if end != _nxt_eff(end) or _overlaps(end):
+                        continue
+                refs = [
+                    int.from_bytes(
+                        data[refs_start + width * j : refs_start + width * (j + 1)],
+                        "big",
+                    )
+                    for j in range(n)
+                ]
+                repeats = False
+                for start in range(0, 3 * ty, 3):
+                    if len(set(refs[start : start + 3])) < 3:
+                        repeats = True
+                        break
                 off = 3 * ty
                 for c in counts:
-                    loop = refs[off : off + c]
+                    if c > 0 and len(set(refs[off : off + c])) < c:
+                        repeats = True
+                        break
                     off += c
-                    if not loop:
-                        continue
-                    if any(r >= len(elements) for r in loop):
-                        continue
-                    if any(r in skips for r in loop):
-                        # The same gap-edge battery as the short records:
-                        # a skip-bearing loop is tested on its dup-pinned
-                        # coordinates; untestable loops stay silent.
-                        pin = _dup_pin_map(elements, loop)
-                        if pin is None:
+                if repeats and not repeats_ranked:
+                    # The misread detector (the same signal the
+                    # short-form width law ranks on): a narrow misread
+                    # of a wider record repeats refs inside the loop,
+                    # and a legitimate record never repeats (a repeated
+                    # ref emits a degenerate triangle the battery
+                    # declines anyway). The committed u8 reading keeps
+                    # this disqualification.  Measured (#62
+                    # CAASdd*Stiffener check): without it, the u8
+                    # misreads of the non-tiling CAASddEditStiffener
+                    # records win the rank on in-bounds (their narrow
+                    # refs stay under the 640-element space) and the
+                    # store exports 50,779 m2 of area outside its own
+                    # 104.6 m bbox — km-scale garbage.
+                    continue
+                oob = (
+                    any(r >= element_count for r in refs)
+                    if element_count is not None
+                    else False
+                )
+                nonplanar = 0
+                if normal is not None and elements is not None:
+                    off = 3 * ty
+                    for c in counts:
+                        loop = refs[off : off + c]
+                        off += c
+                        if not loop:
                             continue
-                        test = [pin.get(r, r) for r in loop]
-                    else:
-                        test = loop
-                    st, _dev = _loop_plane_status(test, normal, elements)
-                    if st == "nonplanar":
-                        nonplanar += 1
-            rank = (
-                0 if end == nxt else 1,
-                1 if oob else 0,
-                nonplanar,
-                width,
+                        if any(r >= len(elements) for r in loop):
+                            continue
+                        if any(r in skips for r in loop):
+                            # The same gap-edge battery as the short
+                            # records: a skip-bearing loop is tested on
+                            # its dup-pinned coordinates; untestable
+                            # loops stay silent.
+                            pin = _dup_pin_map(elements, loop)
+                            if pin is None:
+                                continue
+                            test = [pin.get(r, r) for r in loop]
+                        else:
+                            test = loop
+                        st, _dev = _loop_plane_status(test, normal, elements)
+                        if st == "nonplanar":
+                            nonplanar += 1
+                rank = (
+                    0 if end == _nxt_eff(end) else 1,
+                    1 if oob else 0,
+                    1 if repeats else 0,
+                    nonplanar,
+                    width,
+                )
+                if best is None or rank < best[0]:
+                    best = (rank, tuple(refs), width, end, tuple(counts))
+            return best
+
+        # The counts-table reading chain (#65, 2026-11-20). The
+        # committed u8 reading (the #62 law) runs first and alone on
+        # every candidate it covers — every store the #62 law handled
+        # keeps its exact parse. A candidate whose u8 table fails the
+        # counts law retries the SAME table as P1g counts (u8 or
+        # ``ff + u32le`` — the #64 encoding; the povdoigt _NPart#194287/
+        # MINI_RESSORTS gap records carry 16/211 and 22/220 escaped
+        # counts and exact-tile at w2 under it), then as ``k`` u16be
+        # words (the BundleSegment3 gap records: the table IS 2-byte
+        # big-endian there — n-law exact at 767 = 3*18 + 713). The
+        # fallback variants join with repeats RANKED and the same
+        # gates (in-bounds refs, emission ``_mesh_safe``).
+        counts_u8 = tuple(data[base:refs_start])
+        best = None
+        if n == 3 * ty + sum(counts_u8):
+            best = _vote(counts_u8, refs_start, repeats_ranked=False)
+        if best is None:
+            read = read_counts(data, base, k, hi)
+            if read is not None:
+                counts_p1g, clen = read
+                counts_p1g = tuple(counts_p1g)
+                if n == 3 * ty + sum(counts_p1g):
+                    best = _vote(counts_p1g, base + clen, repeats_ranked=True)
+        if best is None and base + 2 * k <= hi:
+            counts16 = tuple(
+                int.from_bytes(data[base + 2 * j : base + 2 * j + 2], "big")
+                for j in range(k)
             )
-            if best is None or rank < best[0]:
-                best = (rank, tuple(refs), width, end)
+            if n == 3 * ty + sum(counts16):
+                best = _vote(counts16, base + 2 * k, repeats_ranked=True)
         if best is None:
             continue
-        _rank, refs, width, end = best
+        _rank, refs, width, end, counts = best
         if element_count is not None and any(r >= element_count for r in refs):
             # The winning parse's refs leave the element space: not this
             # family (the false-positive rule; the record stays
@@ -1088,6 +1238,7 @@ def parse_extended_facet_records(data, lo: int, hi: int, element_count=None, ele
                 width=width,
             )
         )
+        accepted.append((o, end))
     # #64 (2026-11-20): the P1g-escaped header form joins as a SECOND
     # pass over the same span — the 6-byte form's candidates, boundaries
     # and rank above are byte-identical to the pre-#64 behavior, so every
@@ -1948,7 +2099,12 @@ def decode_composite_store(
     # family (2026-11-18) indexes the same space, so its refs are gated
     # too.
     extended, ext_candidates = parse_extended_facet_records(
-        data, lo, hi, elem_decl, elements=elements
+        data,
+        lo,
+        hi,
+        elem_decl,
+        elements=elements,
+        shipped_spans=_short_record_spans(data, lo, hi, records),
     )
     all_refs = [r for _o, mk, _n, _c, refs, _w in records if mk in GATED for r in refs]
     all_refs += [r for rec in extended for r in rec.refs]
@@ -2301,7 +2457,12 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
             data, d["region_end"], nxt, d["elem"], elements=d["elements"]
         )
         ext_k, ext_cands = parse_extended_facet_records(
-            data, d["region_end"], nxt, d["elem"], elements=d["elements"]
+            data,
+            d["region_end"],
+            nxt,
+            d["elem"],
+            elements=d["elements"],
+            shipped_spans=_short_record_spans(data, d["region_end"], nxt, records),
         )
         grefs = [
             r for _o, mk, _n, _c, refs, _w in records if mk in GATED for r in refs
@@ -2605,7 +2766,7 @@ def _decode_raw_array(data, lo, hi, groups, payload, elem_decl, seam_area=None):
         data, lo, hi, elem_decl, elements=elements
     )
     extended, ext_candidates = parse_extended_facet_records(
-        data, lo, hi, elem_decl
+        data, lo, hi, elem_decl, shipped_spans=_short_record_spans(data, lo, hi, records)
     )
     all_refs = [
         r for _o, mk, _n, _c, refs, _w in records if mk in GATED for r in refs
@@ -3059,7 +3220,12 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
             data, d["region_end"], nxt, d["elem"], elements=d["elements"]
         )
         ext_k, ext_cands = parse_extended_facet_records(
-            data, d["region_end"], nxt, d["elem"], elements=d["elements"]
+            data,
+            d["region_end"],
+            nxt,
+            d["elem"],
+            elements=d["elements"],
+            shipped_spans=_short_record_spans(data, d["region_end"], nxt, records),
         )
         grefs = [
             r for _o, mk, _n, _c, refs, _w in records if mk in GATED for r in refs
