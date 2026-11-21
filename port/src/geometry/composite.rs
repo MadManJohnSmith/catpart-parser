@@ -171,11 +171,14 @@ pub const EXPORTED_SHORT_MARKERS: [u8; 4] = [0x42, 0x49, 0x4A, 0x4C];
 /// The T3 relaxed families (#61, 2026-11-20) — twin:
 /// ``RELAXED_SHORT_MARKERS``. 0x44 and 0x41 parse under the SAME
 /// (width, k) tiling law as the exported families (226/226 carrier
-/// records) but carry no 12-B normal and their primitive reading G3
-/// has not pinned.  Their loops export in the SECOND pass of
-/// `triangulate`, under the STRICT mesh guard — no seam-area exception
-/// — so a base-manifold mesh stays manifold by construction and the
-/// base pass stays byte-identical to the pre-T3 behavior.
+/// records) but carry no 12-B normal. Their primitive is now pinned
+/// (#66, 2026-11-20): u16 little-endian, with u8 as the compact
+/// fallback — `parse_strip_records` offers the u16le candidate and
+/// prefers u16 over u8 for these two markers. Their loops export in
+/// the SECOND pass of `triangulate`, under the STRICT mesh guard — no
+/// seam-area exception — so a base-manifold mesh stays manifold by
+/// construction and the base pass stays byte-identical to the pre-T3
+/// behavior.
 pub const RELAXED_SHORT_MARKERS: [u8; 2] = [0x44, 0x41];
 
 /// Markers observed in the extended-header form (the family's scope;
@@ -957,8 +960,19 @@ fn parse_049_record(
 /// the committed stage-3b one), then the narrower width. The winning
 /// parse is then gated fail-closed on the element space (#66,
 /// 2026-11-20): a record whose refs leave it stays unresolved, the
-/// same post-vote rule the extended family applies. Returns the
-/// records plus the header-candidate count.
+/// same post-vote rule the extended family applies.
+///
+/// The relaxed 0x41/0x44 primitive (#66): those two markers are read
+/// in **u16 little-endian** as well as the committed u16be/u8
+/// candidates (docs/evidence/2026-11-20-composite-relaxed-primitive.md:
+/// 6 of the 10 OOB records are u16le, 2 are u8). Two fail-closed
+/// conditions keep the u16le hypothesis from claiming byte patterns
+/// that are not records: a u16le candidate whose block would swallow a
+/// subsequent 6-byte extended-header candidate is a misread, and a u8
+/// winner whose 2n-wide block straddles such a header while its u16le
+/// reading is a complete in-bounds stream is a half-read, not a
+/// record (the Audi 0x301e912 false header). Returns the records plus
+/// the header-candidate count.
 fn parse_strip_records(
     data: &[u8],
     lo: usize,
@@ -967,6 +981,14 @@ fn parse_strip_records(
     elements: Option<&[Element]>,
 ) -> (Vec<CompositeRecord>, usize) {
     let hdrs = facets::strip_headers(data, lo, hi);
+    let ext_hdrs: Vec<usize> = if hdrs
+        .iter()
+        .any(|&h| RELAXED_SHORT_MARKERS.contains(&data[h + 1]))
+    {
+        facets::facet_headers(data, lo, hi)
+    } else {
+        Vec::new()
+    };
     let widths: &[u8] = if element_count > 65_535 {
         &[1, 2, 3]
     } else {
@@ -1025,107 +1047,155 @@ fn parse_strip_records(
             }
             continue;
         }
-        type Rank = (u8, u8, u8, u32, u8, u32);
-        let mut best: Option<(Rank, Vec<u32>, Vec<u32>, u8)> = None;
+        type Rank = (u8, u8, u8, u32, u8, u8, u8, u32);
+        type Best = (Rank, Vec<u32>, Vec<u32>, u8, usize);
+        let relaxed = RELAXED_SHORT_MARKERS.contains(&mk);
+        let h6: Option<usize> = if relaxed {
+            ext_hdrs.get(ext_hdrs.partition_point(|&h| h <= o)).copied()
+        } else {
+            None
+        };
+        let mut best: Option<Best> = None;
         for &width in widths {
-            for k in 0..=MAX_LOOP_COUNTS {
-                let Some((counts, counts_bytes)) = facets::read_counts(data, base, k, nxt) else {
-                    break;
-                };
-                let sum: u32 = counts.iter().copied().sum();
-                if sum != n {
-                    continue;
-                }
-                if k > BASE_LOOP_COUNTS && counts.contains(&0) {
-                    // #65 zero gate on the k extension: a u16be count
-                    // table misreads as u8 pairs with a zero at every
-                    // other entry (CAAGsiStartVolume: 16/32 zeros, a
-                    // not-manifold mesh); every corpus record the
-                    // extension admits is zero-free.
-                    continue;
-                }
-                let counts_end = base + counts_bytes;
-                let end = counts_end + width as usize * n as usize;
-                if end > nxt {
-                    continue;
-                }
-                let refs: Vec<u32> = (0..n)
-                    .map(|j| {
-                        let at = counts_end + width as usize * j as usize;
-                        match width {
-                            1 => u32::from(data[at]),
-                            2 => u32::from(u16::from_be_bytes([data[at], data[at + 1]])),
-                            _ => u32::from_be_bytes([0, data[at], data[at + 1], data[at + 2]]),
-                        }
-                    })
-                    .collect();
-                let mut repeats = false;
-                let mut off = 0usize;
-                for c in &counts {
-                    let loop_refs = &refs[off..off + *c as usize];
-                    if *c > 0 {
-                        let distinct: HashSet<u32> = loop_refs.iter().copied().collect();
-                        if distinct.len() < loop_refs.len() {
-                            repeats = true;
-                        }
+            let endians: &[bool] = if relaxed && width == 2 {
+                &[false, true]
+            } else {
+                &[false]
+            };
+            for &little in endians {
+                for k in 0..=MAX_LOOP_COUNTS {
+                    let Some((counts, counts_bytes)) = facets::read_counts(data, base, k, nxt)
+                    else {
+                        break;
+                    };
+                    let sum: u32 = counts.iter().copied().sum();
+                    if sum != n {
+                        continue;
                     }
-                    off += *c as usize;
-                }
-                let oob = refs.iter().any(|&r| r >= element_count);
-                let mut nonplanar = 0u32;
-                if let (Some(nm), Some(els), Some(sk)) = (normal, elements, skips.as_ref()) {
+                    if k > BASE_LOOP_COUNTS && counts.contains(&0) {
+                        // #65 zero gate on the k extension: a u16be count
+                        // table misreads as u8 pairs with a zero at every
+                        // other entry (CAAGsiStartVolume: 16/32 zeros, a
+                        // not-manifold mesh); every corpus record the
+                        // extension admits is zero-free.
+                        continue;
+                    }
+                    let counts_end = base + counts_bytes;
+                    let end = counts_end + width as usize * n as usize;
+                    if end > nxt {
+                        continue;
+                    }
+                    if little && h6.is_some_and(|h| counts_end < h && h < end) {
+                        // #66 fail-closed on the u16le hypothesis: a block
+                        // that would swallow a 6-byte extended header
+                        // candidate is a misread (the two Audi false
+                        // headers end inside a real 0x47 this way).
+                        continue;
+                    }
+                    let refs: Vec<u32> = (0..n)
+                        .map(|j| {
+                            let at = counts_end + width as usize * j as usize;
+                            match width {
+                                1 => u32::from(data[at]),
+                                2 if little => {
+                                    u32::from(u16::from_le_bytes([data[at], data[at + 1]]))
+                                }
+                                2 => u32::from(u16::from_be_bytes([data[at], data[at + 1]])),
+                                _ => u32::from_be_bytes([0, data[at], data[at + 1], data[at + 2]]),
+                            }
+                        })
+                        .collect();
+                    let mut repeats = false;
                     let mut off = 0usize;
                     for c in &counts {
                         let loop_refs = &refs[off..off + *c as usize];
+                        if *c > 0 {
+                            let distinct: HashSet<u32> = loop_refs.iter().copied().collect();
+                            if distinct.len() < loop_refs.len() {
+                                repeats = true;
+                            }
+                        }
                         off += *c as usize;
-                        if loop_refs.is_empty() {
-                            continue;
-                        }
-                        if loop_refs.iter().any(|&r| r as usize >= els.len()) {
-                            continue;
-                        }
-                        let resolved: Vec<u32>;
-                        let test: &[u32] = if loop_refs.iter().any(|&r| sk.contains(&(r as usize)))
-                        {
-                            // Gap-edge width choice (2026-11-18): a
-                            // parse whose loop lands on skip slots is
-                            // the usual misread. Test it on its
-                            // dup-pinned coordinates with the SAME
-                            // battery; a wrong width is nonplanar
-                            // there while a real curve loop stays
-                            // coplanar, so the fully-written width wins
-                            // the rank.
-                            let Some(pin) = dup_pin_map(els, sk, loop_refs) else {
-                                continue; // untestable: no battery
-                            };
-                            resolved = loop_refs
-                                .iter()
-                                .map(|&r| pin.get(&r).copied().unwrap_or(r))
-                                .collect();
-                            &resolved
-                        } else {
-                            loop_refs
-                        };
-                        let (st, _m) = loop_plane_status(test, nm, els);
-                        if st == "nonplanar" {
-                            nonplanar += 1;
+                    }
+                    let oob = refs.iter().any(|&r| r >= element_count);
+                    let mut nonplanar = 0u32;
+                    if let (Some(nm), Some(els), Some(sk)) = (normal, elements, skips.as_ref()) {
+                        let mut off = 0usize;
+                        for c in &counts {
+                            let loop_refs = &refs[off..off + *c as usize];
+                            off += *c as usize;
+                            if loop_refs.is_empty() {
+                                continue;
+                            }
+                            if loop_refs.iter().any(|&r| r as usize >= els.len()) {
+                                continue;
+                            }
+                            let resolved: Vec<u32>;
+                            let test: &[u32] =
+                                if loop_refs.iter().any(|&r| sk.contains(&(r as usize))) {
+                                    // Gap-edge width choice (2026-11-18): a
+                                    // parse whose loop lands on skip slots is
+                                    // the usual misread. Test it on its
+                                    // dup-pinned coordinates with the SAME
+                                    // battery; a wrong width is nonplanar
+                                    // there while a real curve loop stays
+                                    // coplanar, so the fully-written width wins
+                                    // the rank.
+                                    let Some(pin) = dup_pin_map(els, sk, loop_refs) else {
+                                        continue; // untestable: no battery
+                                    };
+                                    resolved = loop_refs
+                                        .iter()
+                                        .map(|&r| pin.get(&r).copied().unwrap_or(r))
+                                        .collect();
+                                    &resolved
+                                } else {
+                                    loop_refs
+                                };
+                            let (st, _m) = loop_plane_status(test, nm, els);
+                            if st == "nonplanar" {
+                                nonplanar += 1;
+                            }
                         }
                     }
-                }
-                let rank: Rank = (
-                    if end == nxt { 0 } else { 1 },
-                    if oob { 1 } else { 0 },
-                    if repeats { 1 } else { 0 },
-                    nonplanar,
-                    width,
-                    k as u32,
-                );
-                if best.as_ref().is_none_or(|(b, _, _, _)| rank < *b) {
-                    best = Some((rank, counts, refs, width));
+                    let rank: Rank = (
+                        if end == nxt { 0 } else { 1 },
+                        if oob { 1 } else { 0 },
+                        if repeats { 1 } else { 0 },
+                        nonplanar,
+                        // #66: the relaxed family's pinned primitive is u16
+                        // (little-endian first); u8 is its compact fallback,
+                        // so a u16 reading that passes the gates outranks a
+                        // u8 one. Nothing changes for the other markers.
+                        if !relaxed || width == 2 { 0 } else { 1 },
+                        if little { 1 } else { 0 },
+                        width,
+                        k as u32,
+                    );
+                    if best.as_ref().is_none_or(|(b, _, _, _, _)| rank < *b) {
+                        best = Some((rank, counts, refs, width, end));
+                    }
                 }
             }
         }
-        if let Some((_rank, counts, refs, width)) = best {
+        if let Some((_rank, counts, refs, width, end)) = best {
+            if relaxed
+                && width == 1
+                && h6.is_some_and(|h| {
+                    end < h
+                        && h < end + n as usize
+                        && h + 2 <= end + n as usize
+                        && (end - n as usize..end + n as usize).step_by(2).all(|p| {
+                            u32::from(u16::from_le_bytes([data[p], data[p + 1]])) < element_count
+                        })
+                })
+            {
+                // #66: a u8 winner whose u16le reading is a complete,
+                // in-bounds ref stream reaching at least one whole ref
+                // past a 6-byte header is a half-read of that stream,
+                // not a u8 record (the Audi 0x301e912 false header).
+                continue;
+            }
             if refs.iter().any(|&r| r >= element_count) {
                 // Fail-closed refs gate (#66, 2026-11-20), twin of the
                 // Python post-vote rule: a record whose winning parse
@@ -5071,7 +5141,8 @@ mod tests {
         assert_eq!(uses, before);
     }
 
-    // --- #66 (2026-11-20): the short-form refs gate -------------------
+    // --- #66 (2026-11-20): short-form refs gate + the 0x41/0x44
+    // primitive (OOB fail-closed rank + u16le/u8) ---------------------
 
     fn strip_record(marker: u8, n: u32, counts: &[u8], refs: &[u8]) -> Vec<u8> {
         let mut out = vec![0x01, marker, 1, 0xFF];
@@ -5106,6 +5177,49 @@ mod tests {
     fn short_vote_declines_an_all_oob_winner() {
         let rec = strip_record(0x41, 2, &[2], &[200, 200, 201, 201]);
         let (records, n_hdrs) = parse_strip_records(&rec, 0, rec.len(), 100, None);
+        assert_eq!(n_hdrs, 1);
+        assert!(records.is_empty());
+    }
+
+    /// #66: the MB-chair/Audi byte pattern is u16le [69, 72, 73, 74]
+    /// (0x4500 u16be is OOB); u16 outranks u8 for the relaxed markers.
+    #[test]
+    fn relaxed_primitive_reads_u16_little_endian() {
+        let rec = strip_record(0x44, 4, &[4], &[69, 0, 72, 0, 73, 0, 74, 0]);
+        let (records, n_hdrs) = parse_strip_records(&rec, 0, rec.len(), 100, None);
+        assert_eq!(n_hdrs, 1);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].width, 2);
+        assert_eq!(records[0].refs, vec![69, 72, 73, 74]);
+    }
+
+    /// #66: the MB-hatch sub-form — both u16 readings are out of
+    /// space, the u8 reading is the record.
+    #[test]
+    fn relaxed_primitive_falls_back_to_u8() {
+        let rec = strip_record(0x41, 5, &[5], &[36, 29, 27, 34, 1]);
+        let (records, n_hdrs) = parse_strip_records(&rec, 0, rec.len(), 100, None);
+        assert_eq!(n_hdrs, 1);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].width, 1);
+        assert_eq!(records[0].refs, vec![36, 29, 27, 34, 1]);
+    }
+
+    /// #66: the Audi 0x301e912 false header, byte for byte. The u8
+    /// winner's 2n-wide u16le reading is a complete in-bounds stream
+    /// reaching past the real 6-byte extended header at +47 (391 from
+    /// `87 01`, 2119 from `47 08`), so the record is a half-read of the
+    /// previous record's refs, not a record.
+    #[test]
+    fn relaxed_u8_half_read_of_a_u16le_stream_is_declined() {
+        let mut rec = vec![0u8; 53];
+        rec[21..29].copy_from_slice(&[0x01, 0x41, 0x03, 0xFF, 9, 0, 0, 0]);
+        rec[29..32].copy_from_slice(&[4, 2, 3]);
+        rec[32..44].copy_from_slice(&[0x45, 0, 0x48, 0, 0x49, 0, 0x4A, 0, 0x4B, 0, 0x4C, 0]);
+        rec[44..46].copy_from_slice(&[0x87, 0x01]);
+        rec[46] = 0;
+        rec[47..53].copy_from_slice(&[0x01, 0x47, 0x08, 0x08, 0x04, 0xFF]);
+        let (records, n_hdrs) = parse_strip_records(&rec, 0, rec.len(), 3000, None);
         assert_eq!(n_hdrs, 1);
         assert!(records.is_empty());
     }

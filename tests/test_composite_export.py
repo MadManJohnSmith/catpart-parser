@@ -468,7 +468,8 @@ def test_composite_u24be_candidate_is_threshold_gated():
     assert all(r < 70_000 for _o, _mk, _n, _c, refs, _w in records for r in refs)
 
 
-# --- #66 (2026-11-20): the short-form refs gate --------------------------
+# --- #66 (2026-11-20): the short-form refs gate and the 0x41/0x44
+# primitive (OOB fail-closed rank + u16le/u8) -----------------------------
 
 def _strip_record(marker: int, n: int, counts: bytes, ref_bytes: bytes) -> bytes:
     return (
@@ -507,6 +508,65 @@ def test_composite_short_vote_declines_an_all_oob_winner():
     records, n_hdrs = parse_strip_records(rec, 0, len(rec), 100)
     assert n_hdrs == 1
     assert records == []
+
+
+def test_composite_relaxed_primitive_reads_u16_little_endian():
+    """#66: the MB-chair/Audi byte pattern. The same 8 bytes are u16be
+    junk (0x4500 >= 100), u8 byte pairs ([69, 0, 72, 0], in bounds but
+    the u8 sub-form) and u16le [69, 72, 73, 74] — the pinned primitive.
+    u16 outranks u8 for the relaxed markers, so the u16le parse wins.
+    """
+    ref_bytes = bytes([69, 0, 72, 0, 73, 0, 74, 0])
+    rec = _strip_record(0x44, 4, bytes([4]), ref_bytes)
+    records, n_hdrs = parse_strip_records(rec, 0, len(rec), 100)
+    assert n_hdrs == 1
+    assert len(records) == 1
+    _o, _mk, _normal, _counts, refs, width = records[0]
+    assert width == 2
+    assert refs == (69, 72, 73, 74)
+
+
+def test_composite_relaxed_primitive_falls_back_to_u8():
+    """#66: the MB-hatch sub-form — the u16 readings are out of space,
+    the u8 reading [36, 29, 27, 34, 1] is the record."""
+    rec = _strip_record(0x41, 5, bytes([5]), bytes([36, 29, 27, 34, 1]))
+    records, n_hdrs = parse_strip_records(rec, 0, len(rec), 100)
+    assert n_hdrs == 1
+    assert len(records) == 1
+    _o, _mk, _normal, _counts, refs, width = records[0]
+    assert width == 1
+    assert refs == (36, 29, 27, 34, 1)
+
+
+def test_composite_relaxed_u8_half_read_of_a_u16le_stream_is_declined():
+    """#66: the Audi 0x301e912 false header, reproduced byte for byte.
+
+    A 0x41 candidate whose u8 winner ends before a 6-byte extended
+    header, while its 2n-wide u16le reading is a complete in-bounds
+    ref stream reaching at least one whole ref past that header, is a
+    half-read of the previous record's u16le refs — not a record. The
+    ``01 47 08 08 04 ff`` at +47 is the structure that gives it away
+    (in the Audi file that record's n-law 116 = 3*8 + 92 is exact):
+    the u16le ref spanning the header start reads 391 from ``87 01``
+    and the next one reads 2119 from ``47 08``, so the apparent record
+    swallows the real header's bytes. Every verified u8 record either
+    straddles such a header by its single header byte or leaves OOB
+    u16 refs (corpus census), so this declines no real one.
+    """
+    rec = bytearray(53)
+    # 0x41 candidate at 21: n=9, counts [4, 2, 3] -> counts_end 32.
+    rec[21:29] = bytes([0x01, 0x41, 0x03, 0xFF]) + struct.pack("<I", 9)
+    rec[29:32] = bytes([4, 2, 3])
+    # The ref block's first six u16le refs are plain in-bounds values.
+    rec[32:44] = bytes([0x45, 0, 0x48, 0, 0x49, 0, 0x4A, 0, 0x4B, 0, 0x4C, 0])
+    rec[44:46] = bytes([0x87, 0x01])  # ref 6 = 391
+    rec[46] = 0  # ref 7's low byte = 256 with the header's 0x01
+    # The real 6-byte extended header at 47 (ref 8 reads 0x47 0x08 = 2119).
+    rec[47:53] = bytes([0x01, 0x47, 0x08, 0x08, 0x04, 0xFF])
+    records, n_hdrs = parse_strip_records(bytes(rec), 0, len(rec), 3000)
+    assert n_hdrs == 1
+    assert records == []
+
 
 
 # --- stage-6: the walk-mismatch residue's raw-array law (stage-4a,

@@ -529,11 +529,40 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
     skip slots), then the narrower width.  The winning parse is then
     gated fail-closed on the element space (#66, 2026-11-20): a record
     whose refs leave it stays unresolved, the same post-vote rule the
-    extended family applies.  Returns ``(records, n_headers)`` where
-    each record is ``(offset, marker, normal, counts, refs, width)``.
+    extended family applies.
+
+    The relaxed 0x41/0x44 primitive (#66, 2026-11-20): those two
+    markers are read in **u16 little-endian** as well as the committed
+    u16be/u8 candidates (the byte forensics of the 10 OOB records in
+    docs/evidence/2026-11-20-composite-relaxed-primitive.md: 6 are
+    u16le — e.g. MB-chair ``0x88b70`` reads ``[69..76,70,66,65,64,
+    68,328]`` with 0 OOB — and 2 are u8).  Two fail-closed conditions
+    keep the u16le hypothesis from claiming byte patterns that are not
+    records (measured over the 1,442-part corpus; 5 relaxed records
+    straddle a 6-byte extended header, 3 of them u8 winners):
+
+    * a u16le candidate whose ref block would swallow a subsequent
+      6-byte extended-header candidate is a misread (the Audi
+      ``0x301e912``/``0x2a3f1b7`` false headers sit inside another
+      record's ref stream and end inside a real ``0x47``);
+    * a u8 winner whose 2n-wide block straddles a 6-byte header while
+      the bytes it leaves before that header are themselves whole,
+      in-bounds u16le refs is a half-reading of a u16 stream, not a
+      u8 record (the same Audi ``0x301e912``: three leftover refs
+      932/1008/903, all inside its 5,561-element space; the 3 genuine
+      u8 records that straddle an extended candidate leave OOB
+      leftovers).
+
+    Returns ``(records, n_headers)`` where each record is ``(offset,
+    marker, normal, counts, refs, width)``.
     """
     hdrs = [m.start() for m in STRIP_RE.finditer(data, lo, hi)]
     widths = (1, 2, 3) if element_count > 65_535 else (1, 2)
+    ext_hdrs = (
+        facet_headers(data, lo, hi)
+        if any(data[h + 1] in RELAXED_SHORT_MARKERS for h in hdrs)
+        else []
+    )
     skips = (
         {i for i, (_v, pt) in enumerate(elements) if pt is None}
         if elements is not None
@@ -571,84 +600,130 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
                     out.append(rec)
             continue
         best = None
+        relaxed = mk in RELAXED_SHORT_MARKERS
+        i6 = bisect.bisect_right(ext_hdrs, o) if relaxed else len(ext_hdrs)
+        h6 = ext_hdrs[i6] if i6 < len(ext_hdrs) else None
         for width in widths:
-            for k in range(0, MAX_LOOP_COUNTS + 1):
-                read = read_counts(data, base, k, nxt)
-                if read is None:
-                    break
-                counts, counts_bytes = read
-                if sum(counts) != n:
-                    continue
-                if k > BASE_LOOP_COUNTS and 0 in counts:
-                    # #65 zero gate on the k extension: a u16be count
-                    # table misreads as u8 pairs with a zero at every
-                    # other entry (CAAGsiStartVolume: 16/32 zeros, a
-                    # not-manifold mesh); every corpus record the
-                    # extension admits is zero-free.
-                    continue
-                counts_end = base + counts_bytes
-                end = counts_end + width * n
-                if end > nxt:
-                    continue
-                refs = [
-                    int.from_bytes(
-                        data[counts_end + width * j : counts_end + width * (j + 1)],
-                        "big",
-                    )
-                    for j in range(n)
-                ]
-                repeats = False
-                off = 0
-                for c in counts:
-                    loop = refs[off : off + c]
-                    if c > 0 and len(set(loop)) < c:
-                        repeats = True
-                    off += c
-                oob = any(r >= element_count for r in refs)
-                nonplanar = 0
-                if normal is not None and elements is not None:
+            endians = ("big", "little") if (relaxed and width == 2) else ("big",)
+            for endian in endians:
+                for k in range(0, MAX_LOOP_COUNTS + 1):
+                    read = read_counts(data, base, k, nxt)
+                    if read is None:
+                        break
+                    counts, counts_bytes = read
+                    if sum(counts) != n:
+                        continue
+                    if k > BASE_LOOP_COUNTS and 0 in counts:
+                        # #65 zero gate on the k extension: a u16be count
+                        # table misreads as u8 pairs with a zero at every
+                        # other entry (CAAGsiStartVolume: 16/32 zeros, a
+                        # not-manifold mesh); every corpus record the
+                        # extension admits is zero-free.
+                        continue
+                    counts_end = base + counts_bytes
+                    end = counts_end + width * n
+                    if end > nxt:
+                        continue
+                    if endian == "little" and h6 is not None and counts_end < h6 < end:
+                        # #66 fail-closed on the u16le hypothesis: a
+                        # block that would swallow a 6-byte extended
+                        # header candidate is a misread. The two Audi
+                        # false headers (0x301e912, 0x2a3f1b7) end
+                        # inside a real 0x47 this way; every verified
+                        # u16le/u8 record clears its next extended
+                        # candidate (corpus census: 5 straddling
+                        # records, the two false headers among them).
+                        continue
+                    refs = [
+                        int.from_bytes(
+                            data[
+                                counts_end + width * j : counts_end + width * (j + 1)
+                            ],
+                            endian,
+                        )
+                        for j in range(n)
+                    ]
+                    repeats = False
                     off = 0
                     for c in counts:
                         loop = refs[off : off + c]
+                        if c > 0 and len(set(loop)) < c:
+                            repeats = True
                         off += c
-                        if not loop:
-                            continue
-                        if any(r >= len(elements) for r in loop):
-                            continue
-                        if any(r in skips for r in loop):
-                            # Gap-edge width choice (2026-11-18): a
-                            # parse whose loop lands on skip slots is
-                            # the usual misread.  Test it on its
-                            # dup-pinned coordinates with the SAME
-                            # battery — a wrong width is nonplanar
-                            # there (measured 2e-2..8 on the 3 bad
-                            # labios/main loops) while a real curve
-                            # loop stays coplanar (<= 1.4e-6), so a
-                            # fully-written width wins the rank
-                            # without a blanket no-skip-ref penalty
-                            # that would hurt legitimate curve loops.
-                            pin = _dup_pin_map(elements, loop)
-                            if pin is None:
-                                continue  # untestable: no battery
-                            test = [pin.get(r, r) for r in loop]
-                        else:
-                            test = loop
-                        st, _res = _loop_plane_status(test, normal, elements)
-                        if st == "nonplanar":
-                            nonplanar += 1
-                rank = (
-                    0 if end == nxt else 1,
-                    1 if oob else 0,
-                    1 if repeats else 0,
-                    nonplanar,
-                    width,
-                    k,
-                )
-                if best is None or rank < best[0]:
-                    best = (rank, tuple(counts), tuple(refs), width)
+                    oob = any(r >= element_count for r in refs)
+                    nonplanar = 0
+                    if normal is not None and elements is not None:
+                        off = 0
+                        for c in counts:
+                            loop = refs[off : off + c]
+                            off += c
+                            if not loop:
+                                continue
+                            if any(r >= len(elements) for r in loop):
+                                continue
+                            if any(r in skips for r in loop):
+                                # Gap-edge width choice (2026-11-18): a
+                                # parse whose loop lands on skip slots is
+                                # the usual misread.  Test it on its
+                                # dup-pinned coordinates with the SAME
+                                # battery — a wrong width is nonplanar
+                                # there (measured 2e-2..8 on the 3 bad
+                                # labios/main loops) while a real curve
+                                # loop stays coplanar (<= 1.4e-6), so a
+                                # fully-written width wins the rank
+                                # without a blanket no-skip-ref penalty
+                                # that would hurt legitimate curve loops.
+                                pin = _dup_pin_map(elements, loop)
+                                if pin is None:
+                                    continue  # untestable: no battery
+                                test = [pin.get(r, r) for r in loop]
+                            else:
+                                test = loop
+                            st, _res = _loop_plane_status(test, normal, elements)
+                            if st == "nonplanar":
+                                nonplanar += 1
+                    rank = (
+                        0 if end == nxt else 1,
+                        1 if oob else 0,
+                        1 if repeats else 0,
+                        nonplanar,
+                        # #66: the relaxed family's pinned primitive is
+                        # u16 (little-endian first); u8 is its compact
+                        # fallback, so a u16 reading that passes the
+                        # gates outranks a u8 one. Nothing changes for
+                        # the other markers (both slots stay 0).
+                        0 if (not relaxed or width == 2) else 1,
+                        0 if endian == "big" else 1,
+                        width,
+                        k,
+                    )
+                    if best is None or rank < best[0]:
+                        best = (rank, tuple(counts), tuple(refs), width, end)
         if best is None:
             continue
-        _rank, counts, refs, width = best
+        _rank, counts, refs, width, end = best
+        if (
+            relaxed
+            and width == 1
+            and h6 is not None
+            and end < h6 < end + n
+            and h6 + 2 <= end + n
+            and all(
+                int.from_bytes(data[p : p + 2], "little") < element_count
+                for p in range(end - n, end + n, 2)
+            )
+        ):
+            # #66: a u8 winner whose u16le reading is a complete,
+            # in-bounds ref stream reaching at least one whole ref past
+            # a 6-byte header is a half-read of that stream, not a u8
+            # record — the Audi 0x301e912 false header (refs
+            # 1264/1098/770/903/1008/932/1008/391/2119, all inside
+            # 5,561 elements, its ninth ref sitting after a real 0x47).
+            # The only other u8 records that touch an extended candidate
+            # either straddle it by the single header byte (SP02,
+            # M3x10) or leave OOB u16 refs (tn.1.1.1) — corpus census,
+            # so this declines no measured record.
+            continue
         if element_count is not None and any(r >= element_count for r in refs):
             # Fail-closed refs gate (#66, 2026-11-20), symmetric to the
             # extended family's post-vote rule (parse_extended_facet_
@@ -684,12 +759,14 @@ EXPORTED_SHORT_MARKERS = (0x42, 0x49, 0x4A, 0x4C)
 #: The T3 relaxed families (#61, 2026-11-20): 0x44 and 0x41 parse under
 #: the SAME (width, k) tiling law as the exported families (226/226
 #: carrier records: header_len=4, types 1/2, widths 1/2, counts tiling,
-#: refs in pool range) but carry no 12-B normal and their primitive
-#: reading G3 has not pinned.  Their loops export in the SECOND pass of
-#: :func:`_triangulate`, under the STRICT mesh guard — no seam-area
-#: exception — so a base-manifold mesh stays manifold by construction
-#: and the base pass stays byte-identical to the pre-T3 behavior.  The
-#: accepted/declined loop counts ride the summary as
+#: refs in pool range) but carry no 12-B normal. Their primitive is now
+#: pinned (#66, 2026-11-20): u16 little-endian, with u8 as the compact
+#: fallback — :func:`parse_strip_records` offers the u16le candidate and
+#: prefers u16 over u8 for these two markers. Their loops export in the
+#: SECOND pass of :func:`_triangulate`, under the STRICT mesh guard — no
+#: seam-area exception — so a base-manifold mesh stays manifold by
+#: construction and the base pass stays byte-identical to the pre-T3
+#: behavior. The accepted/declined loop counts ride the summary as
 #: ``relaxed_loops_accepted`` / ``relaxed_loops_declined``.
 RELAXED_SHORT_MARKERS = (0x44, 0x41)
 
