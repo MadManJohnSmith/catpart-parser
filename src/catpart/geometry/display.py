@@ -105,11 +105,20 @@ FAMILY_CONIC = 0x38
 #: (no near-zero coordinates — the measured law, stricter than the display
 #: envelope), runs chain at exactly the 12-byte stride, and a run counts
 #: from 3 triples.  It applies ONLY when every primary carrier came up
-#: empty, over the valid blocks' payload regions (bounded per region).
+#: empty, over the body/geometry blocks' payload regions (bounded per
+#: region).
 F32_RUN_FLOOR = 1e-2
 F32_RUN_CEIL = 1e5
 F32_RUN_MIN_TRIPLES = 3
 F32_SCAN_MAX_REGION = 16 * 1024 * 1024
+#: The parametric blocks the fallback never reads (ticket #69).  These
+#: blocks are the part tree / feature parameters; the runs law was
+#: measured only in body and geometry containers (CATSeeBodyCont 57,
+#: CATBRepModeContainer 11, CATStdCont 9, CGMGeom 6 — 0/83 census files
+#: in CATPrtCont).  A part whose only "runs" live here has no display
+#: carrier, not a point cloud: the McLaren Senna's 244,817 points were
+#: 244,811 f32 triples of CATPrtCont tessellation cache, read as runs.
+F32_RUN_SKIP_BLOCKS = ("CATPrtCont", "CATProdCont", "CATMechProdCont")
 
 #: The summary block's honesty labels.
 KIND = "decoded-carriers"
@@ -434,13 +443,20 @@ def _f32_point_runs(data, lo: int, hi: int) -> list[tuple[int, int]]:
 
 
 def _raw_block_regions(data) -> list[tuple[int, int]]:
-    """Every valid block's payload region (the fallback's scan scope)."""
+    """Every body/geometry block's payload region (the fallback's scope).
+
+    The parametric blocks (``F32_RUN_SKIP_BLOCKS``) are dropped from the
+    scan set, but every valid block still bounds its neighbours' regions:
+    ``probe_region`` ends at the next valid block, so filtering the list
+    before the bounds would extend a body block over a part container.
+    """
     size = len(data)
     outer = int.from_bytes(data[8:12], "big") if size >= 12 else 0
     blocks = store.valid_blocks(data)
     regions = {
         (blk, store.probe_region(data, blk, blocks, outer))
-        for blk, _name in blocks
+        for blk, name in blocks
+        if name not in F32_RUN_SKIP_BLOCKS
     }
     return sorted(
         (lo, hi) for lo, hi in regions if hi - lo <= F32_SCAN_MAX_REGION
@@ -533,11 +549,13 @@ def scan_part(data, spans=(), pool_points=()) -> DisplayScan:
 
     # The empty-scan fallback (#60): a container-less ``V5_CFV2`` binary
     # (no container-name table, so no located spans and no carriers above)
-    # still carries 12-byte f32 point runs in its blocks — the missing-
-    # store census measured them (CAAMaiUdfForMfgHoleInstance: 93 points
-    # at 75029 in CATSeeBodyCont).  Only when every primary source came
-    # up empty, over the valid blocks' payload regions, under the
-    # measured run law — never instead of a decoded carrier.
+    # still carries 12-byte f32 point runs in its body/geometry blocks —
+    # the missing-store census measured them
+    # (CAAMaiUdfForMfgHoleInstance: 93 points at 75029 in CATSeeBodyCont).
+    # Only when every primary source came up empty, over the body blocks'
+    # payload regions, under the measured run law — never instead of a
+    # decoded carrier, and never inside the parametric part containers
+    # (#69: their triples are tessellation cache, not a display carrier).
     f32_runs = 0
     f32_points = 0
     if not points:
