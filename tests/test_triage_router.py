@@ -295,3 +295,18 @@ def test_record_adapters_shape_both_csv_dialects() -> None:
     assert m1_rec["warnings"] == ["open-shell", "primary-loop-manifold-kept"]
     assert m1_rec["size_bytes"] == 48197 and m1_rec["point_count"] == 62
     assert route(m1_rec).bucket == "known_seam_not_manifold"
+
+
+def test_stratified_sample_never_duplicates_a_record() -> None:
+    # Regression: when a stratum's floor share already consumed pool[0]
+    # (here share 1.5 -> take 1 of 2) and it also wins the largest
+    # remainder, the fill must take the NEXT unpicked record. The old
+    # pool[0] fill re-picked pool[0] on EVERY seed, emitting a duplicate
+    # row that then got arbitrated twice.
+    recs = [m1_row() for _ in range(4)]
+    for i, r in enumerate(recs):
+        r["path"] = f"{'aabcd'[i]}.CATPart"  # 2 a-stratum, 2 b-stratum
+    pick = run_triage.stratified_sample(recs, lambda r: (r["path"][0],), 3, seed=7)
+    ids = sorted(r["path"] for r in pick)
+    assert len(ids) == len(set(ids)) == 3
+    assert ids == sorted(set(ids))

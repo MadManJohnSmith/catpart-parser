@@ -99,7 +99,10 @@ def read_records(path: str) -> list[dict]:
 def stratified_sample(records: list[dict], key_fn, n: int, seed: int) -> list[dict]:
     """Proportional allocation across the strata of ``key_fn`` (largest
     remainders first), seeded shuffle-within-stratum; n > population
-    returns everything. Keeps the residue mix representative."""
+    returns everything. Keeps the residue mix representative. The
+    remainder fill draws each stratum's next UNPICKED record (a stratum
+    that already contributed its floor share can win another slot; the
+    original pool[0] fill re-picked it, emitting duplicate rows)."""
     if n <= 0 or len(records) <= n:
         return list(records)
     strata: dict[tuple, list] = {}
@@ -107,15 +110,17 @@ def stratified_sample(records: list[dict], key_fn, n: int, seed: int) -> list[di
         strata.setdefault(key_fn(rec), []).append(rec)
     rng = random.Random(seed)
     shares = {k: len(v) * n / len(records) for k, v in strata.items()}
+    taken = {k: int(shares[k]) for k in strata}
     picks: list = []
-    remainders = sorted(strata, key=lambda k: -(shares[k] % 1))
-    for k in strata:
-        take = int(shares[k])
-        pool = strata[k]
+    for k, pool in strata.items():
         rng.shuffle(pool)
-        picks.extend(pool[:take])
-    for k in remainders[: n - len(picks)]:
-        picks.append(strata[k][0])
+        picks.extend(pool[:taken[k]])
+    for k in sorted(strata, key=lambda k: -(shares[k] % 1)):
+        if len(picks) >= n:
+            break
+        if taken[k] < len(strata[k]):
+            picks.append(strata[k][taken[k]])
+            taken[k] += 1
     return picks[:n]
 
 
