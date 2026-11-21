@@ -137,7 +137,11 @@ pub fn parse_product(data: &[u8]) -> Result<ProductStructureDocument, ProductErr
             // passes find nothing. The branch fills that gap only (additive).
             if instances.is_empty() && has_name_table_signature(&texts) {
                 instances = extract_name_table_instances(&texts).unwrap_or_default();
-                let n_records = bind_name_table(&mut instances, data);
+                // Single-document read: `own(D)` needs the document set, so
+                // `n_own` is `None` and the binding stays fail-closed. The
+                // S7 placed refinement fires only in the tree walker
+                // (`ownership::resolve_owned_assembly`).
+                let n_records = bind_name_table(&mut instances, data, None);
                 warnings.push(ProductWarning {
                     class: "name-table-v5r26".to_string(),
                     detail: format!(

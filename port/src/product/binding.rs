@@ -474,11 +474,36 @@ pub fn bind_position_layer(
 /// - zero non-root `8d81` records -> identity at origin (in the snapshot,
 ///   `_Position` presence and record count coincide in 199/199 files);
 /// - any record -> [`PlacementStatus::Undecodable`] (anti-masking: a position
-///   exists that cannot be attributed, so it is never written as identity).
+///   exists that cannot be attributed, so it is never written as identity);
+/// - S7 refinement, only when the walker supplies `n_own = Some(own(D))`:
+///   `#R == #own(D)` with every matrix body byte-identical makes the
+///   record-to-child permutation free, so the one matrix places every own
+///   child (order-independent, no ordinal law). Identity frames
+///   (`e9 f4 07 04 37`) are constraint/connector placeholders (Clause 3); a
+///   record set containing one never places. `None` (single-document reads,
+///   where `own(D)` needs the document set) keeps the strict path.
 ///
 /// Returns the number of non-root position records seen.
-pub fn bind_name_table(instances: &mut [ProductInstanceRecord], data: &[u8]) -> usize {
-    let n_records = scan_position_matrix_streams(data).len();
+pub fn bind_name_table(
+    instances: &mut [ProductInstanceRecord],
+    data: &[u8],
+    n_own: Option<usize>,
+) -> usize {
+    let records = scan_position_matrix_streams(data);
+    let n_records = records.len();
+    let placed_detail = n_own.map(|n_own| {
+        format!(
+            "name-table placed law: {n_records} byte-identical _Position matrices == own \
+             children count ({n_own}); the matrix applies to every own child (order-free, \
+             no ordinal law)"
+        )
+    });
+    let places = placed_detail.is_some()
+        && n_records > 0
+        && n_records == n_own.unwrap_or_default()
+        && records.iter().all(|rec| {
+            rec.kind == PositionKind::Explicit && rec.matrix_body == records[0].matrix_body
+        });
     for inst in instances.iter_mut() {
         if n_records == 0 {
             inst.placement_status = PlacementStatus::Identity;
@@ -489,6 +514,12 @@ pub fn bind_name_table(instances: &mut [ProductInstanceRecord], data: &[u8]) -> 
                 "name-table enumeration: no _Position transform records (identity at origin)"
                     .to_string(),
             );
+        } else if places {
+            inst.placement_status = PlacementStatus::Placed;
+            inst.transform = Some(records[0].to_transform_7());
+            inst.has_position_attr = true;
+            inst.object_tag = None;
+            inst.classification_detail.clone_from(&placed_detail);
         } else {
             inst.placement_status = PlacementStatus::Undecodable;
             inst.transform = None;
@@ -690,6 +721,7 @@ mod tests {
             kind,
             transform: TransformRecord::from_placement(t, [1.0, 0.0, 0.0, 0.0], 0),
             offset: 0,
+            matrix_body: Vec::new(),
         }
     }
 
@@ -800,14 +832,18 @@ mod tests {
     }
 
     fn name_table_position_bytes(records: usize) -> Vec<u8> {
+        name_table_position_entries(&vec![[12.5, 0.0, 14.4]; records])
+    }
+
+    fn name_table_position_entries(translations: &[[f64; 3]]) -> Vec<u8> {
         let mut data = Vec::new();
-        for _ in 0..records {
+        for t in translations {
             data.extend_from_slice(&crate::product::transforms::POSITION_EXPLICIT_HEADER);
             data.extend_from_slice(&crate::product::transforms::R15_MATRIX_MARKER);
             data.extend_from_slice(&[0xE7, 0xE8, 0xE8, 0xE8]);
             data.extend_from_slice(&[0xE7, 0xE8, 0xE8, 0xE8]);
             data.push(0xE7);
-            for v in [12.5f64, 0.0, 14.4] {
+            for v in t {
                 data.push(0xE6);
                 data.extend_from_slice(&v.to_le_bytes());
             }
@@ -823,7 +859,7 @@ mod tests {
             make_test_instance("Bracket", "Bracket", false),
         ];
 
-        let n = bind_name_table(&mut instances, &[]);
+        let n = bind_name_table(&mut instances, &[], None);
 
         assert_eq!(n, 0);
         for inst in &instances {
@@ -842,7 +878,7 @@ mod tests {
         ];
         let data = name_table_position_bytes(2);
 
-        let n = bind_name_table(&mut instances, &data);
+        let n = bind_name_table(&mut instances, &data, None);
 
         assert_eq!(n, 2);
         for inst in &instances {
@@ -850,6 +886,92 @@ mod tests {
             assert!(inst.transform.is_none());
             assert!(inst.has_position_attr);
             assert!(inst.classification_detail.is_some());
+        }
+    }
+
+    #[test]
+    fn name_table_placed_law_places_every_own_child() {
+        // S7 refinement: #R == #own with byte-identical matrices — the one
+        // matrix applies to every own child, order-free.
+        let mut instances = vec![
+            make_test_instance("Widget", "Widget", false),
+            make_test_instance("Bracket", "Bracket", false),
+        ];
+        let data = name_table_position_bytes(2);
+
+        let n = bind_name_table(&mut instances, &data, Some(2));
+
+        assert_eq!(n, 2);
+        for inst in &instances {
+            assert_eq!(inst.placement_status, PlacementStatus::Placed);
+            assert_eq!(inst.transform, Some([12.5, 0.0, 14.4, 1.0, 0.0, 0.0, 0.0]));
+            assert!(inst.has_position_attr);
+            assert!(
+                inst.classification_detail
+                    .as_deref()
+                    .is_some_and(|d| d.contains("placed law"))
+            );
+        }
+    }
+
+    #[test]
+    fn name_table_placed_law_never_fires_on_differing_matrices() {
+        // Same count, different bodies: the permutation is not free, the
+        // subset is unresolvable -> fail closed.
+        let mut instances = vec![
+            make_test_instance("Widget", "Widget", false),
+            make_test_instance("Bracket", "Bracket", false),
+        ];
+        let data = name_table_position_entries(&[[12.5, 0.0, 14.4], [1.0, 2.0, 3.0]]);
+
+        let n = bind_name_table(&mut instances, &data, Some(2));
+
+        assert_eq!(n, 2);
+        for inst in &instances {
+            assert_eq!(inst.placement_status, PlacementStatus::Undecodable);
+            assert!(inst.transform.is_none());
+        }
+    }
+
+    #[test]
+    fn name_table_placed_law_requires_the_own_count() {
+        // vela regression shape: 5 identical records but 18 own children —
+        // the count law fails and the subset stays unresolvable.
+        let mut instances: Vec<ProductInstanceRecord> = (0..18)
+            .map(|i| make_test_instance(&format!("Part{i}"), "Part", false))
+            .collect();
+        let data = name_table_position_bytes(5);
+
+        let n = bind_name_table(&mut instances, &data, Some(18));
+
+        assert_eq!(n, 5);
+        for inst in &instances {
+            assert_eq!(inst.placement_status, PlacementStatus::Undecodable);
+            assert!(inst.transform.is_none());
+        }
+    }
+
+    #[test]
+    fn name_table_placed_law_never_fires_with_an_identity_frame() {
+        // An identity frame is a constraint/connector placeholder (Clause 3):
+        // a record set containing one never places.
+        let mut instances = vec![
+            make_test_instance("Widget", "Widget", false),
+            make_test_instance("Bracket", "Bracket", false),
+        ];
+        let mut data = name_table_position_bytes(1);
+        data.extend_from_slice(&crate::product::transforms::POSITION_IDENTITY_HEADER);
+        data.extend_from_slice(&crate::product::transforms::R15_MATRIX_MARKER);
+        data.extend_from_slice(&[0xE7, 0xE8, 0xE8, 0xE8]);
+        data.extend_from_slice(&[0xE7, 0xE8, 0xE8, 0xE8]);
+        data.extend_from_slice(&[0xE7, 0xE8, 0xE8, 0xE8]);
+
+        let n = bind_name_table(&mut instances, &data, Some(2));
+
+        assert_eq!(n, 2);
+        for inst in &instances {
+            assert_eq!(inst.placement_status, PlacementStatus::Undecodable);
+            assert!(inst.transform.is_none());
         }
     }
 
@@ -868,7 +990,7 @@ mod tests {
         data.push(0xFE);
 
         let mut instances = vec![make_test_instance("Widget", "Widget", false)];
-        let n = bind_name_table(&mut instances, &data);
+        let n = bind_name_table(&mut instances, &data, None);
         assert_eq!(n, 0);
         assert_eq!(instances[0].placement_status, PlacementStatus::Identity);
     }

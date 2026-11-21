@@ -112,7 +112,7 @@ impl Walker<'_> {
         names
     }
 
-    fn records_for(&mut self, name: &str) -> Option<Vec<ProductInstanceRecord>> {
+    fn records_for(&mut self, name: &str, n_own: usize) -> Option<Vec<ProductInstanceRecord>> {
         if let Some(cached) = self.records_cache.get(name) {
             return cached.clone();
         }
@@ -120,7 +120,11 @@ impl Walker<'_> {
             let pool = find_structure_pool(data)?;
             let texts = decode_pool_texts(&pool.items);
             let mut records = extract_name_table_instances(&texts)?;
-            bind_name_table(&mut records, data);
+            // The walker holds the document set, so `own(D)` is known here and
+            // the S7 placed refinement may fire (`#R == #own(D)` with
+            // byte-identical matrices). `bind_name_table` stays fail-closed
+            // when the count mismatches or the matrices differ.
+            bind_name_table(&mut records, data, Some(n_own));
             Some(records)
         });
         self.records_cache.insert(name.to_string(), records.clone());
@@ -134,13 +138,6 @@ impl Walker<'_> {
         let Some(names) = self.names_for(name) else {
             return;
         };
-        let Some(records) = self.records_for(name) else {
-            return;
-        };
-        let by_name: HashMap<&str, &ProductInstanceRecord> = records
-            .iter()
-            .map(|record| (record.instance_name.as_str(), record))
-            .collect();
         let mut child_tables = BTreeMap::new();
         for child in &names {
             if let Some(child_names) = self.names_for(child) {
@@ -148,6 +145,13 @@ impl Walker<'_> {
             }
         }
         let own = own_children(&names, &child_tables);
+        let Some(records) = self.records_for(name, own.len()) else {
+            return;
+        };
+        let by_name: HashMap<&str, &ProductInstanceRecord> = records
+            .iter()
+            .map(|record| (record.instance_name.as_str(), record))
+            .collect();
 
         self.visiting.insert(name.to_string());
         for child in own {
@@ -392,6 +396,43 @@ mod tests {
         assert_eq!(rows["Sub-leaf"].depth, 1);
         assert_eq!(tree.identity_instances, 2);
         assert_eq!(tree.undecodable_instances, 2);
+    }
+
+    #[test]
+    fn owned_walk_applies_the_placed_refinement() {
+        // The child document carries #R == #own(D) with byte-identical
+        // matrices: the walker supplies own(D), so the S7 refinement places
+        // every own child with the one matrix (order-free). The parent still
+        // has no records and stays identity.
+        let docs = documents(&[
+            ("Root", name_table_product("Root", &["Widget", "Sub"], 0)),
+            (
+                "Sub",
+                name_table_product("Sub", &["Sub-leaf", "Sub-own"], 2),
+            ),
+        ]);
+
+        let tree = resolve_owned_assembly("Root", &docs);
+
+        let rows: HashMap<&str, &OwnedInstanceRecord> = tree
+            .instances
+            .iter()
+            .map(|row| (row.instance_name.as_str(), row))
+            .collect();
+        assert_eq!(rows["Widget"].placement_status, PlacementStatus::Identity);
+        assert_eq!(rows["Sub"].placement_status, PlacementStatus::Identity);
+        assert_eq!(rows["Sub-leaf"].placement_status, PlacementStatus::Placed);
+        assert_eq!(rows["Sub-own"].placement_status, PlacementStatus::Placed);
+        assert_eq!(
+            rows["Sub-leaf"].transform,
+            Some([12.5, 0.0, 14.4, 1.0, 0.0, 0.0, 0.0])
+        );
+        assert_eq!(
+            rows["Sub-own"].transform,
+            Some([12.5, 0.0, 14.4, 1.0, 0.0, 0.0, 0.0])
+        );
+        assert!(tree.identity_instances == 2 && tree.placed_instances == 2);
+        assert_eq!(tree.undecodable_instances, 0);
     }
 
     #[test]
