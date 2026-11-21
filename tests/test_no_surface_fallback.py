@@ -65,6 +65,24 @@ def bagrep_part(records: bytes) -> bytes:
     )
 
 
+def blocks_part(*blocks: tuple[str, bytes]) -> bytes:
+    """A full container whose payload carries several named blocks.
+
+    Each item is ``(block_name, records)``; the blocks are emitted in
+    order, each with a 64-byte zero preamble, so ``store.valid_blocks``
+    sees every named region.
+    """
+    payload = b"".join(
+        fixtures_gen.storage_property_block(name.encode(), b"CATContainer")
+        + b"\x00" * 64
+        + records
+        for name, records in blocks
+    )
+    return fixtures_gen.build_catpart(
+        header_dword=0x0000_0100, payload=payload, pad_before_table=0x600
+    )
+
+
 def run(*points) -> bytes:
     """One ``e5 0d`` record carrying the f64le triples of a point run."""
     payload = b"".join(struct.pack("<3d", *point) for point in points)
@@ -542,6 +560,13 @@ def test_corpus_population_renders_the_decoded_carriers(tmp_path: Path) -> None:
     their ``undecoded-variant`` class.  The bag-rep count-framed f32
     arrays keep their measured share; the counts are pinned part by
     part in ``docs/evidence/data/no-surface-fallback-parts.csv``.
+
+    #69 moved the f32-run fallback's scope out of the parametric part
+    containers: ``cachete_soporte_mirror`` loses the 9 points that were
+    12-byte-stride byte patterns inside its ``CATPrtCont`` region
+    (x/y/z up to 15,725 mm against the part's ±2,048 mm display
+    envelope), so the population total drops 9,685 -> 9,676.  Part
+    classification is unchanged (still 105 display).
     """
     root = Path(__file__).resolve().parents[1]
     manifest = _manifest()
@@ -577,7 +602,7 @@ def test_corpus_population_renders_the_decoded_carriers(tmp_path: Path) -> None:
 
     assert classes == {"mesh": 5, "display": 105, "undecoded-variant": 10}, classes
     assert totals == {
-        "points": 9685,
+        "points": 9676,
         "curve_segments": 188,
         "parts_with_segments": 31,
         "triangles": 4422,
@@ -613,3 +638,54 @@ def test_empty_scan_f32_run_fallback_opens_container_less_carriers() -> None:
     assert scan.points == tuple((10.0 * i, 5.0 * i, 1.0 * i) for i in range(1, 8))
     assert scan.sources == (display.SOURCE_F32_RUNS,)
     assert scan.label == "no surface — showing 7 points, 0 curve segments"
+
+
+def _triples(base: float, count: int) -> bytes:
+    """``count`` distinct 12-byte-stride f32 triples (a fallback run)."""
+    return b"".join(
+        struct.pack("<3f", base + i, base + 2 * i, base + 3 * i)
+        for i in range(1, count + 1)
+    )
+
+
+def test_f32_run_fallback_skips_the_parametric_containers() -> None:
+    # #69: the runs law was measured on body/geometry blocks only.  The
+    # parametric blocks are the part tree and its feature parameters; the
+    # McLaren Senna's 244,817 "points" were 244,811 f32 triples of a
+    # CATPrtCont tessellation cache read as runs.  A file that carries
+    # runs in both a body block and the parametric blocks displays only
+    # the body runs — the parametric triples are not a display carrier.
+    data = blocks_part(
+        ("CGMGeom", _triples(20.0, 3)),
+        ("CATPrtCont", _triples(30.0, 5)),
+        ("CATProdCont", _triples(40.0, 3)),
+        ("CATMechProdCont", _triples(50.0, 3)),
+        ("CATSeeBodyCont", _triples(10.0, 4)),
+    )
+    scan = display.scan_part(data)
+    assert scan.f32_runs == 2
+    assert scan.f32_points == 7
+    assert scan.points == (
+        (21.0, 22.0, 23.0),
+        (22.0, 24.0, 26.0),
+        (23.0, 26.0, 29.0),
+        (11.0, 12.0, 13.0),
+        (12.0, 14.0, 16.0),
+        (13.0, 16.0, 19.0),
+        (14.0, 18.0, 22.0),
+    )
+    assert scan.sources == (display.SOURCE_F32_RUNS,)
+    assert scan.label == "no surface — showing 7 points, 0 curve segments"
+
+
+def test_raw_block_regions_drop_the_parametric_blocks_without_resizing_neighbours() -> None:
+    # The gate only drops the skipped blocks from the scan set: every
+    # valid block still bounds its neighbours, so the region before a
+    # CATPrtCont block ends at its start instead of running over it.
+    geometry = fixtures_gen.storage_property_block(b"CGMGeom", b"CATContainer")
+    part_tree = fixtures_gen.storage_property_block(b"CATPrtCont", b"CATContainer")
+    body = fixtures_gen.storage_property_block(b"CATSeeBodyCont", b"CATContainer")
+    data = geometry + b"\x00" * 16 + part_tree + b"\x00" * 16 + body + b"\x00" * 16
+    regions = display._raw_block_regions(data)
+    assert [lo for lo, _hi in regions] == [0, len(geometry) + 16 + len(part_tree) + 16]
+    assert regions[0][1] == len(geometry) + 16

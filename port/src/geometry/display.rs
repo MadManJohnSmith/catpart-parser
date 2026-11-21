@@ -66,6 +66,14 @@ pub const F32_RUN_FLOOR: f64 = 1e-2;
 pub const F32_RUN_CEIL: f64 = 1e5;
 pub const F32_RUN_MIN_TRIPLES: usize = 3;
 pub const F32_SCAN_MAX_REGION: usize = 16 * 1024 * 1024;
+/// The parametric blocks the fallback never reads (ticket #69, the twin's
+/// ``F32_RUN_SKIP_BLOCKS``).  These blocks are the part tree / feature
+/// parameters; the runs law was measured only in body and geometry
+/// containers (CATSeeBodyCont 57, CATBRepModeContainer 11, CATStdCont 9,
+/// CGMGeom 6 — 0/83 census files in CATPrtCont).  The McLaren Senna's
+/// 244,817 points were 244,811 f32 triples of CATPrtCont tessellation
+/// cache, read as runs.
+const F32_RUN_SKIP_BLOCKS: [&str; 3] = ["CATPrtCont", "CATProdCont", "CATMechProdCont"];
 
 /// The bag-rep payload containers the count-framed arrays live in.
 const BAGREP_PAYLOAD_BLOCKS: [&str; 5] = [
@@ -161,8 +169,10 @@ fn f32_point_runs(data: &[u8], lo: usize, hi: usize) -> Vec<(usize, usize)> {
     runs
 }
 
-/// Every valid block's payload region, bounded per region (the twin's
-/// `_raw_block_regions`) — the empty-scan fallback's scope.
+/// Every body/geometry block's payload region, bounded per region (the
+/// twin's `_raw_block_regions`) — the empty-scan fallback's scope.  The
+/// parametric blocks (`F32_RUN_SKIP_BLOCKS`) are dropped from the scan
+/// set, but every valid block still bounds its neighbours' regions.
 fn raw_block_regions(data: &[u8]) -> Vec<(usize, usize)> {
     let size = data.len();
     let outer = if size >= 12 {
@@ -173,6 +183,7 @@ fn raw_block_regions(data: &[u8]) -> Vec<(usize, usize)> {
     let blocks = store::valid_blocks(data);
     let mut regions: Vec<(usize, usize)> = blocks
         .iter()
+        .filter(|(_, name)| !F32_RUN_SKIP_BLOCKS.contains(&name.as_str()))
         .map(|(blk, _)| (*blk, store::probe_region(*blk, &blocks, outer, size)))
         .collect();
     regions.sort_unstable();
@@ -948,5 +959,42 @@ mod tests {
             flat.extend_from_slice(&0.0f32.to_le_bytes());
         }
         assert!(f32_point_runs(&flat, 0, flat.len()).is_empty());
+    }
+
+    /// One CATStorageProperty storage block named `name` (the
+    /// `tests/fixtures_gen.py::storage_property_block` layout).
+    fn storage_block(name: &str) -> Vec<u8> {
+        let mut block = Vec::new();
+        block.extend_from_slice(b"\x34\x12CATStorageProperty");
+        block.extend_from_slice(b"\x80\x01\x00\x00\x00\x00\x22\x0c\x00\x00\x00");
+        block.extend_from_slice(b"\x34\x01\x01\x00\x34\x10CATUnicodeString");
+        block.extend_from_slice(b"\xa0\x02\x00\x00\x00\x00\x34");
+        block.push(name.len() as u8);
+        block.extend_from_slice(name.as_bytes());
+        block.push(0x9f);
+        block.extend_from_slice(b"\xa0\x02\x00\x00\x00\x00\x34\x00\x9f");
+        block.extend_from_slice(b"\x3b\x10");
+        block.extend_from_slice(&[0u8; 16]);
+        block.push(0x9f);
+        block
+    }
+
+    #[test]
+    fn raw_block_regions_drop_the_parametric_blocks_without_resizing_neighbours() {
+        // #69: the parametric blocks are not part of the fallback's
+        // scan set, but they still bound their neighbours — the region
+        // before a CATPrtCont block ends at its start.
+        let mut data = storage_block("CGMGeom");
+        data.extend_from_slice(&[0u8; 16]);
+        let part_tree = data.len();
+        data.extend_from_slice(&storage_block("CATPrtCont"));
+        data.extend_from_slice(&[0u8; 16]);
+        let body = data.len();
+        data.extend_from_slice(&storage_block("CATSeeBodyCont"));
+        data.extend_from_slice(&[0u8; 16]);
+        assert_eq!(
+            raw_block_regions(&data),
+            vec![(0, part_tree), (body, data.len())]
+        );
     }
 }
