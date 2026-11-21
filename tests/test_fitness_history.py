@@ -170,7 +170,7 @@ def test_every_committed_history_row_still_validates() -> None:
         for line in HISTORY_PATH.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    assert len(rows) == 28
+    assert len(rows) == 29
     for row in rows:
         validate(row, ROW_SCHEMA)
     # The 14 pre-#58 rows are unchanged; the eleven post-#58 rows carry L3.
