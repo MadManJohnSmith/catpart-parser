@@ -457,3 +457,136 @@ def test_an_interleaved_counter_table_ends_the_face_gp_record() -> None:
     assert scan.sub_records == 2
     assert scan.sub_records_gated == 2
     assert scan.triangles == ((0, 1, 2), (2, 3, 4), (3, 4, 5))
+
+
+# --- W13: the d2 d2 XX / 30 04 XX sibling sweep (measured negatives) ---
+#
+# The sibling sweep (docs/evidence/2026-11-22-w13-d2d2-variants.md) found
+# NO closable sibling framing: flag 0x52 does not exist corpus-wide, the
+# "30 04 XX" family carries XX=04 in every hit, the between-spans records
+# are edge/point carriers (0/1055 closures, 0/1055 headers at +57), and
+# the flag-0x30 hits are the 8-byte chain filler.  These tests pin the
+# FAIL-CLOSED behavior for every measured variant class: none of them
+# may emit a mesh or truncate a wired record's extent.
+
+
+def test_a_flag_52_sibling_is_not_a_sub_record() -> None:
+    # the hypothetical 'd2 d2 52' framing: 0 corpus hits, and the scan
+    # must not see it as a sub-record (no triangles from it, ever)
+    stray = face_gp.SUBREC + bytes([0x52]) + b"\x00" * 90
+    assert face_gp._subrecord_positions(stray, 0, len(stray)) == []
+    body = face_gp_span(TWELVE_POINTS, stray)
+    assert face_gp.scan_part(body) is None
+
+
+def test_a_prefix_sibling_30_04_05_is_not_the_family_signature() -> None:
+    # the '30 04 XX' family: XX=04 in every corpus hit; a shifted third
+    # byte must not match SUBREC (the family gate is the byte, not a
+    # wildcard)
+    assert b"\x30\x04\x05\xff\xff\xff\xd2\xd2" != face_gp.SUBREC[:5] + b""
+    shifted = b"\x30\x04\x05\xff\xff\xff\xd2\xd2\x51" + b"\x00" * 90
+    assert face_gp._subrecord_positions(shifted, 0, len(shifted)) == []
+
+
+def test_the_chain_filler_never_gates_or_splits_a_record() -> None:
+    # the flag-0x30 hits are back-to-back 8-byte filler copies (the
+    # 'flag' is the next copy's first byte): they are not sub-records
+    # and must not split a wired record's extent
+    filler = face_gp.SUBREC + bytes([0x30])
+    chain = filler * 4
+    assert face_gp._subrecord_positions(chain, 0, len(chain)) == []
+    # a real record in a span whose framing is closed by the NEXT class
+    # record, with the filler parked OUTSIDE the span (the corpus shape:
+    # chains live between/before records): the scan sees exactly one
+    # sub-record and still folds it
+    record = sub_record(tris=[(0, 1, 2)])
+    body = (
+        struct.pack("<I", 11)
+        + b"CAT3DBagRep"
+        + chain
+        + face_gp_span(TWELVE_POINTS, record)
+    )
+    assert len(face_gp._subrecord_positions(body, 0, len(body))) == 1
+    scan = face_gp.scan_part(body)
+    assert scan is not None
+    assert scan.sub_records == 1
+    assert scan.triangles == ((0, 1, 2),)
+
+
+def test_an_edge_record_with_inline_points_never_gates() -> None:
+    # the between-spans population (0/1055 closures): ID + '02 00' +
+    # '32' + inline f32 point triples + a small-int tail — no kind/counts
+    # header at +57, no marker-anchored mult-3 stream.  Even inside a
+    # span with a declared array it must refuse whole.
+    import struct as _s
+
+    edge = (
+        face_gp.SUBREC
+        + bytes([face_gp.FLAG_FACE_GP])
+        + _s.pack("<I", 0x6AB)
+        + _s.pack("<H", 2)
+        + b"32"
+        + _s.pack("<3f", -50.0, -50.0, 10.0)
+        + _s.pack("<3f", 60.0, 0.0, 10.0)
+        + _s.pack("<3f", -50.0, -50.0, 10.0)
+        + b"\x00\x03\x00\x01\x00\xff\x04\x00\x00\x01\x80\x00\x00\x04"
+        + b"DE@A\x00"
+    )
+    body = face_gp_span(TWELVE_POINTS, edge)
+    sub = face_gp.decode_sub_record(edge, 0, len(edge))
+    assert sub.kind != face_gp.KIND_FACE_GP  # no header at +57
+    assert not sub.closed_exact
+    assert face_gp.scan_part(body) is None
+
+
+def test_a_strip_count_that_overruns_the_span_refuses_the_record() -> None:
+    # the delta +0 family (17 corpus in-span records): pos reaches
+    # rel_len-1 with ok=False because the declared strip count wants
+    # more values than the record carries — fail-closed, no triangles
+    n = 12
+    record = (
+        face_gp.SUBREC
+        + bytes([face_gp.FLAG_FACE_GP])
+        + b"\x11" * (face_gp.HEADER_AT - 9)
+        + struct.pack("<4I", face_gp.KIND_FACE_GP, 0, 1, 0)
+        + b"\xff\x7f"
+        + struct.pack(">I", 999)  # the strip declares 999 values...
+        + b"\x00" * 6             # ...that are not there
+        + b"\x00"                 # the dangling byte
+    )
+    body = face_gp_span(TWELVE_POINTS, record)
+    sub = face_gp.decode_sub_record(record, 0, len(record))
+    assert sub.kind == face_gp.KIND_FACE_GP
+    assert sub.n_strips == 1
+    assert sub.pos_rel == sub.rel_len - 1  # the delta +0 signature
+    assert not sub.closed_exact            # ...but ok is False
+    assert not face_gp._gate_sub_record(sub, n)
+    assert face_gp.scan_part(body) is None
+
+
+def test_a_trailing_bytes_record_never_closes() -> None:
+    # the delta -4 family (8 corpus records, incl. CAAPstPad1_2's two):
+    # 2 extra u16be values ride AFTER the declared stream — reading
+    # them leaves the record closed only if the law admitted them, and
+    # the shipped law refuses (0 flips available: those files already
+    # pass).  Pinned so wiring a tail variant is a deliberate act.
+    n = 12
+    base = sub_record(tris=[(0, 1, 2)])
+    # the corpus shape: the record's own dangling byte, then 2 extra
+    # u16be values (4 bytes) before the extent ends
+    trailing = base + b"\x00\x27\x00\x33"
+    sub = face_gp.decode_sub_record(trailing, 0, len(trailing))
+    assert sub.n_tris == 1
+    assert sub.pos_rel == sub.rel_len - 5  # stops 4 bytes short
+    assert not sub.closed_exact
+    assert not face_gp._gate_sub_record(sub, n)
+    body = face_gp_span(TWELVE_POINTS, trailing)
+    assert face_gp.scan_part(body) is None
+
+
+def test_a_flag_01_chain_terminator_is_not_a_sub_record() -> None:
+    # the 0x01 hits follow a filler copy ('d2 d2 30 04 04 ... d2 d2 01'):
+    # not a framing, not a sub-record
+    stray = face_gp.SUBREC + bytes([0x30]) + face_gp.SUBREC + bytes([0x01]) \
+        + b"\x01\x0c\x02\x02" + b"\x00" * 90
+    assert face_gp._subrecord_positions(stray, 0, len(stray)) == []
