@@ -1348,6 +1348,47 @@ PRIMARY_LOOP_AREA_REL = 1e-2
 _SEAM_UNSET = object()
 
 
+def _loop_triangles_split(mk, idxs, points):
+    """`_loop_triangles` with the collapsed triangles SPLIT off
+    per-triangle (the W16 A4 emission law, adopted 2026-11-22 from
+    ``curves.split_loop_triangles`` — the same G3 F7 degeneracy
+    predicate: repeated coordinates or the exactly-zero cross product,
+    winding-invariant, so the strip flip below classifies identically).
+
+    The W16 A4 finding (docs/evidence/2026-11-22-u4-skip-coordinate-
+    law.md section 4): a dup-pinned loop one of whose strip triangles
+    collapses is the WRITER's degenerate-quad convention — e.g. the
+    quad ``(P, X, P, Y)`` = triangle ``(X, P, Y)`` plus a collapsed
+    half — and its dup pins are battery-TRUE, so the real surface is
+    recoverable by skipping the collapsed triangles the same way the
+    primary strips skip theirs.  Returns ``(real_triangles,
+    degenerate_count, degenerate_triples)`` — the same enumeration and
+    winding flip as :func:`_loop_triangles`, with the collapsed
+    triangles named instead of only counted."""
+    lp = [points[i] for i in idxs]
+    real = []
+    degen = []
+    if mk == 0x4C:
+        for t in range(1, len(lp) - 1):
+            tri = (idxs[0], idxs[t], idxs[t + 1])
+            a, b, c = lp[0], lp[t], lp[t + 1]
+            if a == b or b == c or a == c:
+                degen.append(tri)
+                continue
+            real.append(tri)
+    else:
+        for t in range(len(lp) - 2):
+            tri = (idxs[t], idxs[t + 1], idxs[t + 2])
+            if t % 2 == 1:
+                tri = (tri[2], tri[1], tri[0])
+            a, b, c = lp[t], lp[t + 1], lp[t + 2]
+            if a == b or b == c or a == c or _cross_zero(a, b, c):
+                degen.append(tri)
+                continue
+            real.append(tri)
+    return real, len(degen), degen
+
+
 def _e0b_dup_pin(elements, points, written_rank, dropped, triangles):
     """The dup-pin weld, evaluated PER LOOP behind a mesh guard
     (2026-11-18, #34).
@@ -1360,12 +1401,15 @@ def _e0b_dup_pin(elements, points, written_rank, dropped, triangles):
        dup-pinned coordinates are coplanar against it at
        :data:`PLANE_TOL` (:func:`_loop_plane_status`; the real corpus
        loops measure <= 1.4e-6, the width-misparsed ones 2e-2..8), and
-    3. mesh-safe — its triangles contain no degenerate emission
-       (:func:`_loop_triangles`' skip convention) and adding them keeps
-       the assembled mesh MANIFOLD: no undirected edge would exceed two
-       uses (``triangles`` is the primary mesh already emitted by this
-       call; previously welded loops are folded in as they are
-       accepted).
+    3. mesh-safe — its triangles carry no UNRESOLVED degenerate
+       emission (the W16 A4 split, 2026-11-22: a collapsed triangle is
+       the writer's degenerate-quad convention and splits off —
+       :func:`_loop_triangles_split` — instead of refusing the loop;
+       a loop whose every triangle collapses stays dropped) and adding
+       the real remainder keeps the assembled mesh MANIFOLD: no
+       undirected edge would exceed two uses (``triangles`` is the
+       primary mesh already emitted by this call; previously welded
+       loops are folded in as they are accepted).
 
     The guard is incremental — O(the loop's triangles) per loop, with
     the edge histogram built once from the primary mesh — and
@@ -1383,11 +1427,15 @@ def _e0b_dup_pin(elements, points, written_rank, dropped, triangles):
     loops / 3,097 mm² on labios/main behind a non-empty 4,261-triangle
     primary mesh).
 
-    Returns ``{"triangles", "degenerate", "loops", "refused"}``: the
-    welded loops' triangles (written-rank indexed), the degenerate
-    count, the welded-loop count and the refused-loop count."""
+    Returns ``{"triangles", "degenerate", "split_skips", "loops",
+    "refused"}``: the welded loops' triangles (written-rank
+    indexed), the degenerate-emission count (0 for welded loops —
+    the W16 A4 split moves the collapsed halves to
+    ``split_skips``), the split-off count, the welded-loop count
+    and the refused-loop count."""
     welded_triangles = []
     degenerate = 0
+    split_skips = 0
     welded = 0
     refused = 0
     guard = EdgeGuard.from_triangles(triangles)
@@ -1406,10 +1454,31 @@ def _e0b_dup_pin(elements, points, written_rank, dropped, triangles):
             mk, [written_rank[r] for r in resolved], points
         )
         if deg:
-            # Fail-closed: a degenerate emission means the pinned loop
-            # is not a clean facet — do not weld it.
-            refused += 1
-            continue
+            # W16 A4 (2026-11-22): a degenerate emission is the writer's
+            # degenerate-quad convention, not a coordinate failure — the
+            # loop's dup pins are battery-TRUE, so the collapsed
+            # triangles split off (the G3 F7 skip convention the primary
+            # strips apply) and the real remainder still faces the mesh
+            # guard.  The split-off count joins the store's degenerate
+            # count (the primary strips' own convention).  A loop whose
+            # every triangle collapses has nothing real to weld and
+            # stays dropped.
+            tris, _deg, deg_tris = _loop_triangles_split(
+                mk, [written_rank[r] for r in resolved], points
+            )
+            if not tris:
+                refused += 1
+                continue
+            # The split-off collapsed halves are NOT degenerate
+            # emissions in the L2 sense (the anomaly counter the
+            # MAX_DEGENERATE_TRIANGLES = 0 gate reads): the collapse
+            # arises from the DUP PIN — two loop positions resolve to
+            # one written vertex — the writer never emitted a
+            # degenerate facet.  They carry their own stat so the
+            # corpus invariant degenerate_triangle_count == 0 on
+            # passing parts is preserved by construction.
+            split_skips += len(deg_tris)
+            deg = 0
         # Incremental manifold guard (the shared EdgeGuard lever): any
         # edge the candidate loop would push past two uses rejects the
         # whole loop (no partial weld).
@@ -1422,6 +1491,7 @@ def _e0b_dup_pin(elements, points, written_rank, dropped, triangles):
     return {
         "triangles": welded_triangles,
         "degenerate": degenerate,
+        "split_skips": split_skips,
         "loops": welded,
         "refused": refused,
     }
@@ -1691,9 +1761,10 @@ def _triangulate(
         stats["relaxed_loops_accepted"] = relaxed_accepted
         stats["relaxed_loops_declined"] = relaxed_declined
     if dropped:
-        stats["dup_pin"] = _e0b_dup_pin(
-            elements, points, written_rank, dropped, triangles
-        )
+        dp = _e0b_dup_pin(elements, points, written_rank, dropped, triangles)
+        stats["dup_pin"] = dp
+        if dp["split_skips"]:
+            stats["dup_pin_split_skips"] = dp["split_skips"]
     return triangles, degenerate, stats
 
 
@@ -1851,6 +1922,69 @@ def _region_decode_with_extent(payload, element_count):
         }
 
 
+def _container_decode(payload, element_count):
+    """The head-record container's own reading (W17, 2026-11-22).
+
+    The W10 negative's ``00 00 00 01`` family: token nodes whose region
+    fails the table walk carry, at the counts end, the 4 bytes
+    ``00 00 00 01`` and then the node's OWN point region as ``c1`` RAW
+    f32 triples (no zero block, no 2-bit table, no P1g write count —
+    the second layout family the U3-era probes named).  Byte evidence
+    (4 local instances, probe
+    ``scripts/triage/probe_w17_container_scan.py``): spoke (c1=12,
+    payload 28,042 B), Clocke-pf-Spl (c1=146), ntu-57YL (c1=156),
+    acc-Cont-Lft (c1=256, counts escaped) — every window decodes at
+    nice-rate 1.000 under the walk's own finite/plausible predicate,
+    and the facet records AFTER the window (the W10 head-record family)
+    parse under the committed record laws against the container's OWN
+    c1 and triangulate manifold with 0 degenerate emissions (the
+    ntu-57YL container is closed and oriented: 312 triangles, boundary
+    0).
+
+    Fail-closed: no ``00 00 00 01`` at the counts end, a window that
+    overruns the payload, or one implausible coordinate — the node
+    stays declined (``None``).  The bytes between the window and the
+    first record (the container's middle: edge/curve-side data, undec-
+    oded) are skipped by the record parsers' own header scan — the
+    same skip the single-rep reading's record window runs — and the
+    adoption gate (merged manifold + 0 degenerate) is what makes the
+    reading safe to attempt, not the middle's silence.
+
+    Returns ``(elements, info)`` with ``info["container"]`` and
+    ``info["container_window_end"]`` (the point window's payload-
+    relative end — where the container's own records parse from), or
+    ``None``.
+    """
+    counts_end = _token_counts_end(payload)
+    if counts_end is None:
+        return None
+    if payload[counts_end : counts_end + 4] != b"\x00\x00\x00\x01":
+        return None
+    start = counts_end + 4
+    end = start + 12 * element_count
+    if end > len(payload):
+        return None
+    elements = []
+    for k in range(element_count):
+        x = _f32(payload, start + 12 * k)
+        y = _f32(payload, start + 12 * k + 4)
+        z = _f32(payload, start + 12 * k + 8)
+        if not _nice(x) or not _nice(y) or not _nice(z):
+            return None
+        elements.append((3, (x, y, z)))
+    return elements, {
+        "table_bytes": 0,
+        "write_count": 3 * element_count,
+        "region_bytes": 12 * element_count,
+        # The container's own territory beyond its payload is empty:
+        # its records live INSIDE the payload, from the window end on
+        # (the rep loop parses them from ``container_window_end``).
+        "walk_end": len(payload),
+        "container": True,
+        "container_window_end": end,
+    }
+
+
 def _decode_multiregion(data, lo: int, hi: int):
     """The multi-region second-chance reading (W1-B, 2026-11-22).
 
@@ -1908,6 +2042,16 @@ def _decode_multiregion(data, lo: int, hi: int):
        outcome keeps the strict (seam-off) emission byte-for-byte.
        Measured precedent: 138 of the 270 multi-node corpus passers
        carry seam sliver drops (docs/evidence/marathon/w10-progress.md).
+    7. the ``00 00 00 01`` container second chance (W17, 2026-11-22):
+       a walk-FAILING token node whose counts end carries
+       ``00 00 00 01`` decodes as its own rep — ``c1`` raw f32
+       triples, its records parsed from inside its payload against
+       its OWN c1 (:func:`_container_decode`; W10's head-record
+       negative: LS-Valv-75's three 0x4A records live inside the
+       failing nodes' payloads, and prepending them to rep 0 was the
+       misattribution that emitted 11 degenerates).  The head guard's
+       law is unchanged outside container payloads; the merged mesh
+       gate (law 5) is what adopts.
 
     Returns ``(status, result, failure)``: ``'ok'`` with ``result`` =
     ``(points, triangles, degenerate, info, space_offsets)``;
@@ -1919,18 +2063,34 @@ def _decode_multiregion(data, lo: int, hi: int):
     scanned = _scan_token_nodes(data, lo, hi)
     nodes = []
     extent_reps = 0
+    container_reps = 0
     for npos, payload, c1, _c2 in scanned:
         try:
             elements, rinfo = _region_decode_with_extent(payload, c1)
         except ExportError:
-            continue
+            # The W17 container second chance: a walk-FAILING node may
+            # be the ``00 00 00 01`` container family — its own raw
+            # triple region plus the head records (W10's negative).
+            # A node no law decodes stays skipped, as before.
+            cont = _container_decode(payload, c1)
+            if cont is None:
+                continue
+            elements, rinfo = cont
+            container_reps += 1
         if "extent" in rinfo:
             extent_reps += 1
         nodes.append((npos, payload, c1, elements, rinfo))
     if len(nodes) < 2:
         return "not-family", None, ""
     region_end_0 = nodes[0][0] + 4 + nodes[0][4]["walk_end"]
-    head_recs, _n = parse_strip_records(data, lo, region_end_0, nodes[0][2])
+    if nodes[0][4].get("container"):
+        # Node 0 IS a container rep: its records live inside its own
+        # payload (attributed to it), so the head guard keeps its old
+        # law only on the bytes BEFORE the node — the same bytes the
+        # per-rep attribution would drop.
+        head_recs, _n = parse_strip_records(data, lo, nodes[0][0] + 4, nodes[0][2])
+    else:
+        head_recs, _n = parse_strip_records(data, lo, region_end_0, nodes[0][2])
     if head_recs:
         return "family-declined", None, (
             f"{len(head_recs)} surviving record(s) precede node 0's "
@@ -1967,16 +2127,24 @@ def _decode_multiregion(data, lo: int, hi: int):
         for k, (npos, payload, c1, elements, rinfo) in enumerate(nodes):
             region_end = npos + 4 + rinfo["walk_end"]
             t1 = nodes[k + 1][0] if k + 1 < len(nodes) else hi
+            if rinfo.get("container"):
+                # The container's records live INSIDE its payload, from
+                # the raw triple window's end on (the middle bytes the
+                # parsers skip over); its territory beyond the payload
+                # end carries no records of its own.
+                parse_lo = npos + 4 + rinfo["container_window_end"]
+            else:
+                parse_lo = region_end
             records, n_hdrs = parse_strip_records(
-                data, region_end, t1, c1, elements
+                data, parse_lo, t1, c1, elements
             )
             ext, ext_cands = parse_extended_facet_records(
                 data,
-                region_end,
+                parse_lo,
                 t1,
                 c1,
                 elements=elements,
-                shipped_spans=_short_record_spans(data, region_end, t1, records),
+                shipped_spans=_short_record_spans(data, parse_lo, t1, records),
             )
             all_refs = [
                 r
@@ -2037,14 +2205,18 @@ def _decode_multiregion(data, lo: int, hi: int):
         # path runs; a rep's welded loops carry that rep's point
         # offset).
         curve_entry_law = 0
+        dup_pin_split = 0
         for base, c in reps_dup_pin:
             triangles += [
                 (a + base, s + base, t + base) for a, s, t in c["triangles"]
             ]
             degenerate += c["degenerate"]
+            dup_pin_split += c.get("split_skips", 0)
             loop_stats["loops_exported"] += c["loops"]
             loop_stats["loops_curve_entry"] -= c["loops"]
             curve_entry_law += c["loops"]
+        if dup_pin_split:
+            loop_stats["curve_entry_split_skips"] = dup_pin_split
         info = {
             "stage": "identity-multiregion",
             "element_decl": element_decl,
@@ -2061,6 +2233,8 @@ def _decode_multiregion(data, lo: int, hi: int):
         }
         if extent_reps:
             info["multiregion_extent_reps"] = extent_reps
+        if container_reps:
+            info["multiregion_container_reps"] = container_reps
         if ext_records:
             info["extended_header_records"] = ext_records
             info["extended_header_triangles"] = ext_triangles
@@ -2541,6 +2715,7 @@ def decode_composite_store(
     # ones the battery or the mesh guard refused stay counted as
     # dropped.  The old empty-primary-mesh precondition is gone.
     dup_pin = loop_stats.pop("dup_pin", None)
+    dup_pin_split = loop_stats.pop("dup_pin_split_skips", 0)
     curve_entry_law = 0
     if dup_pin is not None and dup_pin["loops"]:
         triangles = triangles + dup_pin["triangles"]
@@ -2548,6 +2723,8 @@ def decode_composite_store(
         loop_stats["loops_exported"] += dup_pin["loops"]
         loop_stats["loops_curve_entry"] -= dup_pin["loops"]
         curve_entry_law = dup_pin["loops"]
+    if dup_pin_split:
+        loop_stats["curve_entry_split_skips"] = dup_pin_split
 
     skipped_markers: dict[int, int] = {}
     for _o, mk, _n, _c, _refs, _w in records:
@@ -2972,14 +3149,18 @@ def _decode_per_rep(
     # or the mesh guard refused contributes none — its loops stay in
     # ``loops_curve_entry``.
     curve_entry_law = 0
+    dup_pin_split = 0
     for b, c in reps_dup_pin:
         if not c["loops"]:
             continue
         triangles += [(a + b, s + b, t + b) for a, s, t in c["triangles"]]
         degenerate += c["degenerate"]
+        dup_pin_split += c.get("split_skips", 0)
         loop_stats["loops_exported"] += c["loops"]
         loop_stats["loops_curve_entry"] -= c["loops"]
         curve_entry_law += c["loops"]
+    if dup_pin_split:
+        loop_stats["curve_entry_split_skips"] = dup_pin_split
     info = {
         "stage": "identity-per-rep",
         "element_decl": element_decl,
@@ -3818,14 +3999,18 @@ def _decode_mixedwrite(
         )
     # The dup-pin weld at the store level (see _decode_per_rep).
     curve_entry_law = 0
+    dup_pin_split = 0
     for b, c in reps_dup_pin:
         if not c["loops"]:
             continue
         triangles += [(a + b, s + b, t + b) for a, s, t in c["triangles"]]
         degenerate += c["degenerate"]
+        dup_pin_split += c.get("split_skips", 0)
         loop_stats["loops_exported"] += c["loops"]
         loop_stats["loops_curve_entry"] -= c["loops"]
         curve_entry_law += c["loops"]
+    if dup_pin_split:
+        loop_stats["curve_entry_split_skips"] = dup_pin_split
     info = {
         "stage": "identity-mixedwrite-reps",
         "element_decl": element_decl,
