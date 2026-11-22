@@ -251,8 +251,18 @@ pub fn facet_headers(data: &[u8], lo: usize, hi: usize) -> Vec<usize> {
     let mut i = lo;
     while i + 4 <= hi {
         match header_form_len(data, i, hi) {
-            Some(6) => {
+            // The twin's filter (`header_len(data, m.start()) == 6`,
+            // facets.py::facet_headers): the length is derived ff-first
+            // over (4, 5, 6), so a position with ``ff`` at BOTH +4 and
+            // +5 is a 5-byte variant there — never a 6-byte candidate.
+            // W7-B (2026-11-22): the missing ``+4`` arm was the head_ia
+            // 61/62 decline divergence (the phantom header boundary
+            // flipped one record's width vote to u24be).
+            Some(6) if data[i + 4] != 0xFF => {
                 out.push(i);
+                i += 6;
+            }
+            Some(6) => {
                 i += 6;
             }
             Some(length) => i += length,

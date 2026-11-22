@@ -993,6 +993,19 @@ fn parse_strip_records(
     } else {
         Vec::new()
     };
+    // W7-B (2026-11-22): the #65 exact-tiling exception extended to the
+    // short form needs the merged boundary list (strip + facet header
+    // positions) — Motor.CATPart's u16 record at 51508595 exact-tiles
+    // onto a 0x47 facet header, and _NPart#194321's u24 record onto a
+    // short header; the strip-only list misses both.
+    let mut bounds = hdrs.clone();
+    bounds.extend(facets::facet_headers(data, lo, hi));
+    bounds.sort_unstable();
+    bounds.dedup();
+    // The #65 overlap guard's own accepts: exception-admitted records
+    // may span past the next candidate header, so in-span positions are
+    // false positives in the record's refs and must not parse.
+    let mut accepted_spans: Vec<(usize, usize)> = Vec::new();
     let widths: &[u8] = if element_count > 65_535 {
         &[1, 2, 3]
     } else {
@@ -1000,6 +1013,13 @@ fn parse_strip_records(
     };
     let mut out = Vec::new();
     for (i, &o) in hdrs.iter().enumerate() {
+        // The #65 overlap guard (W7-B short-form extension): a walk
+        // position inside an exception-admitted record's span is a
+        // false positive in that record's refs, not a record of its
+        // own.
+        if accepted_spans.iter().any(|&(a, e)| a <= o && o < e) {
+            continue;
+        }
         let nxt = if i + 1 < hdrs.len() { hdrs[i + 1] } else { hi };
         let mk = data[o + 1];
         let hlen: usize = match facets::header_len(data, o) {
@@ -1083,8 +1103,32 @@ fn parse_strip_records(
                     }
                     let counts_end = base + counts_bytes;
                     let end = counts_end + width as usize * n as usize;
-                    if end > nxt {
-                        continue;
+                    // W7-B (2026-11-22): the exact-tiling slot reads the
+                    // MERGED boundary list — an end exactly on a facet
+                    // header (M4x10's u16 @ 20635818 tiling onto the
+                    // next 0x47) is as exact as one tiling onto the next
+                    // strip header. Viability keeps the strip-only
+                    // ``nxt``; an end past it admits only through the
+                    // #65 exception.
+                    let j = bounds.partition_point(|&b| b < end);
+                    let nxt_eff = if j < bounds.len() { bounds[j] } else { hi };
+                    let past = end > nxt;
+                    if past {
+                        // The #65 exact-tiling exception extended to the
+                        // short form: the in-span candidate headers are
+                        // the record's own ref bytes (false positives),
+                        // so an end past ``nxt`` is viable only when it
+                        // lands exactly on a later merged candidate
+                        // header and swallows no accepted record
+                        // (Motor.CATPart u16 @ 51508595 / _NPart#194321
+                        // u24 @ 1778227; their u8 misreads emitted the
+                        // L2 degenerate-triangles counts).
+                        if end != nxt_eff
+                            || end > hi
+                            || accepted_spans.iter().any(|&(a, e)| a < end && o < e)
+                        {
+                            continue;
+                        }
                     }
                     if little && h6.is_some_and(|h| counts_end < h && h < end) {
                         // #66 fail-closed on the u16le hypothesis: a block
@@ -1099,7 +1143,7 @@ fn parse_strip_records(
                         counts,
                         counts_end,
                         end,
-                        exact: end == nxt,
+                        exact: end == nxt_eff,
                         tri_count: 0,
                         relaxed_u16: relaxed,
                         k: k as u32,
@@ -1175,6 +1219,10 @@ fn parse_strip_records(
             refs,
             width,
         });
+        // The #65 overlap guard's input (W7-B short-form extension):
+        // the accepted record's span — an exception-admitted record
+        // ends past ``nxt``, so later in-span walk positions must skip.
+        accepted_spans.push((o, end));
     }
     (out, hdrs.len())
 }
@@ -3608,6 +3656,14 @@ fn decode_store_once(
     if tri_res.primary_loop_kept > 0 {
         info.primary_loop_kept = Some(tri_res.primary_loop_kept);
     }
+    // W7-B (2026-11-22): the twin rides the relaxed counters on
+    // ``**loop_stats`` on every path (composite.py:1619-1621) — the
+    // table-walk info dropped them (Guntle.ver5 / M3x16_CHC summaries
+    // diverged by key presence alone; the PLYs agree).
+    if tri_res.relaxed_loops_accepted > 0 || tri_res.relaxed_loops_declined > 0 {
+        info.relaxed_loops_accepted = Some(tri_res.relaxed_loops_accepted);
+        info.relaxed_loops_declined = Some(tri_res.relaxed_loops_declined);
+    }
     if curve_entry_law > 0 {
         info.curve_entry_law = Some("e0b-dup-pin");
         info.loops_curve_entry_exported = Some(curve_entry_law);
@@ -3991,6 +4047,12 @@ fn decode_raw_array_path(
     }
     if tri_res.primary_loop_kept > 0 {
         info.primary_loop_kept = Some(tri_res.primary_loop_kept);
+    }
+    // W7-B (2026-11-22): same twin emission as the table-walk fix —
+    // the raw-array path's info rides ``**loop_stats`` in the twin.
+    if tri_res.relaxed_loops_accepted > 0 || tri_res.relaxed_loops_declined > 0 {
+        info.relaxed_loops_accepted = Some(tri_res.relaxed_loops_accepted);
+        info.relaxed_loops_declined = Some(tri_res.relaxed_loops_declined);
     }
     // One index space on this path (see the single-region note above).
     // The §2.3 curve exposure: the raw element space has NO skip

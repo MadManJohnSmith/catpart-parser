@@ -563,6 +563,16 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
     marker, normal, counts, refs, width)``.
     """
     hdrs = [m.start() for m in STRIP_RE.finditer(data, lo, hi)]
+    # W7-B (2026-11-22): the #65 exact-tiling exception extended to the
+    # short form needs the merged boundary list (strip + facet header
+    # positions) — Motor.CATPart's u16 record at 51508595 exact-tiles
+    # onto a 0x47 facet header, and _NPart#194321's u24 record onto a
+    # short header; the strip-only list misses both.
+    bounds = sorted(hdrs + facet_headers(data, lo, hi))
+    # The #65 overlap guard's own accepts: exception-admitted records
+    # may span past the next candidate header, so in-span positions are
+    # false positives in the record's refs and must not parse.
+    accepted_spans: list[tuple[int, int]] = []
     widths = (1, 2, 3) if element_count > 65_535 else (1, 2)
     ext_hdrs = (
         facet_headers(data, lo, hi)
@@ -571,6 +581,11 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
     )
     out = []
     for i, o in enumerate(hdrs):
+        # The #65 overlap guard (W7-B short-form extension): a walk
+        # position inside an exception-admitted record's span is a false
+        # positive in that record's refs, not a record of its own.
+        if any(a <= o < e for a, e in accepted_spans):
+            continue
         nxt = hdrs[i + 1] if i + 1 < len(hdrs) else hi
         hlen = header_len(data, o)
         if hlen is None or hlen == 6:
@@ -624,8 +639,33 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
                             continue
                         counts_end = base + counts_bytes
                         end = counts_end + width * n
-                        if end > nxt:
-                            continue
+                        # W7-B (2026-11-22): the exact-tiling slot reads
+                        # the MERGED boundary list — an end exactly on a
+                        # facet header (M4x10's u16 @ 20635818 tiling
+                        # onto the next 0x47) is as exact as one tiling
+                        # onto the next strip header. Viability keeps
+                        # the strip-only ``nxt``; an end past it admits
+                        # only through the #65 exception.
+                        j = bisect.bisect_left(bounds, end)
+                        nxt_eff = bounds[j] if j < len(bounds) else hi
+                        past = end > nxt
+                        if past:
+                            # The #65 exact-tiling exception extended to
+                            # the short form: the in-span candidate
+                            # headers are the record's own ref bytes
+                            # (false positives), so an end past ``nxt``
+                            # is viable only when it lands exactly on a
+                            # later merged candidate header and
+                            # swallows no accepted record (Motor.CATPart
+                            # u16 @ 51508595 / _NPart#194321 u24 @
+                            # 1778227; their u8 misreads emitted the L2
+                            # degenerate-triangles counts).
+                            if (
+                                end != nxt_eff
+                                or end > hi
+                                or any(a < end and o < e for a, e in accepted_spans)
+                            ):
+                                continue
                         if (
                             endian == "little"
                             and h6 is not None
@@ -646,7 +686,7 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
                             counts=tuple(counts),
                             counts_end=counts_end,
                             end=end,
-                            exact=(end == nxt),
+                            exact=(end == nxt_eff),
                             relaxed_u16=relaxed,
                             k=k,
                         )
@@ -712,6 +752,10 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
             # signature).
             continue
         out.append((o, mk, normal, counts, refs, width))
+        # The #65 overlap guard's input (W7-B short-form extension): the
+        # accepted record's span — an exception-admitted record ends
+        # past ``nxt``, so later in-span walk positions must skip.
+        accepted_spans.append((o, end))
     return out, len(hdrs)
 
 
