@@ -1,0 +1,8 @@
+corpus,engine,cache,files,wall_seconds,ms_per_file,l1_seconds,l2_seconds,hash_seconds,peak_rss_parent_mib,peak_rss_children_mib,speedup_vs_python_cold,cache_hits,cache_misses,classifications_clean,l2_pass,l2_fail
+submarino-757,python,cold,757,294.65,389.23,1.169,292.571,0.804,267.9,0.0,1.0,0,0,757,446,311
+submarino-757,fast,cold,757,19.75,26.09,1.146,17.631,0.795,55.0,55.0,14.9,0,757,757,446,311
+submarino-757,rust,cold,757,22.687,29.97,2.713,18.926,0.843,32.6,53.3,13.0,0,757,757,446,311
+submarino-757,fast,warm,757,1.034,1.37,0.0,0.0,0.95,33.4,0.0,285.0,757,0,757,446,311
+candidatos-762,python,cold,762,765.109,1004.08,1.179,760.273,3.559,5323.0,0.0,1.0,0,0,762,449,313
+candidatos-762,fast,cold,762,77.804,102.1,1.133,73.061,3.441,227.3,1194.0,9.8,0,762,762,449,313
+candidatos-762,rust,cold,762,81.327,106.73,2.641,75.041,3.475,32.9,1197.0,9.4,0,762,762,449,313

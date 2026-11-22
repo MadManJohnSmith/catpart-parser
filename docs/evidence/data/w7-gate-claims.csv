@@ -1,0 +1,3 @@
+gate,wall_seconds,tests_passed,skipped,covers
+check-fast.sh,4.15,107,0,ruff + fitness/CLI/parity unit subset + engine parity via real fidelity-cli + claims-CSV checker
+pytest -q (full python suite),49.91,966,21,the whole committed Python suite (no cargo/wasm steps)

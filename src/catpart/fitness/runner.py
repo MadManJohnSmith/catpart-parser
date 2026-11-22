@@ -622,6 +622,7 @@ def run_fitness(
     corpus_root: Path | None = None,
     fitness_dir: Path | None = None,
     now: Callable[[], datetime] | None = None,
+    engine: str = "python",
 ) -> dict:
     """Run the fitness protocol over ``manifest_path`` and return the history row.
 
@@ -637,6 +638,22 @@ def run_fitness(
     console script's stdout JSON). Raises :class:`FitnessError` on every
     operator-facing failure; the run's acceptance verdict is data on the
     row, never a raised error.
+
+    ``engine`` selects the classification seams (marathon W7's speed
+    oracle, :mod:`catpart.fitness.speed`): ``python`` (the default) is
+    the historical in-process behavior, byte-for-byte; ``rust`` and
+    ``fast`` drive the port's shipped ``fidelity-cli`` binary for the
+    L2 export (the measured ~22x phase) — or both phases for ``rust``
+    — while every gate stays in this module: schema validation, the
+    minimal invariants and the L2 sanity gate run on the engine's
+    outputs exactly as on Python's, so the classification vocabulary
+    and the report shape are identical across engines (pinned by
+    ``tests/test_fitness_speed.py``'s same-manifest, both-engine
+    equality). The speed oracle's incremental cache is a sweep-level
+    artifact and is deliberately NOT consumed here: it stores the
+    reduced per-file record, and this runner's report carries the full
+    inspect document (``container_names`` and all) — a cache hit here
+    would silently thin the committed report.
     """
     manifest_path = Path(manifest_path)
     repo_root = manifest_path.resolve().parent.parent
@@ -646,6 +663,21 @@ def run_fitness(
 
     rows = _read_manifest(manifest_path)
     corpus_digest = _corpus_digest(manifest_path)
+    # The speed-oracle engine seams (lazy: the module must stay importable
+    # as a plain ``python -m`` target without importing the runner back).
+    from catpart.fitness.speed import ENGINES, engine_seams
+
+    if engine not in ENGINES:
+        raise FitnessError(f"unknown engine {engine!r} (expected one of {', '.join(ENGINES)})")
+    # The seam pair for the requested engine (the python pair is the
+    # runner's own functions, so the monkeypatch-based tests keep faking
+    # the seam where they always did). A missing port binary under a
+    # native engine is an operator-facing failure: FitnessError, with
+    # the build instruction in the message.
+    try:
+        classify_file, measure_l2 = engine_seams(engine)
+    except FileNotFoundError as exc:
+        raise FitnessError(str(exc)) from exc
 
     results: list[tuple[dict[str, str], str, str | None, dict | None, dict | None]] = []
     # The exports' PLY output is a side effect of the seam contract; it is
@@ -655,9 +687,9 @@ def run_fitness(
         for row in rows:
             file_path = corpus_root / row["local_path"]
             if file_path.is_file():
-                classification, error, output = _classify_file(file_path)
+                classification, error, output = classify_file(file_path)
                 l2 = (
-                    _measure_l2(file_path, scratch_dir / f"{row['sha256'][:16]}.ply")
+                    measure_l2(file_path, scratch_dir / f"{row['sha256'][:16]}.ply")
                     if row["kind"] == L2_POPULATION_KIND
                     else None
                 )
