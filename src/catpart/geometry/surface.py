@@ -27,6 +27,16 @@ predicted by the head and validated by the net, never by a tail size.
 This grammar's knots are not chord-length, so it is also the only branch
 that does not apply the chord-length band.
 
+The **E5** record (``docs/evidence/2026-11-22-e5-class-table.md``) is the
+``e5 0d`` bulk dialect's class ``0x00e7``: the compact grammar's pole law
+with u32 fields, a two-value pole marker (plain ``00 00``, rational
+``01 00`` whose weights follow the coordinate net in the same v-major
+order), and a v-major pole net (pole ``(i, j)`` at ``grid + 24*(j*poles_u
++ i)``).  It runs after the ``a5 03 34`` frames under the same battery and
+folds into the mesh only when at least one of its surfaces tessellated
+(the no-regret law: with nothing tessellated every pre-E5 output is
+unchanged).
+
 The tessellator subdivides each knot span by a bounded adaptive tensor
 grid: cells whose centre departs from the bilinear cell by more than
 ``1e-3`` of the pole-net bounding-box diagonal refine that span (never
@@ -47,7 +57,7 @@ import dataclasses
 import math
 import struct
 
-from catpart.geometry import mesh, store
+from catpart.geometry import grid, mesh, store
 
 #: Marker that seeds the surface scan (A family, flag 0x03, class 0x34).
 SURFACE_MARKER = b"\xa5\x03\x34"
@@ -86,6 +96,23 @@ DEGREE = 5
 MULTIPLICITY = 3
 #: Largest v degree a patch head may declare (corpus range: 1..5).
 MAX_PATCH_DEGREE = 16
+
+#: The E5 bulk dialect's exact-surface record class (the ``e5 0d`` stream's
+#: ``class:u16le`` value; docs/evidence/2026-11-22-e5-class-table.md).
+E5_SURFACE_CLASS = 0x00E7
+#: Payload tag that opens an E5 surface record: one u32 header per lane.
+E5_SURFACE_TAG = 0x80
+#: The two measured pole-net markers: non-rational, and coordinates then
+#: weights (rational).  The rational tail satisfies
+#: ``tail - 8 * poles == 148`` and the non-rational tail is ``148`` on the
+#: population, so the marker is what selects the 32-byte layout — the same
+#: coordinates-then-weights convention the patch grammar's closing byte uses.
+E5_POLE_MARKER_PLAIN = b"\x00\x00"
+E5_POLE_MARKER_RATIONAL = b"\x01\x00"
+E5_POLE_MARKERS = (E5_POLE_MARKER_PLAIN, E5_POLE_MARKER_RATIONAL)
+#: Measured E5 lane limits (degrees 1..15, knot counts 2..256).
+E5_MAX_DEGREE = 15
+E5_MAX_KNOTS = 256
 
 #: Plausible model coordinate magnitude (mm): the bulk probe's upper band.
 #: There is no lower floor — a pole may legitimately sit at 0 or 1e-16.
@@ -259,7 +286,15 @@ class TessellatedPatch:
 
 @dataclasses.dataclass(frozen=True)
 class SurfaceScan:
-    """One part's surface census plus the merged tessellation."""
+    """One part's surface census plus the merged tessellation.
+
+    The ``e5_*`` fields are the E5 dialect's own census (class ``0x00e7``
+    records of the ``e5 0d`` stream).  They fold into the totals and the
+    mesh only when at least one E5 surface tessellated — otherwise the
+    E5 records are invisible to the route decision and every pre-E5
+    output is unchanged (the no-regret law of
+    ``docs/evidence/2026-11-22-e5-class-table.md``).
+    """
 
     block: int | None
     candidates: int
@@ -273,6 +308,11 @@ class SurfaceScan:
     degenerate: int
     tolerances: tuple[float, ...]
     points: int
+    e5_candidates: int = 0
+    e5_decoded: int = 0
+    e5_evaluable: int = 0
+    e5_tessellated: int = 0
+    e5_refused: int = 0
 
     @property
     def has_mesh(self) -> bool:
@@ -439,6 +479,95 @@ def parse_compact_head(data, payload: int, end: int) -> SurfaceHead | None:
         subtype=SUBTYPE_COMPACT,
         degree_u=degree_u,
         degree_v=degree_v,
+        mult_u=mult_u,
+        mult_v=mult_v,
+    )
+    if head.poles_u < 2 or head.poles_v < 2:
+        return None
+    if grid + head.net_bytes > end:
+        return None
+    return head
+
+
+def parse_e5_surface(data, payload: int, end: int) -> SurfaceHead | None:
+    """Decode the E5 dialect's exact-surface record (class ``0x00e7``).
+
+    Measured layout (corpus rates in
+    ``docs/evidence/2026-11-22-e5-class-table.md``)::
+
+        0x80 | deg_v:u32 | a:u32 | b:u32 | n_v:u32 | q:u32
+             | knots_v f64[n_v]    strictly increasing
+             | mults_v u32[n_v]    each >= 1
+             | deg_u:u32 | a2:u32 | b2:u32 | n_u:u32 | q2:u32
+             | knots_u f64[n_u]    strictly increasing
+             | mults_u u32[n_u]    each >= 1
+             | 00 00 | 01 00       pole marker: plain / rational
+             | pole net            v-major outer (see :func:`e5_pole_data`)
+             | tail                148 B law (not a closure gate)
+
+    ``poles = sum(mult) - degree - 1`` per direction — the compact head's
+    pole law with u32 fields instead of byte tokens.  The ``a``/``b``/``q``
+    slots are a measured vocabulary (a=b=0 on all but a handful of
+    records; ``q`` in 0..5 mirrored between lanes), reported by the probe
+    and not interpreted, so they do not gate the decode; the knot
+    monotonicity, the multiplicity law and the net-fit closure are the
+    validators.  The tail is not a closure law here either (148 B on
+    97 % of the population, 142..152 on the rest): the grid is predicted
+    by the head and validated by the net, never by a tail size.
+    """
+    if payload + 21 > end or _u8(data, payload) != E5_SURFACE_TAG:
+        return None
+    deg_v, _a, _b, n_v, _q = (_u32le(data, payload + 1 + 4 * i) for i in range(5))
+    if not 1 <= deg_v <= E5_MAX_DEGREE:
+        return None
+    if not MIN_LANE <= n_v <= E5_MAX_KNOTS:
+        return None
+    pos = payload + 21
+    if pos + 12 * n_v > end:
+        return None
+    knots_v = tuple(_f64le(data, pos + 8 * i) for i in range(n_v))
+    if not _strictly_increasing(knots_v):
+        return None
+    pos += 8 * n_v
+    mult_v = tuple(_u32le(data, pos + 4 * i) for i in range(n_v))
+    pos += 4 * n_v
+    if any(count < 1 for count in mult_v):
+        return None
+    if pos + 20 > end:
+        return None
+    deg_u, _a2, _b2, n_u, _q2 = (_u32le(data, pos + 4 * i) for i in range(5))
+    pos += 20
+    if not 1 <= deg_u <= E5_MAX_DEGREE:
+        return None
+    if not MIN_LANE <= n_u <= E5_MAX_KNOTS:
+        return None
+    if pos + 12 * n_u > end:
+        return None
+    knots_u = tuple(_f64le(data, pos + 8 * i) for i in range(n_u))
+    if not _strictly_increasing(knots_u):
+        return None
+    pos += 8 * n_u
+    mult_u = tuple(_u32le(data, pos + 4 * i) for i in range(n_u))
+    pos += 4 * n_u
+    if any(count < 1 for count in mult_u):
+        return None
+    if pos + 2 > end or bytes(data[pos : pos + 2]) not in E5_POLE_MARKERS:
+        return None
+    grid = pos + 2
+    head = SurfaceHead(
+        start=payload,
+        end=end,
+        n_u=n_u,
+        n_v=n_v,
+        knots_u=knots_u,
+        knots_v=knots_v,
+        mode_u=0,
+        mode_v=0,
+        grid=grid,
+        subtype=SUBTYPE_COMPACT,
+        degree_u=deg_u,
+        degree_v=deg_v,
+        rational=bytes(data[pos : pos + 2]) == E5_POLE_MARKER_RATIONAL,
         mult_u=mult_u,
         mult_v=mult_v,
     )
@@ -737,6 +866,49 @@ def pole_net(data, head: SurfaceHead) -> list[list[tuple[float, float, float]]]:
     return pole_data(data, head)[0]
 
 
+def e5_pole_data(data, head: SurfaceHead):
+    """The E5 pole matrix and (rational) its parallel weight matrix.
+
+    The E5 pole net is stored **v-major outer**: pole ``(i, j)`` sits at
+    ``grid + 24 * (j * poles_u + i)`` — consecutive ``poles_u`` triples are
+    the u-polygon at a fixed v, which is what makes the E5 census' row law
+    (rows ``= poles_v``) hold.  The orientation is corpus-pinned: on the
+    non-square nets 85 evaluate *only* under this reading and none *only*
+    under the u-major one.  A rational net appends the weights in the same
+    order after the coordinates (the marker ``01 00`` law).
+    """
+    nu = head.poles_u
+    nv = head.poles_v
+    poles = [
+        [
+            struct.unpack_from("<3d", data, head.grid + 24 * (j * nu + i))
+            for j in range(nv)
+        ]
+        for i in range(nu)
+    ]
+    if not head.rational:
+        return poles, None
+    base = head.grid + 24 * head.points
+    weights = [
+        [_f64le(data, base + 8 * (j * nu + i)) for j in range(nv)]
+        for i in range(nu)
+    ]
+    return poles, weights
+
+
+def e5_surface_frames(data) -> list[tuple[int, int]]:
+    """Every admitted E5 record of class ``0x00e7`` as ``(payload, end)``.
+
+    The record walk is the grid module's admitted-run law; the surface
+    class filter is the E5 class table's exact-surface family.
+    """
+    return [
+        (payload, end)
+        for payload, end, cls in grid.e5_records(data)
+        if cls == E5_SURFACE_CLASS
+    ]
+
+
 def _bbox(points) -> tuple[float, float, float, float, float, float]:
     return (
         min(p[0] for p in points),
@@ -1014,6 +1186,33 @@ def tessellate(
     )
 
 
+def _scan_e5_surface(
+    data,
+    payload: int,
+    end: int,
+    tolerance_factor: float,
+) -> tuple[TessellatedPatch | None, int]:
+    """Decode, assess and tessellate one E5 ``0x00e7`` record.
+
+    Returns ``(patch, status, points)`` with ``status`` one of
+    ``"undecoded"``, ``"implausible"`` (head decoded, net implausible —
+    not counted as decoded), ``"refused"`` (battery or tessellation
+    failed), ``"tessellated"``.
+    """
+    head = parse_e5_surface(data, payload, end)
+    if head is None:
+        return None, "undecoded", 0
+    poles, weights = e5_pole_data(data, head)
+    if not plausible_net(poles) or not plausible_weights(weights):
+        return None, "implausible", 0
+    if not assess(head, poles, weights).evaluable:
+        return None, "refused", head.points
+    patch = tessellate(head, poles, weights, tolerance_factor)
+    if patch is None:
+        return None, "refused", head.points
+    return patch, "tessellated", head.points
+
+
 def scan_part(data, tolerance_factor: float = TOLERANCE_FRACTION) -> SurfaceScan:
     """Census one part and merge every tessellatable surface's mesh.
 
@@ -1021,6 +1220,13 @@ def scan_part(data, tolerance_factor: float = TOLERANCE_FRACTION) -> SurfaceScan
     tessellation is not a manifold sheet, is counted as refused and
     contributes no triangle.  Nothing is welded between surfaces: each
     patch keeps its own index space (the task's "no topology joins").
+
+    The E5 dialect's ``0x00e7`` records (``e5_surface_frames``) run after
+    the ``a5 03 34`` frames under the same battery.  They fold into the
+    totals and the mesh only when at least one of them tessellated; with
+    nothing tessellated the E5 census rides on the ``e5_*`` fields alone
+    and the totals, the mesh and the route decision are exactly what they
+    were before the E5 route existed (the no-regret law).
     """
     region = _surface_block(data)
     frames = candidate_frames(data)
@@ -1059,9 +1265,53 @@ def scan_part(data, tolerance_factor: float = TOLERANCE_FRACTION) -> SurfaceScan
         triangles.extend((a + base, b + base, c + base) for a, b, c in patch.triangles)
         tolerances.append(patch.tolerance)
         degenerate += patch.degenerate
+    e5_frames = e5_surface_frames(data)
+    e5_candidates = len(e5_frames)
+    e5_decoded = 0
+    e5_evaluable = 0
+    e5_tessellated = 0
+    e5_refused = 0
+    e5_patches: list[TessellatedPatch] = []
+    e5_points = 0
+    for payload, end in e5_frames:
+        patch, status, record_points = _scan_e5_surface(
+            data, payload, end, tolerance_factor
+        )
+        if status == "undecoded" or status == "implausible":
+            continue
+        e5_decoded += 1
+        e5_points += record_points
+        if status == "refused":
+            e5_refused += 1
+            continue
+        e5_evaluable += 1
+        e5_patches.append(patch)
+    if e5_patches:
+        e5_tessellated = len(e5_patches)
+        points += e5_points
+        for patch in e5_patches:
+            if mesh.mesh_stats(list(patch.triangles)).manifold:
+                manifold_patches += 1
+            base = len(vertices)
+            vertices.extend(patch.vertices)
+            triangles.extend(
+                (a + base, b + base, c + base) for a, b, c in patch.triangles
+            )
+            tolerances.append(patch.tolerance)
+            degenerate += patch.degenerate
+        candidates = len(frames) + e5_candidates
+        decoded += e5_decoded
+        evaluable += e5_evaluable
+        tessellated += e5_tessellated
+        refused += e5_refused
+    else:
+        e5_decoded = 0
+        e5_evaluable = 0
+        e5_refused = 0
+        candidates = len(frames)
     return SurfaceScan(
         block=None if region is None else region[0],
-        candidates=len(frames),
+        candidates=candidates,
         decoded=decoded,
         evaluable=evaluable,
         tessellated=tessellated,
@@ -1072,4 +1322,9 @@ def scan_part(data, tolerance_factor: float = TOLERANCE_FRACTION) -> SurfaceScan
         degenerate=degenerate,
         tolerances=tuple(tolerances),
         points=points,
+        e5_candidates=e5_candidates,
+        e5_decoded=e5_decoded,
+        e5_evaluable=e5_evaluable,
+        e5_tessellated=e5_tessellated,
+        e5_refused=e5_refused,
     )
