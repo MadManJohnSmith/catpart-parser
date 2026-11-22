@@ -22,8 +22,9 @@ from pathlib import Path
 
 import pytest
 
-from catpart.geometry import composite
+from catpart.geometry import composite, mesh
 from catpart.geometry.composite import parse_strip_records
+from catpart.geometry.store import StoreSpan
 from catpart.schema import load_schema
 from catpart.schema.validate import validate
 from fixtures_gen import (
@@ -2495,3 +2496,119 @@ def test_parse_extended_facet_records_b3_and_b4_escapes() -> None:
     (record,) = records
     assert record.polygons == 1
     assert record.refs == (0, 1, 2, 3, 4, 5)
+
+
+
+# --- the W1-B multi-region second chance (2026-11-22) ----------------------
+#
+# Function-level twins of the port's decode_multiregion tests: the body
+# is a two-period composite body (each period = its own token node +
+# records over that node's region; no pool groups, no edge groups — the
+# stage-13 unrouted family the MB-Frames-middle stores belong to).
+
+
+def _mr_record(marker, normal, refs):
+    from fixtures_gen import _facet_record
+
+    return _facet_record(marker, normal, tuple(refs), width=1)
+
+
+def _mr_open_faces():
+    """The box's five quads (the z+ face dropped: an open shell)."""
+    return [
+        (m, n, tuple(r))
+        for m, n, r in COMPOSITE_FACES
+        if not (m == 0x4A and r == (2, 8, 5, 11))
+    ]
+
+
+def _mr_other_diagonal_faces():
+    """The same five quads triangulated with the OTHER diagonal: the
+    strips swap to the (b, a, d, c) zigzag, the fans rotate to
+    (b, c, d, a) — over the SAME element space the misresolved facets
+    are distinct triangles (no coordinate-duplicate copy for the dedup
+    to drop) that over-use every quad boundary edge."""
+    out = []
+    for m, n, r in _mr_open_faces():
+        a, b, c, d = r
+        out.append((m, n, (b, a, d, c) if m == 0x4A else (b, c, d, a)))
+    return out
+
+
+def _mr_body(rep0_records, rep1_records, elem0_extra=(), node0_tail=b""):
+    from fixtures_gen import _composite_elements, _composite_node_payload
+
+    pts0 = tuple(COMPOSITE_POINTS) + tuple(elem0_extra)
+    pts1 = tuple((x + 200.0, y, z) for x, y, z in COMPOSITE_POINTS)
+    elements0 = _composite_elements(pts0)
+    elements1 = _composite_elements(pts1)
+    parts = [
+        b"\x04\x04\xfd\xff"
+        + _composite_node_payload(elements0)
+        + node0_tail
+    ]
+    for m, n, r in rep0_records:
+        parts.append(_mr_record(m, n, r))
+    parts.append(b"\x04\x04\xfd\xff" + _composite_node_payload(elements1))
+    for m, n, r in rep1_records:
+        parts.append(_mr_record(m, n, r))
+    return b"".join(parts)
+
+
+def _mr_decode(body):
+    span = StoreSpan(
+        block_start=0,
+        origin=0,
+        origin_kind="header",
+        body_lo=0,
+        body_hi=len(body),
+        catalog_len=0,
+    )
+    return composite.decode_composite_store(
+        body, span, [], [], allow_unrouted_elements=True
+    )
+
+
+def test_composite_multiregion_merges_per_period_regions():
+    """The W1-B multi-region second chance (2026-11-22): a two-period
+    body whose periods each carry their own token node + records over
+    that node's region.  The single-rep reading resolves period 1's
+    records against node 0's region — the misresolved other-diagonal
+    facets over-use the quad boundary edges and the dedup declines (no
+    coordinate duplicates) — and the relist post-pass declines too (its
+    candidate grows the boundary set).  The multi-region route, which
+    fires only on that still-not-manifold residue, decodes each period
+    against its OWN region and is adopted: manifold, degenerate-free,
+    both reps merged over disjoint index spaces (MB-Frames-middle-centr-
+    YL's law: 50 walk-exact token nodes, the k-th panel's first written
+    point at x = 1646.04 + 120k)."""
+    body = _mr_body(_mr_open_faces(), _mr_other_diagonal_faces())
+    points, triangles, degenerate, info = _mr_decode(body)
+    assert info["stage"] == "identity-multiregion"
+    assert info["multiregion_reps"] == 2
+    assert degenerate == 0
+    assert len(points) == 24
+    assert len(triangles) == 20
+    stats = mesh.mesh_stats(list(triangles))
+    assert stats.manifold is True
+    # both reps' open boxes export over their own disjoint space
+    assert sum(1 for t in triangles if all(i < 12 for i in t)) == 10
+    assert sum(1 for t in triangles if all(i >= 12 for i in t)) == 10
+
+
+def test_composite_multiregion_nonmanifold_rep_declines_fail_closed():
+    """A rep whose OWN reading is not manifold declines the adoption
+    (the merged-mesh gate: manifold + degenerate-free, fail-closed) —
+    rep 1 carries one fin triangle over-using a box edge, so the merged
+    mesh stays not-manifold and the single-rep emission is kept
+    byte-for-byte with the gap named on the summary."""
+    rep1 = _mr_other_diagonal_faces() + [(0x42, None, (0, 2, 4))]
+    body = _mr_body(_mr_open_faces(), rep1)
+    points, triangles, degenerate, info = _mr_decode(body)
+    assert info["stage"] == "identity-table-walk"
+    assert "multiregion_declined" in info
+    assert "not adopted" in info["multiregion_declined"]
+    # the single-rep emission, unchanged: both periods misresolved onto
+    # node 0's region plus the fin, still not manifold
+    stats = mesh.mesh_stats(list(triangles))
+    assert stats.manifold is False

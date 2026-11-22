@@ -112,6 +112,9 @@ pub const WARN_PRIMARY_KEPT: &str = "primary-loop-manifold-kept";
 pub const WARN_PRIMARY_RELIST_SKIP: &str = "primary-loop-relist-skip";
 pub const WARN_DEDUP: &str = "duplicate-triangles-deduped";
 pub const WARN_DEDUP_DECLINED: &str = "duplicate-triangles-dedup-declined";
+/// The W1-B multi-region second chance (2026-11-22).
+pub const WARN_MULTIREGION: &str = "composite-multiregion-decode";
+pub const WARN_MULTIREGION_DECLINED: &str = "composite-multiregion-declined";
 /// The exact B-spline surface fallback (2026-11-19).
 pub const WARN_SURFACE_TESSELLATED: &str = "bspline-surface-tessellated";
 /// The structured point-grid fallback (2026-11-19): candidate connectivity.
@@ -1676,6 +1679,31 @@ fn export_composite_store(
                  declined fail-closed and the emitted triangles are \
                  kept verbatim (the over-use joins distinct triangles; \
                  the L2 gate records not-manifold)"
+            ),
+        });
+    }
+    if info.stage == "identity-multiregion" {
+        warnings.push(Warning {
+            class: WARN_MULTIREGION.to_string(),
+            detail: format!(
+                "{} token-node regions decoded per period and merged \
+                 (W1-B 2026-11-22): the single-rep reading resolved every \
+                 period after the first against node 0's region — the \
+                 misresolved facets were the store's duplicate-triangle \
+                 signature; the multi-region reading fires only on the \
+                 still-not-manifold residue and is adopted only when the \
+                 merged mesh is manifold and degenerate-free",
+                info.multiregion_reps.unwrap_or(0)
+            ),
+        });
+    }
+    if let Some(declined) = &info.multiregion_declined {
+        warnings.push(Warning {
+            class: WARN_MULTIREGION_DECLINED.to_string(),
+            detail: format!(
+                "the multi-region second chance declined: {declined} — \
+                 the single-rep emission is kept byte-for-byte \
+                 (fail-closed)"
             ),
         });
     }
