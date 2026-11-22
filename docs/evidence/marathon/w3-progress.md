@@ -70,3 +70,54 @@ cd ~/marathon-wt/w3
 2. **Corpus download hash-mismatch (68 files)**: source repos changed
    upstream since the manifest froze. Excluded from denominators; no code
    effect.
+
+## Unit 1 (committed b5e14d2) — the E5 Class Table algebra CLOSED
+
+**The `e5 0d` class `0x00e7` payload is an exact B-spline surface** — the
+compact head's pole law with u32 fields (measured, shipped decoder):
+
+```
+0x80 | deg_v:u32 | a:u32 | b:u32 | n_v:u32 | q:u32 | knots_v f64[n] | mults_v u32[n]
+    | deg_u:u32 | a2 | b2 | n_u:u32 | q2 | knots_u | mults_u
+    | 00 00 | 01 00        pole marker: plain / rational
+    | pole net             v-major outer, pole (i,j) at net + 24*(j*poles_u + i)
+    | tail                 148 B law (01 00 records: tail - 8*poles == 148 = weights)
+```
+
+Corpus rates (1,755 sha-valid files, 268 E5-bearing): parse 11,520/11,554
+= 99.7 %; plausible net 11,123/11,520 = 96.6 %; markers 0000×10,723 /
+0100×797; both marker families close the 148 B tail law at ~100 %.
+Orientation pinned: on the no-facet battery population 85 non-square nets
+evaluate ONLY v-major, 0 only u-major, 82 (square) both.
+
+**Route** (shipped, Python+Rust): `surface.scan_part` runs E5 records
+after the a5 frames under the same battery; folds into totals+mesh ONLY
+when ≥1 E5 surface tessellated (no-regret). `grid.e5_records` = the
+admitted-run walk. Export prose/summary name the a5+E5 split only when E5
+participates — additive schema (additionalProperties: true).
+
+**Corpus A/B (d8554e0 vs branch)** over the exact changed-candidate set
+(380 files = E5-bearing ∪ no-facet): 343 byte-identical, 37 improved
+(21 candidate-grid → exact-surface upgrades, **16 display → mesh flips**,
+L2 dev 1,138 → **1,153-1,154 expected**, 82.40 % → ~83.5 %), **0
+regressions**. Held-out untouched by construction (no held-out file in the
+changed set — verified per-row in the A/B CSV split column).
+Python = Rust PLY **byte-identical on all 16 no-facet E5 parts**.
+
+**Tests**: `tests/test_e5_surface.py` (15) + 7 Rust tests; ruff clean,
+clippy `-D warnings` clean, rustfmt clean; suite: 88 targeted + fidelity
+pins green. Probe `scripts/triage/probe_e5_class_table.py` (selftest 6/6).
+
+## H2 residue close-out
+
+- **bdd7ec87's non-monotone prefix grid**: superseded — the E5 route now
+  owns the part with 18 exact surfaces; the prefix candidate is no longer
+  consulted for output (the grid route no longer runs there).
+- **80aad8d8 / d7ed0772 non-uniform prefixes**: a5-priority parts, no 0xe7
+  records; their prefix grids were never consulted (a5 priority) and stay
+  refused under the conservative law — unchanged by design.
+- **The 3-lane compact-head variant (10 frames, 2 parts) + the 1/94
+  fold-failing part**: BLOCKED, not refuted — the TR-1700 snapshot is not
+  on this host and its URL/sha256s were never committed (S2 diagnostic was
+  session-state). Reopens the moment the snapshot or the 2 BW-hatch parts
+  are restored.
