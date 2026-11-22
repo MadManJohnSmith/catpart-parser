@@ -459,6 +459,10 @@ pub struct CompositeInfo {
     /// kept byte-for-byte; absent when the route never ran).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub multiregion_declined: Option<String>,
+    /// W10 (2026-11-22): the node scan's extent-recovered reps (the
+    /// stage-8 leading-zero-table overshoot family; absent when none).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub multiregion_extent_reps: Option<usize>,
 }
 
 /// The decoded export of one composite store span — the twin's
@@ -2482,6 +2486,7 @@ fn decode_per_rep(
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
         multiregion_reps: None,
+        multiregion_extent_reps: None,
         multiregion_declined: None,
     };
     if ext_records > 0 {
@@ -2803,15 +2808,70 @@ enum MrOutcome {
     NotFamily,
 }
 
+/// decode_region with the stage-8 extent recovery on walk failure —
+/// the multi-region node scan's second chance (W10, 2026-11-22; the
+/// twin of :fn:`_region_decode_with_extent`).  A token node whose
+/// region opens with >= 16 full-write slots carries a 2-bit table
+/// whose leading bytes form whole zero groups, so the committed
+/// layout skip overshoots INTO the table and the primary walk fails
+/// (stage-8 artifact 2, the 221df959 shape).  The committed extent
+/// law (:fn:`table_decode_extents`) recovers the unique walk-exact
+/// extent — the same law the mixedwrite path runs; no new candidate,
+/// no re-ordered guess.  Fail-closed: no zero block at the counts
+/// end, zero or several walk-exact extents, and the node stays
+/// declined (the original walk failure re-raised).  Returns the
+/// decoded node plus the recovered flag (false on the primary walk,
+/// true on the extent recovery).
+// ``(n + 3) / 4`` is the twin's expression shape (see layout).
+#[allow(clippy::manual_div_ceil)]
+fn region_decode_with_extent(
+    payload: &[u8],
+    element_count: u32,
+) -> Result<(Vec<Element>, RegionInfo, bool), ExportError> {
+    match decode_region(payload, element_count) {
+        Ok(res) => Ok((res.0, res.1, false)),
+        Err(orig) => {
+            let Some(tok) = find(payload, LIST_TOKEN, 0, payload.len()) else {
+                return Err(orig);
+            };
+            let Some((_c1, mut q)) = read_count_checked(payload, tok + 5) else {
+                return Err(orig);
+            };
+            let Some((_c2, q2)) = read_count_checked(payload, q) else {
+                return Err(orig);
+            };
+            q = q2;
+            match table_decode_extents(payload, element_count, q) {
+                Some(Ok(te)) => Ok((
+                    te.elements,
+                    RegionInfo {
+                        table_bytes: (element_count as usize + 3) / 4,
+                        write_count: te.write_count,
+                        region_bytes: 4 * te.write_count as usize,
+                        walk_end: te.region_end_rel,
+                    },
+                    true,
+                )),
+                _ => Err(orig),
+            }
+        }
+    }
+}
+
 /// Returns ``NotFamily`` when fewer than 2 walk-exact nodes exist —
 /// the single-rep reading is the law there and no decline is named
 /// (the not-manifold warning already carries the store's failure).
 fn decode_multiregion(data: &[u8], lo: usize, hi: usize) -> MrOutcome {
     let scanned = scan_token_nodes(data, lo, hi);
     let mut nodes: Vec<(usize, u32, Vec<Element>, RegionInfo)> = Vec::new();
+    let mut extent_reps = 0usize;
     for tn in &scanned {
         let payload = &data[tn.plo..tn.phi];
-        if let Ok((elements, rinfo)) = decode_region(payload, tn.elem) {
+        if let Ok((elements, rinfo, extent_recovered)) = region_decode_with_extent(payload, tn.elem)
+        {
+            if extent_recovered {
+                extent_reps += 1;
+            }
             nodes.push((tn.pos, tn.elem, elements, rinfo));
         }
     }
@@ -2827,6 +2887,48 @@ fn decode_multiregion(data: &[u8], lo: usize, hi: usize) -> MrOutcome {
             head_recs.len()
         ));
     }
+    let strict = match mr_emit_reps(data, hi, &nodes, extent_reps, None) {
+        Ok(decode) => decode,
+        Err(msg) => return MrOutcome::FamilyDeclined(msg),
+    };
+    if !mr_adoptable(&strict) {
+        // The per-rep seam second chance (W10, 2026-11-22): the same
+        // two-pass discipline the entry point's primary-emit seam runs
+        // (2026-11-18, #34), with the store-level law's reference
+        // semantics — the sliver is compared against the WHOLE merged
+        // mesh's area, not one rep.  Measured precedent: 138 of the
+        // 270 multi-node corpus passers carry seam sliver drops
+        // (docs/evidence/marathon/w10-progress.md).  The armed reading
+        // stands ONLY where it resolves the merged over-use (manifold
+        // + degenerate-free); any other outcome keeps the strict
+        // (seam-off) emission byte-for-byte.
+        let area = mesh::mesh_area(&strict.triangles, &strict.points);
+        // An armed-pass Err cannot happen here: the records' parse (and
+        // so the per-rep OOB gate) is seam-independent, and the strict
+        // pass already cleared it — the arm stays declined either way.
+        if let Ok(armed) = mr_emit_reps(data, hi, &nodes, extent_reps, Some(area))
+            && mr_adoptable(&armed)
+        {
+            return MrOutcome::Adopted(armed);
+        }
+    }
+    MrOutcome::Adopted(strict)
+}
+
+/// One full per-rep multi-region emission: every rep's territory
+/// records triangulated against the rep's OWN element space, merged
+/// over the disjoint offsets.  ``seam_area`` arms the primary-loop
+/// seam per rep with the merged mesh's area reference (``None`` — the
+/// seam off, the W1-B strict reading).  ``Err`` names the fail-closed
+/// OOB rep (the #66 post-vote gate per rep).
+#[allow(clippy::too_many_lines)]
+fn mr_emit_reps(
+    data: &[u8],
+    hi: usize,
+    nodes: &[(usize, u32, Vec<Element>, RegionInfo)],
+    extent_reps: usize,
+    seam_area: Option<f64>,
+) -> Result<Box<CompositeDecode>, String> {
     let mut points: Vec<(f64, f64, f64)> = Vec::new();
     let mut triangles: Vec<(u32, u32, u32)> = Vec::new();
     let mut degenerate = 0u32;
@@ -2876,14 +2978,14 @@ fn decode_multiregion(data: &[u8], lo: usize, hi: usize) -> MrOutcome {
         let oob: Vec<u32> = grefs.iter().copied().filter(|&r| r >= *c1).collect();
         if !oob.is_empty() {
             let mx = oob.iter().copied().max().unwrap_or(0);
-            return MrOutcome::FamilyDeclined(format!(
+            return Err(format!(
                 "rep {k} (node at {npos}): {} gated reference(s) leave \
                  the rep's element space ({mx} >= elem_decl {c1}); the \
                  multi-region reading does not resolve",
                 oob.len()
             ));
         }
-        let tri_res = triangulate(elements, &records, &ext_k, None, false);
+        let tri_res = triangulate(elements, &records, &ext_k, seam_area, false);
         let base = points.len();
         let pts: Vec<(f64, f64, f64)> = elements
             .iter()
@@ -2961,6 +3063,11 @@ fn decode_multiregion(data: &[u8], lo: usize, hi: usize) -> MrOutcome {
         skipped_markers,
         node_bytes,
         multiregion_reps: Some(reps),
+        multiregion_extent_reps: if extent_reps > 0 {
+            Some(extent_reps)
+        } else {
+            None
+        },
         multiregion_declined: None,
         reps_decoded: None,
         reps_exported: None,
@@ -3014,7 +3121,7 @@ fn decode_multiregion(data: &[u8], lo: usize, hi: usize) -> MrOutcome {
         info.curve_entry_law = Some("e0b-dup-pin");
         info.loops_curve_entry_exported = Some(curve_entry_law);
     }
-    MrOutcome::Adopted(Box::new(CompositeDecode {
+    Ok(Box::new(CompositeDecode {
         kept_loop_tris: Vec::new(),
         kept_loop_count: 0,
         relist_forced: 0,
@@ -3025,6 +3132,14 @@ fn decode_multiregion(data: &[u8], lo: usize, hi: usize) -> MrOutcome {
         curves,
         space_offsets,
     }))
+}
+
+/// The merged-mesh adoption gate (the caller's, verbatim): non-empty,
+/// manifold, degenerate-free.
+fn mr_adoptable(decode: &CompositeDecode) -> bool {
+    !decode.triangles.is_empty()
+        && decode.degenerate == 0
+        && mesh::mesh_stats(&decode.triangles).manifold
 }
 
 /// Decode one composite store span — the primary-emit seam's entry
@@ -3474,6 +3589,7 @@ fn decode_store_once(
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
         multiregion_reps: None,
+        multiregion_extent_reps: None,
         multiregion_declined: None,
     };
     if !extended.is_empty() {
@@ -3856,6 +3972,7 @@ fn decode_raw_array_path(
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
         multiregion_reps: None,
+        multiregion_extent_reps: None,
         multiregion_declined: None,
     };
     let mut info = info;
@@ -4709,6 +4826,7 @@ fn decode_mixedwrite(
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
         multiregion_reps: None,
+        multiregion_extent_reps: None,
         multiregion_declined: None,
     };
     if ext_records > 0 {
@@ -4964,6 +5082,7 @@ mod tests {
             unordered_dedup_dropped: None,
             unordered_dedup_declined: None,
             multiregion_reps: None,
+            multiregion_extent_reps: None,
             multiregion_declined: None,
         };
         let pts: Vec<(f64, f64, f64)> = vec![
@@ -5053,6 +5172,7 @@ mod tests {
             unordered_dedup_dropped: None,
             unordered_dedup_declined: None,
             multiregion_reps: None,
+            multiregion_extent_reps: None,
             multiregion_declined: None,
         };
         // Space 0 = points 0..3, space 1 = points 3..8 (joint at 3).
@@ -5693,8 +5813,13 @@ mod tests {
             table[i / 4] |= slot << (2 * (i % 4));
         }
         body.extend_from_slice(&table);
+        // The write count covers WRITTEN words only (skip slots read
+        // none — the twin's ``_composite_node_payload`` excludes them;
+        // a skip slot's phantom word misdeclared the region and the
+        // walk came up short).
         let words: usize = elements
             .iter()
+            .filter(|(s, _pt)| *s != 1)
             .map(|(s, _pt)| match s {
                 0 => 3,
                 3 => 2,
@@ -5841,5 +5966,108 @@ mod tests {
         assert!(declined.contains("not adopted"), "{declined}");
         let stats = mesh::mesh_stats(&decode.triangles);
         assert!(!stats.manifold);
+    }
+
+    // W10 (2026-11-22): the multi-region node scan's extent recovery —
+    // a period whose region opens with >= 16 full-write slots carries
+    // a leading-zero 2-bit table, the committed layout skip overshoots
+    // INTO it (stage-8 artifact 2), and the extent law recovers the
+    // unique walk-exact extent.
+
+    /// The x-interleaved index order [0, 6, 1, 7, 2, 8, 3, 9, 4, 10,
+    /// 5, 11]: consecutive elements alternate x = 0 / 20, so every
+    /// written slot is a full triple (slot 0) and the 2-bit table's
+    /// first four bytes are zero.
+    fn mr_x_remap(face: [u32; 4]) -> [u32; 4] {
+        let perm = [0usize, 6, 1, 7, 2, 8, 3, 9, 4, 10, 5, 11];
+        let mut inv = [0usize; 12];
+        for (new, old) in perm.iter().enumerate() {
+            inv[*old] = new;
+        }
+        [
+            inv[face[0] as usize] as u32,
+            inv[face[1] as usize] as u32,
+            inv[face[2] as usize] as u32,
+            inv[face[3] as usize] as u32,
+        ]
+    }
+
+    #[test]
+    fn multiregion_extent_recovery_adopts_leading_zero_table() {
+        let rep0: Vec<(u8, Option<(f64, f64, f64)>, [u32; 4])> = vec![
+            (0x4A, Some((0.0, 0.0, -1.0)), [6, 0, 9, 3]),
+            (0x4A, Some((0.0, 1.0, 0.0)), [11, 9, 5, 3]),
+            (0x4A, Some((0.0, -1.0, 0.0)), [6, 8, 0, 2]),
+            (0x4C, Some((-1.0, 0.0, 0.0)), [0, 2, 5, 3]),
+            (0x4C, Some((1.0, 0.0, 0.0)), [6, 9, 11, 8]),
+        ];
+        let rep1: Vec<(u8, Option<(f64, f64, f64)>, Vec<u32>)> = vec![
+            (
+                0x4A,
+                Some((0.0, 0.0, -1.0)),
+                mr_x_remap([6, 0, 9, 3]).to_vec(),
+            ),
+            (
+                0x4A,
+                Some((0.0, 1.0, 0.0)),
+                mr_x_remap([11, 9, 5, 3]).to_vec(),
+            ),
+            (
+                0x4A,
+                Some((0.0, -1.0, 0.0)),
+                mr_x_remap([6, 8, 0, 2]).to_vec(),
+            ),
+            (
+                0x4C,
+                Some((-1.0, 0.0, 0.0)),
+                mr_x_remap([0, 2, 5, 3]).to_vec(),
+            ),
+            (
+                0x4C,
+                Some((1.0, 0.0, 0.0)),
+                mr_x_remap([6, 9, 11, 8]).to_vec(),
+            ),
+        ];
+        // node 0: the standard 12-point payload + a zero tail so its
+        // payload is the largest (find_list_node's single-rep pick),
+        // keeping the single-rep emission misresolved and not-manifold.
+        let mut body = Vec::new();
+        body.extend_from_slice(NODE_MAGIC);
+        body.extend(mr_node_payload(&mr_elements(&MR_POINTS)));
+        body.extend_from_slice(&[0x00; 140]);
+        for (m, n, r) in &rep0 {
+            body.extend(mr_record(*m, *n, r));
+        }
+        // node 1: 16 full-write slots (x-interleaved box points, x
+        // shifted +1 so element 0 also changes x) + 4 skip slots — the
+        // table's leading four bytes are zero, the committed skip
+        // overshoots, the primary walk fails.
+        let perm = [0usize, 6, 1, 7, 2, 8, 3, 9, 4, 10, 5, 11];
+        let mut pts1: Vec<(f64, f64, f64)> = perm
+            .iter()
+            .map(|&k| {
+                let (x, y, z) = MR_POINTS[k];
+                (x + 1.0, y, z)
+            })
+            .collect();
+        pts1.extend((0..4).map(|i| (60.0 + 20.0 * i as f64, 500.0, 700.0)));
+        let mut elements1: Vec<Element> = pts1
+            .iter()
+            .map(|&(x, y, z)| (0u8, Some((x, y, z))))
+            .collect();
+        elements1.extend((0..4).map(|_| (1u8, None)));
+        body.extend_from_slice(NODE_MAGIC);
+        body.extend(mr_node_payload(&elements1));
+        for (m, n, r) in &rep1 {
+            body.extend(mr_record(*m, *n, r));
+        }
+        let span = mr_span(body.len());
+        let decode = decode_composite_store(&body, &span, &[], &[], true).unwrap();
+        assert_eq!(decode.info.stage, "identity-multiregion");
+        assert_eq!(decode.info.multiregion_reps, Some(2));
+        assert_eq!(decode.info.multiregion_extent_reps, Some(1));
+        assert_eq!(decode.degenerate, 0);
+        let stats = mesh::mesh_stats(&decode.triangles);
+        assert!(stats.manifold);
     }
 }

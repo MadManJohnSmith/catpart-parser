@@ -1,0 +1,41 @@
+part,failed_before,w1b_projection_tris,l2_after,failed_after,tris_after,degen_after,cause,ceiling_skips_kept
+BW-hatch-up-Top-G.CATPart,not-manifold,474,pass,pass,15089,0,"per-rep seam armed reading adopted under the full entry pipeline (entry seam, dedup, relist, dup-pin weld run before the fire gate)",14/2
+LS-pipe-34K-YL.CATPart,not-manifold,292,pass,pass,4495,0,per-rep seam armed reading adopted under the full entry pipeline,0/5
+MB-Cargo_torp_down45.CATPart,not-manifold,205,pass,pass,10878,0,per-rep seam: armed reading adopted,21/0
+MB-banqueta.CATPart,not-manifold,579,pass,pass,2546,0,per-rep seam armed reading adopted under the full entry pipeline,2/0
+MB-base-tubes-YR.CATPart,not-manifold,118,pass,pass,10406,0,per-rep seam: armed reading adopted,1/0
+MB-toilet-02.CATPart,not-manifold,500,pass,pass,1859,0,per-rep seam: armed reading adopted,1/0
+MD-Exhaust manifold-A1.CATPart,not-manifold,445,pass,pass,3680,0,per-rep seam: armed reading adopted,2/0
+MD-case Exhaust manifold-A1.CATPart,not-manifold,358,pass,pass,418,0,per-rep seam armed reading adopted under the full entry pipeline,29/7
+MD-cylinder head-A1.CATPart,not-manifold,4743,pass,pass,9901,0,per-rep seam: armed reading adopted,6/0
+MD-cylinder head-B2.CATPart,not-manifold,4608,pass,pass,9781,0,per-rep seam: armed reading adopted,4/0
+MD-cylinder head-B4.CATPart,not-manifold,4615,pass,pass,10122,0,per-rep seam: armed reading adopted,4/0
+MD-hatch_down_31 Geometry.CATPart,not-manifold,1513,pass,pass,5310,0,per-rep seam: armed reading adopted,7/0
+ST-timon-Up.CATPart,not-manifold,942,pass,pass,37792,0,per-rep seam: armed reading adopted,6/0
+VM-base_F323-Mast.CATPart,not-manifold,640,pass,pass,5801,0,per-rep seam armed reading adopted under the full entry pipeline,2/1
+VM-pipe-gas-flow-up-YL.CATPart,not-manifold,208,pass,pass,1390,0,per-rep seam armed reading adopted under the full entry pipeline,0/1
+VM-pipe-gas-flow-up-YR.CATPart,not-manifold,217,pass,pass,2159,0,per-rep seam: armed reading adopted,1/0
+ntu-57.CATPart,not-manifold,780,pass,pass,708,0,"extent-recovery: 12 period reps decode at extent 1, merged manifold",
+ntu-57YL.CATPart,not-manifold,780,pass,pass,736,0,"extent-recovery: 12 period reps decode at extent 1, merged manifold",
+ntu-58.CATPart,not-manifold,780,pass,pass,736,0,"extent-recovery: 12 period reps decode at extent 1, merged manifold",
+ntu-58YL.CATPart,not-manifold,780,pass,pass,668,0,"extent-recovery: 12 period reps decode at extent 1, merged manifold",
+BW-Proa-A01B75.CATPart,not-manifold,3071,fail,not-manifold,3071,14,negative: head records inside failing-node payloads (00 00 00 01 container family); the per-rep merge carries 58 degenerates regardless,
+BW-chain-vertical.CATPart,not-manifold,1301,fail,not-manifold,1301,0,negative: 30+ failing 304-element period nodes (container family),4/31
+BW-mechanisms-muzzle-YL.CATPart,not-manifold,957,fail,not-manifold,957,0,negative: the armed reading is still not manifold,0/1
+LS-Muzzle.CATPart,not-manifold,3799,fail,not-manifold,3799,36,negative: same container family; the per-rep merge carries 36 degenerates regardless,
+LS-Valv-75.CATPart,not-manifold,397,fail,not-manifold,397,0,negative: the 3-rep merge is manifold and clean but the 3 head records are the failing nodes surface; prepending them to rep 0 yields 11 degenerates,
+MB-Torpedo-rail-Bow-YR Geometry.CATPart,not-manifold,10055,fail,not-manifold,10055,18,negative: the reps emit 16 degenerates (adoption gate),0/0
+MB-chair-A.CATPart,not-manifold,1300,fail,not-manifold,1300,0,negative: the armed reading is still not manifold (the kept over-use is real surface),1/1
+MB-handwell-trpcgK.CATPart,not-manifold,2412,fail,not-manifold,2412,0,"negative: no coherent (element_count, shift) decode under the brute-force search",
+MB-hatch-tapa-MDC.CATPart,not-manifold,1014,fail,not-manifold,1014,0,negative: the armed reading is still not manifold,0/1
+MB-tapis-H.CATPart,not-manifold,410,fail,not-manifold,410,17,negative: the armed reading is still not manifold,1/1
+MB-toilet-01.CATPart,not-manifold,529,fail,not-manifold,529,8,negative: the armed reading is still not manifold,1/1
+MD-Gear train-A1.CATPart,not-manifold,3029,fail,not-manifold,3029,59,negative: the reps emit 32 degenerates (adoption gate),0/0
+MD-charging generator-A1.CATPart,not-manifold,2414,fail,not-manifold,2414,0,negative: no coherent decode under the brute-force search,
+MD-charging generator-A3.CATPart,not-manifold,2444,fail,not-manifold,2444,0,negative: no coherent decode under the brute-force search,
+MD-charging generator-B2.CATPart,not-manifold,2438,fail,not-manifold,2438,0,negative: no coherent decode under the brute-force search,
+MD-charging generator-B4.CATPart,not-manifold,2374,fail,not-manifold,2374,0,negative: no coherent decode under the brute-force search,
+MD-filters-A1.CATPart,not-manifold,2654,fail,not-manifold,2654,0,negative: the armed reading is still not manifold,0/2
+VM-Door-cummins.CATPart,not-manifold,1714,fail,not-manifold,1714,32,negative: the reps emit 32 degenerates,5/8
+VM-Hydraulic_25.CATPart,not-manifold,144,fail,not-manifold,144,0,negative: no coherent decode under the brute-force search,
+motor-hp.CATPart,not-manifold,6075,fail,not-manifold,6075,179,negative: the armed reading carries 2 degenerates,6/1
