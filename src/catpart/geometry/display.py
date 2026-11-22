@@ -57,6 +57,7 @@ from __future__ import annotations
 
 import dataclasses
 import math
+import re
 import struct
 from array import array
 from itertools import accumulate
@@ -129,6 +130,54 @@ SOURCE_F32_RUNS = "store-f32-points"
 #: ``surface = false``: this is not a surface render, by construction.
 SURFACE = False
 
+#: The feature/spec-tree block's honesty label: the tree is a display
+#: of the part's parametric records, never geometry (no triangle, no
+#: point, no segment comes from it and the honest open rate does not
+#: credit it).
+FEATURE_KIND = "feature-tree-only"
+#: The feature-tree block's source label (the framing the names sit in).
+SOURCE_FEATURE_TREE = "catprtcont-feature-tokens"
+#: The part-container token the kind law names the part marker (the
+#: container-table measurement; ``CATMechProdCont`` sits next to it on
+#: two corpus parts and ``CATProdCont`` marks products).
+CONTAINER_TOKEN = b"CATPrtCont"
+#: The measured feature-type vocabulary (the audit probe's shipped
+#: subset, ``scripts/triage/probe_w4_feature_tree.py``): every type
+#: carries >= 1 length-framed occurrence in the BLANK population.  The
+#: parameter-type family (``Volume``/``Density``/``Area``/``Mass`` —
+#: mass-properties headers like ``07 Volume 08 Density``) is excluded:
+#: the framing alone cannot tell a feature instance from a parameter
+#: header, and the parameter family appears in 51/51 files as a block,
+#: not a feature.
+FEATURE_TYPES = (
+    "Axis",
+    "Boundary",
+    "Chamfer",
+    "Circle",
+    "Curve",
+    "EdgeFillet",
+    "Hole",
+    "Line",
+    "Mirror",
+    "Offset",
+    "Pad",
+    "Pattern",
+    "Plane",
+    "Point",
+    "Pocket",
+    "Rib",
+    "Sketch",
+)
+#: The feature-name framing: a length byte ``L`` (4..40) followed by
+#: exactly ``L - 1`` ASCII name bytes — the writer's ``len = strlen +
+#: 1`` layout (``00 07 Sketch``, ``05 Pad1``, ``09 Sketch.1``,
+#: ``0b EdgeFillet``).  The candidate regex runs the C-level scan; the
+#: framing and full-name validation runs per candidate.
+FEATURE_CANDIDATE_RE = re.compile(rb"[\x04-\x28]([A-Z][A-Za-z0-9_.]{2,38})")
+_FEATURE_INSTANCE_RE = re.compile(
+    r"^(" + "|".join(re.escape(t) for t in FEATURE_TYPES) + r")(?:\.\d+|\d+)?$"
+)
+
 
 @dataclasses.dataclass(frozen=True)
 class DisplayScan:
@@ -183,6 +232,101 @@ def label_for(points: int, segments: int) -> str:
     return (
         f"no surface — showing {points} {point_word}, "
         f"{segments} curve {segment_word}"
+    )
+
+
+@dataclasses.dataclass(frozen=True)
+class FeatureTreeScan:
+    """One part's feature/spec tree: the framed feature-type names.
+
+    ``features`` are ``(type, count, first_offset)`` triples in
+    first-occurrence (byte) order — the writer emits the feature
+    records in creation order, so the byte order approximates the spec
+    tree's order.  ``containers`` is the ``CATPrtCont`` token count
+    (the kind law's part marker).  Nothing here is geometry: the scan
+    names records, it does not decode coordinates.
+    """
+
+    containers: int
+    features: tuple[tuple[str, int, int], ...]
+    feature_names: int
+
+    @property
+    def has_tree(self) -> bool:
+        return self.containers > 0 or bool(self.features)
+
+    def block(self) -> dict:
+        """The summary's additive ``feature_tree`` block (integer and
+        string fields only — the port's block compares parsed-document
+        equal)."""
+        return {
+            "source": SOURCE_FEATURE_TREE,
+            "kind": FEATURE_KIND,
+            "surface": False,
+            "containers": {"catprtcont": self.containers},
+            "features": [
+                {"type": typ, "count": count, "first_offset": offset}
+                for typ, count, offset in self.features
+            ],
+            "feature_names": self.feature_names,
+        }
+
+
+def _count_token(data, token: bytes) -> int:
+    """Count ``token``'s occurrences (mmap has no ``bytes.count``)."""
+    count = 0
+    pos = data.find(token)
+    while pos >= 0:
+        count += 1
+        pos = data.find(token, pos + 1)
+    return count
+
+
+def scan_feature_tree(data) -> FeatureTreeScan:
+    """Decode one part's feature/spec-tree names.
+
+    The whole file is scanned for the writer's length-framed ASCII
+    names: a length byte ``L`` (4..40) followed by exactly ``L - 1``
+    printable-ASCII bytes whose FULL text matches one of the pinned
+    :data:`FEATURE_TYPES` (instance suffixes ``.N`` / ``N`` allowed) —
+    the framing measured on the anchors (``00 07 Sketch``, ``05 Pad1``,
+    ``09 Sketch.1``, ``0b EdgeFillet``; the audit probe measures every
+    shipped type at >= 1 framed occurrence).  A name records its type,
+    the count of its framed occurrences and its first offset; the
+    container row is the ``CATPrtCont`` token count.
+
+    The names live in the parametric streams outside the named
+    containers (289/289 measured inside no ``CATPrtCont`` region), so
+    the scan is framing-scoped, not region-scoped — and it is a name
+    census only: no coordinate is decoded, no geometry is claimed.
+    """
+    containers = _count_token(data, CONTAINER_TOKEN)
+    found: dict[str, list[int]] = {}
+    total = 0
+    for match in FEATURE_CANDIDATE_RE.finditer(data):
+        name = match.group(1)
+        length = data[match.start()]
+        if length != len(name) + 1:
+            continue
+        text = name.decode("ascii")
+        instance = _FEATURE_INSTANCE_RE.match(text)
+        if instance is None:
+            continue
+        typ = text[: instance.end(1)]
+        slot = found.get(typ)
+        if slot is None:
+            found[typ] = [1, match.start() + 1]
+        else:
+            slot[0] += 1
+        total += 1
+    features = tuple(
+        (typ, count, offset)
+        for typ, (count, offset) in sorted(
+            found.items(), key=lambda item: item[1][1]
+        )
+    )
+    return FeatureTreeScan(
+        containers=containers, features=features, feature_names=total
     )
 
 

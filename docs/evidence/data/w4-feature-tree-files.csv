@@ -1,0 +1,57 @@
+sha16,path,present,catprtcont,feature_types,feature_names,class
+01bd888df54c2790,online/CAAScdSddUseCases/samples/CAASddCreatePlate.CATPart,yes,3,Offset:1,1,feature-tree
+05fe6c233d50ab53,CAAV5V6MechanicalModeler.edu/InputData/CAAV5V6ExtCombinedCurve.CATPart,yes,3,,0,prtcont-only
+1d1dfa2ab283678e,sample/CAADMAPSInterfaces.edu/CNext/resources/graphic/screw.CATPart,yes,3,Circle:1 Pad:1 Point:1 Sketch:1,4,feature-tree
+230b0591fc55dd46,caa_new/tests/dummy.CATPart,yes,0,,0,none
+24173b9c1a4a575e,sample/CAADMAPSInterfaces.edu/CNext/resources/graphic/sheet.CATPart,yes,3,Hole:1 Line:1 Pad:1 Point:1 Sketch:1,5,feature-tree
+3590d6f9f029e8f8,sample/CAACommonLayoutItf.edu/CNext/resources/graphic/CAACloPspEduIn/WELD-W1.CATPart,yes,3,,0,prtcont-only
+3a6238219bc6f133,online/CAAScdBKTUseCases/samples/TypedPartforBKTAutomation.CATPart,yes,3,,0,prtcont-only
+3c6ea0125d026aee,CAAxPDMInterfaces.edu/InputData/DocCheck/Part3.CATPart,yes,3,,0,prtcont-only
+40120449192bc8b5,sample/CAAProductStructure.edu/CNext/resources/graphic/CAAPstBrowsePstPart.CATPart,yes,3,,0,prtcont-only
+43405f84effa3396,sample/CAAManufacturingItf.edu/CNext/resources/graphic/CAAMaiToolEditionCustomization.CATPart,yes,3,Circle:1 Hole:1 Line:3 Pad:1 Pocket:1 Point:1 Sketch:1,9,feature-tree
+4a3f8ef2bd1f2af2,online/CAAScdAniUseCases/samples/Crankshaft.CATPart,yes,3,Axis:1 Circle:1 Line:1 Mirror:1 Offset:2 Pad:1 Pattern:1 Point:1 Sketch:1,10,feature-tree
+505a36f64a44262d,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_Support2.CATPart,yes,3,Boundary:1 Chamfer:1 Circle:1 EdgeFillet:1 Line:1 Offset:1 Pad:1 Point:1 Sketch:1,9,feature-tree
+5122a961966ccb8e,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_BundleSegment4_2.CATPart,yes,3,Boundary:1 Curve:1 Point:2 Rib:1,5,feature-tree
+521f08e35ad8c141,C-AMEDEO-FRAMEWORK/CA-DEOPTIMISE/CAD-DESIGN/H2-BWB-Q100-CONF0000/AAA-ARCHITECTURES_AIRFRAMES_AERODYNAMICS/CE-CAD-Q100-AAA-ATA-53-FUSELAGE/CC/CE-CC-CAD-Q100-AAA-ATA-53-10-STRUCTURE-1/CI/CE-CC-CI-CAD-Q100-AAA-ATA-53-10-01-COMPONENT-1/3DModels/fpb_assy_v3.CATPart,yes,0,,0,none
+540d2d33d9e9a3c7,3DjiexiCAA/tests/caa_completion/fixtures_manual/gsd_analytic_elements.CATPart,yes,3,Offset:1,1,feature-tree
+550e4e2673beabf7,连接关系示例数据/连接关系示例数据/511.000_NOTE A.CATPart,yes,3,,0,prtcont-only
+57b5c1dd0c315970,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_FConnector.CATPart,yes,3,Circle:1 Curve:1 EdgeFillet:1 Pad:1 Pocket:1 Point:1 Sketch:1,7,feature-tree
+5983e0b638d3d185,sample/CAAMechanicalModeler.edu/CAAMechanicalModelerEduRscCNext.m/src/CNext/resources/graphic/PadFillet.CATPart,yes,3,EdgeFillet:1 Line:1 Pad:1 Point:1 Sketch:1,5,feature-tree
+6523a7144defd69d,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_clamp1.CATPart,yes,3,Boundary:1 Curve:1 EdgeFillet:1 Line:1 Offset:1 Pad:1 Pocket:1 Point:1 Sketch:1,9,feature-tree
+6769a88c824dd85d,online/CAAScdPstUseCases/samples/CAAPstFunnel.CATPart,yes,3,Circle:1 Pad:1 Point:1 Sketch:1,4,feature-tree
+67b37d06c40d6eed,3DjiexiCAA/tests/caa_completion/fixtures_manual/negative_empty_surface_imported.CATPart,yes,3,,0,prtcont-only
+6cab134d4405d3f8,CAAxPDMInterfaces.edu/InputData/DocCheck/MyTextDocCheck.CATPart,yes,0,,0,none
+6f71ac5eba3f1258,sample/CAAAnalysisInterfaces.edu/CNext/reffiles/CAA-Rod-Part.CATPart,yes,1,Axis:1 Circle:1 Line:1 Offset:1 Pad:1 Pattern:1 Point:1 Sketch:1,8,feature-tree
+731c6b5f3f20425f,sample/CAAProductStructure.edu/CNext/resources/graphic/CAAPstPrdProperties_Part.CATPart,yes,3,,0,prtcont-only
+740a5d6654ebc596,sample/CAAAssemblyUI.edu/CNext/resources/graphic/fou.CATPart,yes,1,Axis:1 Circle:1 EdgeFillet:1 Line:1 Pocket:1 Point:1 Sketch:1,7,feature-tree
+7bd0eeed0006c272,online/CAAScdStrUseCases/samples/grille/grid.CATPart,yes,3,,0,prtcont-only
+822815ea745e984c,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_Support1.CATPart,yes,3,Circle:1 Curve:1 EdgeFillet:1 Line:1 Offset:1 Pad:1 Point:1 Sketch:1,8,feature-tree
+8497f19a04c4f50d,diseño_3d/cachete/cachete_soporte_mirror.CATPart,no,,,,missing
+89fad3db7102f02a,online/CAAScdAsmUseCases/samples/NewScrew.CATPart,yes,3,Axis:2 Circle:1 Line:1 Point:1 Sketch:1,6,feature-tree
+9628d3293ba16a2d,sample/CAAProductStructure.edu/CNext/resources/graphic/CAAPstImport.CATPart,yes,3,Line:1 Pad:1 Point:1 Sketch:1,4,feature-tree
+989d0dbbdf5455ed,CAAxPDMInterfaces.edu/InputData/DocCheck/Part1.CATPart,yes,3,Circle:1 Pad:1 Point:1 Sketch:1,4,feature-tree
+9c14d692c9e110cf,sample/CAAManufacturingItf.edu/CNext/resources/graphic/CAAMaiUserToolDatabaseCustomization.CATPart,yes,3,Circle:1 Hole:1 Line:3 Pad:1 Pocket:1 Point:1 Sketch:1,9,feature-tree
+ad895d409c730ae2,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_BundleSegment1_2.CATPart,yes,3,Boundary:1 Curve:1 Point:2 Rib:1,5,feature-tree
+b0b76dc355b2e070,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_Equipment.CATPart,yes,3,Chamfer:1 Circle:1 EdgeFillet:1 Line:3 Pad:3 Pocket:1 Point:1 Sketch:1,12,feature-tree
+b4e58796023fc6f0,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_BundleSegment1_1.CATPart,yes,3,Boundary:1 Curve:1 Point:2 Rib:1,5,feature-tree
+b859a61d1ab6c00d,连接关系示例数据/连接关系示例数据/550.000_NOTE A.CATPart,yes,3,,0,prtcont-only
+bafb33e5c3b05cf7,CATIA/CATIA_vol/test_tolerence.CATPart,yes,0,,0,none
+bce3f5be6c7320dd,online/CAAScdPstUseCases/samples/CAAPstHull.CATPart,yes,3,Line:1 Pad:1 Point:1 Sketch:1,4,feature-tree
+c485d068f8760243,online/CAAScdKniUseCases/samples/p1.CATPart,yes,3,Line:1 Pad:1 Point:1 Sketch:1,4,feature-tree
+c807a7adb0740c4e,online/CAAScdPriUseCases/samples/CAAPriPad.CATPart,yes,3,Circle:1 Line:1 Pad:1 Plane:1 Point:1 Sketch:2,7,feature-tree
+ca047ae9ad9eaa82,online/CAAScdPriUseCases/samples/CAAPriPocket.CATPart,yes,1,Axis:2 Circle:2 Line:2 Pad:2 Pocket:2 Point:2 Sketch:2,14,feature-tree
+cab3b6f2e49a5545,sample/CAAManufacturingItf.edu/CNext/resources/graphic/CAAMaiUdfForMfgHoleInstance.CATPart,yes,3,Hole:2 Line:1 Pad:1 Point:1 Sketch:1,6,feature-tree
+cc8288bcdba778d4,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_BundleSegment2_2.CATPart,yes,3,Boundary:1 Curve:1 Point:2 Rib:1,5,feature-tree
+cd4ffbd08ab834ee,online/CAAScdKniUseCases/samples/p4.CATPart,yes,3,Line:1 Pad:1 Point:1 Sketch:1,4,feature-tree
+d4115ad2bdebe6c0,sample/CAAMechanicalModeler.edu/InputData/CAAMmrPartCopy_Comp1.CATPart,yes,3,,0,prtcont-only
+d796a8d724e5f0a6,online/CAAScdStrUseCases/samples/HEA120.CATPart,yes,3,Circle:1 Line:1 Offset:1 Point:1 Sketch:1,5,feature-tree
+d8c1bbc27d9f96ea,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_Structure.CATPart,yes,3,Boundary:1 Circle:1 EdgeFillet:1 Line:3 Offset:1 Pad:1 Pocket:1 Point:1 Sketch:1,11,feature-tree
+e0bacb7ff69e66ac,sample/CAAManufacturingItf.edu/CNext/resources/graphic/CAAMaiToolPathCustomization.CATPart,yes,3,Circle:1 Hole:1 Line:3 Pad:1 Pocket:1 Point:1 Sketch:1,9,feature-tree
+e2e24efd2331a09c,sample/CAAManufacturingItf.edu/CNext/resources/graphic/CAAMaiUdfForMfgHoleTemplate.CATPart,yes,3,Hole:2 Line:1 Pad:1 Point:1 Sketch:1,6,feature-tree
+e87d1693be7068f9,sample/CAACommonLayoutItf.edu/CNext/resources/graphic/CAACloPspEduIn/BENDABLE-PIPE-BW-4in.CATPart,yes,3,,0,prtcont-only
+ea2c21b75376fcc0,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_MConnector.CATPart,yes,3,Circle:1 Curve:1 EdgeFillet:1 Pad:1 Point:1 Sketch:1,6,feature-tree
+ed72c188c83a14df,online/CAAScdInfUseCases/samples/CAAInfReadDocument.CATPart,yes,3,,0,prtcont-only
+f826165a255c0396,sample/CAADMAPSInterfaces.edu/CNext/resources/graphic/table.CATPart,yes,3,Circle:1 Line:1 Pad:1 Point:1 Sketch:1,5,feature-tree
+fb489a7efbfd1fac,online/CAAScdKniUseCases/samples/p3.CATPart,yes,3,Circle:1 Pad:1 Point:1 Sketch:1,4,feature-tree
+fe8985b04d27d4b3,online/CAAScdKniUseCases/samples/p5.CATPart,yes,3,Line:1 Pad:1 Point:1 Sketch:1,4,feature-tree
+fec863960e434b76,sample/CAAElecHarnessItf.edu/CNext/resources/graphic/Ehi_EConnector.CATPart,yes,3,Chamfer:1 Circle:1 Pad:1 Pocket:1 Point:1 Sketch:1,6,feature-tree

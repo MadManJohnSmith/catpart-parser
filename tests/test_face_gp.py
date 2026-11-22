@@ -80,6 +80,45 @@ def sub_record(
     )
 
 
+def counter_table_record(
+    tris=(),
+    strips=(),
+    fans=(),
+    dangling: bool = True,
+) -> bytes:
+    """One ``0x50`` counter-table sub-record: pattern + flag + padding +
+    the ``+57`` header (kind 0) + the pad word + the ``u16be`` stream at
+    ``+74`` (``3 * N_tris`` values, the count table, the concatenated
+    values) + the dangling byte.
+
+    ``tris`` are vertex triples (the stream carries ``3 * vertex``);
+    ``strips``/``fans`` are value sequences (one ``u16be`` count each in
+    the table, then the values concatenated, in law order).
+    """
+    stream = b""
+    for tri in tris:
+        stream += b"".join(struct.pack(">H", 3 * vertex) for vertex in tri)
+    for values in (*strips, *fans):
+        stream += struct.pack(">H", len(values))
+    for values in (*strips, *fans):
+        stream += b"".join(struct.pack(">H", value) for value in values)
+    tail = b"\x00" if dangling else b""
+    padding = b"\x11" * (face_gp.HEADER_AT - 9)
+    header = struct.pack(
+        "<4I", face_gp.KIND_COUNTER_TABLE, len(tris), len(strips), len(fans)
+    )
+    pad = b"\x00" * (face_gp.COUNTER_TABLE_AT - face_gp.HEADER_AT - 16)
+    return (
+        face_gp.SUBREC
+        + bytes([face_gp.FLAG_COUNTER_TABLE])
+        + padding
+        + header
+        + pad
+        + stream
+        + tail
+    )
+
+
 def face_gp_span(points, *subs) -> bytes:
     """A ``CATSurfacicRep`` class record: the framing, the declared
     array and the sub-records, closed by a following record framing."""
@@ -333,3 +372,88 @@ def test_route_never_raises_on_a_truncated_pattern(tmp_path: Path) -> None:
     with pytest.raises(ExportError) as excinfo:
         build_export(path, tmp_path / "trunc.ply")
     assert excinfo.value.error_class == "missing-geometry-store"
+
+
+def test_counter_table_law_reads_triangles_and_the_count_table() -> None:
+    # one independent triangle, one strip declared by the table (4
+    # values -> 2 windows), one fan (4 values -> 2 triangles): the same
+    # mult-3 encoding, kind 0
+    built = counter_table_record(
+        tris=[(0, 1, 2)],
+        strips=[(0, 3, 6, 9)],
+        fans=[(0, 6, 9, 12)],
+    )
+    decoded = face_gp.decode_sub_record(built, 0, len(built))
+    assert decoded.flag == face_gp.FLAG_COUNTER_TABLE
+    assert decoded.kind == face_gp.KIND_COUNTER_TABLE
+    assert (decoded.n_tris, decoded.n_strips, decoded.n_fans) == (1, 1, 1)
+    assert decoded.closed_exact
+    assert decoded.pos_rel == len(built) - 1
+    assert decoded.triangles == (
+        (0, 1, 2),  # the independent triangle
+        (0, 1, 2),  # the strip's first window (values 0, 3, 6)
+        (1, 2, 3),  # the strip's second window (values 3, 6, 9)
+        (0, 2, 3),  # the fan's first triangle (fan head 0; 6, 9)
+        (0, 3, 4),  # the fan's second triangle (fan head 0; 9, 12)
+    )
+
+
+def test_counter_table_gate_is_the_strict_gate_at_kind_0() -> None:
+    n = len(TWELVE_POINTS)
+    built = counter_table_record(tris=[(0, 1, 2), (2, 3, 4)])
+    good = face_gp.decode_sub_record(built, 0, len(built))
+    assert face_gp._gate_sub_record(good, n)
+
+    # a kind other than the framing's kind refuses
+    wrong = bytearray(counter_table_record(tris=[(0, 1, 2)]))
+    at = wrong.find(struct.pack("<I", face_gp.KIND_COUNTER_TABLE))
+    wrong[at : at + 4] = struct.pack("<I", 3)
+    sub = face_gp.decode_sub_record(bytes(wrong), 0, len(wrong))
+    assert not face_gp._gate_sub_record(sub, n)
+
+    # an out-of-bounds index refuses
+    oob = counter_table_record(tris=[(0, 1, 20)])
+    sub = face_gp.decode_sub_record(oob, 0, len(oob))
+    assert not face_gp._gate_sub_record(sub, n)
+
+    # two dangling bytes: not byte-exact, refused
+    loose = counter_table_record(tris=[(0, 1, 2)])
+    sub = face_gp.decode_sub_record(loose + b"\x00", 0, len(loose) + 1)
+    assert not sub.closed_exact
+    assert not face_gp._gate_sub_record(sub, n)
+
+
+def test_counter_table_folds_into_the_span_scan() -> None:
+    body = face_gp_span(
+        TWELVE_POINTS,
+        counter_table_record(tris=[(0, 1, 2)], strips=[(6, 9, 12, 15)]),
+        sub_record(tris=[(0, 1, 2), (2, 3, 4)]),
+    )
+    scan = face_gp.scan_part(body)
+    assert scan is not None
+    assert scan.records == 1
+    assert scan.sub_records == 2
+    assert scan.sub_records_gated == 2
+    assert scan.sub_records_counter == 1
+    assert scan.sub_records_counter_gated == 1
+    # counter-table member first ((0,1,2) + strip windows (2,3,4),
+    # (3,4,5)); the face-GP member's two triangles re-list both sorted
+    # keys, so the dedup drops them (first copy wins)
+    assert scan.triangles == ((0, 1, 2), (2, 3, 4), (3, 4, 5))
+    assert scan.dedup_dropped == 2
+
+
+def test_an_interleaved_counter_table_ends_the_face_gp_record() -> None:
+    # the writer emits 0x50/0x51 interleaved: the 0x51 record's extent
+    # ends at the 0x50 that follows it, so the scan must not run it
+    # past its neighbor (that span could not close)
+    body = face_gp_span(
+        TWELVE_POINTS,
+        sub_record(tris=[(0, 1, 2), (2, 3, 4)]),
+        counter_table_record(strips=[(9, 12, 15)]),
+    )
+    scan = face_gp.scan_part(body)
+    assert scan is not None
+    assert scan.sub_records == 2
+    assert scan.sub_records_gated == 2
+    assert scan.triangles == ((0, 1, 2), (2, 3, 4), (3, 4, 5))

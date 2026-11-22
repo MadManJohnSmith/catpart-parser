@@ -216,8 +216,9 @@ pub struct GridMeshing {
 }
 
 /// The face-gp block (#63) — the twin's ``bagrep_face_gp`` dict; the
-/// counters of the CAT3DFaceGP decode over the ``CATSurfacicRep`` patch
-/// sub-records (docs/evidence/2026-11-21-bagrep-face-gp.md).
+/// counters of the patch-sub-record decode (both framings) over the
+/// ``CATSurfacicRep`` spans (docs/evidence/2026-11-21-bagrep-face-gp.md,
+/// docs/evidence/2026-11-22-face-gp-counter-table.md).
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct BagrepFaceGp {
     /// The route's source label (``bagrep-face-gp``).
@@ -225,14 +226,18 @@ pub struct BagrepFaceGp {
     /// Patch streams that emitted triangles (the records' declared
     /// arrays concatenated with disjoint index spaces).
     pub records: usize,
-    /// Every ``0x51`` sub-record in the ``CATSurfacicRep`` spans.
+    /// Every ``0x51``/``0x50`` sub-record in the ``CATSurfacicRep`` spans.
     pub sub_records: usize,
-    /// Strict-gate passes.
+    /// Strict-gate passes (both framings).
     pub sub_records_gated: usize,
     /// Assembly refusals (the incremental guard).
     pub guard_refused: usize,
     /// Unordered duplicate triangles dropped.
     pub dedup_dropped: usize,
+    /// The ``0x50`` counter-table sub-records.
+    pub sub_records_counter: usize,
+    /// Their strict-gate passes.
+    pub sub_records_counter_gated: usize,
 }
 
 /// The display-carrier block (the twin's ``no_surface_display`` dict;
@@ -330,6 +335,51 @@ pub struct ExportSummary {
     /// carriers (points / law-pinned curve segments — never a surface).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub no_surface_display: Option<NoSurfaceDisplay>,
+    /// The feature/spec-tree block (w4, 2026-11-22); present on a
+    /// display-fallback summary when the part's bytes carry the
+    /// length-framed feature-type names (a name census labeled
+    /// ``feature-tree-only`` — never geometry).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub feature_tree: Option<FeatureTreeBlock>,
+}
+
+/// The additive ``feature_tree`` block — the twin's
+/// ``display.FeatureTreeScan.block()`` dict (integer and string fields
+/// only; parsed-document parity).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct FeatureTreeBlock {
+    /// The framing's source label (``catprtcont-feature-tokens``).
+    pub source: String,
+    /// The honesty label (``feature-tree-only``).
+    pub kind: String,
+    /// ``false`` — this is not a surface render, by construction.
+    pub surface: bool,
+    /// The part-container token counts.
+    pub containers: FeatureTreeContainers,
+    /// The framed feature types in first-occurrence order.
+    pub features: Vec<FeatureTreeFeature>,
+    /// The total framed occurrences.
+    pub feature_names: usize,
+}
+
+/// The container row (the twin's ``{"catprtcont": N}``).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct FeatureTreeContainers {
+    /// The ``CATPrtCont`` token count (the kind law's part marker).
+    pub catprtcont: usize,
+}
+
+/// One feature type's census row (the twin's
+/// ``{"type", "count", "first_offset"}``).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct FeatureTreeFeature {
+    /// The pinned feature type (e.g. ``Sketch``, ``Pad``, ``EdgeFillet``).
+    pub r#type: String,
+    /// The type's framed occurrences.
+    pub count: usize,
+    /// The first occurrence's name offset (the length byte's position
+    /// + 1).
+    pub first_offset: usize,
 }
 
 /// The decoded export of one store: the summary plus the PLY payload
@@ -537,6 +587,7 @@ fn surface_fallback(
         store_recovery: None,
         bagrep_face_gp: None,
         no_surface_display: None,
+        feature_tree: None,
     };
     Ok(ExportOutcome {
         summary,
@@ -668,6 +719,7 @@ fn grid_fallback(
         store_recovery: None,
         bagrep_face_gp: None,
         no_surface_display: None,
+        feature_tree: None,
     };
     Ok(ExportOutcome {
         summary,
@@ -806,9 +858,12 @@ fn face_gp_fallback(
             sub_records_gated: scan.sub_records_gated,
             guard_refused: scan.guard_refused,
             dedup_dropped: scan.dedup_dropped,
+            sub_records_counter: scan.sub_records_counter,
+            sub_records_counter_gated: scan.sub_records_counter_gated,
         }),
         store_recovery: None,
         no_surface_display: None,
+        feature_tree: None,
     };
     Ok(ExportOutcome {
         summary,
@@ -936,6 +991,27 @@ fn display_fallback(
         let mut summary = previous.summary.clone();
         summary.warnings = warnings;
         summary.no_surface_display = Some(block);
+        let tree = display::scan_feature_tree(data);
+        if tree.has_tree() {
+            summary.feature_tree = Some(FeatureTreeBlock {
+                source: display::SOURCE_FEATURE_TREE.to_string(),
+                kind: display::FEATURE_KIND.to_string(),
+                surface: display::SURFACE,
+                containers: FeatureTreeContainers {
+                    catprtcont: tree.containers,
+                },
+                features: tree
+                    .features
+                    .iter()
+                    .map(|(typ, count, offset)| FeatureTreeFeature {
+                        r#type: typ.clone(),
+                        count: *count,
+                        first_offset: *offset,
+                    })
+                    .collect(),
+                feature_names: tree.feature_names,
+            });
+        }
         return Ok(ExportOutcome {
             summary,
             vertices: previous.vertices,
@@ -974,13 +1050,36 @@ fn display_fallback(
         store_recovery: None,
         bagrep_face_gp: None,
         no_surface_display: Some(block),
+        feature_tree: None,
     };
-    Ok(ExportOutcome {
+    let mut outcome = ExportOutcome {
         summary,
         vertices: Vec::new(),
         triangles: Vec::new(),
         curves: Vec::new(),
-    })
+    };
+    let tree = display::scan_feature_tree(data);
+    if tree.has_tree() {
+        outcome.summary.feature_tree = Some(FeatureTreeBlock {
+            source: display::SOURCE_FEATURE_TREE.to_string(),
+            kind: display::FEATURE_KIND.to_string(),
+            surface: display::SURFACE,
+            containers: FeatureTreeContainers {
+                catprtcont: tree.containers,
+            },
+            features: tree
+                .features
+                .iter()
+                .map(|(typ, count, offset)| FeatureTreeFeature {
+                    r#type: typ.clone(),
+                    count: *count,
+                    first_offset: *offset,
+                })
+                .collect(),
+            feature_names: tree.feature_names,
+        });
+    }
+    Ok(outcome)
 }
 
 /// Decode ``data``'s first exportable nested store — the twin's
@@ -1382,6 +1481,7 @@ fn export_store(
         store_recovery: None,
         bagrep_face_gp: None,
         no_surface_display: None,
+        feature_tree: None,
     };
     if span.container != store::CONTAINER_STDCONT || span.tail_law != store::TAIL_LAW_SHIPPED {
         // Stage 3a (#34): the store was recovered — name the probe and
@@ -1786,6 +1886,7 @@ fn export_composite_store(
         store_recovery: None,
         bagrep_face_gp: None,
         no_surface_display: None,
+        feature_tree: None,
     };
     if span.container != store::CONTAINER_STDCONT || span.tail_law != store::TAIL_LAW_SHIPPED {
         // Stage 3a/12 (#34): recovered stores name HOW on every decode
