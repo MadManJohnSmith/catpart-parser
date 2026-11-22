@@ -1304,6 +1304,47 @@ PRIMARY_LOOP_AREA_REL = 1e-2
 _SEAM_UNSET = object()
 
 
+def _loop_triangles_split(mk, idxs, points):
+    """`_loop_triangles` with the collapsed triangles SPLIT off
+    per-triangle (the W16 A4 emission law, adopted 2026-11-22 from
+    ``curves.split_loop_triangles`` — the same G3 F7 degeneracy
+    predicate: repeated coordinates or the exactly-zero cross product,
+    winding-invariant, so the strip flip below classifies identically).
+
+    The W16 A4 finding (docs/evidence/2026-11-22-u4-skip-coordinate-
+    law.md section 4): a dup-pinned loop one of whose strip triangles
+    collapses is the WRITER's degenerate-quad convention — e.g. the
+    quad ``(P, X, P, Y)`` = triangle ``(X, P, Y)`` plus a collapsed
+    half — and its dup pins are battery-TRUE, so the real surface is
+    recoverable by skipping the collapsed triangles the same way the
+    primary strips skip theirs.  Returns ``(real_triangles,
+    degenerate_count, degenerate_triples)`` — the same enumeration and
+    winding flip as :func:`_loop_triangles`, with the collapsed
+    triangles named instead of only counted."""
+    lp = [points[i] for i in idxs]
+    real = []
+    degen = []
+    if mk == 0x4C:
+        for t in range(1, len(lp) - 1):
+            tri = (idxs[0], idxs[t], idxs[t + 1])
+            a, b, c = lp[0], lp[t], lp[t + 1]
+            if a == b or b == c or a == c:
+                degen.append(tri)
+                continue
+            real.append(tri)
+    else:
+        for t in range(len(lp) - 2):
+            tri = (idxs[t], idxs[t + 1], idxs[t + 2])
+            if t % 2 == 1:
+                tri = (tri[2], tri[1], tri[0])
+            a, b, c = lp[t], lp[t + 1], lp[t + 2]
+            if a == b or b == c or a == c or _cross_zero(a, b, c):
+                degen.append(tri)
+                continue
+            real.append(tri)
+    return real, len(degen), degen
+
+
 def _e0b_dup_pin(elements, points, written_rank, dropped, triangles):
     """The dup-pin weld, evaluated PER LOOP behind a mesh guard
     (2026-11-18, #34).
@@ -1316,12 +1357,15 @@ def _e0b_dup_pin(elements, points, written_rank, dropped, triangles):
        dup-pinned coordinates are coplanar against it at
        :data:`PLANE_TOL` (:func:`_loop_plane_status`; the real corpus
        loops measure <= 1.4e-6, the width-misparsed ones 2e-2..8), and
-    3. mesh-safe — its triangles contain no degenerate emission
-       (:func:`_loop_triangles`' skip convention) and adding them keeps
-       the assembled mesh MANIFOLD: no undirected edge would exceed two
-       uses (``triangles`` is the primary mesh already emitted by this
-       call; previously welded loops are folded in as they are
-       accepted).
+    3. mesh-safe — its triangles carry no UNRESOLVED degenerate
+       emission (the W16 A4 split, 2026-11-22: a collapsed triangle is
+       the writer's degenerate-quad convention and splits off —
+       :func:`_loop_triangles_split` — instead of refusing the loop;
+       a loop whose every triangle collapses stays dropped) and adding
+       the real remainder keeps the assembled mesh MANIFOLD: no
+       undirected edge would exceed two uses (``triangles`` is the
+       primary mesh already emitted by this call; previously welded
+       loops are folded in as they are accepted).
 
     The guard is incremental — O(the loop's triangles) per loop, with
     the edge histogram built once from the primary mesh — and
@@ -1362,10 +1406,21 @@ def _e0b_dup_pin(elements, points, written_rank, dropped, triangles):
             mk, [written_rank[r] for r in resolved], points
         )
         if deg:
-            # Fail-closed: a degenerate emission means the pinned loop
-            # is not a clean facet — do not weld it.
-            refused += 1
-            continue
+            # W16 A4 (2026-11-22): a degenerate emission is the writer's
+            # degenerate-quad convention, not a coordinate failure — the
+            # loop's dup pins are battery-TRUE, so the collapsed
+            # triangles split off (the G3 F7 skip convention the primary
+            # strips apply) and the real remainder still faces the mesh
+            # guard.  The split-off count joins the store's degenerate
+            # count (the primary strips' own convention).  A loop whose
+            # every triangle collapses has nothing real to weld and
+            # stays dropped.
+            tris, deg, _deg_tris = _loop_triangles_split(
+                mk, [written_rank[r] for r in resolved], points
+            )
+            if not tris:
+                refused += 1
+                continue
         # Incremental manifold guard (the shared EdgeGuard lever): any
         # edge the candidate loop would push past two uses rejects the
         # whole loop (no partial weld).

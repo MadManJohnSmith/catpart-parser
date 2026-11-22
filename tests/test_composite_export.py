@@ -2821,3 +2821,35 @@ def test_composite_multiregion_container_head_records_attributed():
     else:
         info = result[3]
         assert info["multiregion_container_reps"] == 1
+
+
+def test_composite_e0b_degenerate_quad_split_welds_real_remainder(tmp_path, capsys):
+    """The W16 A4 emission law (2026-11-22, adopted from
+    ``curves.split_loop_triangles``): a dropped loop whose dup-pinned
+    strip carries the writer's degenerate-quad convention — the pinned
+    (P1, P0, P1, P3) = the (P, X, P, Y) quad — has battery-TRUE pins
+    and one collapsed triangle; the real remainder welds behind the
+    same mesh guard and the collapsed half joins the store's
+    degenerate count (the primary strips' own skip convention).  The
+    old whole-loop refusal dropped both triangles — red."""
+    code, captured, ply_path = run_export(
+        tmp_path, capsys, "geometry-composite-law-e0b-degenerate-split"
+    )
+    assert code == 0, captured.err
+    summary = json.loads(captured.out)
+    validate(summary, load_schema("export-summary-v1"))
+    info = summary["composite"]
+    assert info["curve_entry_law"] == "e0b-dup-pin"
+    assert info["loops_curve_entry"] == 0  # nothing stays dropped
+    assert info["loops_curve_entry_exported"] == 1
+    assert summary["vertex_count"] == 12  # the weld adds no vertices
+    assert summary["triangle_count"] == 1
+    assert summary["degenerate_triangle_count"] == 1  # the collapsed half
+    assert summary["mesh"]["manifold"] is True
+    classes = _warning_classes(summary)
+    assert "curve-entry-loops-unexported" not in classes
+    assert "curve-entry-loops-exported-dup-pin" in classes
+    # the real remainder, in written ranks: the strip's second triangle
+    # (ranks 0, 1, 3 flipped -> (3, 1, 0))
+    _, faces = parse_ply(ply_path)
+    assert sorted(faces) == [(3, 1, 0)]

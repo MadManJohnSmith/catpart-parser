@@ -470,6 +470,7 @@ pub struct CompositeInfo {
     pub multiregion_extent_reps: Option<usize>,
     /// The W17 container reps (the ``00 00 00 01`` family) among
     /// the merged reading's reps (None when none decoded).
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub multiregion_container_reps: Option<usize>,
 }
 
@@ -886,6 +887,47 @@ fn loop_triangles(mk: u8, idxs: &[u32], points: &[(f64, f64, f64)]) -> (Vec<(u32
         }
     }
     (triangles, degenerate)
+}
+
+/// The twin's ``_loop_triangles_split`` (the W16 A4 emission law,
+/// adopted 2026-11-22 from ``curves::split_loop_triangles`` — the same
+/// G3 F7 degeneracy predicate, winding-invariant, so the strip flip
+/// classifies identically): ``loop_triangles`` with the collapsed
+/// triangles named instead of only counted.  The writer's
+/// degenerate-quad convention (the pinned ``(P, X, P, Y)``) splits off
+/// per triangle; the real remainder still faces the mesh guard.
+/// ``(real, degenerate_count, degenerate_triples)``.
+type LoopSplit = (Vec<(u32, u32, u32)>, u32, Vec<(u32, u32, u32)>);
+
+fn loop_triangles_split(mk: u8, idxs: &[u32], points: &[(f64, f64, f64)]) -> LoopSplit {
+    let lp: Vec<(f64, f64, f64)> = idxs.iter().map(|&i| points[i as usize]).collect();
+    let mut real = Vec::new();
+    let mut degen = Vec::new();
+    if mk == 0x4C {
+        for t in 1..idxs.len().saturating_sub(1) {
+            let tri = (idxs[0], idxs[t], idxs[t + 1]);
+            let (a, b, c) = (lp[0], lp[t], lp[t + 1]);
+            if a == b || b == c || a == c {
+                degen.push(tri);
+                continue;
+            }
+            real.push(tri);
+        }
+    } else {
+        for t in 0..idxs.len().saturating_sub(2) {
+            let mut tri = (idxs[t], idxs[t + 1], idxs[t + 2]);
+            if t % 2 == 1 {
+                tri = (tri.2, tri.1, tri.0);
+            }
+            let (a, b, c) = (lp[t], lp[t + 1], lp[t + 2]);
+            if a == b || b == c || a == c || cross_zero(a, b, c) {
+                degen.push(tri);
+                continue;
+            }
+            real.push(tri);
+        }
+    }
+    (real, degen.len() as u32, degen)
 }
 
 /// The twin's ``_cross_zero``: the cross product is EXACTLY the zero
@@ -2609,12 +2651,23 @@ fn e0b_dup_pin(
                 )
             })
             .collect();
-        let (tris, deg) = loop_triangles(*mk, &idxs, points);
+        let (mut tris, mut deg) = loop_triangles(*mk, &idxs, points);
         if deg > 0 {
-            // Fail-closed: a degenerate emission means the pinned loop
-            // is not a clean facet — do not weld it.
-            refused += 1;
-            continue;
+            // W16 A4 (2026-11-22): a degenerate emission is the
+            // writer's degenerate-quad convention, not a coordinate
+            // failure — the loop's dup pins are battery-TRUE, so the
+            // collapsed triangles split off (the G3 F7 skip convention
+            // the primary strips apply) and the real remainder still
+            // faces the mesh guard.  The split-off count joins the
+            // store's degenerate count.  A loop whose every triangle
+            // collapses has nothing real to weld and stays dropped.
+            let (real, deg2, _degen_tris) = loop_triangles_split(*mk, &idxs, points);
+            tris = real;
+            deg = deg2;
+            if tris.is_empty() {
+                refused += 1;
+                continue;
+            }
         }
         if !guard.admit(&tris) {
             refused += 1;
@@ -5140,6 +5193,45 @@ mod tests {
         // A degenerate emission (repeated coordinates) refuses.
         let degenerate = (0x42u8, None, vec![4u32, 3, 3]);
         let pin = e0b_dup_pin(&elements, &points, &written_rank, &[degenerate], &[]);
+        assert_eq!(pin.loops, 0);
+        assert_eq!(pin.refused, 1);
+    }
+
+    /// The W16 A4 emission law (2026-11-22, the twin of
+    /// ``_e0b_dup_pin``'s split): the dup-pinned strip (P, X, P, Y)
+    /// collapses its first triangle and its second is real surface —
+    /// the split welds the real remainder behind the same mesh guard
+    /// and counts the collapsed half; the old whole-loop refusal
+    /// dropped both.
+    #[test]
+    fn dup_pin_degenerate_quad_splits_the_real_remainder() {
+        let elements: Vec<Element> = vec![
+            (0, Some((0.0, 10.0, 0.0))),  // e0 = P0, rank 0
+            (0, Some((0.0, 10.0, 30.0))), // e1 = P1, rank 1
+            (1, None),                    // e2 skip -> pins to e1 (P1)
+            (0, Some((0.0, 10.0, 60.0))), // e3 = P2, rank 2
+            (0, Some((0.0, 110.0, 0.0))), // e4 = P3, rank 3
+        ];
+        let mut written_rank = HashMap::new();
+        for (i, (_v, pt)) in elements.iter().enumerate() {
+            if pt.is_some() {
+                written_rank.insert(i, written_rank.len());
+            }
+        }
+        let points: Vec<(f64, f64, f64)> = elements.iter().filter_map(|e| e.1).collect();
+        // The 0x42 strip loop (skip, 0, 1, 4): resolved [1, 0, 1, 4],
+        // ranks [1, 0, 1, 3] — triangle (1,0,1) collapses (repeated
+        // coordinate), triangle (0,1,3) flipped (3,1,0) is real.
+        let dropped = vec![(0x42u8, None, vec![2u32, 0, 1, 4])];
+        let pin = e0b_dup_pin(&elements, &points, &written_rank, &dropped, &[]);
+        assert_eq!(pin.loops, 1);
+        assert_eq!(pin.refused, 0);
+        assert_eq!(pin.degenerate, 1);
+        assert_eq!(pin.triangles, vec![(3u32, 1u32, 0u32)]);
+        // A loop whose EVERY triangle collapses has nothing real to
+        // weld and stays dropped (the fail-closed arm).
+        let all_degen = vec![(0x42u8, None, vec![2u32, 0, 1, 3])];
+        let pin = e0b_dup_pin(&elements, &points, &written_rank, &all_degen, &[]);
         assert_eq!(pin.loops, 0);
         assert_eq!(pin.refused, 1);
     }

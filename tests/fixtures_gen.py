@@ -297,6 +297,7 @@ VALID_VARIANTS = (
     # the overturned stage-10 behavior — the re-scoped tests pin the
     # fire).
     "geometry-composite-law-e0b-dup-pin",
+    "geometry-composite-law-e0b-degenerate-split",
     "geometry-composite-law-e0b-single-loop",
     "geometry-composite-law-e0b-nonplanar",
     "geometry-composite-law-e0b-normal-less",
@@ -464,6 +465,7 @@ COMPOSITE_VARIANTS = (
     "geometry-composite-law-mixedwrite-multi-rep",
     "geometry-composite-law-mixedwrite-multi-rep-subnode",
     "geometry-composite-law-e0b-dup-pin",
+    "geometry-composite-law-e0b-degenerate-split",
     "geometry-composite-law-e0b-single-loop",
     "geometry-composite-law-e0b-nonplanar",
     "geometry-composite-law-e0b-normal-less",
@@ -1476,6 +1478,14 @@ def _composite_store(variant: str) -> bytes:
                 extra_record = _facet_record(
                     0x4C, (0.0, 1.0, 0.0), skip_loop_a
                 ) + _e0b_record(0x4C, (0.0, 1.0, 0.0), (skip_loop_bad,))
+            elif variant == "geometry-composite-law-e0b-degenerate-split":
+                # W16 A4 (2026-11-22): the writer's degenerate-quad
+                # convention — the dup-pinned strip (P1, P0, P1, P3)
+                # collapses its first triangle and its second is real
+                # surface.  The split law welds the real remainder and
+                # counts the collapsed half; the old whole-loop refusal
+                # dropped both.
+                extra_record = _facet_record(0x42, None, (2, 0, 1, 4))
             elif variant == "geometry-composite-law-e0b-normal-less":
                 # one coplanar loop + one on a NORMAL-LESS 0x42 strip
                 # (the 08f2eccb mixed-coverage shape): both weld (a
