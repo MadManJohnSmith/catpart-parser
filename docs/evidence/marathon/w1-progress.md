@@ -139,8 +139,32 @@ parts — PLY bytes identical (acc-Cont-Lft, BW-Motor-W, MB-mesada-82,
 MD-Battery-charging-A1, VM-Periscope_17). clippy --all-targets: no new
 warnings (13 pre-existing at the base); cargo fmt clean.
 
-Submarino before/after: measured in the run below (out-h2 vs
-out-baseline).
+Submarino before/after (757 parts, same probe, out-h2 vs out-baseline):
+
+- **not-manifold 277 → 275** (fixed: acc-Cont-Lft, VM-base_floord-bow-A;
+  **0 new not-manifold, 0 new degenerate-triangles**)
+- L2 pass 446 → 448 (58.92% → 59.18%)
+- triangles 1,822,962 → 1,821,817 (−1,145: the removed garbage)
+- empty-mesh 13 → 13 unchanged; degenerate-triangles 19 → 19 unchanged
+
+The remaining 275 not-manifold parts fail because their REAL surface is
+missing (the declined exact-tile u16be records reference the truncated
+space), not because of exported garbage — that is the tail law's
+territory (hypothesis 1, open).
+
+## H3 gate state (L3 fine sewing)
+
+The brief gates H3 on "#1 and #2 exhausted" with residue > 80. State:
+#2 landed (above); #1's tail-law attempts are spent for this round
+(2 documented negatives + reopening criteria), so the residue stands at
+275 > 80. L3 sewing was NOT attempted this round: the prior round's
+committed negatives (bench state dir `out-postl1-gate/sew_redundancy.json`
+— the sewing drops redundant facets at large displacement, p95/inf
+distances on 145 parts, i.e. surface-lossy as measured) still stand, and
+a no-loss sewing design over a mesh whose real surface is MISSING (the
+declined records) would sew the truncated-space residue, not the real
+defect. Recommended order for the next round: the tail law first (it
+restores the missing surface directly), L3 only after.
 
 ## Hypothesis 1 — the tail law: negatives recorded, reopening criteria
 
