@@ -1766,6 +1766,47 @@ def _apply_unordered_dedup(triangles, info, points=None, space_offsets=()):
     return triangles
 
 
+def _region_decode_with_extent(payload, element_count):
+    """decode_region with the stage-8 extent recovery on walk failure.
+
+    The multi-region node scan's second chance (W10, 2026-11-22): a
+    token node whose region opens with >= 16 full-write slots carries
+    a 2-bit table whose leading bytes form whole zero groups, so the
+    committed layout skip overshoots INTO the table and the primary
+    walk fails (stage-8 artifact 2, the 221df959 shape).  The
+    committed extent law (:func:`_table_decode_extents`) recovers the
+    unique walk-exact extent — the same law the mixedwrite path runs;
+    no new candidate, no re-ordered guess.  Measured on the Submarino:
+    the ntu quartet's 12 period nodes per part decode at extent 1 (32
+    leading full-write slots = 8 zero table bytes) and their
+    per-period reading resolves the store (4 not-manifold -> pass,
+    docs/evidence/marathon/w10-progress.md).
+
+    Fail-closed: no zero block at the counts end, zero or several
+    walk-exact extents, and the node stays declined (the original
+    walk failure re-raised).
+    """
+    try:
+        return decode_region(payload, element_count)
+    except ExportError:
+        tok = payload.find(LIST_TOKEN)
+        if tok < 0:
+            raise
+        _c1, q = read_count(payload, tok + 5)
+        _c2, q = read_count(payload, q)
+        td = _table_decode_extents(payload, element_count, q)
+        if td is None or td[0] == "ambiguous":
+            raise
+        _e, elements, _skips, region_end, write_count = td
+        return elements, {
+            "table_bytes": (element_count + 3) // 4,
+            "write_count": write_count,
+            "region_bytes": 4 * write_count,
+            "walk_end": region_end,
+            "extent": _e,
+        }
+
+
 def _decode_multiregion(data, lo: int, hi: int):
     """The multi-region second-chance reading (W1-B, 2026-11-22).
 
@@ -1793,8 +1834,12 @@ def _decode_multiregion(data, lo: int, hi: int):
     The law, fail-closed at every step:
 
     1. every token node in [lo, hi) decodes walk-exact under the
-       committed table law (:func:`decode_region`); fewer than 2 such
-       nodes is not the family;
+       committed table law (:func:`decode_region`), with the stage-8
+       extent recovery on the leading-zero-table overshoot
+       (:func:`_region_decode_with_extent` — the same committed law
+       the mixedwrite path runs, named per rep in
+       ``multiregion_extent_reps``); fewer than 2 such nodes is not
+       the family;
     2. rep k = node k's territory ``[region_end_k, node k+1)``: its
        records parse under the SAME committed record laws (the width
        vote, the extended family) against node k's OWN element space;
@@ -1808,7 +1853,17 @@ def _decode_multiregion(data, lo: int, hi: int):
     5. the merged mesh is adopted ONLY when it is manifold and carries
        zero degenerate emissions (the L2 checks) and non-empty — the
        caller enforces this and keeps the single-rep emission
-       byte-for-byte otherwise.
+       byte-for-byte otherwise;
+    6. on a merged mesh the strict reading does NOT resolve, the
+       per-rep seam second chance (W10, 2026-11-22) re-emits every rep
+       with the primary-loop seam armed at :data:`PRIMARY_LOOP_AREA_REL`
+       of the MERGED mesh's area — the store-level law's reference
+       semantics (a rep-local sliver is compared against the whole
+       part, not one rep; #34's docstring) — and stands ONLY where the
+       armed reading is itself manifold and degenerate-free; any other
+       outcome keeps the strict (seam-off) emission byte-for-byte.
+       Measured precedent: 138 of the 270 multi-node corpus passers
+       carry seam sliver drops (docs/evidence/marathon/w10-progress.md).
 
     Returns ``(status, result, failure)``: ``'ok'`` with ``result`` =
     ``(points, triangles, degenerate, info, space_offsets)``;
@@ -1819,11 +1874,14 @@ def _decode_multiregion(data, lo: int, hi: int):
     """
     scanned = _scan_token_nodes(data, lo, hi)
     nodes = []
+    extent_reps = 0
     for npos, payload, c1, _c2 in scanned:
         try:
-            elements, rinfo = decode_region(payload, c1)
+            elements, rinfo = _region_decode_with_extent(payload, c1)
         except ExportError:
             continue
+        if "extent" in rinfo:
+            extent_reps += 1
         nodes.append((npos, payload, c1, elements, rinfo))
     if len(nodes) < 2:
         return "not-family", None, ""
@@ -1834,126 +1892,180 @@ def _decode_multiregion(data, lo: int, hi: int):
             f"{len(head_recs)} surviving record(s) precede node 0's "
             "region end: the per-rep attribution would drop them"
         )
-    points: list = []
-    triangles: list = []
-    degenerate = 0
-    space_offsets: list[int] = []
-    loop_stats: dict = {"loops_exported": 0, "loops_curve_entry": 0}
-    skipped_markers: dict[int, int] = {}
-    facet_candidates = 0
-    facet_records = 0
-    write_count = 0
-    table_bytes = 0
-    element_decl = 0
-    curve_entries = 0
-    node_bytes = 0
-    ext_records = 0
-    ext_triangles = 0
-    ext_declined = 0
-    ext_filtered = 0
-    reps_dup_pin: list[tuple[int, dict]] = []
-    reps = 0
-    for k, (npos, payload, c1, elements, rinfo) in enumerate(nodes):
-        region_end = npos + 4 + rinfo["walk_end"]
-        t1 = nodes[k + 1][0] if k + 1 < len(nodes) else hi
-        records, n_hdrs = parse_strip_records(data, region_end, t1, c1, elements)
-        ext, ext_cands = parse_extended_facet_records(
-            data,
-            region_end,
-            t1,
-            c1,
-            elements=elements,
-            shipped_spans=_short_record_spans(data, region_end, t1, records),
-        )
-        all_refs = [
-            r
-            for _o, mk, _n, _ct, refs, _w in records
-            if mk in GATED
-            for r in refs
-        ]
-        all_refs += [r for rec in ext for r in rec.refs]
-        oob = [r for r in all_refs if r >= c1]
-        if oob:
-            return "family-declined", None, (
-                f"rep {k} (node at {npos}): {len(oob)} gated reference(s) "
-                f"leave the rep's element space ({max(oob)} >= elem_decl "
-                f"{c1}); the multi-region reading does not resolve"
+    oob_failure = None
+
+    def _decode_reps(seam_area):
+        """One full per-rep emission: every rep's territory records
+        triangulated against the rep's OWN element space, merged over
+        the disjoint offsets.  ``seam_area`` arms the primary-loop seam
+        per rep with the merged mesh's area reference (``None`` — the
+        seam off, the W1-B reading)."""
+        points: list = []
+        triangles: list = []
+        degenerate = 0
+        space_offsets: list[int] = []
+        loop_stats: dict = {"loops_exported": 0, "loops_curve_entry": 0}
+        skipped_markers: dict[int, int] = {}
+        facet_candidates = 0
+        facet_records = 0
+        write_count = 0
+        table_bytes = 0
+        element_decl = 0
+        curve_entries = 0
+        node_bytes = 0
+        ext_records = 0
+        ext_triangles = 0
+        ext_declined = 0
+        ext_filtered = 0
+        reps_dup_pin: list[tuple[int, dict]] = []
+        reps = 0
+        nonlocal oob_failure
+        for k, (npos, payload, c1, elements, rinfo) in enumerate(nodes):
+            region_end = npos + 4 + rinfo["walk_end"]
+            t1 = nodes[k + 1][0] if k + 1 < len(nodes) else hi
+            records, n_hdrs = parse_strip_records(
+                data, region_end, t1, c1, elements
             )
-        tris, deg, stats_k = _triangulate(elements, records, extended=ext)
-        pts = [pt for _v, pt in elements if pt is not None]
-        offset = len(points)
-        dup_pin = stats_k.pop("dup_pin", None)
-        points.extend(pts)
-        triangles.extend((a + offset, b + offset, c + offset) for a, b, c in tris)
-        degenerate += deg
-        space_offsets.append(offset)
-        reps += 1
-        loop_stats["loops_exported"] += stats_k.pop("loops_exported", 0)
-        loop_stats["loops_curve_entry"] += stats_k.pop("loops_curve_entry", 0)
-        for _key in (
-            "primary_loop_skips",
-            "primary_loop_kept",
-            "relist_forced",
-            "relaxed_loops_accepted",
-            "relaxed_loops_declined",
-        ):
-            if _key in stats_k:
-                loop_stats[_key] = loop_stats.get(_key, 0) + stats_k.pop(_key)
-        if dup_pin is not None and dup_pin.get("loops"):
-            reps_dup_pin.append((offset, dup_pin))
-        ext_records += len(ext)
-        ext_triangles += stats_k.pop("extended_triangles", 0)
-        ext_declined += stats_k.pop("extended_declined", 0)
-        ext_filtered += stats_k.pop("extended_members_filtered", 0)
-        facet_candidates += n_hdrs + ext_cands
-        facet_records += len(records) + len(ext)
-        write_count += rinfo["write_count"]
-        table_bytes += rinfo["table_bytes"]
-        element_decl += c1
-        curve_entries += len(elements) - len(pts)
-        node_bytes += len(payload)
-        for _o, mk, _n, _c, _refs, _w in records:
-            if mk not in EXPORTED_SHORT_MARKERS and mk not in RELAXED_SHORT_MARKERS:
-                skipped_markers[mk] = skipped_markers.get(mk, 0) + 1
-    # The dup-pin weld merged per rep (the same merge the per-rep path
-    # runs; a rep's welded loops carry that rep's point offset).
-    curve_entry_law = 0
-    for base, c in reps_dup_pin:
-        triangles += [(a + base, s + base, t + base) for a, s, t in c["triangles"]]
-        degenerate += c["degenerate"]
-        loop_stats["loops_exported"] += c["loops"]
-        loop_stats["loops_curve_entry"] -= c["loops"]
-        curve_entry_law += c["loops"]
-    info = {
-        "stage": "identity-multiregion",
-        "element_decl": element_decl,
-        "node_points": len(points),
-        "curve_entries": curve_entries,
-        "write_count": write_count,
-        "table_bytes": table_bytes,
-        "facet_candidates": facet_candidates,
-        "facet_records": facet_records,
-        "skipped_markers": skipped_markers,
-        "node_bytes": node_bytes,
-        "multiregion_reps": reps,
-        **loop_stats,
-    }
-    if ext_records:
-        info["extended_header_records"] = ext_records
-        info["extended_header_triangles"] = ext_triangles
-        if ext_declined:
-            info["extended_header_declined"] = ext_declined
-        if ext_filtered:
-            info["extended_members_filtered"] = ext_filtered
-    if curve_entry_law:
-        info["curve_entry_law"] = "e0b-dup-pin"
-        info["loops_curve_entry_exported"] = curve_entry_law
-    # The disjoint per-rep index spaces, in emission order (the stage-15
-    # dedup's keeper rule reads them at the assembled mesh).
-    info["_space_offsets"] = tuple(space_offsets)
+            ext, ext_cands = parse_extended_facet_records(
+                data,
+                region_end,
+                t1,
+                c1,
+                elements=elements,
+                shipped_spans=_short_record_spans(data, region_end, t1, records),
+            )
+            all_refs = [
+                r
+                for _o, mk, _n, _ct, refs, _w in records
+                if mk in GATED
+                for r in refs
+            ]
+            all_refs += [r for rec in ext for r in rec.refs]
+            oob = [r for r in all_refs if r >= c1]
+            if oob:
+                oob_failure = (
+                    f"rep {k} (node at {npos}): {len(oob)} gated reference(s) "
+                    f"leave the rep's element space ({max(oob)} >= elem_decl "
+                    f"{c1}); the multi-region reading does not resolve"
+                )
+                return None
+            tris, deg, stats_k = _triangulate(
+                elements, records, extended=ext, seam_area=seam_area
+            )
+            pts = [pt for _v, pt in elements if pt is not None]
+            offset = len(points)
+            dup_pin = stats_k.pop("dup_pin", None)
+            points.extend(pts)
+            triangles.extend(
+                (a + offset, b + offset, c + offset) for a, b, c in tris
+            )
+            degenerate += deg
+            space_offsets.append(offset)
+            reps += 1
+            loop_stats["loops_exported"] += stats_k.pop("loops_exported", 0)
+            loop_stats["loops_curve_entry"] += stats_k.pop("loops_curve_entry", 0)
+            for _key in (
+                "primary_loop_skips",
+                "primary_loop_kept",
+                "relist_forced",
+                "relaxed_loops_accepted",
+                "relaxed_loops_declined",
+            ):
+                if _key in stats_k:
+                    loop_stats[_key] = loop_stats.get(_key, 0) + stats_k.pop(_key)
+            if dup_pin is not None and dup_pin.get("loops"):
+                reps_dup_pin.append((offset, dup_pin))
+            ext_records += len(ext)
+            ext_triangles += stats_k.pop("extended_triangles", 0)
+            ext_declined += stats_k.pop("extended_declined", 0)
+            ext_filtered += stats_k.pop("extended_members_filtered", 0)
+            facet_candidates += n_hdrs + ext_cands
+            facet_records += len(records) + len(ext)
+            write_count += rinfo["write_count"]
+            table_bytes += rinfo["table_bytes"]
+            element_decl += c1
+            curve_entries += len(elements) - len(pts)
+            node_bytes += len(payload)
+            for _o, mk, _n, _c, _refs, _w in records:
+                if mk not in EXPORTED_SHORT_MARKERS and mk not in RELAXED_SHORT_MARKERS:
+                    skipped_markers[mk] = skipped_markers.get(mk, 0) + 1
+        # The dup-pin weld merged per rep (the same merge the per-rep
+        # path runs; a rep's welded loops carry that rep's point
+        # offset).
+        curve_entry_law = 0
+        for base, c in reps_dup_pin:
+            triangles += [
+                (a + base, s + base, t + base) for a, s, t in c["triangles"]
+            ]
+            degenerate += c["degenerate"]
+            loop_stats["loops_exported"] += c["loops"]
+            loop_stats["loops_curve_entry"] -= c["loops"]
+            curve_entry_law += c["loops"]
+        info = {
+            "stage": "identity-multiregion",
+            "element_decl": element_decl,
+            "node_points": len(points),
+            "curve_entries": curve_entries,
+            "write_count": write_count,
+            "table_bytes": table_bytes,
+            "facet_candidates": facet_candidates,
+            "facet_records": facet_records,
+            "skipped_markers": skipped_markers,
+            "node_bytes": node_bytes,
+            "multiregion_reps": reps,
+            **loop_stats,
+        }
+        if extent_reps:
+            info["multiregion_extent_reps"] = extent_reps
+        if ext_records:
+            info["extended_header_records"] = ext_records
+            info["extended_header_triangles"] = ext_triangles
+            if ext_declined:
+                info["extended_header_declined"] = ext_declined
+            if ext_filtered:
+                info["extended_members_filtered"] = ext_filtered
+        if curve_entry_law:
+            info["curve_entry_law"] = "e0b-dup-pin"
+            info["loops_curve_entry_exported"] = curve_entry_law
+        # The disjoint per-rep index spaces, in emission order (the
+        # stage-15 dedup's keeper rule reads them at the assembled
+        # mesh).
+        info["_space_offsets"] = tuple(space_offsets)
+        return (points, triangles, degenerate, info, tuple(space_offsets))
+
+    def _adoptable(result):
+        """The merged-mesh adoption gate, verbatim the caller's
+        (non-empty, manifold, degenerate-free)."""
+        if result is None:
+            return False
+        _points, triangles, degenerate, _info, _offsets = result
+        if not triangles or degenerate:
+            return False
+        return mesh.mesh_stats(list(triangles)).manifold
+
+    result = _decode_reps(None)
+    if result is None:
+        return "family-declined", None, oob_failure
+    if not _adoptable(result):
+        # The per-rep seam second chance (W10, 2026-11-22): the same
+        # two-pass discipline the entry point's primary-emit seam runs
+        # (2026-11-18, #34), with the store-level law's reference
+        # semantics — the sliver is compared against the WHOLE merged
+        # mesh's area, not one rep (the #34 docstring: "per-rep stores
+        # compare against the whole part").  The precedent is measured,
+        # not guessed: 138 of the 270 multi-node corpus passers carry
+        # seam sliver drops (primary_loop_skips > 0) — passing siblings
+        # with the same structure (docs/evidence/marathon/
+        # w10-progress.md).  The armed reading stands ONLY where it
+        # resolves the merged over-use (manifold + degenerate-free);
+        # any other outcome keeps the seam-off emission byte-for-byte.
+        merged_area = mesh_area(result[1], result[0])
+        seam_result = _decode_reps(merged_area)
+        if _adoptable(seam_result):
+            result = seam_result
     return (
         "ok",
-        (points, triangles, degenerate, info, tuple(space_offsets)),
+        result,
         "",
     )
 

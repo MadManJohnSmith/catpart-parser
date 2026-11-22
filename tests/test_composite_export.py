@@ -2612,3 +2612,72 @@ def test_composite_multiregion_nonmanifold_rep_declines_fail_closed():
     # node 0's region plus the fin, still not manifold
     stats = mesh.mesh_stats(list(triangles))
     assert stats.manifold is False
+
+
+# W10 (2026-11-22): the multi-region node scan's extent recovery — a
+# period whose region opens with >= 16 full-write slots carries a
+# leading-zero 2-bit table, the committed layout skip overshoots INTO
+# it (stage-8 artifact 2), and the extent law recovers the unique
+# walk-exact extent.
+
+def _mr_x_order_faces(faces):
+    """The box faces remapped onto the x-interleaved index order
+    [0, 6, 1, 7, 2, 8, 3, 9, 4, 10, 5, 11]: consecutive elements
+    alternate x = 0 / 20, so every written slot is a full triple
+    (slot 0) and the 2-bit table's first four bytes are zero."""
+    perm = [0, 6, 1, 7, 2, 8, 3, 9, 4, 10, 5, 11]
+    inv = {old: new for new, old in enumerate(perm)}
+    return [
+        (m, n, tuple(inv[r] for r in refs)) for m, n, refs in faces
+    ]
+
+
+def _mr_extent_body():
+    from fixtures_gen import _composite_elements, _composite_node_payload
+
+    pts0 = tuple(COMPOSITE_POINTS)
+    elements0 = _composite_elements(pts0)
+    perm = [0, 6, 1, 7, 2, 8, 3, 9, 4, 10, 5, 11]
+    pts1 = tuple(
+        (x + 1.0, y, z) for k in perm for x, y, z in [COMPOSITE_POINTS[k]]
+    ) + tuple(
+        (60.0 + 20.0 * i, 500.0, 700.0) for i in range(4)
+    )
+    elements1 = _composite_elements(pts1, skip_slots=(16, 17, 18, 19))
+    slots = [slot for slot, _pt in elements1]
+    assert slots[:16] == [0] * 16 and slots[16:] == [1] * 4
+    parts = [
+        b"\x04\x04\xfd\xff"
+        + _composite_node_payload(elements0)
+        + b"\x00" * 140  # node 0's payload the largest (find_list_node)
+    ]
+    for m, n, r in _mr_open_faces():
+        parts.append(_mr_record(m, n, r))
+    parts.append(b"\x04\x04\xfd\xff" + _composite_node_payload(elements1))
+    for m, n, r in _mr_x_order_faces(_mr_other_diagonal_faces()):
+        parts.append(_mr_record(m, n, r))
+    return b"".join(parts)
+
+
+def test_composite_multiregion_extent_recovery_adopts_leading_zero_table():
+    """W10 (2026-11-22): period 1's node payload opens with 16 full-
+    write slots — its table's leading bytes are zero, the committed
+    layout skip overshoots INTO the table and the primary walk fails
+    (the stage-8 artifact-2 shape; measured corpus incidence: the ntu
+    quartet's 12 period nodes per part, 4 not-manifold stores).  The
+    multi-region node scan applies the committed extent law
+    (:func:`_table_decode_extents`) as a second chance and recovers
+    the unique walk-exact extent (the true table at counts_end + 4;
+    the shifted candidate fails) — the per-period reading merges
+    manifold and degenerate-free and is adopted, with the recovered
+    rep named in ``multiregion_extent_reps``.  Fail-closed arm: the
+    ambiguity stays declined inside :func:`_table_decode_extents`
+    (covered by the stage-8 extent tests)."""
+    body = _mr_extent_body()
+    points, triangles, degenerate, info = _mr_decode(body)
+    assert info["stage"] == "identity-multiregion"
+    assert info["multiregion_reps"] == 2
+    assert info["multiregion_extent_reps"] == 1
+    assert degenerate == 0
+    stats = mesh.mesh_stats(list(triangles))
+    assert stats.manifold is True
