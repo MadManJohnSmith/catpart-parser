@@ -234,6 +234,7 @@ def test_open_shell_variant_exports_with_warnings(tmp_path: Path, capsys) -> Non
         ("geometry-nan-coords", "malformed-pool-vertex"),
         ("geometry-missing-facet-payload", "undecoded-variant"),
         ("geometry-composite-index-space", "undecoded-variant"),
+        ("geometry-empty-body", "empty-geometry-store"),
     ],
 )
 def test_corrupted_variants_classified(
