@@ -1938,6 +1938,11 @@ def test_triangulate_extended_degenerate_member_is_filtered_not_declining() -> N
 # through BOTH shipped seams (the Python reference and the release
 # ``fidelity-cli``) and pins parsed-summary equality plus
 # byte-identical PLY; elsewhere it skips.
+# 2026-11-22 (marathon W1-B/W10): the identity-table-walk and
+# identity-*-reps routes emit more real surface on seven of these flips
+# (all manifold, 0 degenerate emissions; counts below are the measured
+# post-marathon values). The seam counter is asserted whenever the part
+# still takes the primary seam.
 PRIMARY_SEAM_FLIPS = {
     # 13bb5c0c gained its 120 k=17/18 0x42 records (#65's MAX_LOOP_COUNTS
     # raise; all in-bounds, 90 exact-tiling, the store stays manifold) —
@@ -1952,23 +1957,23 @@ PRIMARY_SEAM_FLIPS = {
     # micro-batch evidence).
     "13bb5c0c49616ade": 229732,
     "2fb5b092857f70ec": 1753,
-    "44e63faa2d9abf84": 2520,
+    "44e63faa2d9abf84": 2524,
     "4a32f59c1e637acd": 2451,
     "4abf3eeaf892be44": 1973,
     # 612c5e7cc7291c71 gained its extended-header records' valid
     # siblings through the 2026-11-21 member-filter law (4505 -> 4521;
     # the degenerate members are filtered and named, the manifold
     # assembly gate unchanged) — the seam-flip pins the law recovers.
-    "612c5e7cc7291c71": 4521,
+    "612c5e7cc7291c71": 4593,
     "6ab9e107b7f30308": 959,
-    "97a0a420923c5c67": 8641,
-    "a61588e5fe2cca5f": 3017,
+    "97a0a420923c5c67": 9106,
+    "a61588e5fe2cca5f": 3023,
     "ba0900267e2072e1": 4395,
     "bc235805f71fdf5a": 1753,
-    "c9fdd85256ae1eba": 17598,
-    "cd76cab52cf2fbe5": 1563,
+    "c9fdd85256ae1eba": 17785,
+    "cd76cab52cf2fbe5": 1617,
     "d31ea2c17d63c041": 2633,
-    "d4127e6b5cc39236": 5080,
+    "d4127e6b5cc39236": 5094,
 }
 
 
