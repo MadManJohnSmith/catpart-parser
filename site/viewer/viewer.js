@@ -14,7 +14,12 @@
 import * as THREE from "./three.module.min.js";
 import init, { decode_export, decode_inspect, decode_product_structure } from "./pkg/port.js";
 import { CHECK_EMPTY_MESH, MAX_DEGENERATE_TRIANGLES, scoreExport } from "./gate.js";
-import { attachOrbit } from "./orbit.js";
+import {
+  VIEW_NAMES,
+  computeComponents,
+  createCadOrbit,
+  reorderByComponents,
+} from "./cadviews.js";
 import { VirtualFileCatalog } from "./catalog.js";
 import { ingestFiles, isZipFile } from "./ingest.js";
 import {
@@ -38,6 +43,9 @@ const els = {
   gatePanel: document.getElementById("gate-panel"),
   featurePanel: document.getElementById("feature-panel"),
   featureTree: document.getElementById("feature-tree"),
+  featureDetail: document.getElementById("feature-detail"),
+  bodiesPanel: document.getElementById("bodies-panel"),
+  bodiesList: document.getElementById("bodies-list"),
   meta: document.getElementById("meta"),
   metaPanel: document.getElementById("meta-panel"),
   displayLabel: document.getElementById("display-label"),
@@ -45,6 +53,13 @@ const els = {
   curvesBtn: document.getElementById("curve-toggle"),
   wireBtn: document.getElementById("wire-toggle"),
   edgesBtn: document.getElementById("edges-toggle"),
+  shadingBtn: document.getElementById("shading-toggle"),
+  viewButtons: {
+    iso: document.getElementById("view-iso"),
+    front: document.getElementById("view-front"),
+    top: document.getElementById("view-top"),
+    right: document.getElementById("view-right"),
+  },
   curveState: document.getElementById("curve-state"),
   assemblyPanel: document.getElementById("assembly-panel"),
   inspectorPanel: document.getElementById("inspector-panel"),
@@ -64,10 +79,17 @@ renderer.setClearColor(0x0e1526);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 1e7);
 scene.add(new THREE.HemisphereLight(0xcfe6ff, 0x202a3c, 1.5));
+// The key light rides the camera (CATIA's view-relative lamp): the
+// visible side stays lit and orbiting never turns a face black. The
+// camera joins the scene so the light's target updates its matrices.
+scene.add(camera);
 const key = new THREE.DirectionalLight(0xffffff, 1.8);
 key.position.set(1, 2, 1.5);
-scene.add(key);
-const orbit = attachOrbit(els.canvas, camera);
+camera.add(key);
+camera.add(key.target);
+// The W22 pose-based controller (site/viewer/cadviews.js): same drag/
+// wheel grammar as orbit.js plus the standard CAD-view presets.
+const orbit = createCadOrbit(camera, els.canvas);
 
 let meshObject = null;
 let curveGroup = null;
@@ -76,7 +98,11 @@ let solidMaterial = null;
 let showCurves = false;
 let showWireframe = false;
 let showEdges = true; // CATIA-style crease edges: on by default
+let showEvenShading = false; // flat shading: every fragment shades front-facing
 let edgesObject = null;
+let bodiesComponents = null; // null while not measured / < 2 components
+let bodiesEpoch = 0; // guards the async body labeling across reloads
+let sceneBounds = null; // { center, radius } — the loaded model's fit bounds
 
 /* ---- Assembly Subsystems (Phase 6) ---- */
 
@@ -136,6 +162,7 @@ function tick() {
 requestAnimationFrame(tick);
 
 function setUIMode(mode) {
+  orbit.setMode(mode);
   if (mode === "assembly") {
     if (els.assemblyPanel) els.assemblyPanel.hidden = false;
     if (els.inspectorPanel) els.inspectorPanel.hidden = false;
@@ -168,8 +195,19 @@ function clearScene() {
   edgesObject = null;
   curveGroup = null;
   displayGroup = null;
+  bodiesComponents = null;
+  sceneBounds = null;
+  bodiesEpoch += 1;
   assemblyScene.clear();
   if (assemblyUI) assemblyUI.clear();
+  if (els.bodiesPanel) {
+    els.bodiesPanel.hidden = true;
+    els.bodiesList.innerHTML = "";
+  }
+  if (els.featureDetail) {
+    els.featureDetail.hidden = true;
+    els.featureDetail.textContent = "";
+  }
 }
 
 function disposeMesh() {
@@ -188,16 +226,26 @@ function buildMesh(vertices, triangles) {
     metalness: 0.1,
     roughness: 0.65,
     wireframe: showWireframe,
+    flatShading: showEvenShading,
     side: THREE.DoubleSide, // open shells are legitimate (G3 F6)
   });
-  meshObject = new THREE.Mesh(geometry, solidMaterial);
+  // A Group holding the surface mesh(es): one mesh when the Bodies
+  // labeling is pending or finds a single visual component, one mesh
+  // per component once a multi-component labeling lands (each with its
+  // own draw range over the shared attributes — no duplicated data).
+  meshObject = new THREE.Group();
+  const surface = new THREE.Mesh(geometry, solidMaterial);
+  surface.name = "surface";
+  meshObject.add(surface);
   scene.add(meshObject);
 
   // The CATIA-style crease-edge overlay (2026-11-21): dark subtle lines
   // along face pairs meeting past 25 degrees (EdgesGeometry's threshold
   // angle), on by default next to the Wireframe toggle. A sibling
   // object, not a child: the mesh's DoubleSide shading is untouched and
-  // the overlay disposes with the file's scene (clearScene).
+  // the overlay disposes with the file's scene (clearScene). Hidden
+  // while a Bodies component is toggled off (the overlay has no
+  // per-component ranges; it comes back at full visibility).
   const edgesGeometry = new THREE.EdgesGeometry(geometry, 25);
   edgesObject = new THREE.LineSegments(
     edgesGeometry,
@@ -211,10 +259,115 @@ function buildMesh(vertices, triangles) {
   scene.add(edgesObject);
 
   // Frame the bounding sphere the summary reports (already the pool's
-  // extents; the Float32Array coordinates are the same values).
+  // extents; the Float32Array coordinates are the same values) — and
+  // settle into the CATIA isometric view, the CAD default.
   geometry.computeBoundingSphere();
   const sphere = geometry.boundingSphere;
-  orbit.frame(sphere.center, Math.max(sphere.radius, 1e-6));
+  sceneBounds = {
+    center: sphere.center.clone(),
+    radius: Math.max(sphere.radius, 1e-6),
+  };
+  orbit.setPreset("iso", {
+    center: sceneBounds.center,
+    radius: sceneBounds.radius,
+  });
+  labelBodies(geometry);
+}
+
+/* ---- Bodies (w22, 2026-11-22) ----
+   The visual components of the decoded mesh, computed client-side
+   (site/viewer/cadviews.js computeComponents: union-find over the
+   shared VERTEX indices, chunked so a Dodge-scale mesh never blocks
+   the main thread). One visual component renders as the ordinary
+   single mesh — nothing changes; N >= 2 components re-render as one
+   mesh per component (per-geometry draw ranges over the SAME position
+   and normal attributes — the exported mesh data is untouched, this
+   is a viewer-side grouping). The panel says what this is and is not:
+   a visual grouping by shared vertices, never a decoded CATIA body
+   boundary — the export contract carries one merged pool and the
+   parser is out of reach for the viewer. */
+
+async function labelBodies(geometry) {
+  const epoch = ++bodiesEpoch;
+  const indexAttr = geometry.getIndex();
+  const position = geometry.getAttribute("position");
+  viewerState.bodies = { count: 1, components: [], allVisible: true, measuring: true };
+  renderBodiesPanel();
+  const result = await computeComponents(position.count, indexAttr.array);
+  if (epoch !== bodiesEpoch || !meshObject) return; // a newer load took over
+  if (result.count >= 2) {
+    const surface = meshObject.children.find((child) => child.name === "surface");
+    const { index, ranges } = reorderByComponents(indexAttr.array, result.labels, result.count);
+    const positionAttr = surface.geometry.getAttribute("position");
+    const normalAttr = surface.geometry.getAttribute("normal");
+    meshObject.remove(surface);
+    surface.geometry.dispose(); // the shared attributes re-upload once, then reuse
+    bodiesComponents = ranges.map((range, k) => {
+      const compGeometry = new THREE.BufferGeometry();
+      compGeometry.setAttribute("position", positionAttr);
+      compGeometry.setAttribute("normal", normalAttr);
+      compGeometry.setIndex(
+        new THREE.BufferAttribute(index.subarray(range.start, range.start + range.count), 1),
+      );
+      compGeometry.setDrawRange(0, range.count);
+      const mesh = new THREE.Mesh(compGeometry, solidMaterial);
+      mesh.name = `body-${k}`;
+      mesh.visible = true;
+      meshObject.add(mesh);
+      return { mesh, triangles: range.triangles, visible: true };
+    });
+    refreshEdgesVisibility();
+  }
+  viewerState.bodies = {
+    count: result.count,
+    components: (bodiesComponents || []).map((comp) => ({
+      triangles: comp.triangles,
+      visible: comp.visible,
+    })),
+    allVisible: true,
+    measuring: false,
+  };
+  renderBodiesPanel();
+  publishState();
+}
+
+function refreshEdgesVisibility() {
+  if (!edgesObject) return;
+  const allVisible = !bodiesComponents || bodiesComponents.every((comp) => comp.visible);
+  edgesObject.visible = showEdges && allVisible;
+}
+
+function renderBodiesPanel() {
+  if (!els.bodiesPanel || !els.bodiesList) return;
+  const state = viewerState.bodies;
+  if (!state || (!state.measuring && (!state.components || state.count < 2))) {
+    els.bodiesPanel.hidden = true;
+    els.bodiesList.innerHTML = "";
+    return;
+  }
+  els.bodiesPanel.hidden = false;
+  if (state.measuring) {
+    // Only reachable while the chunked labeling is still yielding
+    // across frames (a Dodge-scale mesh): tiny meshes finish inside
+    // the same task, before the next paint.
+    els.bodiesList.innerHTML = `<p class="dim">measuring visual components…</p>`;
+    return;
+  }
+  const rows = bodiesComponents
+    .map(
+      (comp, k) =>
+        `<div class="body-row${comp.visible ? "" : " body-hidden"}">` +
+        `<button type="button" class="body-toggle" data-body="${k}" aria-pressed="${comp.visible ? "true" : "false"}">${comp.visible ? "visible" : "hidden"}</button>` +
+        `<span class="body-name">Component ${k + 1}</span>` +
+        `<span class="dim">${comp.triangles.toLocaleString("en")} tri</span>` +
+        `</div>`,
+    )
+    .join("");
+  els.bodiesList.innerHTML =
+    `${rows}` +
+    (state.allVisible
+      ? ""
+      : `<button type="button" id="bodies-show-all" class="bodies-show-all">Show all</button>`);
 }
 
 /* The no-surface display fallback (2026-11-19): a part with zero
@@ -255,7 +408,14 @@ function buildDisplayCarriers(points, curveSegments) {
 
   const box = new THREE.Box3().setFromBufferAttribute(positions);
   const sphere = box.getBoundingSphere(new THREE.Sphere());
-  orbit.frame(sphere.center, Math.max(sphere.radius, 1e-6));
+  sceneBounds = {
+    center: sphere.center.clone(),
+    radius: Math.max(sphere.radius, 1e-6),
+  };
+  orbit.setPreset("iso", {
+    center: sceneBounds.center,
+    radius: sceneBounds.radius,
+  });
 }
 
 function setDisplayLabel(label) {
@@ -431,11 +591,17 @@ function renderFeatureTree(tree, hasGeometry) {
     return;
   }
   els.featurePanel.hidden = false;
+  // The feature rows are buttons: clicking one highlights it and shows
+  // where its framed records live in the file (the only per-feature
+  // data the census carries — the offset, the count). A selection is
+  // a highlight of the OPERATION's name census, never a geometry claim.
   const rows = tree.features
     .map(
       (feature) =>
-        `<li class="feature-row"><span class="feature-type">${esc(feature.type)}</span>` +
-        `<span class="feature-count">${feature.count}</span></li>`,
+        `<li><button type="button" class="feature-row" data-type="${esc(feature.type)}" ` +
+        `data-count="${feature.count}" data-offset="${feature.first_offset}" aria-pressed="false">` +
+        `<span class="feature-type">${esc(feature.type)}</span>` +
+        `<span class="feature-count">${feature.count}</span></button></li>`,
     )
     .join("");
   const badge = hasGeometry
@@ -458,10 +624,45 @@ function renderFeatureTree(tree, hasGeometry) {
   `;
 }
 
+/* The feature-row click: toggle the highlight, render the record's
+   location detail (byte offset in hex + decimal). */
+function onFeatureRowClick(button) {
+  const wasSelected = button.classList.contains("selected");
+  for (const row of els.featureTree.querySelectorAll("button.feature-row.selected")) {
+    row.classList.remove("selected");
+    row.setAttribute("aria-pressed", "false");
+  }
+  if (wasSelected) {
+    viewerState.featureSelection = null;
+    if (els.featureDetail) {
+      els.featureDetail.hidden = true;
+      els.featureDetail.textContent = "";
+    }
+    return;
+  }
+  button.classList.add("selected");
+  button.setAttribute("aria-pressed", "true");
+  const type = button.dataset.type;
+  const count = Number(button.dataset.count);
+  const offset = Number(button.dataset.offset);
+  viewerState.featureSelection = { type, count, firstOffset: offset };
+  if (els.featureDetail) {
+    els.featureDetail.hidden = false;
+    els.featureDetail.textContent =
+      `${type}: ${count} framed record(s) — first at byte ${offset} ` +
+      `(0x${offset.toString(16).toUpperCase()}). A name census location, never geometry.`;
+  }
+}
+
 function clearFeatureTree() {
   if (!els.featurePanel || !els.featureTree) return;
   els.featurePanel.hidden = true;
   els.featureTree.innerHTML = "";
+  viewerState.featureSelection = null;
+  if (els.featureDetail) {
+    els.featureDetail.hidden = true;
+    els.featureDetail.textContent = "";
+  }
 }
 
 function esc(text) {
@@ -513,6 +714,7 @@ function refreshToggles(curveCount) {
   els.curvesBtn.setAttribute("aria-pressed", showCurves ? "true" : "false");
   els.wireBtn.setAttribute("aria-pressed", showWireframe ? "true" : "false");
   els.edgesBtn.setAttribute("aria-pressed", showEdges ? "true" : "false");
+  els.shadingBtn.setAttribute("aria-pressed", showEvenShading ? "true" : "false");
 }
 
 /* The scripted-check surface (window.viewer): the same state the
@@ -531,6 +733,11 @@ const viewerState = {
   curvesVisible: false,
   wireframe: false,
   edgesVisible: true,
+  evenShading: false, // flat shading: every fragment shades front-facing
+  shading: "smooth", // "smooth" | "flat" (the material state)
+  view: null, // the CAD-view pose readout (cadviews.js)
+  bodies: null, // the visual components (never decoded body boundaries)
+  featureSelection: null, // the highlighted feature-census row
   display: null,
   assembly: null,
 };
@@ -539,7 +746,42 @@ function publishState() {
   viewerState.curvesVisible = showCurves;
   viewerState.wireframe = showWireframe;
   viewerState.edgesVisible = showEdges;
+  viewerState.evenShading = showEvenShading;
+  viewerState.shading = showEvenShading ? "flat" : "smooth";
+  viewerState.view = orbit.readout();
   window.viewer = viewerState;
+}
+
+/* The current fit bounds for the standard-view buttons: the mesh's
+   bounding sphere in part mode (already computed at build time), the
+   scene's world bounding sphere in assembly mode. Camera-only work. */
+function currentFit() {
+  if (viewerState.mode === "assembly") {
+    return assemblyScene.computeBoundingSphere("world");
+  }
+  return sceneBounds || { center: new THREE.Vector3(), radius: 10 };
+}
+
+/* The even-shading option (w22): flat shading on the material only —
+   three.js derives per-fragment normals from screen-space derivatives
+   (always front-facing), so mixed winding in the exported mesh stops
+   producing dark faces. The mesh data (vertices, triangles, normals)
+   is never touched, and the toggle costs one shader recompile, not a
+   geometry pass — safe at Dodge scale. */
+function applyEvenShading(on) {
+  showEvenShading = !!on;
+  if (solidMaterial) {
+    solidMaterial.flatShading = showEvenShading;
+    solidMaterial.needsUpdate = true;
+  }
+  for (const inst of assemblyScene.instances.values()) {
+    inst.traverse((child) => {
+      if (child.isMesh && child.material && child.material.flatShading !== showEvenShading) {
+        child.material.flatShading = showEvenShading;
+        child.material.needsUpdate = true;
+      }
+    });
+  }
 }
 
 /* ---- loading (Part Mode) ---- */
@@ -561,6 +803,8 @@ async function loadFile(file) {
   viewerState.curveCount = 0;
   viewerState.display = null;
   viewerState.assembly = null;
+  viewerState.bodies = null;
+  viewerState.featureSelection = null;
   publishState();
   setStatus(`decoding ${file.name} (${file.size.toLocaleString("en")} B)…`);
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -726,6 +970,8 @@ async function loadAssemblyFromCatalog(catalog, preferredRoot = null) {
   viewerState.summary = null;
   viewerState.inspect = null;
   viewerState.assembly = null;
+  viewerState.bodies = null;
+  viewerState.featureSelection = null;
   publishState();
 
   const candidates = catalog.getProducts();
@@ -766,6 +1012,12 @@ async function loadAssemblyFromCatalog(catalog, preferredRoot = null) {
   }
 
   const sphereData = assemblyScene.computeBoundingSphere("world");
+  // Settle into the CATIA isometric view for the loaded product (the
+  // autoFrame's plain fit already ran inside loadAssembly).
+  orbit.setPreset("iso", {
+    center: sphereData.center,
+    radius: Math.max(sphereData.radius, 1e-6),
+  });
 
   viewerState.assembly = {
     document: doc,
@@ -911,10 +1163,69 @@ els.wireBtn.addEventListener("click", () => {
 
 els.edgesBtn.addEventListener("click", () => {
   showEdges = !showEdges;
-  if (edgesObject) edgesObject.visible = showEdges;
+  refreshEdgesVisibility();
   assemblyScene.setEdges(showEdges);
   refreshToggles(viewerState.curveCount);
   publishState();
+});
+
+els.shadingBtn.addEventListener("click", () => {
+  applyEvenShading(!showEvenShading);
+  els.shadingBtn.setAttribute("aria-pressed", showEvenShading ? "true" : "false");
+  refreshToggles(viewerState.curveCount);
+  publishState();
+});
+
+for (const name of VIEW_NAMES) {
+  els.viewButtons[name].addEventListener("click", () => {
+    orbit.setPreset(name, currentFit(), () => publishState());
+    publishState();
+  });
+}
+
+els.featureTree.addEventListener("click", (ev) => {
+  const button = ev.target.closest("button.feature-row");
+  if (!button) return;
+  onFeatureRowClick(button);
+  publishState();
+});
+
+els.bodiesList.addEventListener("click", (ev) => {
+  const toggle = ev.target.closest("button.body-toggle");
+  if (toggle) {
+    const k = Number(toggle.dataset.body);
+    const comp = bodiesComponents && bodiesComponents[k];
+    if (!comp) return;
+    comp.visible = !comp.visible;
+    comp.mesh.visible = comp.visible;
+    refreshEdgesVisibility();
+    const allVisible = bodiesComponents.every((c) => c.visible);
+    viewerState.bodies = {
+      count: bodiesComponents.length,
+      components: bodiesComponents.map((c) => ({ triangles: c.triangles, visible: c.visible })),
+      allVisible,
+      measuring: false,
+    };
+    renderBodiesPanel();
+    publishState();
+    return;
+  }
+  const showAll = ev.target.closest("button.bodies-show-all");
+  if (showAll) {
+    for (const comp of bodiesComponents) {
+      comp.visible = true;
+      comp.mesh.visible = true;
+    }
+    refreshEdgesVisibility();
+    viewerState.bodies = {
+      count: bodiesComponents.length,
+      components: bodiesComponents.map((c) => ({ triangles: c.triangles, visible: c.visible })),
+      allVisible: true,
+      measuring: false,
+    };
+    renderBodiesPanel();
+    publishState();
+  }
 });
 
 /* ---- boot: the wasm module initialises before the first decode ---- */

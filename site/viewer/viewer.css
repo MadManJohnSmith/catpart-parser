@@ -96,6 +96,81 @@
 .controls button:disabled { opacity: .45; cursor: not-allowed; }
 .controls .hint { margin-left: auto; }
 
+/* ---- Standard CAD views toolbar (w22, 2026-11-22) ----
+   Iso / Front / Top / Right: the CATIA-space presets
+   (site/viewer/cadviews.js), each an eased camera transition — never a
+   geometry pass, whatever the mesh size. */
+.views-toolbar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.views-toolbar button {
+  background: var(--bg-soft);
+  border: 1px solid var(--card-edge);
+  color: var(--ink);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.views-toolbar button:hover { border-color: var(--accent); }
+
+/* ---- Bodies panel (w22): the visual components ------------------- */
+.bodies-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.body-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  border-left: 2px solid rgba(139, 123, 255, 0.45);
+  background: rgba(139, 123, 255, 0.06);
+  font-size: 12.5px;
+}
+.body-row.body-hidden { opacity: .55; }
+.body-row .body-name { flex: 1; font-family: var(--mono); }
+.body-toggle,
+.bodies-show-all {
+  background: var(--bg-soft);
+  border: 1px solid var(--card-edge);
+  color: var(--ink);
+  border-radius: 6px;
+  padding: 2px 9px;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.body-toggle:hover,
+.bodies-show-all:hover { border-color: var(--accent); }
+.body-toggle[aria-pressed="false"] {
+  color: var(--ink-faint);
+  border-style: dashed;
+}
+
+/* ---- Feature row selection (w22): the highlighted operation ------ */
+.feature-row { cursor: pointer; text-align: left; width: 100%; }
+.feature-row.selected {
+  border-left-color: var(--accent);
+  background: rgba(139, 123, 255, 0.18);
+  outline: none;
+}
+.feature-row.selected .feature-type { color: var(--accent); }
+.feature-detail {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--card-edge);
+  border-radius: 8px;
+  background: var(--bg-soft);
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.feature-detail[hidden] { display: none; }
+
 .error-panel {
   margin-top: 14px;
   border: 1px solid var(--bad);
