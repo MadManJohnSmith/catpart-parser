@@ -121,3 +121,19 @@ pins green. Probe `scripts/triage/probe_e5_class_table.py` (selftest 6/6).
   on this host and its URL/sha256s were never committed (S2 diagnostic was
   session-state). Reopens the moment the snapshot or the 2 BW-hatch parts
   are restored.
+
+## Final (2026-11-22) — pushed d8554e0..bd823b2
+
+All four commits on `origin/marathon/w3-e5-algebra`: baseline (bda6b19),
+the E5-surface route (b5e14d2), progress (894b467), evidence (bd823b2).
+Committed census + A/B supersede every scratch figure: CT rows in
+`docs/evidence/data/e5-class-table-claims.csv`, the per-class table in
+`e5-class-families.csv`, the no-regret A/B in `e5-surface-ab.csv`
+(379 changed-candidate files: 342 identical, 37 improved = 22 upgrades +
+**15 dev display→mesh flips**, 0 regressions, 0 error-class changes).
+Expected L2 dev **1,138 → 1,153 (82.40 % → 83.49 %)**; held-out flat by
+construction (no held-out file in the changed set). Full suite 959 passed
+/ 1 environmental failure (corpus-gated composite test; the pinned
+`lengua_original.CATPart` changed upstream — unrelated to this branch).
+NOTE: the token request card was opened for pushes, but the push
+succeeded with the environment's own credentials — no secret consumed.
