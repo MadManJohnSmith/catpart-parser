@@ -2021,7 +2021,18 @@ def test_primary_seam_port_parity_on_the_flips(tmp_path):
         summary = build_export(path, python_ply)
         assert summary["triangle_count"] == PRIMARY_SEAM_FLIPS[sha]
         assert summary["mesh"]["manifold"] is True
-        assert summary["composite"]["primary_loop_skips"] >= 1
+        composite = summary["composite"]
+        if "primary_loop_skips" in composite:
+            assert composite["primary_loop_skips"] >= 1
+        else:
+            # 2026-11-22 (marathon W1-B/W10/W7-B): the identity-table-walk
+            # and multi-region readings resolve some of these flips before
+            # the primary seam, so the seam counter is correctly absent;
+            # the pinned count and the byte-identical PLY carry the check
+            # and the resolving stage must be named.
+            assert str(composite.get("stage", "")).startswith("identity-"), (
+                composite.get("stage")
+            )
         port = subprocess.run(
             [str(port_bin), "export", str(path), str(port_ply)],
             capture_output=True,
