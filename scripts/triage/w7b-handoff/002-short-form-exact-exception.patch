@@ -1,0 +1,182 @@
+diff --git a/port/src/geometry/composite.rs b/port/src/geometry/composite.rs
+index 36940b7..729bf91 100644
+--- a/port/src/geometry/composite.rs
++++ b/port/src/geometry/composite.rs
+@@ -979,6 +979,19 @@ fn parse_strip_records(
+     } else {
+         Vec::new()
+     };
++    // W7-B (2026-11-22): the #65 exact-tiling exception extended to the
++    // short form needs the merged boundary list (strip + facet header
++    // positions) — Motor.CATPart's u16 record at 51508595 exact-tiles
++    // onto a 0x47 facet header, and _NPart#194321's u24 record onto a
++    // short header; the strip-only list misses both.
++    let mut bounds = hdrs.clone();
++    bounds.extend(facets::facet_headers(data, lo, hi));
++    bounds.sort_unstable();
++    bounds.dedup();
++    // The #65 overlap guard's own accepts: exception-admitted records
++    // may span past the next candidate header, so in-span positions are
++    // false positives in the record's refs and must not parse.
++    let mut accepted_spans: Vec<(usize, usize)> = Vec::new();
+     let widths: &[u8] = if element_count > 65_535 {
+         &[1, 2, 3]
+     } else {
+@@ -986,6 +999,13 @@ fn parse_strip_records(
+     };
+     let mut out = Vec::new();
+     for (i, &o) in hdrs.iter().enumerate() {
++        // The #65 overlap guard (W7-B short-form extension): a walk
++        // position inside an exception-admitted record's span is a
++        // false positive in that record's refs, not a record of its
++        // own.
++        if accepted_spans.iter().any(|&(a, e)| a <= o && o < e) {
++            continue;
++        }
+         let nxt = if i + 1 < hdrs.len() { hdrs[i + 1] } else { hi };
+         let mk = data[o + 1];
+         let hlen: usize = match facets::header_len(data, o) {
+@@ -1069,8 +1089,32 @@ fn parse_strip_records(
+                     }
+                     let counts_end = base + counts_bytes;
+                     let end = counts_end + width as usize * n as usize;
+-                    if end > nxt {
+-                        continue;
++                    // W7-B (2026-11-22): the exact-tiling slot reads the
++                    // MERGED boundary list — an end exactly on a facet
++                    // header (M4x10's u16 @ 20635818 tiling onto the
++                    // next 0x47) is as exact as one tiling onto the next
++                    // strip header. Viability keeps the strip-only
++                    // ``nxt``; an end past it admits only through the
++                    // #65 exception.
++                    let j = bounds.partition_point(|&b| b < end);
++                    let nxt_eff = if j < bounds.len() { bounds[j] } else { hi };
++                    let past = end > nxt;
++                    if past {
++                        // The #65 exact-tiling exception extended to the
++                        // short form: the in-span candidate headers are
++                        // the record's own ref bytes (false positives),
++                        // so an end past ``nxt`` is viable only when it
++                        // lands exactly on a later merged candidate
++                        // header and swallows no accepted record
++                        // (Motor.CATPart u16 @ 51508595 / _NPart#194321
++                        // u24 @ 1778227; their u8 misreads emitted the
++                        // L2 degenerate-triangles counts).
++                        if end != nxt_eff
++                            || end > hi
++                            || accepted_spans.iter().any(|&(a, e)| a < end && o < e)
++                        {
++                            continue;
++                        }
+                     }
+                     if little && h6.is_some_and(|h| counts_end < h && h < end) {
+                         // #66 fail-closed on the u16le hypothesis: a block
+@@ -1085,7 +1129,7 @@ fn parse_strip_records(
+                         counts,
+                         counts_end,
+                         end,
+-                        exact: end == nxt,
++                        exact: end == nxt_eff,
+                         tri_count: 0,
+                         relaxed_u16: relaxed,
+                         k: k as u32,
+@@ -1137,6 +1181,10 @@ fn parse_strip_records(
+             refs,
+             width,
+         });
++        // The #65 overlap guard's input (W7-B short-form extension):
++        // the accepted record's span — an exception-admitted record
++        // ends past ``nxt``, so later in-span walk positions must skip.
++        accepted_spans.push((o, end));
+     }
+     (out, hdrs.len())
+ }
+diff --git a/src/catpart/geometry/composite.py b/src/catpart/geometry/composite.py
+index c24a229..2df8265 100644
+--- a/src/catpart/geometry/composite.py
++++ b/src/catpart/geometry/composite.py
+@@ -563,6 +563,16 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
+     marker, normal, counts, refs, width)``.
+     """
+     hdrs = [m.start() for m in STRIP_RE.finditer(data, lo, hi)]
++    # W7-B (2026-11-22): the #65 exact-tiling exception extended to the
++    # short form needs the merged boundary list (strip + facet header
++    # positions) — Motor.CATPart's u16 record at 51508595 exact-tiles
++    # onto a 0x47 facet header, and _NPart#194321's u24 record onto a
++    # short header; the strip-only list misses both.
++    bounds = sorted(hdrs + facet_headers(data, lo, hi))
++    # The #65 overlap guard's own accepts: exception-admitted records
++    # may span past the next candidate header, so in-span positions are
++    # false positives in the record's refs and must not parse.
++    accepted_spans: list[tuple[int, int]] = []
+     widths = (1, 2, 3) if element_count > 65_535 else (1, 2)
+     ext_hdrs = (
+         facet_headers(data, lo, hi)
+@@ -571,6 +581,11 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
+     )
+     out = []
+     for i, o in enumerate(hdrs):
++        # The #65 overlap guard (W7-B short-form extension): a walk
++        # position inside an exception-admitted record's span is a false
++        # positive in that record's refs, not a record of its own.
++        if any(a <= o < e for a, e in accepted_spans):
++            continue
+         nxt = hdrs[i + 1] if i + 1 < len(hdrs) else hi
+         hlen = header_len(data, o)
+         if hlen is None or hlen == 6:
+@@ -624,8 +639,33 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
+                             continue
+                         counts_end = base + counts_bytes
+                         end = counts_end + width * n
+-                        if end > nxt:
+-                            continue
++                        # W7-B (2026-11-22): the exact-tiling slot reads
++                        # the MERGED boundary list — an end exactly on a
++                        # facet header (M4x10's u16 @ 20635818 tiling
++                        # onto the next 0x47) is as exact as one tiling
++                        # onto the next strip header. Viability keeps
++                        # the strip-only ``nxt``; an end past it admits
++                        # only through the #65 exception.
++                        j = bisect.bisect_left(bounds, end)
++                        nxt_eff = bounds[j] if j < len(bounds) else hi
++                        past = end > nxt
++                        if past:
++                            # The #65 exact-tiling exception extended to
++                            # the short form: the in-span candidate
++                            # headers are the record's own ref bytes
++                            # (false positives), so an end past ``nxt``
++                            # is viable only when it lands exactly on a
++                            # later merged candidate header and
++                            # swallows no accepted record (Motor.CATPart
++                            # u16 @ 51508595 / _NPart#194321 u24 @
++                            # 1778227; their u8 misreads emitted the L2
++                            # degenerate-triangles counts).
++                            if (
++                                end != nxt_eff
++                                or end > hi
++                                or any(a < end and o < e for a, e in accepted_spans)
++                            ):
++                                continue
+                         if (
+                             endian == "little"
+                             and h6 is not None
+@@ -646,7 +686,7 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
+                             counts=tuple(counts),
+                             counts_end=counts_end,
+                             end=end,
+-                            exact=(end == nxt),
++                            exact=(end == nxt_eff),
+                             relaxed_u16=relaxed,
+                             k=k,
+                         )
+@@ -685,6 +725,10 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
+             # so this declines no measured record.
+             continue
+         out.append((o, mk, normal, counts, refs, width))
++        # The #65 overlap guard's input (W7-B short-form extension): the
++        # accepted record's span — an exception-admitted record ends
++        # past ``nxt``, so later in-span walk positions must skip.
++        accepted_spans.append((o, end))
+     return out, len(hdrs)
+ 
+ 

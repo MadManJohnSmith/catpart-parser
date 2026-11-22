@@ -1,0 +1,32 @@
+diff --git a/port/src/geometry/composite.rs b/port/src/geometry/composite.rs
+index 36940b7..729bf91 100644
+--- a/port/src/geometry/composite.rs
++++ b/port/src/geometry/composite.rs
+@@ -3144,6 +3192,14 @@ fn decode_store_once(
+     if tri_res.primary_loop_kept > 0 {
+         info.primary_loop_kept = Some(tri_res.primary_loop_kept);
+     }
++    // W7-B (2026-11-22): the twin rides the relaxed counters on
++    // ``**loop_stats`` on every path (composite.py:1619-1621) — the
++    // table-walk info dropped them (Guntle.ver5 / M3x16_CHC summaries
++    // diverged by key presence alone; the PLYs agree).
++    if tri_res.relaxed_loops_accepted > 0 || tri_res.relaxed_loops_declined > 0 {
++        info.relaxed_loops_accepted = Some(tri_res.relaxed_loops_accepted);
++        info.relaxed_loops_declined = Some(tri_res.relaxed_loops_declined);
++    }
+     if curve_entry_law > 0 {
+         info.curve_entry_law = Some("e0b-dup-pin");
+         info.loops_curve_entry_exported = Some(curve_entry_law);
+@@ -3525,6 +3581,12 @@ fn decode_raw_array_path(
+     if tri_res.primary_loop_kept > 0 {
+         info.primary_loop_kept = Some(tri_res.primary_loop_kept);
+     }
++    // W7-B (2026-11-22): same twin emission as the table-walk fix —
++    // the raw-array path's info rides ``**loop_stats`` in the twin.
++    if tri_res.relaxed_loops_accepted > 0 || tri_res.relaxed_loops_declined > 0 {
++        info.relaxed_loops_accepted = Some(tri_res.relaxed_loops_accepted);
++        info.relaxed_loops_declined = Some(tri_res.relaxed_loops_declined);
++    }
+     // One index space on this path (see the single-region note above).
+     // The §2.3 curve exposure: the raw element space has NO skip
+     // slots, so no dropped curve-entry loops exist and the artifact is
