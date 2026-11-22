@@ -118,22 +118,36 @@ Full per-file rows: `w4-feature-tree-files.csv`.
 
 ## 5. The honest open rate after both w4 levers
 
-The open-rate probe re-measured over the available corpus
+The open-rate probe re-measured over the corpus
 (`docs/evidence/data/w4-open-rate-files.csv`; the committed
-`open-rate-files.csv` stays the 2026-11-19 measurement):
+`open-rate-files.csv` stays untouched — it is the 2026-11-20 run whose
+tree predates the face-gp route, so its per-row data is stale by 24
+rows: the 13 committed face-gp fires + 11 rows the d8554e0 lineage
+opened, all re-verified MESH at d8554e0's code during the
+reconciliation).
 
-| Measurement | 2026-11-19 (committed) | w4 re-measure (this host) |
-| :--- | ---: | ---: |
-| Part rows measured | 1,442 | 1,380 available (62 dev parts off-disk, §6) |
-| MESH | 1,163 (80.65%) | see the probe run below |
-| DISPLAY | 223 (15.46%) | … |
-| BLANK | 56 (3.88%) | … |
+**Raw on this host** (62 dev parts off-disk, §6 — they land as
+`unreadable-file` BLANK): MESH 1,142 · DISPLAY 209 · BLANK 91 of 1,442.
 
-The w4 deltas on the rows the levers touch: `CAAPstPad1_2` BLANK →
-MESH (+1, the counter-table fire); the 8 changed fires stay MESH with
-larger meshes; **every `feature-tree` / `prtcont-only` row stays
-BLANK** — the tree is a display aid, not geometry, and the honest open
-rate does not move by a single feature-tree row.
+**Like-for-like** (drift rows restored to their d8554e0 classes, the
+24 stale rows corrected — every correction verified by an export at
+d8554e0's code):
+
+| Measurement | d8554e0 true | w4 | movement |
+| :--- | ---: | ---: | :--- |
+| MESH | 1,202 | **1,203** | +1 (`CAAPstPad1_2`: DISPLAY → MESH, 30 tris) |
+| DISPLAY | 211 | **210** | −1 (the same row) |
+| BLANK | 29 | **29** | flat — the no-carrier floor |
+| **Open (MESH + DISPLAY)** | **1,413/1,442 = 97.99%** | **1,413/1,442 = 97.99%** | flat (the one moved row was already open as a display; it upgrades to a real mesh — the +1 L2 dev pass) |
+
+Exactly **one row changes class** between d8554e0 and w4; the 8
+counter-table gains upgrade already-open rows (more triangles, same
+class); **every `feature-tree` / `prtcont-only` row stays BLANK** — the
+tree is a display aid, not geometry, and the honest open rate does not
+move by a single feature-tree row. The 29 remaining BLANKs are the
+no-carrier floor: 19 `missing-geometry-store` + 10
+`undecoded-variant`, every one verified to carry no count-framed f32
+array, no point run and no law-holding curve record.
 
 ## 6. The corpus caveat (honest scope)
 
