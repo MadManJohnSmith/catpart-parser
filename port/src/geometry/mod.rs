@@ -26,6 +26,7 @@ pub mod mesh;
 pub mod ply;
 pub mod pool;
 pub mod store;
+pub mod stream_version;
 pub mod surface;
 pub mod unclassified;
 pub mod vote;
