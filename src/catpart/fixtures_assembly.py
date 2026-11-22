@@ -35,7 +35,7 @@ import os
 import re
 import struct
 import zipfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -1019,7 +1019,9 @@ def parse_position_matrix_records(data: bytes) -> list[dict[str, Any]]:
 
 
 def _name_table_placement(
-    records: Sequence[Mapping[str, Any]], n_own: int | None = None
+    records: Sequence[Mapping[str, Any]],
+    n_own: int | None = None,
+    shared_bodies: Collection[bytes] | None = None,
 ) -> dict[str, Any]:
     """Placement fields for name-table instances under the fail-closed law.
 
@@ -1037,6 +1039,19 @@ def _name_table_placement(
     child. Order-independent by construction — no ordinal law. Identity
     frames (`e9 f4 07 04 37`) are constraint/connector placeholders
     (Clause 3); a record set containing one never places.
+
+    `shared_bodies` carries the matrix bodies that appear byte-identical in
+    **two or more documents** of the walked set (W5 law C). The snapshot's
+    connector frames propagate through the product references — e.g. the
+    ``T = (-0.0, -2.241, 2179.457)`` body appears in 13 unrelated documents —
+    and the STEP oracle places those documents' children at the parent origin
+    (Z within [-88.7, +31.7] mm for VM-vela-Mast, where the matrix would put
+    them at Z = +2179.457 mm). A shared body is therefore a connector frame,
+    never an instance placement: refused records do not bind. A document
+    whose records are ALL refused (or Clause 3 identity frames) carries no
+    instance placements at all and its instances decode identity — the
+    oracle-confirmed state for the four STEP-backed products. A document
+    mixing refused records with anything else keeps the fail-closed path.
     """
     n_records = len(records)
     if n_records == 0:
@@ -1050,10 +1065,43 @@ def _name_table_placement(
                 "(identity at origin)"
             ),
         }
+    refused = [
+        rec
+        for rec in records
+        if rec["kind"] == "explicit"
+        and shared_bodies is not None
+        and rec["matrix"] in shared_bodies
+    ]
+    clause3 = [rec for rec in records if rec["kind"] == "identity"]
+    if refused or clause3:
+        if len(refused) + len(clause3) == n_records:
+            return {
+                "has_position_attr": True,
+                "placement_status": "identity",
+                "transform": list(IDENTITY_TRANSFORM),
+                "object_tag": None,
+                "classification_detail": (
+                    f"connector-frame records: all {n_records} _Position record(s) are "
+                    "non-placement frames (byte-identical across documents of the walked "
+                    "set / Clause 3 identity frames); the document carries no instance "
+                    "placements (W5 law C)"
+                ),
+            }
+        return {
+            "has_position_attr": True,
+            "placement_status": "undecodable",
+            "transform": None,
+            "object_tag": None,
+            "classification_detail": (
+                f"connector-frame refusal blocks binding: {len(refused)} shared-body "
+                f"+ {len(clause3)} identity frame(s) among {n_records} records; the "
+                "remainder cannot be attributed to names (the name table carries no "
+                "instance order)"
+            ),
+        }
     places = (
         n_own is not None
         and n_records == n_own
-        and all(rec["kind"] == "explicit" for rec in records)
         and len({rec["matrix"] for rec in records}) == 1
     )
     if places:
@@ -1200,6 +1248,28 @@ def resolve_owned_assembly(
         docs[stem] = data
 
     table_cache: dict[str, dict[str, Any] | None] = {}
+    records_cache: dict[str, list[dict[str, Any]]] = {}
+
+    def records_for(name: str) -> list[dict[str, Any]]:
+        """Cached non-root `_Position` records of one document."""
+        if name not in records_cache:
+            data = docs.get(name)
+            records_cache[name] = (
+                parse_position_matrix_records(data) if data is not None else []
+            )
+        return records_cache[name]
+
+    # W5 law C: matrix bodies byte-identical across two or more documents of
+    # the walked set are shared connector frames (never instance placements).
+    # The census covers every document of the set, not only the visited ones:
+    # connector frames propagate through references across unrelated subtrees.
+    body_docs: dict[bytes, set[str]] = {}
+    for name in docs:
+        for rec in records_for(name):
+            body_docs.setdefault(rec["matrix"], set()).add(name)
+    shared_bodies = {
+        body for body, names in body_docs.items() if len(names) >= 2
+    }
 
     def table_for(name: str) -> dict[str, Any] | None:
         if name not in table_cache:
@@ -1225,7 +1295,7 @@ def resolve_owned_assembly(
         }
         own = own_instance_names(table["names"], child_tables)
         placement = _name_table_placement(
-            parse_position_matrix_records(data), n_own=len(own)
+            records_for(name), n_own=len(own), shared_bodies=shared_bodies
         )
 
         visiting.add(name)
@@ -1248,6 +1318,28 @@ def resolve_owned_assembly(
             visiting.remove(name)
 
     visit(root, 0, None)
+    n_refused_docs = sum(
+        1
+        for name in docs
+        if records_cache.get(name)
+        and all(
+            rec["kind"] == "identity" or rec["matrix"] in shared_bodies
+            for rec in records_cache[name]
+        )
+    )
+    warnings: list[dict[str, str]] = []
+    if shared_bodies:
+        warnings.append(
+            {
+                "class": "connector-frame-records-v5r26",
+                "detail": (
+                    f"{len(shared_bodies)} _Position matrix body(ies) appear byte-identical "
+                    f"in >= 2 documents of the walked set; {n_refused_docs} document(s) "
+                    "carry only such connector frames (W5 law C) and their instances "
+                    "decode identity"
+                ),
+            }
+        )
     return {
         "schema_version": 1,
         "root": root,
@@ -1261,6 +1353,7 @@ def resolve_owned_assembly(
         "undecodable_instances": sum(
             1 for row in rows if row["placement_status"] == "undecodable"
         ),
+        "warnings": warnings,
         "instances": rows,
     }
 

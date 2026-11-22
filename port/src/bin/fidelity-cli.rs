@@ -64,12 +64,14 @@
 //! is assembly and I/O only, so unlike the decode modules it carries
 //! no ``suboptimal_flops`` allow (the V0 lint policy, ``lib.rs``).
 
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::process::ExitCode;
 
 use port::geometry::errors::ExportError;
 use port::geometry::export::build_export;
 use port::inspect::{InspectDocument, build_inspect_document};
+use port::product::resolve_owned_assembly;
 use serde::Serialize;
 
 /// The classified error line (the ``catpart-export``/§3.2 shape:
@@ -81,13 +83,14 @@ struct ClassifiedError {
     detail: String,
 }
 
-const USAGE: &str = "usage: fidelity-cli inspect <file>\n       fidelity-cli export <file> <ply-output>\n       (usage errors exit 2)";
+const USAGE: &str = "usage: fidelity-cli inspect <file>\n       fidelity-cli export <file> <ply-output>\n       fidelity-cli tree <root-stem> <snapshot-dir>\n       (usage errors exit 2)";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("inspect") if args.len() == 2 => run_inspect(&args[1]),
         Some("export") if args.len() == 3 => run_export(&args[1], &args[2]),
+        Some("tree") if args.len() == 3 => run_tree(&args[1], &args[2]),
         _ => {
             eprint!("{USAGE}");
             ExitCode::from(2)
@@ -138,6 +141,44 @@ fn run_export(path: &str, out_path: &str) -> ExitCode {
             detail,
         }) => emit_classified(error_class, &detail),
     }
+}
+
+/// The W5 parity seam: walk the V5R26 name-table tree under ``root`` over
+/// every ``*.CATProduct`` of ``dir`` and print the tree document JSON. The
+/// Python twin is ``catpart.fixtures_assembly.resolve_owned_assembly`` fed
+/// the same document set; the parity probe compares canonical JSON.
+fn run_tree(root: &str, dir: &str) -> ExitCode {
+    let mut documents: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(err) => return emit_classified("crash", &format!("{dir}: {err}")),
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("CATProduct") {
+            match std::fs::read(&path) {
+                Ok(data) => {
+                    documents.insert(
+                        path.file_stem()
+                            .unwrap_or_default()
+                            .to_string_lossy()
+                            .to_string(),
+                        data,
+                    );
+                }
+                Err(err) => {
+                    return emit_classified("crash", &format!("{}: {err}", path.to_string_lossy()));
+                }
+            }
+        }
+    }
+    let tree = resolve_owned_assembly(root, &documents);
+    let stdout = std::io::stdout().lock();
+    if let Err(err) = serde_json::to_writer(stdout, &tree) {
+        return emit_classified("crash", &format!("cannot write the tree: {err}"));
+    }
+    let _ = std::io::stdout().lock().write_all(b"\n");
+    ExitCode::SUCCESS
 }
 
 /// One JSON ``{"error_class": ..., "detail": ...}`` line on stderr,
