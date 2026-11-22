@@ -55,3 +55,15 @@ base 65b7a0e. Deliverable: `docs/evidence/2026-11-22-w12-inverse-oracle.md`
 0 src/ edits; no subagents; `python -B` everywhere; only
 `scripts/triage/` + `docs/evidence/` touched; memory-gated (pytest gate
 checked before heavy runs; dodge run last with `free -m` verified).
+
+Gate note (2026-11-22): the push ran WITHOUT a second full check.sh —
+the orchestrator's own check.sh was in flight on the main checkout
+throughout (10+ min: cargo native + wasm32 + clippy + tests), and a
+duplicate full gate would have contended for memory against it (the
+anti-OOM brief's scenario). Local verifications actually run: pinned
+ruff 0.17.4 over all four new scripts (clean), check_w12_csvs.py over
+the 12 committed CSVs (ok), bash -n on check.sh, py_compile on every
+script. The diff carries no runtime code (docs + scripts/triage only;
+pytest does not collect scripts/), so the skipped duplicate run's
+coverage delta is the cargo steps, untouched by this diff. CI and the
+orchestrator's merge gate remain the authority for main.
