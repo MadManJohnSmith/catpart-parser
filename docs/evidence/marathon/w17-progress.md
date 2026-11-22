@@ -203,6 +203,12 @@ change lives here:
     moldes/head/head.CATPart 12,523 -> 12,526 tris (`curve_entry_
     split_skips` 18) and povdoigt's SOIC-8 U5Q5 4,521 -> 4,525
     (split 8), each pass -> pass with the L2 degenerate count at 0.
+    BOTH byte changes are the U4 front's — the container front
+    changes NO hit-file export (their stores either pass through the
+    pre-route emission or the container reps do not change the
+    merged outcome); its local effect stays the oracle's ntu-57YL
+    adoption, and the named Submarino recoveries are projected (the
+    files are absent, above).
 - **the accounting gate the A/B caught (and its fix)**: the first
   split draft counted the split-off collapsed halves into the store's
   `degenerate_triangle_count` — the L2 gate reads that counter at
