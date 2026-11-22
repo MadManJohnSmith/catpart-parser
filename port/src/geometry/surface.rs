@@ -284,6 +284,11 @@ pub struct SurfaceScan {
     pub e5_evaluable: usize,
     pub e5_tessellated: usize,
     pub e5_refused: usize,
+    /// Degenerate tessellation triangles filtered, not exported — the
+    /// member-filter law: the skips are named on the
+    /// `surface-members-filtered` warning and never count as degenerate
+    /// (the L2 gate's `degenerate_triangle_count` stays 0).
+    pub degenerate_filtered: usize,
 }
 
 impl SurfaceScan {
@@ -1382,7 +1387,11 @@ pub fn scan_part(data: &[u8], tolerance_factor: f64) -> SurfaceScan {
     let mut vertices: Vec<(f64, f64, f64)> = Vec::new();
     let mut triangles: Vec<(u32, u32, u32)> = Vec::new();
     let mut tolerances: Vec<f64> = Vec::new();
-    let mut degenerate = 0;
+    // The exported sheet never carries a degenerate triangle: the
+    // tessellation filters them (member-filter law, named on
+    // `degenerate_filtered` below).
+    let degenerate = 0;
+    let mut degenerate_filtered = 0;
     let mut points = 0;
     for (_, payload, end) in frames.iter().copied() {
         let Some(head) = parse_surface_head(data, payload, end) else {
@@ -1416,7 +1425,7 @@ pub fn scan_part(data: &[u8], tolerance_factor: f64) -> SurfaceScan {
                 .map(|&(a, b, c)| (a + base, b + base, c + base)),
         );
         tolerances.push(patch.tolerance);
-        degenerate += patch.degenerate;
+        degenerate_filtered += patch.degenerate;
     }
     // The E5 dialect's 0x00e7 records, under the same battery.  They fold
     // into the totals and the mesh only when at least one tessellated;
@@ -1468,7 +1477,7 @@ pub fn scan_part(data: &[u8], tolerance_factor: f64) -> SurfaceScan {
                     .map(|&(a, b, c)| (a + base, b + base, c + base)),
             );
             tolerances.push(patch.tolerance);
-            degenerate += patch.degenerate;
+            degenerate_filtered += patch.degenerate;
         }
         candidates += e5_candidates;
         decoded += e5_decoded;
@@ -1493,6 +1502,7 @@ pub fn scan_part(data: &[u8], tolerance_factor: f64) -> SurfaceScan {
             e5_evaluable,
             e5_tessellated,
             e5_refused,
+            degenerate_filtered,
         }
     } else {
         SurfaceScan {
@@ -1513,6 +1523,7 @@ pub fn scan_part(data: &[u8], tolerance_factor: f64) -> SurfaceScan {
             e5_evaluable: 0,
             e5_tessellated: 0,
             e5_refused: 0,
+            degenerate_filtered,
         }
     }
 }
@@ -1856,6 +1867,52 @@ mod tests {
         );
         assert_eq!(scan.candidates, 0);
         assert!(!scan.has_mesh());
+    }
+
+    #[test]
+    fn e5_degenerate_members_are_filtered_not_counted() {
+        // A slab whose two inner v pole rows coincide: the collapsed row
+        // makes its knot span constant, so every cell there is a
+        // zero-area degenerate member, while the battery still passes
+        // (the flat span's v-steps are exactly zero, so the fold check
+        // skips them).
+        let lane_v = e5_lane(1, &[0.0, 0.5, 1.0], &[2, 1, 2]);
+        let lane_u = e5_lane(1, &[0.0, 1.0], &[2, 2]);
+        let mut blob = vec![E5_SURFACE_TAG];
+        blob.extend_from_slice(&lane_v);
+        blob.extend_from_slice(&lane_u);
+        blob.extend_from_slice(&E5_POLE_MARKER_PLAIN);
+        for point in [
+            [0.0f64, 0.0, 0.0],
+            [10.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0], // the collapsed row
+            [10.0, 0.0, 0.0],
+            [0.0, 1.0, 2.0],
+            [10.0, 1.0, 2.0],
+        ] {
+            for value in point {
+                push_f64(&mut blob, value);
+            }
+        }
+        blob.extend(std::iter::repeat_n(0u8, 148));
+        let head = parse_e5_surface(&blob, 0, blob.len()).unwrap();
+        let (poles, weights) = e5_pole_data(&blob, &head);
+        assert!(assess(&head, &poles, weights.as_deref()).evaluable());
+        let patch = tessellate(&head, &poles, weights.as_deref(), TOLERANCE_FRACTION).unwrap();
+        assert!(patch.degenerate > 0);
+        assert!(!patch.triangles.is_empty());
+        let filler = [0u8; 8];
+        let chained = e5_part(&[
+            (0x000Eu16, &filler),
+            (E5_SURFACE_CLASS, &blob),
+            (E5_SURFACE_CLASS, &blob),
+        ]);
+        let scan = scan_part(&chained, TOLERANCE_FRACTION);
+        // The member-filter law: the exported mesh carries no degenerate
+        // triangle and the skips are named, never counted as degenerate.
+        assert_eq!(scan.degenerate, 0);
+        assert_eq!(scan.degenerate_filtered, 2 * patch.degenerate);
+        assert!(scan.has_mesh());
     }
 
     #[test]

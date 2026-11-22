@@ -567,6 +567,16 @@ def test_corpus_population_renders_the_decoded_carriers(tmp_path: Path) -> None:
     (x/y/z up to 15,725 mm against the part's ±2,048 mm display
     envelope), so the population total drops 9,685 -> 9,676.  Part
     classification is unchanged (still 105 display).
+
+    2026-11-22 correction (W15, after the E5 class-table merge): five
+    more of these no-facet parts carry class-``0x00e7`` records whose
+    exact B-spline surfaces now tessellate (the E5 route runs before the
+    grid fallback), and five of the T1-relaxed grid meshes upgrade to
+    their own exact surfaces — the census is ``mesh: 10, display: 100``
+    and the triangle total 4,422 -> 63,848 while the display points drop
+    9,676 -> 7,455 (five fewer display parts).  Every one of the ten
+    meshes names ``bspline-surface-tessellated``; the pinned display
+    part's block is unchanged.
     """
     root = Path(__file__).resolve().parents[1]
     manifest = _manifest()
@@ -600,12 +610,12 @@ def test_corpus_population_renders_the_decoded_carriers(tmp_path: Path) -> None:
         if sha == PINNED_PART:
             pinned = block
 
-    assert classes == {"mesh": 5, "display": 105, "undecoded-variant": 10}, classes
+    assert classes == {"mesh": 10, "display": 100, "undecoded-variant": 10}, classes
     assert totals == {
-        "points": 9676,
+        "points": 7455,
         "curve_segments": 188,
         "parts_with_segments": 31,
-        "triangles": 4422,
+        "triangles": 63848,
     }, totals
     assert pinned is not None, "the pinned part must be in the display population"
     assert pinned["point_count"] == 116

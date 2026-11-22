@@ -313,6 +313,13 @@ class SurfaceScan:
     e5_evaluable: int = 0
     e5_tessellated: int = 0
     e5_refused: int = 0
+    #: Degenerate tessellation triangles filtered, not exported — the
+    #: member-filter law of ``docs/evidence/2026-11-22-e5-class-table.md``:
+    #: a collapsed pole row/edge evaluates to zero-area cells that the
+    #: tensor grid drops; the skips are named here and on the
+    #: ``surface-members-filtered`` warning and never count as degenerate
+    #: (the L2 gate's ``degenerate_triangle_count`` stays 0).
+    degenerate_filtered: int = 0
 
     @property
     def has_mesh(self) -> bool:
@@ -1239,6 +1246,7 @@ def scan_part(data, tolerance_factor: float = TOLERANCE_FRACTION) -> SurfaceScan
     triangles: list[tuple[int, int, int]] = []
     tolerances: list[float] = []
     degenerate = 0
+    degenerate_filtered = 0
     points = 0
     for _start, payload, end in frames:
         head = parse_surface_head(data, payload, end)
@@ -1264,7 +1272,7 @@ def scan_part(data, tolerance_factor: float = TOLERANCE_FRACTION) -> SurfaceScan
         vertices.extend(patch.vertices)
         triangles.extend((a + base, b + base, c + base) for a, b, c in patch.triangles)
         tolerances.append(patch.tolerance)
-        degenerate += patch.degenerate
+        degenerate_filtered += patch.degenerate
     e5_frames = e5_surface_frames(data)
     e5_candidates = len(e5_frames)
     e5_decoded = 0
@@ -1298,7 +1306,7 @@ def scan_part(data, tolerance_factor: float = TOLERANCE_FRACTION) -> SurfaceScan
                 (a + base, b + base, c + base) for a, b, c in patch.triangles
             )
             tolerances.append(patch.tolerance)
-            degenerate += patch.degenerate
+            degenerate_filtered += patch.degenerate
         candidates = len(frames) + e5_candidates
         decoded += e5_decoded
         evaluable += e5_evaluable
@@ -1327,4 +1335,5 @@ def scan_part(data, tolerance_factor: float = TOLERANCE_FRACTION) -> SurfaceScan
         e5_evaluable=e5_evaluable,
         e5_tessellated=e5_tessellated,
         e5_refused=e5_refused,
+        degenerate_filtered=degenerate_filtered,
     )

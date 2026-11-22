@@ -309,3 +309,87 @@ def test_the_rust_twin_decodes_the_same_head() -> None:
     assert head is not None
     assert (head.poles_u, head.poles_v) == (6, 9)
     assert head.tail == 148
+
+
+# ---------------------------------------------------------- member filter
+
+
+def collapsed_row_payload() -> bytes:
+    """A slab whose two inner ``v`` pole rows coincide (a collapsed row).
+
+    The collapsed interior row makes the surface constant on its knot
+    span — every cell there is a zero-area degenerate member — while the
+    battery still passes: the corner poles stay exact, the flat span's
+    v-steps are exactly zero so the fold check skips them, and the
+    surviving cells face one way.  This is the collapsed-pole-row
+    mechanism behind the corpus's filtered members (the E5 tessellation's
+    degenerate cells at knife edges and apex rows).
+    """
+    lane_v = e5_lane(degree=1, knots=(0.0, 0.5, 1.0), mult=(2, 1, 2))
+    lane_u = e5_lane(degree=1, knots=(0.0, 1.0), mult=(2, 2))
+    rows = [
+        [(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)],
+        [(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)],  # the collapsed row
+        [(0.0, 1.0, 2.0), (10.0, 1.0, 2.0)],
+    ]
+    net = [point for row in rows for point in row]  # v-major outer
+    return (
+        b"\x80"
+        + lane_v
+        + lane_u
+        + b"\x00\x00"
+        + b"".join(f64(*point) for point in net)
+        + bytes(148)
+    )
+
+
+def test_degenerate_members_are_filtered_not_counted() -> None:
+    payload = collapsed_row_payload()
+    head = parse(payload)
+    assert head is not None
+    assert (head.poles_u, head.poles_v) == (2, 3)
+    poles, _ = surface.e5_pole_data(payload, head)
+    assert surface.assess(head, poles).evaluable
+    patch = surface.tessellate(head, poles)
+    assert patch is not None
+    assert patch.degenerate > 0  # the collapsed span's cells
+    assert patch.triangles  # the valid strip still emits
+    filler = e5_record(b"\x00" * 8, cls=0x000E, ident=1)
+    data = e5_part(filler + e5_record(payload, ident=2) + e5_record(payload, ident=3))
+    scan = surface.scan_part(data)
+    # The member-filter law: the exported mesh carries no degenerate
+    # triangle and the skips are named, never counted as degenerate.
+    assert scan.degenerate == 0
+    assert scan.degenerate_filtered == 2 * patch.degenerate
+    assert scan.has_mesh
+
+
+def test_export_names_the_filtered_members_and_passes_the_l2_gate(tmp_path) -> None:
+    from catpart.fitness import runner
+    from catpart.geometry import build_export
+
+    payload = collapsed_row_payload()
+    filler = e5_record(b"\x00" * 8, cls=0x000E, ident=1)
+    records = filler + e5_record(payload, ident=2) + e5_record(payload, ident=3)
+    block = fixtures_gen.storage_property_block(b"CATPrtCont", b"CATContainer")
+    part_path = tmp_path / "collapsed.CATPart"
+    part_path.write_bytes(
+        fixtures_gen.build_catpart(
+            header_dword=0x0000_0100,
+            payload=block + b"\x00" * 64 + records,
+            pad_before_table=0x600,
+        )
+    )
+    summary = build_export(part_path, tmp_path / "collapsed.ply")
+    assert summary["degenerate_triangle_count"] == 0
+    classes = [warning["class"] for warning in summary["warnings"]]
+    assert "surface-members-filtered" in classes
+    assert "degenerate-triangles-skipped" not in classes
+    detail = next(
+        warning["detail"]
+        for warning in summary["warnings"]
+        if warning["class"] == "surface-members-filtered"
+    )
+    assert detail.startswith("16 degenerate tessellation member triangles filtered")
+    # The L2 sanity gate passes: the first failed check is None.
+    assert runner._score_export(summary)["status"] == runner.L2_PASS
