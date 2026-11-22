@@ -600,7 +600,10 @@ def test_corpus_population_renders_the_decoded_carriers(tmp_path: Path) -> None:
         if sha == PINNED_PART:
             pinned = block
 
-    assert classes == {"mesh": 5, "display": 105, "undecoded-variant": 10}, classes
+    # W8's fail-closed family: the 10 store-validated, body-without-pool
+    # parts are named empty-geometry-store (were the undecoded-variant
+    # bucket before the rename); geometry and totals are unchanged.
+    assert classes == {"mesh": 5, "display": 105, "empty-geometry-store": 10}, classes
     assert totals == {
         "points": 9676,
         "curve_segments": 188,
