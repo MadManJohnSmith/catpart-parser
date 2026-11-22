@@ -21,6 +21,15 @@ document set):
   corrects the S7-era reading of the vela/bow/flooding/MB81 "placed" rows:
   the 19 rows the pre-W5 walk placed with the shared body are connector
   frames, and the oracle refutes their Z (position error 2179.457 mm).
+* W9 law R (2026-11-22): the sharing rule is bounded by the body's rotation
+  content. A document whose records are ALL one shared body, count-matched
+  to its own children, with a NON-identity rotation, binds the matrix to
+  every own child — the MD-MTU-16V-652-MB81 STEP export carries
+  MD-base-motor-01's children at Rz(180 deg), byte-exact the rotation of the
+  shared body `ba2a3c4e20f91f95` (rotation error 0.000 deg per instance),
+  while MB81-0001/0003 carrying the same body have all children at identity
+  rotation. Identity-rotation shared bodies keep the W5 refusal (an identity
+  rotation cannot distinguish a placement from a connector frame).
 
 `own(D)` needs the document set, so the refinements fire only in the tree
 walker (`resolve_owned_assembly`); a single-document read cannot know which
@@ -59,12 +68,26 @@ SNAP_CANDIDATES = (
         "submarine-ssk-tr-1700-s42-ara-san-juan-1.snapshot.20/"
         "Submarine-Tr-1700-S42-Catia"
     ),
+    Path(
+        "/home/alan/.local/state/catpart-parser/w9-sub/"
+        "submarine-ssk-tr-1700-s42-ara-san-juan-1.snapshot.20/"
+        "Submarine-Tr-1700-S42-Catia"
+    ),
 )
 SNAP = next((p for p in SNAP_CANDIDATES if p.exists()), SNAP_CANDIDATES[0])
 
 
 def _position_entry(translation: tuple[float, float, float]) -> bytes:
     stream = bytearray([0xE7, 0xE8, 0xE8, 0xE8, 0xE7, 0xE8, 0xE8, 0xE8, 0xE7])
+    for value in translation:
+        stream.append(0xE6)
+        stream.extend(struct.pack("<d", value))
+    return POSITION_EXPLICIT_HEADER + b"\x8d\x81" + bytes(stream) + b"\xfe"
+
+
+def _rotated_entry(translation: tuple[float, float, float]) -> bytes:
+    """An explicit entry with an Rz(180 deg) rotation: diag(-1, -1, +1)."""
+    stream = bytearray([0xE9, 0xE8, 0xE8, 0xE8, 0xE9, 0xE8, 0xE8, 0xE8, 0xE7])
     for value in translation:
         stream.append(0xE6)
         stream.extend(struct.pack("<d", value))
@@ -412,3 +435,130 @@ def test_swbd_nut_family_keeps_the_unique_body_placement() -> None:
         assert row["transform"][:3] == pytest.approx(
             [0.140466423462, 145.90604277158, 0.0], abs=1e-6
         )
+
+
+# --- (d) W9 law R: rotation-witnessed shared placement ------------------------
+
+
+def test_rotation_witness_places_a_shared_body_at_matching_count() -> None:
+    # W9 law R: the shared body's NON-identity rotation witnesses an
+    # instance placement when #R == #own(D). The MD-base-motor-01 shape:
+    # 2 byte-identical Rz(180 deg) records for 2 own children, the body
+    # shared with 4 other documents — the MB81 STEP export confirms the
+    # children's per-instance rotation exactly (rotation error 0.000 deg).
+    entry = _rotated_entry((-4682.6207, 0.0, 0.0))
+    documents = {
+        "Solo": build_name_table_product_with_entries(
+            "Solo", ("Widget", "Bracket"), entry * 2
+        ),
+        "Elsewhere": build_name_table_product_with_entries(
+            "Elsewhere", ("Nut",), entry
+        ),
+    }
+
+    tree = resolve_owned_assembly("Solo", documents)
+
+    assert tree["placed_instances"] == 2
+    assert tree["identity_instances"] == 0
+    assert tree["undecodable_instances"] == 0
+    for row in tree["instances"]:
+        assert row["placement_status"] == "placed"
+        assert row["has_position_attr"] is True
+        assert row["transform"] == pytest.approx(
+            [-4682.6207, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0], abs=1e-9
+        )
+        assert "rotation-witnessed shared placement (W9 law R)" in (
+            row["classification_detail"]
+        )
+
+
+def test_identity_rotation_shared_body_stays_refused_at_matching_count() -> None:
+    # The law-R negative arm: an identity rotation cannot distinguish a
+    # placement from a connector frame, so the count-matched shared body
+    # keeps the W5 refusal (the vela/flooding/bow extent-refuted class).
+    entry = _position_entry((12.5, 0.0, 14.4))
+    documents = {
+        "Solo": build_name_table_product_with_entries(
+            "Solo", ("Widget", "Bracket"), entry * 2
+        ),
+        "Elsewhere": build_name_table_product_with_entries(
+            "Elsewhere", ("Nut",), entry
+        ),
+    }
+
+    tree = resolve_owned_assembly("Solo", documents)
+
+    assert tree["placed_instances"] == 0
+    assert tree["identity_instances"] == 2
+    for row in tree["instances"]:
+        assert row["placement_status"] == "identity"
+        assert "connector-frame records: all 2" in row["classification_detail"]
+
+
+def test_rotation_witness_requires_matching_count() -> None:
+    # The MB81-0001/0002 negative: 1 rotated shared record, 4 own children —
+    # the record may be ONE child's placement (the MB81 STEP shows
+    # MD-escape-mtu-B2YR at Rz(180 deg) in MB81-0002) or none (MB81-0001/0003
+    # have all children at identity with the SAME body). Binary structure is
+    # identical either way, so the count law keeps the document all-refused
+    # -> identity; reopened when the ea-oid object stream yields a per-child
+    # key.
+    entry = _rotated_entry((-4682.6207, 0.0, 0.0))
+    documents = {
+        "Variant": build_name_table_product_with_entries(
+            "Variant", ("A", "B", "C", "D"), entry
+        ),
+        "Elsewhere": build_name_table_product_with_entries(
+            "Elsewhere", ("Nut",), entry
+        ),
+    }
+
+    tree = resolve_owned_assembly("Variant", documents)
+
+    assert tree["placed_instances"] == 0
+    assert tree["identity_instances"] == 4
+    for row in tree["instances"]:
+        assert row["placement_status"] == "identity"
+        assert "connector-frame records: all 1" in row["classification_detail"]
+
+
+@pytest.mark.skipif(not SNAP.exists(), reason="snapshot not present")
+def test_mb81_base_motor_rotation_witness_placement() -> None:
+    # The law-R real-file case: MD-base-motor-01 (2 records == 2 own
+    # children, body ba2a3c4e20f91f95 shared with MB81-0001/0002/0003 and
+    # base-motor-Mtu) places Base-R-01K and Rubber-01K at
+    # T = (-4682.6207, 0, 0) mm, Rz(180 deg) — rotation error 0.000 deg per
+    # instance against MD-MTU-16V-652-MB81.stp. MB81-0002 (1 record, 4 own)
+    # stays all-refused identity despite its escape-mtu-B2YR child being
+    # STEP-rotated (the count-mismatch negative above).
+    documents = {p.stem: p.read_bytes() for p in SNAP.glob("*.CATProduct")}
+    if "MD-MTU-16V-652-MB81" not in documents:
+        pytest.skip("MB81 tree documents not present")
+
+    tree = resolve_owned_assembly("MD-MTU-16V-652-MB81", documents)
+
+    assert tree["total_instances"] == 201
+    assert tree["placed_instances"] == 2
+    placed = {
+        row["instance_name"]: row
+        for row in tree["instances"]
+        if row["placement_status"] == "placed"
+    }
+    assert set(placed) == {"MD-Base-R-01K", "MD-Rubber-01K"}
+    for row in placed.values():
+        assert row["transform"][:3] == pytest.approx(
+            [-4682.620713535181, 0.0, 0.0], abs=1e-6
+        )
+        assert row["transform"][3:] == pytest.approx(
+            [0.0, 0.0, 0.0, 1.0], abs=1e-9
+        )
+        assert "rotation-witnessed shared placement (W9 law R)" in (
+            row["classification_detail"]
+        )
+    # the count-mismatch negative: MB81-0002's rows stay identity
+    b2 = [
+        row for row in tree["instances"] if row["instance_name"] == "MD-escape-mtu-B2YR"
+    ]
+    assert len(b2) == 1
+    assert b2[0]["placement_status"] == "identity"
+    assert "connector-frame records: all 1" in b2[0]["classification_detail"]
