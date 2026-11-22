@@ -1,0 +1,380 @@
+sha256,split,e5_bearing,identical,baseline_triangles,branch_triangles,baseline_error,branch_error,baseline_warnings,branch_warnings
+0018baa84f3bff6bdad1f29f00d1a4840ff3d4e9d45ace711aa8bd8725a6f505,dev,True,True,1066,1066,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+00198dd9de8caadf0b07bd5fc28a6771cab6ed13c5bb11f989d1f3fda8cfe975,dev,False,True,0,0,,,no-surface-display,no-surface-display
+002e03ea032528d30a7d8d13340869b0fd115b22a13ae64c723bf4ff16fc4f7a,dev,False,True,0,0,,,no-surface-display,no-surface-display
+006395786be0df4ea5298a2ba7fa326d4b25b0a3377f04cc4f7c30eb739ea324,dev,True,True,3795,3795,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+009cc6056fb040b9bb2ca794bb480096443f25fd874ca1ea2adb435e9cd4d1e8,dev,True,False,96,256,,,grid-candidates-refused open-shell point-grid-meshed,bspline-surface-tessellated open-shell
+01bd888df54c2790ae436816a0e96b9982945d9df6da7742e3a9b109b1940859,dev,False,True,0,0,,,no-surface-display,no-surface-display
+01f2a48c9151197ebf8953609b4482d1022a4629d12ab60489e3fa2c4ee7d117,dev,True,True,28,28,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+022523b419c2ad6e284642a8044ae18b8ddcb59486865721b18cc50a9b33845e,dev,False,True,0,0,,,no-surface-display,no-surface-display
+02ff71f5b7a33d13eea4006a4e36121f205d40b6e6a4899e3f240525e774792f,dev,True,True,30379,30379,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices
+03212512bd137561f2f314308e2d9345d41750685d300ec096fd8a70d8470ee3,dev,False,True,0,0,,,no-surface-display,no-surface-display
+03c6788852ef9614f502f1d81026aaaf72bd5f5e3317ebdb51b20305b00dbbf0,dev,True,True,92,92,,,open-shell,open-shell
+04adbcb7d69e18d727eed3269f3549a8c9a1345bfa478b981d2c17a519c2fc9c,dev,True,True,736,736,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+05091b5d7fa8e7558cea65f81839312d3602b00650a0233ca2d8424b2c08cbe3,dev,True,True,5340,5340,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+0520840350b478945d76a76ace0aff74843e41f05a620c860e9c3e8a45755f07,dev,True,True,328,328,,,curve-entry-loops-exported-dup-pin,curve-entry-loops-exported-dup-pin
+05fe6c233d50ab5350f6bf84721f8070cb189f9c734d6e75ea3daa4251d80926,dev,False,True,0,0,,,no-surface-display,no-surface-display
+0689ff98ac25202fbe20b4b9782d80751a0afd0aad09c27426f14daa472e2eb0,dev,False,True,0,0,,,no-surface-display,no-surface-display
+06de1bdb8a7808db925656b38c05796cd8a6261b955fc79bcfc5506deb9dc764,dev,False,True,0,0,,,no-surface-display,no-surface-display
+0710a58b06e772058e8d637934f12ab426373b69efbec50794723dd641fd46e7,dev,True,True,24,24,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+07d3c70bcaa64ce8377b14f2700a29dcf51c1a96af1e6f6874e32dfe481a37e6,dev,True,False,2220,8278,,,grid-candidates-refused open-shell point-grid-meshed unused-pool-vertices,bspline-surface-tessellated degenerate-triangles-skipped open-shell unused-pool-vertices
+08588c5c87c14268a15bccb3f9141c7d508cc7c8ce22d23a2cb49b95523fa443,dev,True,True,25,25,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+0cc0a1d76bd75b737f923bffbb8c360438f8583ba5555733701bc4ed7e90fbe4,dev,False,True,0,0,,,no-surface-display,no-surface-display
+0d68dc7f536fbeaca278bd0947a064a8906a2f3a009468ac8dcc1d1ecd96efee,dev,True,True,447,447,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices
+0e4bc645f64c4f4b754563382f2fb200659255547ef2a0bc9c1e68bb7ade6f08,dev,True,True,1649,1649,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+0ece01cfa77e35b813aca536a7d438a14a5867d0ba396fae98fc30fedffa0777,dev,True,True,228,228,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+0eff8ecfb84eeb4a4c94899def2000c10d00ffc721b8186d2d6bb3caf636f055,dev,True,True,21661,21661,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+0f0ff88b4bab5f6b1a50098cebf87fcc9e84f8c44c51abd8b1fea50ed8be0616,dev,True,False,12974,24536,,,grid-candidates-refused open-shell point-grid-meshed unused-pool-vertices,bspline-surface-tessellated open-shell
+0f18f7721733626dbb52a47035859e9bbd42cb30c5a502dad319aab13ecd9d81,dev,True,True,4480,4480,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+0faee628dbc4c4fb18b619d9afad5eed82fe5754aa0c4eefb543450a1ac39f68,dev,False,True,0,0,,,no-surface-display,no-surface-display
+153a33fb45e24dd49fc2317848ff0eff696462f21e93d7e4f50ea358284955c5,dev,True,False,720,2368,,,grid-candidates-refused open-shell point-grid-meshed,bspline-surface-tessellated open-shell
+15b865041e7aa4c207a727816e66b4effd59a6679e55a30d761b2492da18b083,dev,False,True,0,0,,,no-surface-display,no-surface-display
+1764fd115273f74c2a6a991dd36478c015958bf4a71196fabfa92052040929b0,dev,True,True,20,20,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+17aee4b024b1a5526097efdd2cd22e123f99cde8d70ace6aa653b4300cbf8ebf,dev,False,True,0,0,,,no-surface-display,no-surface-display
+18ad2b498a3971110369f34e9bf88f6fe1088c1343c0147b055b77cfded4af7c,dev,True,True,1717,1717,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+18bb4ca6a3e1fe671784fe7b69563819574f83337d311bb9b9e0491ec771cdc2,dev,True,False,912,1152,,,grid-candidates-refused open-shell point-grid-meshed,bspline-surface-tessellated open-shell
+18d5ae4f7385cef706d92c9f1e04a8e545106226bb09a4c896b3d58f1447c0a0,dev,True,True,1059,1059,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+1950ec3d7e9b03c6c330e1909ea0b85427e8a2e86ca512828b695d2817a49501,dev,False,True,0,0,,,no-surface-display,no-surface-display
+1968ce854d85d11df1214584bb2e6bc2e98547ca4a422d9a0ea0d3b26cfd8d93,dev,False,True,0,0,,,no-surface-display,no-surface-display
+19be2c11ec1b65dc5395dba43372aa3d8765608ae7d5e043bc28202697eb4063,dev,True,True,4463,4463,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-members-filtered open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-members-filtered open-shell unused-pool-vertices
+1a81ce1bc1946bd23f730dfc7ff0995e3bb8d6bd4b94afa18a3a4c4c72a8504d,dev,True,True,40,40,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+1adb93005d942497dcf69f8c219bc568a9019e3b5e5cb07b641582799120011d,dev,True,True,208,208,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+1be84e2e76de228680d28654ab64af5d31413331709cf8d15010e1bdb35172d4,dev,True,True,1414,1414,,,curve-entry-loops-exported-dup-pin,curve-entry-loops-exported-dup-pin
+1d467b803be058fc4b74fbdbc556b1fa9618b267edce121577021d1a89442ba3,dev,True,True,22,22,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+1d97a49d80ede920874510e4ffa7e8714b48d75791b5a1a5e9ed574636d14fd8,dev,False,True,0,0,,,no-surface-display,no-surface-display
+1da3bf30ec0700012d85ee6887ba25a07f07cdf92fe4f2439e2ef4aafc44ae6f,dev,True,True,1133,1133,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+1dd645971ef783f612ec7a3ac502614a5bf6c336bf17f3842564cff72159a758,dev,True,True,14889,14889,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices
+1ee458de940a75d6843065e4a3b9fa335e9e83979c27a99c6997c4740fdbb70f,dev,True,True,590,590,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+2039ff97e18de1966e99093ea00eb4b217dfd255c6bac963c0d0d5b31f31836b,dev,True,True,21661,21661,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+2086127943978f42edea9f49bc91a0f3d9139e96fa786c9199fb1b5268cf8f56,dev,False,True,0,0,,,no-surface-display,no-surface-display
+20eb19887c724a942223cc7a26656d0f3dd32380da4a4d161724c3e5c781d67c,dev,False,True,0,0,,,no-surface-display,no-surface-display
+24ba193a63949a5059afec5215ef6907a7c958a3d0bc7366dfdb4d6b1133d656,dev,True,True,367,367,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+24e92c74960828fe915353df901d68fe7080e07dda5ffbc1f731d37a23afbc01,dev,True,True,3812,3812,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+25122b070f398c990857d11f98876a7ab6731cbc3323d4dc465a0b2bfe13843a,dev,True,True,5020,5020,,,open-shell,open-shell
+2518ea2c82146efd9199a6caf094f7bb62bf1086bc79a6fe08aa8cfb0bc99543,dev,False,True,0,0,,,no-surface-display,no-surface-display
+258b2f1b47a8ad333612c23cdba11e7b34e011fdcff217063030a2af670822dc,dev,False,True,0,0,,,no-surface-display,no-surface-display
+25aeb5a0fa3de669515fd8209f9a496557eb9611718a58c56652150a276133da,dev,True,True,56732,56732,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell primary-loop-manifold-skip unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell primary-loop-manifold-skip unused-pool-vertices
+25d9018226e29b3cfa75aed8cc63f055298e82d14ec118f74f5e008a27d83817,dev,True,True,66,66,,,open-shell,open-shell
+2781081834d841b62dfe5ece801c70ff9d0ca3d94a9f26cf137401f5bc944184,dev,True,True,208,208,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+29a1c8deb1b5ec3e4940dbb1a014d180e62a39dbef868337148d3c002de9f332,dev,True,True,2060,2060,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+2a9bc7f3b6b628ebd86d2a6d0da87f82b66765251e3575ce57919e6eefc25171,dev,True,True,8324,8324,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+2aa2971373a4db0b1f8afed4b8cd0b2eaa7d0c99ce2238f4cd96cb215e75b093,dev,True,True,3799,3799,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined open-shell unused-pool-vertices
+2aa2dc84be5d0ea517cc8973ab0ef816f9f37a25ed4ccc2e288f67950f414cc8,dev,False,True,0,0,,,no-surface-display,no-surface-display
+2bfc85fd01790e6caf9c2fe1b6dc27cebc66eeb2a3464c828282ff27c5adac0f,dev,True,True,23074,23074,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+2d2548d77191d861da713ea0a5117ca22bcdcacb296aa58686921f16b07b4a70,dev,False,True,0,0,,,no-surface-display,no-surface-display
+2d59ff1957b99609b60cbfdb528b65831a1adb0fac9913c6945a92a7444cd2c3,dev,True,True,2468,2468,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined open-shell primary-loop-manifold-skip unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined open-shell primary-loop-manifold-skip unused-pool-vertices
+2dde4cc26d2c7595f30ec4ddab9895bca5a7d3f361af9a62d22fa58499260929,dev,False,True,0,0,,,no-surface-display,no-surface-display
+2eddd5c7f8cc379d216739e045c259a874128fb1a2004aa88a89312f4af32491,dev,True,True,2040,2040,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+2f0d59cde3838bc0b994c6798335443f416571b011adcd039081b0fb976368b9,dev,True,False,0,1536,,,no-surface-display,bspline-surface-tessellated open-shell
+2f1a6c001d9ec5f49bcd131a5b2abba16452eb5bc1e4e0d66d6e8c36577faa98,dev,True,True,1026,1026,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+2fb5b092857f70ec724a397e903870bbebc694c2948b33ded26b83aea722ef83,dev,True,True,1753,1753,,,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell primary-loop-manifold-skip unused-pool-vertices,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell primary-loop-manifold-skip unused-pool-vertices
+2fb90153f6dbc86f63add42423daa9308ade7e6d19aa4e8f5cfab8127ac6995a,dev,False,True,0,0,,,no-surface-display,no-surface-display
+2ffd6590fa1d57014b8103e560d2fa1daf7c4a9bf5dfc40e9d4a6fe86524565f,dev,False,True,0,0,,,no-surface-display,no-surface-display
+30cad0a34553d5da8554fd4d41f64d440ea0814714f2cbc2a2e825ec0f797c3f,dev,True,True,35790,35790,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+343b75614cc4fe52a5c0d33db817bbf141f12d5cf920d554a39cfeda2de369b0,dev,True,False,0,2560,,,no-surface-display,bspline-surface-tessellated open-shell
+34c18f595928c956d9776f770a23cb346b3d67ea6113745872517dd70739785d,dev,False,True,0,0,,,no-surface-display,no-surface-display
+34e031c0aa250b13ec9496c4ce0e19cd8b2390c0a58a52553261c8eaebb6cc1c,dev,False,True,0,0,,,no-surface-display,no-surface-display
+352f26aa2855b8fcdf690f51eea0027c654a5fded15addc494b2921e8d55c1d8,dev,True,False,0,1536,,,no-surface-display,bspline-surface-tessellated open-shell
+3590d6f9f029e8f81d9fdf9cd4ea9790a36e4bedd54fd0137ed4c79af841b8b7,dev,False,True,,,undecoded-variant,undecoded-variant,,
+36c8ae72adc269af135f40748610adcdf62657919ba5d9f911b63b786fc47a21,dev,True,True,1258,1258,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+36dbade3649e56b3d2009faa5c7a1c5ce5cbd5da3c647358137c52a11d8b1d34,dev,True,True,8946,8946,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+36facaacfa14bcbc6ce52b3d1afd8c9b3c11c4df7e04fa2fedd0f7fbe46df8ff,dev,True,True,1040,1040,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+37bda11634241b8e166a67aea317f592fce56732faad3c7879fd8fef11c690e2,dev,True,True,66,66,,,open-shell,open-shell
+390a16fc93a861c9bfdc8eb45d2f2bee366586de532bb5b54b4d80dbf8b55860,dev,False,True,0,0,,,no-surface-display,no-surface-display
+396483c4a9f70b0d2f77d88b2f311d1013edc865f42f128007d5277486424c74,dev,False,True,0,0,,,no-surface-display,no-surface-display
+3a3b286094671624254f117d46ec83a56fd1a1d6cc7ada00ba89b5c68481c005,dev,True,True,777,777,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+3a4659d49704238c136062ec54968471700229383e68a41fcfb9ed9be2acff78,dev,True,False,0,1280,,,no-surface-display,bspline-surface-tessellated open-shell
+3a6238219bc6f133f1a809bcd51ff02a6ba4b5d67b82031f4cea32b225b7e927,dev,False,True,,,undecoded-variant,undecoded-variant,,
+3a6444312fed51cf9117cc57533a0908b40b66286767ca8649a53c441acbb8cf,dev,True,True,431,431,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices
+3ad183e920cad181ddd54fc435811170ad0d0bee2bdf1e2860ccdbdc7e65c839,dev,False,True,0,0,,,no-surface-display,no-surface-display
+3ae4e86ff118e2cd5923ad9ad6263a2e30cd7a643d9badf677d5117f3312252c,dev,False,True,0,0,,,no-surface-display,no-surface-display
+3b9452edecb4f777bc704d266a27c31fb999c3620e589f3c90442bdec1d3bd6d,dev,False,True,0,0,,,no-surface-display,no-surface-display
+3c6ea0125d026aeebce1d2dfd0192cf8248c22a3ed3d3d77744106426168b65c,dev,False,True,,,undecoded-variant,undecoded-variant,,
+3cd14556c4b9becdb87e7cae1498e3b96d180544e52d20ba3cdd577d87320448,dev,True,True,1472,1472,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+3db97da6e602a448a83553cc60433be22164d5167d83caaca00337d43f194f06,dev,True,False,0,2048,,,no-facet-records no-surface-display,bspline-surface-tessellated open-shell
+3e1d955acc86d07255376ad793d258f476aedc36b8eb0e08548ecdb91ca7e2d1,dev,False,True,0,0,,,no-surface-display,no-surface-display
+3e322eab99c66b5bf2a8c5dd1b4e18ff35ae7b51d17eadb9e03d4c4d052ed9e8,dev,True,True,6776,6776,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+3fe33236959e891c7aed7ec58ca4f2ce9117ad59ddec502bae6376c858b07965,dev,True,True,1728,1728,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+400b074226b827aad2ef3598104e7f8c94a65683d751bbaf096f5a33a3a71a9f,dev,True,True,3352,3352,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+40120449192bc8b544d7bd176d3e1d7892d37acfc4214fbced4468d48efb62f7,dev,False,True,,,undecoded-variant,undecoded-variant,,
+416d14fd09a8c68d797508c38a57f220c5d790ac26b862b05ebb2c6fa8b8be6b,dev,True,True,24,24,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+41cde56ae85ae0879ace90c7f62b3204aa017c971d9990aeaf0dd2bf59873fa5,dev,True,True,1752,1752,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+42f48ec172b314be1750e6b6b49059b804022aea96c1321acac8fa9f81c610f6,dev,True,False,384,1536,,,grid-candidates-refused open-shell point-grid-meshed,bspline-surface-tessellated open-shell
+4302e0c5b1bc37e932181036a1164c8015c7c0bbdf5c8b4c43fd472258791980,dev,False,True,0,0,,,no-surface-display,no-surface-display
+434d4bb4b3ce97a3ff5e7051cddd74d41d4632c76e475a9e3191bde03dfb9f1b,dev,True,True,32,32,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+4429e5a8dfc650cdbde4e1685d0193b5e696fcd513ef992722961627bf020175,dev,True,True,58429,58429,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+4540eacc85b95ba7a50b1546ab5835347bfa97e86ed0b884960b36e386a18f62,dev,True,True,602,602,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+45bee87f37c06cf639609ec72b86ac09b3dc7cef8a59c75a1d3018dc4602e213,dev,False,True,0,0,,,no-surface-display,no-surface-display
+45ee973441376e4695aa00c543bab36a0eb37f46e8e6e409aef524b46e72f4ce,dev,True,True,534,534,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices
+46ac577d20a52ec8a8226629216951bd2863bf32960b31d68e6c6c2d7139f7b4,dev,True,True,646,646,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+46ed078d7c77086bfc9743cd62e279be216adb1a8d1e9f10dabd75969706760c,dev,True,True,57,57,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+471bd72ce5bfcd960b6ef6bf0ea720b3209f06efce0b83ba5a4e6e66fcfc1b75,dev,False,True,0,0,,,no-surface-display,no-surface-display
+4785fb3d7a1435d5f93bd1df00f64bbd44971103c16ba049fd6c39b768e8789d,dev,True,True,1728,1728,,,curve-entry-loops-exported-dup-pin,curve-entry-loops-exported-dup-pin
+489c97a5ea5f0dda6690a6e78bef5a837862c1e3e67e7fc4d67ad8718d7064aa,dev,True,True,12,12,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+48fb5a24b5a78362fb014d8aa2b3348ce42551544d7122b8b9044333529bda7c,dev,True,True,2482,2482,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+498edddda534e60cbdc178fc45993d1a8d7a14390d864f4b94579d6ffff0f3ee,dev,False,True,0,0,,,no-surface-display,no-surface-display
+49b5981a0a13da700bdb89b911f3f3fef0bc597cd75e0b04c5883d95b6da4071,dev,False,True,0,0,,,no-surface-display,no-surface-display
+4a3255399d4eb4c0761d6255371bdb3a15fb6ab5ac69d38a415b6ff98fb5935a,dev,True,True,2963,2963,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+4a32f59c1e637acdea3aaf9177bb032c40c7d4edd22f1b12d426548a8649d61b,dev,True,True,2451,2451,,,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell primary-loop-manifold-skip unused-pool-vertices,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell primary-loop-manifold-skip unused-pool-vertices
+4abf3eeaf892be4486f989631d3047512ad755774661bb801a401b9a05822cc5,dev,True,True,1973,1973,,,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell primary-loop-manifold-skip unused-pool-vertices,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell primary-loop-manifold-skip unused-pool-vertices
+4ad53b87c35a77e7dc204b344dfb60d6dbbf717e0982dff8180829c1942362c8,dev,True,True,8533,8533,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+4ae0392d45b1c4692c077c5822fa6ce8083c397b728d48a03a7d0c3d8134692b,dev,True,True,8533,8533,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+4bb4646cb31a42fff38f9986649feb6010cb6a1bf937b57ee0f4a5016f958dbc,dev,True,True,4671,4671,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+4d28b245678fc0d3bae6a1fd75fc553d3cd2626298fd8cb13cfa8f260b55f3bc,dev,True,False,0,37024,,,no-surface-display,bspline-surface-tessellated open-shell
+4dc377a27ad0748a129be8da4323d2bfd6123baec8f752267e8b5d17c9e22c90,dev,True,True,1883,1883,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+4dd965a6dc8829afc2743b6095c5d0528c96223e23d16f39b3d70b6c9bba480c,dev,False,True,0,0,,,no-surface-display,no-surface-display
+4e7886484df5d3ca78e239cd3860c55eeab5a43c8f515e51c0155605f829702d,dev,False,True,0,0,,,no-surface-display,no-surface-display
+4e8feabe34c9b620c4b0950081c55d92921e33b2803a857f64e98cc905a6cd61,dev,False,True,0,0,,,no-surface-display,no-surface-display
+4ea3214ae87e0b0299e8eb8dfdaafc9d7f4b1518e56a60f779cd62d5695ffe0c,dev,True,True,3300,3300,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+4f3ac4728a3887df29594c802340cf2b9a1bff3916d2ea54502b6bae1d187c40,dev,True,True,6695,6695,,,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell unused-pool-vertices
+4fb73628efc0521a5786a46f3ddf2a88338d7b689892dabfafe81ac0b6ee4cbe,dev,False,True,0,0,,,no-surface-display,no-surface-display
+4ff7b61bf8c693205a8e5cce44d4da0ffa9a205ccd480fb52383746eb13f0432,dev,True,True,24416,24416,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+507fdc4b92860fc19489cb612d131daaa8960adfc17f56de1dc1aa678e3b88ae,dev,True,True,31621,31621,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices
+50977b860fe48ddfeea09f0ff782fccaa4746417446894e140358f52c0fd8bc2,dev,True,True,49,49,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+50dd3e533e41ab8298664e5c82c2be9645df21c82371a7c5c61ee1897771c985,dev,True,True,1419,1419,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+52001b6d940937b82000bfdfb75748367082b49cbf56dec2ad8b66f31bd084a6,dev,True,True,984,984,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+527c698f183353700433c8b016319db18615e601839119690b262886a05079d1,dev,True,True,2326,2326,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+530674d3eb8bbe0878456d914922b6bb48a4be3bd7ca95e6e43e3d9094d3025a,dev,True,True,663,663,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+530b2c4aa71df3134254ab3bd6a2436793d9866b1d6b7df206b232a2b7c6aff4,dev,False,True,0,0,,,no-surface-display,no-surface-display
+5310c0320d94b8995d701fd521a86c91a66f4700bb1ebb80f8aaab3b6cb7285f,dev,False,True,0,0,,,no-surface-display,no-surface-display
+53565372e0c59534567f8e4fce62be62a0bb6a21f71166e696f00f9b7591b826,dev,False,True,0,0,,,no-surface-display,no-surface-display
+540d2d33d9e9a3c70a74fd9af8d6051ab6f6fad1b1f8606060465a77d1d57c20,dev,False,True,,,undecoded-variant,undecoded-variant,,
+54b043d4e188c366b0b9b3f2b4d4f2500638653846b2ad2ccf84e455d910bf38,dev,False,True,0,0,,,no-surface-display,no-surface-display
+54cebe10b495eb5c6c87a7357202d3050f5ba4d86b57a3528c6297dd7535201d,dev,True,True,1883,1883,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+550e4e2673beabf7421e7cfc2cd477ecabb0d4bcbacfa15c22d1c399daed071f,dev,False,True,0,0,,,no-surface-display,no-surface-display
+553828a6cf47f27eec157ccdf52315a75bc4a5fdae4f52e9457446a90bb6ec29,dev,True,True,856,856,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+56168d069dc0f1ed1b687fbbe412b501b215dc33bc46bbbdf463037533d510f9,dev,True,True,8,8,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+56aee4064a0bd09ad1ae3c3ce82c420149b08fd0aa51cd350cda406eebcd9b92,dev,True,True,28,28,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+5753d3679b17e3e6eae01e865be8b554e93644880211490c51dfb2fac023551e,dev,True,True,777,777,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+57681043979ca92cd6d401923c027fde145299a765de796719127878d9d2b6c7,dev,False,True,0,0,,,no-surface-display,no-surface-display
+57d4b85846f5b26124ef217b58bd58e72898aba38b624d6f174e8bb5327cd515,dev,True,True,2015,2015,,,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell unused-pool-vertices
+58ae1e30be60ddcc634e8bfe622c2176db10e7e6d11148c831ced1f3ce33a8d3,dev,True,True,28,28,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+59c06d3226d7d875525fd786f58274504a831c7e36825eb9a2ac5eb452b7e689,dev,True,True,366,366,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+5a1aadd6757d3db5570d55100b69caeb8fbe54edb07f40b4211ee992c9d614d8,dev,True,True,4125,4125,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+5abff0b101e450cfc5fdaf98720f667c90f050757c3e164c8390565f8c7366f1,dev,True,False,1344,2064,,,grid-candidates-refused open-shell point-grid-meshed,bspline-surface-tessellated open-shell
+5cf386c5c471313459f360fd11d9f0293474244d62aaf52d872af1e35fe1b50c,dev,True,True,1419,1419,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+5e75b5fbdf9e9ed5a313b3239621f3b9d7f71ed1a2517aa98f06f989c98f88b3,dev,True,False,384,1088,,,grid-candidates-refused open-shell point-grid-meshed,bspline-surface-tessellated open-shell
+5eeee020fcb8f5f0763d6b4645fed41ba36f83a8c6090f278873fe210f5cbb4c,dev,False,True,0,0,,,no-surface-display,no-surface-display
+5f63b708f124307ab5dc8ffc008a8dca0c18d2e63b61bf35184cfeff2852b516,dev,True,True,3407,3407,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+60b36a5dfc8f95e8949ac100800ede2ca63dffa39cedd503281173e4d623652f,dev,True,True,27453,27453,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices
+612c5e7cc7291c7148a6f10a0309dd09e3e971061d66711ba87b29ec86a9d1c2,dev,True,True,4521,4521,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell primary-loop-manifold-skip unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell primary-loop-manifold-skip unused-pool-vertices
+61765d51d3d73cb195cc34bd52b5b687f950e69f408a50097940a4adfff52dd9,dev,False,True,0,0,,,no-surface-display,no-surface-display
+618f18ec1fcd1cd5eaaf7d1d342c2d9adb68e168437451eaddd954a558a09fd4,dev,True,True,1717,1717,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+6193dcab9646385b54dd5c83809aea79f8821714707cf7b21c2bae68101b7383,dev,True,True,14148,14148,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+628888539e312b3efe88da0aa6c6b786626f84e52d7ec9769e6468d0982b16fd,dev,False,True,0,0,,,no-surface-display,no-surface-display
+64d646b1dbf71e4cc4d1fea5d0c011c2cee0118d87d91369c0b0e3aa6eaadae2,dev,True,True,31773,31773,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+65564a9bbcafb35b46bed9360538bd629a6111b0d74f7b78a0676bec7a23e908,dev,False,True,0,0,,,no-surface-display,no-surface-display
+67b37d06c40d6eed5800b9b44b78d42f11555bc15639edd1e383008d6c7785a6,dev,False,True,,,undecoded-variant,undecoded-variant,,
+6833358e2f84a088951f834ca1a661dee6d80702a1ca94a67882f9ca14d3ce33,dev,True,True,4057,4057,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+688f51d2935d01724950efd63c458645553d76eb6721b2492614160d47c3384c,dev,True,True,1030,1030,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+6895b2eee44da89600fecf5dd9c1dffd05e71876f34278cd24da4db95590aa2c,dev,True,False,0,4608,,,no-surface-display,bspline-surface-tessellated open-shell
+68e0d8f65fba1c600101fcfefa0ddab99ae407171743b3483aed9995c8aad6d0,dev,False,True,0,0,,,no-surface-display,no-surface-display
+696a9594e7dcbfade3aa559c07d03bc7d486c1aff02636308c42824199f494cd,dev,True,True,49,49,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+6a693e273e42562019bf37d99c3dc5ca7b919078e4878d73bddc5424ed0ef981,dev,True,True,2485,2485,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell
+6ab9e107b7f30308e4b63561835085c23a8385549b216e434ce8d3c38761de46,dev,True,True,959,959,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined open-shell primary-loop-manifold-skip unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined open-shell primary-loop-manifold-skip unused-pool-vertices
+6bede1b93aed2a710cd831d4b3188e078d07b2e5ebbedaa67d5ce1d3e803fef4,dev,False,True,0,0,,,no-surface-display,no-surface-display
+711475ecfb70ef05624c96e25fcd5116488d89925e1a72665e15a9d4d5c09fe0,dev,False,True,0,0,,,no-surface-display,no-surface-display
+731c6b5f3f20425ff1779a04ba3a1bb77101f230aa8327ea5b67096ca5b1a748,dev,False,True,,,undecoded-variant,undecoded-variant,,
+75756ce67e471aae0e02a8a640feaa8a73b709bb431a8fffd10fe468a10826b1,dev,True,True,1347,1347,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+77af3e0fd6ebab4dad1a73a515d8493746e96f9c7e69e370865b0fbd50ad2d28,dev,False,True,0,0,,,no-surface-display,no-surface-display
+7923455085a695e5193446e4d88fe98991d94a8a7066dae92cdea122c7d2377a,dev,True,True,2127,2127,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+79f078c57666506e686020186139e8ee4578b80754218c6b199eb340a1a4b47b,dev,False,True,0,0,,,no-surface-display,no-surface-display
+7adab700e59793b054ed7f9aea4c8fea8d3320fffeae67814a4019cd763ed6f6,dev,True,True,2562,2562,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+7b8d0128107498d1dd563e598c94cb6abc349aba08c143da5c293ae4f7e3fcc2,dev,True,True,2660,2660,,,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell unused-pool-vertices
+7d8d9cfe44d5192d6732f75d5f9074a8a73b0331db92403580f9e7ec8658f4e8,dev,False,True,0,0,,,no-surface-display,no-surface-display
+7e3a4e2169549bd74d5d0efbfbd9efd6d7e6496527ee354d8aa82e1188c7f304,dev,False,True,0,0,,,no-surface-display,no-surface-display
+802a113eb42bce1e2edfb7072371044a5c403847894bb7234da6623468fd9846,dev,True,True,4254,4254,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+80aad8d832046ccb163b0e10f0bb2c04ae2579a2ef3d928f0354c3eddffbed53,dev,False,True,68464,68464,,,bspline-surface-tessellated open-shell,bspline-surface-tessellated open-shell
+80e3a7c17de2cc30ef504a1f356d5bf77ae42322628b256ac5d49aca59e6865a,dev,True,True,37,37,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+81040870ea322db6a1703025038f9c1c410e4f20402c6c996f235e3d232ce332,dev,True,True,1674,1674,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+81b3019798cb9e8f39fe9c1494f03242574e46b42a987399b634463f365b6f5f,dev,False,True,0,0,,,no-surface-display,no-surface-display
+826d7713208e7e393e5a8618fd2d655036299561cbdba8b1f9fbefdbf17b243f,dev,True,True,1402,1402,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+827c5b7ab5cfe15ce6393e250d3e7ccaacef9aa9d0552400c513224a5ca02ea2,dev,True,False,864,2048,,,grid-candidates-refused open-shell point-grid-meshed,bspline-surface-tessellated open-shell
+82de011940646800285c8d3ee80d3fd92d5893f5853459349c304f82cc6862d6,dev,False,True,0,0,,,no-surface-display,no-surface-display
+831214b30f4da9cb89262f95d19dadff1e61e6e64c29da7c151a79a3532b8a4d,dev,True,False,0,1280,,,no-surface-display,bspline-surface-tessellated open-shell
+8325da4668c666608f225de55764ad0809fbf5383eef5f7ec002a207f32d7736,dev,True,True,57,57,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+84037f7a16cc65469f58b0678da5ed758ed2e9bfd64e615905f2d7ba00171f93,dev,True,False,288,1088,,,grid-candidates-refused open-shell point-grid-meshed,bspline-surface-tessellated open-shell
+853788c3cb1ff0772eadbee81976a6671cdca400995058661e3dca688c5ee1a4,dev,False,True,0,0,,,no-surface-display,no-surface-display
+85b7fcaccf5aac9bbd738d1fa718d42136fb213bd1fbca40ee03351d7abd6e20,dev,False,True,0,0,,,no-surface-display,no-surface-display
+88cd5a9a33b843e81208e23715a07bc9ec71b720be82af6a29c4c37a68a2ead8,dev,True,True,3567,3567,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+88fe100d54804706e12432066ce7afbb291be4e6b3479c923f0f64ea8bda579f,dev,True,True,41224,41224,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+89d0279a1f276e406180eceb9b2a1fd7caa9e9941bca555df015dd0c54b93e6b,dev,True,True,1362,1362,,,open-shell,open-shell
+89d9d6423df9d01016d5e29e9361c867c108a992e053b43a2a8c6c41216db116,dev,True,True,3195,3195,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+89f6f5ec67dda5cbc10351baddb6b82b6313c9817f26f1073730430246513cc9,dev,True,True,2266,2266,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+8b0243864de45905d0cc7d209075c6e3e0cec21d8a5aae98924424dd0d4d0ae1,dev,True,True,2040,2040,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+8b4ff4016014b869cbdc07a25ef74a5bdb8d0add38b37353022e28350f29b903,dev,False,True,0,0,,,no-surface-display,no-surface-display
+8be9434a877fcbe5221b86ac8c9663104ec2b5460f65195f0f4614ea74fba3d0,dev,True,True,301,301,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+8fbbd5372d8e72b2dcf8f777947a22279d7e4fda6f20eca312da4a4028211e5b,dev,True,True,477,477,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+8fc0edec66f36853f308dffff63d7a98a0a02ecff4dfecfbddf33956eef359a4,dev,False,True,0,0,,,no-surface-display,no-surface-display
+902e503432d7ed79997c52f30642c46a83ea92e67bfd3bdfd2436948b251c840,dev,True,True,6085,6085,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+90487e0d06f84fbf99ea71c5707481c5163c462b312bc249202f8fac52f95c7b,dev,True,True,3187,3187,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+909d3080c8b3d3c02d51bc8e1f322b5fba448f77973dd4328ef92292509a9746,dev,True,True,13001,13001,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices
+91be66553263803227cdee9bc8d8d43315e6f53fbbba444086fd5cf04887f99f,dev,True,True,4042,4042,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+91fce1ad248b22a1f692391e526446cbebec89c0b538dcbacceb8d51efaa4493,dev,True,True,4183,4183,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+9253a265661b32b5eb54a3f499136c09949e15af994b06ed4009208de8fb272d,dev,True,True,6344,6344,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell
+92b9ef170a577879bf6bd6c1168dcf7eb5e047c939ea4536ac19410c9918f51f,dev,True,True,3224,3224,,,open-shell,open-shell
+9396c2b6fdd437227dc201235e400821e67f05e278bae21bc8b388bf985a9a31,dev,True,True,11945,11945,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+93a61b77005f6f6967e62df6b42b6a4d4323f42f0a9de60475334781d149b9df,dev,True,True,1116,1116,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+93dda57e4333be9b15ef9708f84369da21d8fff9cf082254d84bbdd0e60517db,dev,True,True,1494,1494,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+93ee5c7633eb4282cb004181088ea517fc503c762f304126c42337a7b11ac280,dev,True,True,1706,1706,,,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell unused-pool-vertices
+93f92d25aa9d9bb30c1021fe82f3f82e15b4a01015a35ac6b84c4b6f0304625e,dev,True,True,8,8,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+94c525cd7c08899d60391bc5154e6326a7fd5f4c9065c91b944ec1f71781b64b,dev,False,True,0,0,,,no-surface-display,no-surface-display
+94c6d66e729f17ecaf7c23869f515fe31be47faa7ea14767ef8cdb50a59aa2db,dev,True,True,1972,1972,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+96a08dd2f0980e985ffe2627e8d229399b56cb39caf809cdcc0c9399cfc338d3,dev,True,True,276,276,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+9864e388e22320942eae4f8a3ae8557e56d037887915baeb408643d2d3e37f39,dev,False,True,0,0,,,no-surface-display,no-surface-display
+989d1329852d0fb7d4f9693673a464c938581b7c0d1601bd70169dce5fcea1a3,dev,False,True,0,0,,,no-surface-display,no-surface-display
+99a412ff91d425dacb3a1a611d501cc8574cffb7aef21929c6ef0b61a5bef6f9,dev,True,True,2238,2238,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+99f5e756eed6e52234f3a64b31db979dc036aee13b187e4e7cb869359b629fc2,dev,True,True,8,8,,,open-shell,open-shell
+9a2f57fa7f662b71c17e55190524881af6f4ead758378a446cacfaf569361699,dev,True,True,2116,2116,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined open-shell unused-pool-vertices
+9a502c1859886380f424554eeea191713da82278ac68463ae365c7af5ab72949,dev,True,True,1883,1883,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+9b1c847216a3b8b100fedeff6c36567023d3dbd7784f63e38bfd768247f301da,dev,True,True,13434,13434,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+9b8fc438a6cc29b985d34584e326d3cadb5489d23115017feee1f7d4a530251c,dev,True,True,136,136,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+9c25d3d2020b14b665fff8b251ae93be2404aa65aa3bae110b3a8acc6674eda5,dev,False,True,0,0,,,no-surface-display,no-surface-display
+9c5b68d9e80023f98247e10b7e5e13e497b633d503f49da3696ea15b7d128aba,dev,False,True,0,0,,,no-surface-display,no-surface-display
+9c943905c699eb414341292f4fb872498caa61fdd4dd8d69cb2aa7e84a3d6111,dev,True,True,62,62,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+9d3a36cac01e465434804459b618124470e14c8bc438b53151d81e89f178fbb9,dev,True,True,4173,4173,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+9d5344e98ba27f8597f5b89643d35aefa3d507c3cc6d3fcbaa7294a4c2f53569,dev,True,True,4594,4594,,,curve-entry-loops-exported-dup-pin,curve-entry-loops-exported-dup-pin
+9fa8cb5a11b7eb633f19d49e16357826d4376c8bdc68634dfd37eeb18d1dcc1b,dev,False,True,0,0,,,no-surface-display,no-surface-display
+a10ce6d497d49a580e41fdb22d1377680a14695e6e1751d8719d57fcac615635,dev,True,True,2348,2348,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+a15e5740918d9e079398f5b7e7a09d746d04ca9ef3511b60498126777eb079f7,dev,False,True,0,0,,,no-surface-display,no-surface-display
+a2028ca99091d6943e15222399121cd83e005854dbbd19da6d4b1eacf01c4b38,dev,True,True,2681,2681,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+a20ea428e8f3c3160b442f5b7d5caed34120afe4105b6b02ab2368650ea59bdd,dev,True,True,1100,1100,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+a2a6fc2793465df911c0869b0174f0acfb3ada68202e82c42b84d489dc1cdb3d,dev,True,True,2284,2284,,,,
+a34acec5af998093cef12b38fa99cfe7121c42182b1da85cd7c47bb773d66d67,dev,True,True,1204,1204,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+a385c4f6f41535d9b6de2cbbabc98ee884e6608fd4876a899229a7f4cfa16e0a,dev,True,True,20,20,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+a3cdbd45c5a6898bdf4a050108ecd1549562decf3d5961840f750dc986a241e7,dev,True,False,240,768,,,grid-candidates-refused open-shell point-grid-meshed,bspline-surface-tessellated open-shell
+a404256f8d3d0741d723847abdddd529839a5dee712f042116ca14ff6bb94365,dev,False,True,0,0,,,no-surface-display,no-surface-display
+a4268a35ab1efc7e50b28f2fc7abce855b0556059304a156b2cbbc0c91df9289,dev,True,True,306,306,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+a42f64d5032b06811f0596ff65822d62885daea1e1f82a43cd47cd1ec1f139eb,dev,False,True,0,0,,,no-surface-display,no-surface-display
+a4d6875d6633a1b13257f1a7d8fa3119b315b72e702a6fd13646fae3b9b60a4f,dev,False,True,0,0,,,no-surface-display,no-surface-display
+a5417dea14a22150380bfdad7bb9cf0506077c0b1713f9370d8e73c53248b7f1,dev,True,True,224,224,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+a64d1a225b55a4aabee8c449dc4681d5a403f82da6bfc2fdb4d8a424b3f3342f,dev,True,True,628,628,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+a65c44a0f49403577d5d299aeefe0a52157ef482f73f6f9e225d08eb4b2d0594,dev,True,True,11826,11826,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+a7237029f4acce9d778a5a6c854c9c25be4226b65948b9b7106f45d077f4e280,dev,True,True,19878,19878,,,curve-entry-loops-exported-dup-pin extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices
+a86845312e3c3ca69e470f268324f25a491d39b96e514fcb99329d692ca4b6e7,dev,True,True,2326,2326,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+a9a564cd2803bb722a6d41f0291ff41f93b76069adf51c0f8c716e299e3f7a0d,dev,True,True,36980,36980,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+a9d296d612910c25980d90b6764cc854435366bdae061c6b785b4cb4566c326a,dev,True,True,51428,51428,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+aa35a372d154b25bfc0ee13593acee414f63d4af1eb662fc9747d232ba1ea1fd,dev,True,True,1674,1674,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+aa5f5e28eedf89b47e5a06ed480c48910685d8512e0231c4e3ec04dd187688ea,dev,False,True,0,0,,,no-surface-display,no-surface-display
+aaea685477ca0ce0d6a73b9526277fc89b49c54d459e506647e128e7681988ea,dev,True,True,24508,24508,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+abb6483761f9cb9da18a6ff4dfc02b6458111b36556f4ba1d6745ef7ccd649f7,dev,True,True,1330,1330,,,curve-entry-loops-exported-dup-pin,curve-entry-loops-exported-dup-pin
+abfd9e0d9e3a5974425e8cb5eb490f16ed0ab09907046f2cc0d7781b5217c188,dev,True,True,1991,1991,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+ad6d2087242500b17e73a90031840a1c34a6668d44a14ad9cb30b1b327be19d6,dev,True,True,16,16,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+adb5c755df3be5a7ca579a0f128a2135e78142eae5e6c980e4da9710f42e44f7,dev,True,True,1023,1023,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+ae857334925ee3b752d1ba8bd8227b5176b67a0a59f92c23ce4bcfe26291d20c,dev,True,True,12294,12294,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices
+ae9aaff9740a0dd8eeef7662bf9ce801f16faa65ef1c12644d110fc86033872b,dev,True,True,8,8,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+b03ad04a6ec34088cf0271c605732de1ea2d987ace3b03437f017cc0942414a7,dev,True,True,40,40,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+b1f88de57714140815c1425b124fd961b0019855a304d31811f7312e5482afbb,dev,False,True,0,0,,,no-surface-display,no-surface-display
+b2456416ab4c91a67ee3e992c80ac9b6b939649e40efce76da2d0454fe66868b,dev,True,True,820,820,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+b4629da168fceae6d505d3f9cc50ac659e32accdaef69f9c4b1a86db4d26f1bd,dev,True,True,22237,22237,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+b5363479da466b7ef54731cf8746c62ae79540e520287c3b503125d1dc162179,dev,True,True,3240,3240,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+b6a5ecc5f1a0a65d64538d48f6bd879204166d0438b7e212f0705eca2a9e3009,dev,True,True,1545,1545,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+b77af663b2d50677568f7072929f366783bde619b50dfb446885b90fe06e6c44,dev,False,True,0,0,,,no-surface-display,no-surface-display
+b859a61d1ab6c00d92da56a85e39f15227909bb1568d16726ef7772db94c49b7,dev,False,True,,,undecoded-variant,undecoded-variant,,
+b90b748115f4529f07e7c67ca3ab5aa17cbf35fdfe4918616090282d2997c8f3,dev,False,True,0,0,,,no-surface-display,no-surface-display
+b912cbef805c541bf76f44d30b3254527fa9c8ec42ab4ac89ee8ed09e2db159b,dev,True,True,51369,51369,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported degenerate-triangles-skipped open-shell primary-loop-manifold-skip unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported degenerate-triangles-skipped open-shell primary-loop-manifold-skip unused-pool-vertices
+b9ae7809dfac8466c7a38b1e6bae831fbe1e2e8891df419eb141a527b596db26,dev,True,True,412,412,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+b9fb2b8b3cd227155f85791baed57098587867b8b7c3d162755518372bdde59e,dev,False,True,0,0,,,no-surface-display,no-surface-display
+ba0900267e2072e199eaa5fcfcf13f2497b8db5a9913d1ce3fd56f97ec16ef19,dev,True,True,4395,4395,,,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell primary-loop-manifold-skip unused-pool-vertices,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell primary-loop-manifold-skip unused-pool-vertices
+bb7e5bc074e80b79519f55f447c2ff67cc50a611b164cdbd3f5c7382fb4e46c8,dev,True,True,1674,1674,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+bc21020dffe9ba55091aa1add7f92b13bc77d670f581da1d9fd2741544270db1,dev,True,True,3648,3648,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined open-shell unused-pool-vertices
+bc235805f71fdf5a1b5b6f0a58a81eefb993afae27c5526ff5abfe2e5aef9bf5,dev,True,True,1753,1753,,,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell primary-loop-manifold-skip unused-pool-vertices,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell primary-loop-manifold-skip unused-pool-vertices
+bc257632c53b1e58564903e9593396cdad1e000bdcc45c24e054076b58ac6d3d,dev,False,True,0,0,,,no-surface-display,no-surface-display
+bda049b6795af1bd7f03e41214541d438bc342d0e30ac1ba8ee9147b8b5167a6,dev,False,True,0,0,,,no-surface-display,no-surface-display
+bdc6c8855f29f2101f2f076cc511511e8af424fcbbfc3a47a376295b47a7c7f5,dev,True,True,9653,9653,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-members-filtered open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-members-filtered open-shell unused-pool-vertices
+bdd7ec876d08f2dce0cc0f38b4dd68892aa1d5a6135c8e9543f25592d0344812,dev,True,False,3320,9142,,,grid-candidates-refused open-shell point-grid-meshed unused-pool-vertices,bspline-surface-tessellated degenerate-triangles-skipped open-shell unused-pool-vertices
+be1be7cc8c68bb47b290fafa549eabfc4399435f95fdaffb10ca64ba3182aa3f,dev,False,True,0,0,,,no-surface-display,no-surface-display
+be3ff691460057190537a39b2a0653b00f715b171e1defd830e439f510bb9455,dev,False,True,0,0,,,no-surface-display,no-surface-display
+bfcf8a949ea9741db7fe1d202d56e1c36f7de8db5599303c00e0f1b76f5e4618,dev,True,True,38345,38345,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+c0b2614649dad5a1d0f7db890878f0937b8df4d17aab45920fdd23036ccede35,dev,True,True,2387,2387,,,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell unused-pool-vertices
+c207374d6def478b13dcf52e0e06edf42e40cb18f150c5a92471647cf7142bc8,dev,False,True,0,0,,,no-surface-display,no-surface-display
+c377cd208546eb341bee17e1e263a88f4c39787e47519ba7d978546e586fb99b,dev,True,False,2172,10696,,,grid-candidates-refused open-shell point-grid-meshed,bspline-surface-tessellated open-shell
+c3973a6f2407d3d841f5fb0cf53c6364392ccf5552eba3cf38a23a1394de210a,dev,True,True,36980,36980,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+c551643a192b6f7bd9e6c67f7fae94b5385f45026d9c185dee5c30f81ba473f6,dev,True,False,0,64,,,no-facet-records no-surface-display,bspline-surface-tessellated open-shell
+c594912a9853c14137e51f82aec2eff187bd8b3392b2ac40e90761999fc764c9,dev,True,True,2583,2583,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+c5b31a94fb544b2f80814cb97ffb47857f870d0bac5d25c33c17e36ac2461a76,dev,True,True,8,8,,,open-shell,open-shell
+c617b20a2bbe2282ada186626c5f4f34906bd2de830f7fb9c2c48a7d9d3a5814,dev,False,True,0,0,,,no-surface-display,no-surface-display
+c631705964eb9ab7204fc2e12dddfde2fba9ff6fb0c18e719801ce795e453b2b,dev,True,False,1438,8064,,,grid-candidates-refused open-shell point-grid-meshed,bspline-surface-tessellated open-shell
+cb2686d6d215bfc18a61c779b7227c9db96327ebdc32ad498cee6d8701dbcd57,dev,True,False,0,1280,,,no-surface-display,bspline-surface-tessellated open-shell
+cb49f9f46b36053efb456ca4a3c774431997a55291daceba7e2dad7af6fafd8d,dev,True,True,176,176,,,open-shell,open-shell
+cb4f484ec65c968c63b3c9bdf708ba8f9d19bf38f565543660ff2b7bcce46763,dev,True,False,0,1536,,,no-surface-display,bspline-surface-tessellated open-shell
+cb6454b50f3ad828932af643151adf35a833808a005a87a68fcd72273176e83b,dev,True,False,1344,4008,,,grid-candidates-refused open-shell point-grid-meshed,bspline-surface-tessellated open-shell
+cc789d253d5d9a341a41a91b8b8e2cbb224c7a53c3b52fe5f1b5287ea7e6c621,dev,True,True,1040,1040,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+cd76cab52cf2fbe5b9efe5c5242384f44f7650fb9d8a0a99593c240fb009eb40,dev,True,True,1563,1563,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined open-shell primary-loop-manifold-skip unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined open-shell primary-loop-manifold-skip unused-pool-vertices
+cde4e9407e5f5953674c0078241eb8d1bf3d1c5ccb6af7259b26835a44baa97f,dev,True,True,0,0,,,no-facet-records no-surface-display,no-facet-records no-surface-display
+ce3ad58e684775efc06d20a1fe377522299d01f63986a136619ac28fcb0c9b58,dev,False,True,0,0,,,no-surface-display,no-surface-display
+ce8e683cb2e57f26db1c19512f96a2f9e2e4d0882a775e7db32e8ee7df76c45e,dev,True,True,1674,1674,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+ceee84085a19b4252f058b5354078f5fdf5dacd3278166c22d98475e67771ea5,dev,False,True,0,0,,,no-surface-display,no-surface-display
+cfdcbf57c00a70c656f1051626db4c8074502402a06ae4c629226ad3d5d7e6f7,dev,True,True,373,373,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+d015fa2229ffbbbdd151ca6a6a618e8ae7582b92f7909649024e130cefec84cf,dev,True,True,52,52,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+d1dae6aa80a0d5bff3af03d255a3fbdd73d951bd8d52100f9b91e21b1b8cd330,dev,True,True,2660,2660,,,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell unused-pool-vertices
+d2ecc8f2effbc27849988c29bd3ba6c729bd825a1592899669f6e35c8681e3b8,dev,True,True,1887,1887,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+d3027997ef2f3f8f1b1ad825649f762139e55d3feb49338507c41fecc356c7ce,dev,True,True,24,24,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+d31ea2c17d63c041a920b34d9ebbed8e043096aec1103fb8f4ebd418c6987dad,dev,True,True,2633,2633,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined open-shell primary-loop-manifold-skip unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined open-shell primary-loop-manifold-skip unused-pool-vertices
+d34ca0d8b315d7375dcc8a1846989c4abafd363f8dbcaf7173f062db8cedc6a2,dev,True,True,0,0,,,no-facet-records no-surface-display,no-facet-records no-surface-display
+d39149ebbfcc49ce5268dd85349347e755405cd1f282de3ee170d6460b571f22,dev,True,True,2505,2505,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+d3f026591b438fd26ae6d7db3bd8fb8d1b3ee1e8ac83aae1000da38d64e74ab4,dev,False,True,0,0,,,no-surface-display,no-surface-display
+d4115ad2bdebe6c0a27238a804b9a71d3a6457016bd6781ac13a53668e6896c2,dev,False,True,,,undecoded-variant,undecoded-variant,,
+d442f14632b8137b626e7191ee5684a014365215c12e5f1085b41f7a30553461,dev,True,True,8,8,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+d4a6712936b02c2d1d5d65f94208b392dc29b5228cb62aa0e65f5709cfaaa520,dev,True,True,246,246,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+d4eace9b7427fb0c134d2c11345f432822c56dbe393bbbdf066bff6a125293f6,dev,True,True,841,841,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+d594d37ad093893fdbdbfb42c469a9e8b1f59946379c14d719dc0cf9dd283589,dev,True,True,2080,2080,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined open-shell unused-pool-vertices
+d665cd12f7bef75cc2858a779b4195c0ab97b6f52e8fcef32b683d3610d1ae11,dev,True,False,150,7120,,,grid-candidates-refused open-shell point-grid-meshed unused-pool-vertices,bspline-surface-tessellated open-shell
+d67512e692691ab4fab8ae649c69a4cd833bf314fba3d6168cf251c7021b3a14,dev,True,True,62,62,,,open-shell,open-shell
+d696356b0f57274e5253fb04e6ff29a47f1114d5595238ca31a23b8df0b4ccff,dev,True,False,816,864,,,grid-candidates-refused open-shell point-grid-meshed,bspline-surface-tessellated open-shell
+d6aa6e71a25e9dd850414e4a3c3fb7a5dc502a929cc7107d93e3ac34288a1137,dev,False,True,0,0,,,no-surface-display,no-surface-display
+d729423cb471012ca6041dcbd36d31124bca0da0d6d9a100c189beaf714c0086,dev,True,True,5276,5276,,,curve-entry-loops-exported-dup-pin,curve-entry-loops-exported-dup-pin
+d748c70cb995dbebf8fc6da584556840ef5708d9e300f7793a60a3e51a46e182,dev,True,True,9699,9699,,,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin extended-header-geometry-declined open-shell unused-pool-vertices
+d7ed0772bd39118609711d4ddb83bc1f6f53c407f5729c638aca7477749cca6e,dev,False,True,17728,17728,,,bspline-surface-tessellated open-shell,bspline-surface-tessellated open-shell
+d9ad440e027bf99efe3883a95314162af4474ba31eca91947a46a7d01579c825,dev,True,False,1894,6608,,,grid-candidates-refused open-shell point-grid-meshed unused-pool-vertices,bspline-surface-tessellated open-shell
+d9e4d9dd66222976e22aaabfc91653d5198883badba8fe80d1410984475d1ccd,dev,True,True,2614,2614,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices
+da05603f7cc7a7115e0a8ee28360abdb39bc89e1a6ea61f1d94a64a5eeabe69b,dev,True,True,12,12,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+dab6cb1d275fecda7fe3396e58367d74845b6c70bc76ec7d4983729eaf0d1e5a,dev,True,True,1497,1497,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+dc69d8cb907b54a35a820ed7efa890c11087e0fa9720630a0bc30ab7454e0d10,dev,True,True,7253,7253,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+dca7c697f666345285133c29da839ef2b32217c562a75fdc210054522af5e4cf,dev,True,True,1974,1974,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+df07295a0743e6c434d344b456b7fa5c32aed7e3e5d206da21b60c7b377fedf4,dev,True,True,66,66,,,open-shell,open-shell
+df2ef82709e3ada8a35ed02e40ffbc7a4c87f3967a01735c056833e7f75a5b1c,dev,True,True,5767,5767,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined extended-header-members-filtered open-shell unused-pool-vertices
+e0ed4cddaba79cab7c19f2391a1ea14764fff4056c2ea8d718f490376e3a420e,dev,True,True,430,430,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+e0fb41e62ef4a7e5f9d19029b8ae5ae39f2d5ff7e8788c3b72a3ad018b9b0947,dev,True,True,2040,2040,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+e1cef8ab71c538009799fc62bc4d0b7e09cd629eb3c5c2d4d6e8869cd5342f43,dev,False,True,0,0,,,no-surface-display,no-surface-display
+e3d0bbc7e51be800f8e3a7bb88295bdd764635b3f4a96d5c7596ba980547cb9e,dev,True,True,13388,13388,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+e3dce566d3a29d2c7197313a7bb77ff0e2f307ff5819487bfa4344ed2e519013,dev,True,True,28,28,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+e460139494d5c9aaa6ca987b9f7509283c304d2b35dc4eee2bd7132673a6fe6d,dev,False,True,0,0,,,no-surface-display,no-surface-display
+e5ba9c67be574da9db98b71082487e9b4469c32d3c31e5425dc5ca6977a054d2,dev,True,True,18018,18018,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+e767d1435b54f5cf6edd5caa41bf7a48224194f90c4528083956d84faf0eb0ba,dev,True,False,0,1280,,,no-surface-display,bspline-surface-tessellated open-shell
+e7bc62593f304b72e4973188b442e1299b05fa1220d945772639949d1d3ede8c,dev,False,True,0,0,,,no-surface-display,no-surface-display
+e87d1693be7068f9e090aa8509b9a7632bbd1104d043f131e9944aaa74f7c6b4,dev,False,True,,,undecoded-variant,undecoded-variant,,
+e8dbf4605f8f6716da5713fba8525f60d4bc8d81eaeb73db25705daeaff46b24,dev,True,True,56,56,,,curve-entry-loops-exported-dup-pin,curve-entry-loops-exported-dup-pin
+e8e299f86eea9e0a5a0ba2f0cfdb1a158aeb8e7365db468770a14a36ea7fd9ee,dev,True,True,4111,4111,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+e9ca6192a2854002e22908293b8fcfd0f32296c53ec8147ca14d739cb3712fea,dev,True,True,15360,15360,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+ea00228689861d23253ba792c893058696fe722bec5ca921cd518eb95f1592e5,dev,True,True,2026,2026,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+ea83b6478b65137b4b80401a0444e24fc6e45fd25b73f8c987ed9cfcbcdcf950,dev,False,True,0,0,,,no-surface-display,no-surface-display
+eaccbb5627f608ea616624b1de5d7d2a1a133fa5f5f44da6df20abecc75caebf,dev,False,True,0,0,,,no-surface-display,no-surface-display
+eb536f05f70283f88e84fe155f39524b3d3f5a49016183ad0aac97635bec90d9,dev,True,True,15512,15512,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell unused-pool-vertices
+eb8df968f4e0ae98db3b30b3f8c8648c3e487a8572c6026b59f6a327c277111b,dev,True,False,12974,24536,,,grid-candidates-refused open-shell point-grid-meshed unused-pool-vertices,bspline-surface-tessellated open-shell
+ec57ac235e68330c620e25c7c0080272faac5fa65d8b289b093346eb30cac783,dev,True,True,3681,3681,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+ed082eb6167511f25aa45d2df5c582b806b1babbc28bd34483ffc9d3e27a457a,dev,True,True,1883,1883,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+edd35192eac69adf0073c78612ae36ea0a0a7c86f8ade0184c60c199d1472875,dev,True,True,1674,1674,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+eebd42698d053f486d81db94c59dd3d7eeddba87e54715995534fc4c6e73dca5,dev,True,False,0,896,,,no-surface-display,bspline-surface-tessellated open-shell
+eebed1d806a6c9c85008c2f3e6a0a0edfe7500f1a05398fb5c6b7cc5965b0701,dev,True,True,4262,4262,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+f0429ec74fc1cd1994a97ddeb0ce10afc1c83584fc2db7fcee18f9e9dd1bd220,dev,True,True,57,57,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+f097fb0d7f50fc1e10b30bdaf942f9844d74bf40f5cc29756c5806c3589fa51c,dev,True,True,777,777,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+f23efa7773a9a336c46ead76ec3c65123e5063c1af141230d7c20fc1b7641338,dev,True,False,336,1536,,,grid-candidates-refused open-shell point-grid-meshed,bspline-surface-tessellated open-shell
+f32351260640f891353abaa63ecc59f9ab54d0b3120e56670de0e2fa97e99360,dev,True,False,756,2752,,,grid-candidates-refused open-shell point-grid-meshed,bspline-surface-tessellated open-shell
+f365e18d0556aa22678e5c21191bff36de46eef6196fc1dd46648662c42dc539,dev,True,False,0,64,,,no-facet-records no-surface-display,bspline-surface-tessellated open-shell
+f3862d22fd9025ffed114fec91b1bd6405fd0aa164cb0691766edc66f1125cb2,dev,False,True,0,0,,,no-surface-display,no-surface-display
+f431251c133d72b2fe31f824428000f90a7b48ef914d6660f3be7a50d51b1be8,dev,True,True,724,724,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+f4a5df2adceb68cc28629916afb9b8608c48724b98db876cf7a5f9c21c7f2d14,dev,True,True,29302,29302,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell primary-loop-manifold-skip unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported open-shell primary-loop-manifold-skip unused-pool-vertices
+f58862854740eb92f88638d5a9b5edf24c55505166565efb3e08b6ec3d129037,dev,True,True,777,777,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+f7bc402ed7f23319e8b67cd63fa5aea2ecb5c20aae0d2a3269c294f899fcbc41,dev,False,True,0,0,,,no-surface-display,no-surface-display
+f94338c5a6acf7ef7c4a66bedaf7460a860535c039b0dc24259660150956871e,dev,True,True,1494,1494,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+f97b4c869a704642e18939515d0bb7badd5966b630a1804572b651ca739c8605,dev,True,True,656,656,,,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin open-shell unused-pool-vertices
+f9c58cbb7c99551c87be808440328ab5b08f50aed3f05ca48abb083930417209,dev,True,False,0,1024,,,no-surface-display,bspline-surface-tessellated open-shell
+fa779a78b5a2aa60ce5abf430683fc17ebd5587d1a5f471287fa600106176686,dev,True,True,28,28,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+fab1f40d1070f8b9639ec390ce7e802b7e84bbedc6eea6e53b2d406a4c051a70,dev,False,True,0,0,,,no-surface-display,no-surface-display
+fcc88843b957274a752ee85883081dd34b4aa36ef8a134c91049dffce38707cc,dev,False,True,0,0,,,no-surface-display,no-surface-display
+fe66038ce464a05127bf16873965d2866a604332e6dd737d677b924017772107,dev,False,True,0,0,,,no-surface-display,no-surface-display
+ff51cf21bc520af07e8cb6011ff9ed4c25aa106f6875f626267085c19d22256f,dev,True,True,52,52,,,curve-entry-loops-exported-dup-pin open-shell,curve-entry-loops-exported-dup-pin open-shell
+ff716a8865e037657e6da84c4ba2b603496b29e2175b3f51800e21a02f56923e,dev,True,False,756,3328,,,grid-candidates-refused open-shell point-grid-meshed,bspline-surface-tessellated open-shell
+ff842b8ab2869583f38053841c1ffeebfce03d8bf9b78d31797369aeac9e765b,dev,True,True,12,12,,,open-shell unused-pool-vertices,open-shell unused-pool-vertices
+ffdbc4f7a2569ab89d3d4882bb6fec448be08db56cad258edbb8dac174193e30,dev,True,True,2726,2726,,,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined open-shell unused-pool-vertices,curve-entry-loops-exported-dup-pin curve-entry-loops-unexported extended-header-geometry-declined open-shell unused-pool-vertices
