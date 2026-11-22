@@ -79,6 +79,7 @@ CONTROL_SEED = 11
 FILES_FIELDS = [
     "sha16",
     "path",
+    "corpus_path",
     "split",
     "report_class",
     "export_class",
@@ -107,9 +108,14 @@ FILES_FIELDS = [
 CLAIM_FIELDS = ["claim", "scope", "observations", "passes", "rate", "label", "detail"]
 
 
-def index_corpus(corpus: Path) -> dict[str, str]:
-    """sha256 -> absolute path, walked in sorted order."""
-    index: dict[str, str] = {}
+def index_corpus(corpus: Path) -> dict[str, tuple[str, str]]:
+    """sha256 -> (absolute path, corpus-relative path), sorted walk.
+
+    The corpus-relative path is what the parity test resolves from the
+    checkout's own ``corpus/`` (a read-only symlink in worktrees, the
+    ``.gitignore``-covered convention).
+    """
+    index: dict[str, tuple[str, str]] = {}
     for dirpath, _, files in os.walk(corpus):
         for fn in sorted(files):
             path = os.path.join(dirpath, fn)
@@ -117,7 +123,8 @@ def index_corpus(corpus: Path) -> dict[str, str]:
             with open(path, "rb") as fh:
                 for chunk in iter(lambda: fh.read(1 << 20), b""):
                     digest.update(chunk)
-            index[digest.hexdigest()] = path
+            rel = os.path.relpath(path, corpus)
+            index[digest.hexdigest()] = (path, rel)
     return index
 
 
@@ -137,8 +144,8 @@ def _bulk_framed_bytes(data: bytes) -> int:
     return 0
 
 
-def measure_row(data: bytes, path: str, meta: dict) -> dict:
-    scan: AnalyticScan = scan_part(data)
+def measure_row(data: bytes, path: str, meta: dict, corpus_rel: str = "") -> dict:
+    scan = scan_part(data)
     export_class = "export-ok"
     try:
         with tempfile.TemporaryDirectory() as tmp:
@@ -150,6 +157,7 @@ def measure_row(data: bytes, path: str, meta: dict) -> dict:
     return {
         "sha16": meta["sha256"][:16],
         "path": meta["path"],
+        "corpus_path": corpus_rel,
         "split": meta.get("split", ""),
         "report_class": meta.get("report_class", ""),
         "export_class": export_class,
@@ -226,13 +234,14 @@ def run(corpus: Path, report_path: Path) -> tuple[list[dict], list[dict]]:
     corpus_index = index_corpus(corpus)
     rows: list[dict] = []
     for meta in population(report_path):
-        path = corpus_index.get(meta["sha256"])
-        if path is None:
+        found = corpus_index.get(meta["sha256"])
+        if found is None:
             print(f"  MISSING {meta['sha256'][:16]} {meta['path']}", flush=True)
             continue
+        path, rel = found
         with open(path, "rb") as fh:
             data = fh.read()
-        rows.append(measure_row(data, path, meta))
+        rows.append(measure_row(data, path, meta, rel))
         print(
             f"  {rows[-1]['sha16']} verdict={rows[-1]['verdict']} "
             f"planes={rows[-1]['plane_records']}(tpl {rows[-1]['template_planes']}) "
@@ -240,10 +249,10 @@ def run(corpus: Path, report_path: Path) -> tuple[list[dict], list[dict]]:
             flush=True,
         )
     for meta in control_rows(report_path, corpus_index):
-        path = corpus_index[meta["sha256"]]
+        path, rel = corpus_index[meta["sha256"]]
         with open(path, "rb") as fh:
             data = fh.read()
-        rows.append(measure_row(data, path, meta))
+        rows.append(measure_row(data, path, meta, rel))
         print(
             f"  control {rows[-1]['sha16']} verdict={rows[-1]['verdict']} "
             f"planes={rows[-1]['plane_records']}(tpl {rows[-1]['template_planes']})",
