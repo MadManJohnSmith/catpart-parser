@@ -403,6 +403,11 @@ pub struct CompositeInfo {
     /// uses; absent when none were declined).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extended_header_declined: Option<usize>,
+    /// The degenerate member triangles filtered from accepted extended
+    /// records (the member-filter law; None when 0 — the twin only
+    /// sets the key when > 0).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub extended_members_filtered: Option<usize>,
     /// Primary-emit seam (2026-11-18): the sliver loops skipped at the
     /// primary emission (absent when none).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1606,6 +1611,10 @@ struct Triangulation {
     extended_triangles: u32,
     /// The extended records the manifold-assembly gate declined.
     extended_declined: u32,
+    /// The degenerate member triangles the member-filter law dropped
+    /// from ACCEPTED extended records (named, never counted as
+    /// degenerate: the L2 degenerate rate stays 0).
+    extended_members_filtered: u32,
     /// The T3 relaxed-family loops the strict guard accepted (#61).
     relaxed_loops_accepted: u32,
     /// The T3 relaxed-family loops the strict guard refused (#61).
@@ -1785,6 +1794,7 @@ fn triangulate(
     // dropped (never weld candidates of a declined record).
     let mut extended_triangles = 0u32;
     let mut extended_declined = 0u32;
+    let mut extended_members_filtered = 0u32;
     // The extended/relaxed lineage folds into a CLONE of the primary
     // guard (the twin's shared dict reaches both passes through the
     // same histogram; the clone keeps the primary state untouched).
@@ -1820,10 +1830,27 @@ fn triangulate(
             );
             o += *c as usize;
         }
-        if rec_st.degenerate == 0 && lineage.admit(&rec_st.triangles) {
+        // The member-filter law (2026-11-21, the Audi R8 forensics):
+        // a record WITHOUT degenerate members keeps the committed law
+        // verbatim — the valid remainder (possibly EMPTY: an
+        // all-skip-bearing record contributes nothing itself but its
+        // dropped loops stay weld candidates) passes the incremental
+        // guard.  A record WITH degenerate members has them FILTERED
+        // and named (``extended_members_filtered``) instead of
+        // declining the record whole — its valid siblings still emit
+        // behind the same guard, and the skips never count as
+        // degenerate (the L2 gate's degenerate-triangle rate stays 0);
+        // the valid remainder must be non-empty and guard-passing,
+        // else the record is declined as a whole exactly as before.
+        let accepted = if rec_st.degenerate == 0 {
+            lineage.admit(&rec_st.triangles)
+        } else {
+            extended_members_filtered += rec_st.degenerate;
+            !rec_st.triangles.is_empty() && lineage.admit(&rec_st.triangles)
+        };
+        if accepted {
             extended_triangles += rec_st.triangles.len() as u32;
             st.triangles.extend(rec_st.triangles);
-            st.degenerate += rec_st.degenerate;
             st.loops_exported += rec_st.loops_exported;
             st.loops_curve_entry += rec_st.loops_curve_entry;
             st.dropped_loops.extend(rec_st.dropped_loops);
@@ -1907,6 +1934,7 @@ fn triangulate(
         loops_curve_entry: st.loops_curve_entry,
         extended_triangles,
         extended_declined,
+        extended_members_filtered,
         relaxed_loops_accepted: relaxed_accepted,
         relaxed_loops_declined: relaxed_declined,
         primary_loop_skips: st.primary_loop_skips,
@@ -2183,6 +2211,7 @@ fn decode_per_rep(
     let mut ext_records = 0usize;
     let mut ext_triangles = 0usize;
     let mut ext_declined = 0usize;
+    let mut ext_filtered = 0usize;
     // The primary-emit seam counters (per rep; summed at store level).
     let mut primary_loop_skips = 0u32;
     let mut relaxed_loops_accepted = 0u32;
@@ -2329,7 +2358,9 @@ fn decode_per_rep(
         facet_records += records.len() + ext_k.len();
         ext_records += ext_k.len();
         ext_triangles += tri_res.extended_triangles as usize;
+        ext_filtered += tri_res.extended_members_filtered as usize;
         ext_declined += tri_res.extended_declined as usize;
+        ext_filtered += tri_res.extended_members_filtered as usize;
         write_count += d.write_count as usize;
         table_bytes += d.table_bytes;
         element_decl += d.elem as usize;
@@ -2407,6 +2438,7 @@ fn decode_per_rep(
         extended_header_records: None,
         extended_header_triangles: None,
         extended_header_declined: None,
+        extended_members_filtered: None,
         curve_entry_law: None,
         loops_curve_entry_exported: None,
         primary_loop_skips: None,
@@ -2422,6 +2454,9 @@ fn decode_per_rep(
         info.extended_header_triangles = Some(ext_triangles);
         if ext_declined > 0 {
             info.extended_header_declined = Some(ext_declined);
+        }
+        if ext_filtered > 0 {
+            info.extended_members_filtered = Some(ext_filtered);
         }
     }
     if primary_loop_skips > 0 {
@@ -3083,6 +3118,7 @@ fn decode_store_once(
         extended_header_records: None,
         extended_header_triangles: None,
         extended_header_declined: None,
+        extended_members_filtered: None,
         curve_entry_law: None,
         loops_curve_entry_exported: None,
         primary_loop_skips: None,
@@ -3098,6 +3134,9 @@ fn decode_store_once(
         info.extended_header_triangles = Some(tri_res.extended_triangles as usize);
         if tri_res.extended_declined > 0 {
             info.extended_header_declined = Some(tri_res.extended_declined as usize);
+        }
+        if tri_res.extended_members_filtered > 0 {
+            info.extended_members_filtered = Some(tri_res.extended_members_filtered as usize);
         }
     }
     if tri_res.primary_loop_skips > 0 {
@@ -3422,6 +3461,7 @@ fn decode_raw_array_path(
     let loops_curve_entry = tri_res.loops_curve_entry;
     let ext_triangles = tri_res.extended_triangles;
     let ext_declined = tri_res.extended_declined;
+    let ext_filtered = tri_res.extended_members_filtered;
     let mut skipped_markers: BTreeMap<u8, u32> = BTreeMap::new();
     for rec in &records {
         if !EXPORTED_SHORT_MARKERS.contains(&rec.marker)
@@ -3458,6 +3498,7 @@ fn decode_raw_array_path(
         extended_header_records: None,
         extended_header_triangles: None,
         extended_header_declined: None,
+        extended_members_filtered: None,
         curve_entry_law: None,
         loops_curve_entry_exported: None,
         primary_loop_skips: None,
@@ -3474,6 +3515,9 @@ fn decode_raw_array_path(
         info.extended_header_triangles = Some(ext_triangles as usize);
         if ext_declined > 0 {
             info.extended_header_declined = Some(ext_declined as usize);
+        }
+        if ext_filtered > 0 {
+            info.extended_members_filtered = Some(ext_filtered as usize);
         }
     }
     if tri_res.primary_loop_skips > 0 {
@@ -4116,6 +4160,7 @@ fn decode_mixedwrite(
     let mut ext_records = 0usize;
     let mut ext_triangles = 0usize;
     let mut ext_declined = 0usize;
+    let mut ext_filtered = 0usize;
     // The primary-emit seam counters (per rep; summed at store level).
     let mut primary_loop_skips = 0u32;
     let mut relaxed_loops_accepted = 0u32;
@@ -4226,7 +4271,9 @@ fn decode_mixedwrite(
         facet_records += records.len() + ext_k.len();
         ext_records += ext_k.len();
         ext_triangles += tri_res.extended_triangles as usize;
+        ext_filtered += tri_res.extended_members_filtered as usize;
         ext_declined += tri_res.extended_declined as usize;
+        ext_filtered += tri_res.extended_members_filtered as usize;
         write_count += d.write_count as usize;
         // the twin's ``table_bytes += (d["elem"] + 3) // 4`` — the
         // table-law reps' declared table length only
@@ -4303,6 +4350,7 @@ fn decode_mixedwrite(
         extended_header_records: None,
         extended_header_triangles: None,
         extended_header_declined: None,
+        extended_members_filtered: None,
         curve_entry_law: None,
         loops_curve_entry_exported: None,
         primary_loop_skips: None,
@@ -4318,6 +4366,9 @@ fn decode_mixedwrite(
         info.extended_header_triangles = Some(ext_triangles);
         if ext_declined > 0 {
             info.extended_header_declined = Some(ext_declined);
+        }
+        if ext_filtered > 0 {
+            info.extended_members_filtered = Some(ext_filtered);
         }
     }
     if primary_loop_skips > 0 {
@@ -4551,6 +4602,7 @@ mod tests {
             extended_header_records: None,
             extended_header_triangles: None,
             extended_header_declined: None,
+            extended_members_filtered: None,
             primary_loop_skips: None,
             relaxed_loops_accepted: None,
             relaxed_loops_declined: None,
@@ -4637,6 +4689,7 @@ mod tests {
             extended_header_records: None,
             extended_header_triangles: None,
             extended_header_declined: None,
+            extended_members_filtered: None,
             primary_loop_skips: None,
             relaxed_loops_accepted: None,
             relaxed_loops_declined: None,

@@ -1803,6 +1803,73 @@ def test_triangulate_extended_record_soup_strips_polygons() -> None:
     assert stats["extended_declined"] == 1
 
 
+def test_triangulate_extended_degenerate_member_is_filtered_not_declining() -> None:
+    """The member-filter law (2026-11-21, the Audi R8 forensics): a
+    degenerate member of an extended record is dropped and named on
+    `extended_members_filtered` instead of declining the record whole —
+    the record's valid siblings still emit behind the manifold-assembly
+    gate, and the skips never count as degenerate (the L2 gate's
+    degenerate-triangle rate stays 0)."""
+    # refs 0..9: the first independent triangle (0,1,2) is degenerate
+    # by repeated COORDINATE? No — make it degenerate by a zero cross
+    # product: collinear points (0,0,0), (1,0,0), (2,0,0) — element 9.
+    elements = [
+        (0, (0.0, 0.0, 0.0)),      # 0
+        (0, (1.0, 0.0, 0.0)),      # 1
+        (0, (0.0, 1.0, 0.0)),      # 2
+        (0, (1.0, 0.0, 1.0)),      # 3
+        (0, (0.0, 0.0, 1.0)),      # 4
+        (0, (0.0, 1.0, 1.0)),      # 5
+        (0, (2.0, 0.0, 0.0)),      # 6
+        (0, (3.0, 0.0, 0.0)),      # 7
+        (0, (3.0, 1.0, 0.0)),      # 8
+        (0, (2.0, 1.0, 0.0)),      # 9
+    ]
+    # ty=2: member 0 = (0,6,7) collinear on y=0 (zero cross -> filtered);
+    # member 1 = (3,4,5) valid. strips=1: loop (6,7,8) valid.
+    record = composite.ExtendedFacetRecord(
+        offset=0,
+        marker=0x47,
+        triangles=2,
+        strips=1,
+        polygons=0,
+        counts=(3,),
+        refs=(0, 6, 7, 3, 4, 5, 6, 7, 8),
+        end=0,
+        normal=None,
+    )
+    triangles, degenerate, stats = composite._triangulate(
+        elements, (), extended=[record]
+    )
+    # the filtered member emits nothing; the valid member (1 tri) + the
+    # strip loop (1 tri) emit
+    assert len(triangles) == 2
+    assert degenerate == 0  # the L2 gate stays clean
+    assert stats["extended_members_filtered"] == 1
+    assert stats["extended_declined"] == 0
+    assert stats["extended_triangles"] == 2
+    # a fully-degenerate record (every member filtered) is declined:
+    # its valid remainder is empty
+    all_degenerate = composite.ExtendedFacetRecord(
+        offset=1,
+        marker=0x47,
+        triangles=1,
+        strips=0,
+        polygons=0,
+        counts=(),
+        refs=(0, 6, 7),
+        end=1,
+        normal=None,
+    )
+    triangles, degenerate, stats = composite._triangulate(
+        elements, (), extended=[all_degenerate]
+    )
+    assert len(triangles) == 0
+    assert degenerate == 0
+    assert stats["extended_members_filtered"] == 1
+    assert stats["extended_declined"] == 1
+
+
 # --- 2026-11-18: the primary-emit seam's port parity on the corpus flips --
 #
 # The 15 not-manifold parts the seam flips (docs/evidence/

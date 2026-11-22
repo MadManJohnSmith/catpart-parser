@@ -54,6 +54,7 @@ WARN_NO_FACETS = "no-facet-records"
 WARN_CURVE_ENTRY = "curve-entry-loops-unexported"
 WARN_CURVE_ENTRY_EXPORTED = "curve-entry-loops-exported-dup-pin"
 WARN_EXTENDED_DECLINED = "extended-header-geometry-declined"
+WARN_EXTENDED_FILTERED = "extended-header-members-filtered"
 WARN_PRIMARY_SKIP = "primary-loop-manifold-skip"
 WARN_PRIMARY_DECLINED = "primary-loop-manifold-declined"
 WARN_PRIMARY_KEPT = "primary-loop-manifold-kept"
@@ -1029,6 +1030,21 @@ def _export_composite_store(
                 "(the 2026-11-18 manifold-assembly gate, "
                 "docs/evidence/2026-11-18-extended-header-family.md); "
                 "the store's other geometry exports unchanged",
+            }
+        )
+    if info.get("extended_members_filtered"):
+        warnings.append(
+            {
+                "class": WARN_EXTENDED_FILTERED,
+                "detail": f"{info['extended_members_filtered']} degenerate "
+                "member triangles of accepted extended-header records "
+                "(0x47/0x4f) filtered: a degenerate member is dropped "
+                "instead of declining its record whole (the "
+                "2026-11-21 member-filter law, the Audi R8 forensics), "
+                "so the record's valid siblings still emit behind the "
+                "manifold-assembly gate and the L2 degenerate rate "
+                "stays 0 (the skips are named here, not counted as "
+                "degenerate-triangles)",
             }
         )
     if info.get("primary_loop_skips"):

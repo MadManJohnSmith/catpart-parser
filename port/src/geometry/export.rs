@@ -105,6 +105,7 @@ pub const WARN_CURVE_ENTRY: &str = "curve-entry-loops-unexported";
 pub const WARN_CURVE_ENTRY_EXPORTED: &str = "curve-entry-loops-exported-dup-pin";
 /// The extended-header manifold-assembly decline (2026-11-18).
 pub const WARN_EXTENDED_DECLINED: &str = "extended-header-geometry-declined";
+pub const WARN_EXTENDED_FILTERED: &str = "extended-header-members-filtered";
 pub const WARN_PRIMARY_SKIP: &str = "primary-loop-manifold-skip";
 pub const WARN_PRIMARY_DECLINED: &str = "primary-loop-manifold-declined";
 pub const WARN_PRIMARY_KEPT: &str = "primary-loop-manifold-kept";
@@ -1554,6 +1555,22 @@ fn export_composite_store(
                  (the 2026-11-18 manifold-assembly gate, \
                  docs/evidence/2026-11-18-extended-header-family.md); \
                  the store's other geometry exports unchanged"
+            ),
+        });
+    }
+    if let Some(filtered) = info.extended_members_filtered {
+        warnings.push(Warning {
+            class: WARN_EXTENDED_FILTERED.to_string(),
+            detail: format!(
+                "{filtered} degenerate \
+                 member triangles of accepted extended-header records \
+                 (0x47/0x4f) filtered: a degenerate member is dropped \
+                 instead of declining its record whole (the \
+                 2026-11-21 member-filter law, the Audi R8 forensics), \
+                 so the record's valid siblings still emit behind the \
+                 manifold-assembly gate and the L2 degenerate rate \
+                 stays 0 (the skips are named here, not counted as \
+                 degenerate-triangles)"
             ),
         });
     }

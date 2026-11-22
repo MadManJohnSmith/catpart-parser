@@ -1495,6 +1495,7 @@ def _triangulate(
             o += c
 
     extended_declined = 0
+    extended_filtered = 0
     for rec in extended:
         rec_triangles = []
         rec_degenerate = 0
@@ -1524,9 +1525,26 @@ def _triangulate(
             rec_triangles += tris
             rec_degenerate += deg
             rec_loops += 1
-        if rec_degenerate == 0 and guard.admit(rec_triangles):
+        if rec_degenerate == 0:
+            # The committed law verbatim: the valid remainder (possibly
+            # EMPTY — an all-skip-bearing record contributes nothing
+            # itself but its dropped loops stay weld candidates) passes
+            # the incremental guard.
+            accepted = guard.admit(rec_triangles)
+        else:
+            # The member-filter law (2026-11-21, the Audi R8
+            # forensics): the record's degenerate member emission is
+            # FILTERED and named (extended_members_filtered) instead of
+            # declining the record whole — the valid siblings still
+            # emit behind the same incremental guard, and the skips
+            # never count as degenerate (the L2 gate's
+            # degenerate-triangle rate must stay 0).  A record whose
+            # valid remainder is empty or pushes an edge past two uses
+            # is declined as a whole exactly as before.
+            extended_filtered += rec_degenerate
+            accepted = bool(rec_triangles) and guard.admit(rec_triangles)
+        if accepted:
             triangles += rec_triangles
-            degenerate += rec_degenerate
             loops_exported += rec_loops
             loops_curve_entry += len(rec_dropped)
             dropped += rec_dropped
@@ -1596,6 +1614,8 @@ def _triangulate(
     if extended:
         stats["extended_triangles"] = extended_triangles
         stats["extended_declined"] = extended_declined
+        if extended_filtered:
+            stats["extended_members_filtered"] = extended_filtered
     if relaxed_accepted or relaxed_declined:
         stats["relaxed_loops_accepted"] = relaxed_accepted
         stats["relaxed_loops_declined"] = relaxed_declined
@@ -2119,6 +2139,7 @@ def decode_composite_store(
     # soup triples are not loops; the declined records are named).
     ext_triangles = loop_stats.pop("extended_triangles", 0)
     ext_declined = loop_stats.pop("extended_declined", 0)
+    ext_filtered = loop_stats.pop("extended_members_filtered", 0)
     kept_tris = loop_stats.pop("kept_loop_tris", None)
     kept_loops = loop_stats.pop("kept_loop_count", 0)
     info = {
@@ -2142,6 +2163,8 @@ def decode_composite_store(
         info["extended_header_triangles"] = ext_triangles
         if ext_declined:
             info["extended_header_declined"] = ext_declined
+        if ext_filtered:
+            info["extended_members_filtered"] = ext_filtered
     if curve_entry_law:
         info["curve_entry_law"] = "e0b-dup-pin"
         info["loops_curve_entry_exported"] = curve_entry_law
@@ -2384,6 +2407,7 @@ def _decode_per_rep(
     ext_records = 0
     ext_triangles = 0
     ext_declined = 0
+    ext_filtered = 0
     reps_unexported = []
     reps_dup_pin = []
     reps_kept_tris = []
@@ -2504,6 +2528,7 @@ def _decode_per_rep(
         ext_records += len(ext_k)
         ext_triangles += stats_k.pop("extended_triangles", 0)
         ext_declined += stats_k.pop("extended_declined", 0)
+        ext_filtered += stats_k.pop("extended_members_filtered", 0)
         facet_candidates += n_hdrs + ext_cands
         facet_records += len(records) + len(ext_k)
         write_count += d["write_count"]
@@ -2558,6 +2583,8 @@ def _decode_per_rep(
         info["extended_header_triangles"] = ext_triangles
         if ext_declined:
             info["extended_header_declined"] = ext_declined
+        if ext_filtered:
+            info["extended_members_filtered"] = ext_filtered
     if curve_entry_law:
         info["curve_entry_law"] = "e0b-dup-pin"
         info["loops_curve_entry_exported"] = curve_entry_law
@@ -2805,6 +2832,7 @@ def _decode_raw_array(
     loop_stats.pop("dup_pin", None)
     ext_triangles = loop_stats.pop("extended_triangles", 0)
     ext_declined = loop_stats.pop("extended_declined", 0)
+    ext_filtered = loop_stats.pop("extended_members_filtered", 0)
     kept_tris = loop_stats.pop("kept_loop_tris", None)
     kept_loops = loop_stats.pop("kept_loop_count", 0)
     skipped_markers: dict[int, int] = {}
@@ -2828,6 +2856,8 @@ def _decode_raw_array(
         info["extended_header_triangles"] = ext_triangles
         if ext_declined:
             info["extended_header_declined"] = ext_declined
+        if ext_filtered:
+            info["extended_members_filtered"] = ext_filtered
     # One index space on this path (see the single-region note above).
     info["_space_offsets"] = (0,)
     if kept_tris:
@@ -3257,6 +3287,7 @@ def _decode_mixedwrite(
     ext_records = 0
     ext_triangles = 0
     ext_declined = 0
+    ext_filtered = 0
     reps_unexported = []
     reps_dup_pin = []
     reps_kept_tris = []
@@ -3348,6 +3379,7 @@ def _decode_mixedwrite(
         ext_records += len(ext_k)
         ext_triangles += stats_k.pop("extended_triangles", 0)
         ext_declined += stats_k.pop("extended_declined", 0)
+        ext_filtered += stats_k.pop("extended_members_filtered", 0)
         facet_candidates += n_hdrs + ext_cands
         facet_records += len(records) + len(ext_k)
         write_count += d["write_count"]
@@ -3398,6 +3430,8 @@ def _decode_mixedwrite(
         info["extended_header_triangles"] = ext_triangles
         if ext_declined:
             info["extended_header_declined"] = ext_declined
+        if ext_filtered:
+            info["extended_members_filtered"] = ext_filtered
     if curve_entry_law:
         info["curve_entry_law"] = "e0b-dup-pin"
         info["loops_curve_entry_exported"] = curve_entry_law
