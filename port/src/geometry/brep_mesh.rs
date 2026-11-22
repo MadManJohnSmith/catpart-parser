@@ -182,6 +182,150 @@ pub fn record_triangles(rec: &CountlessTriangleRecord) -> Vec<[u16; 3]> {
         .collect()
 }
 
+// --- the deterministic 2D ear clipper --------------------------------------
+//
+// The route's polygon triangulator for planar boundary-cycle loops
+// (0x4c rings and any future correctly-mapped polygon loop). Scope and
+// determinism contract mirror the Python twin's doc verbatim: ONE
+// simple polygon (no holes — named open), caller-validated
+// coplanarity; the projection drops the largest-|component| normal
+// axis (ties toward the earlier axis in x, y, z order); orientation
+// from the f64 shoelace sign (zero area refuses); ears are strict
+// convex (cross > 0) with no reflex vertex boundary-inclusively inside
+// the candidate triangle; the FIRST ear in index order clips — exact
+// f64 comparisons only, no numeric tie-breaks.
+
+/// The loop's Newell normal (f64; the f32 coordinates widen once, then
+/// f64 throughout — the twin's exact arithmetic).
+fn newell_normal_2d(points: &[[f64; 3]]) -> [f64; 3] {
+    let (mut nx, mut ny, mut nz) = (0.0f64, 0.0f64, 0.0f64);
+    let n = points.len();
+    for i in 0..n {
+        let a = points[i];
+        let b = points[(i + 1) % n];
+        nx += (a[1] - b[1]) * (a[2] + b[2]);
+        ny += (a[2] - b[2]) * (a[0] + b[0]);
+        nz += (a[0] - b[0]) * (a[1] + b[1]);
+    }
+    [nx, ny, nz]
+}
+
+/// The (u, v) projection axes: drop the largest-|component| axis
+/// (ties break toward the earlier axis).
+fn project_axes(normal: &[f64; 3]) -> (usize, usize) {
+    let comps = [normal[0].abs(), normal[1].abs(), normal[2].abs()];
+    let mut drop = 0usize;
+    for axis in 1..3 {
+        if comps[axis] > comps[drop] {
+            drop = axis;
+        }
+    }
+    let axes: Vec<usize> = (0..3).filter(|&a| a != drop).collect();
+    (axes[0], axes[1])
+}
+
+fn cross2(o: [f64; 2], a: [f64; 2], b: [f64; 2]) -> f64 {
+    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+}
+
+/// Boundary-inclusive containment (the ear test's blocker rule).
+fn point_in_tri(p: [f64; 2], a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> bool {
+    let d1 = cross2(a, b, p);
+    let d2 = cross2(b, c, p);
+    let d3 = cross2(c, a, p);
+    let has_neg = d1 < 0.0 || d2 < 0.0 || d3 < 0.0;
+    let has_pos = d1 > 0.0 || d2 > 0.0 || d3 > 0.0;
+    !(has_neg && has_pos)
+}
+
+/// Triangulate one simple planar polygon loop, deterministically.
+///
+/// ``point_indices`` is the loop's vertex sequence into ``points`` (3D
+/// coordinate triples, caller-validated coplanar); returns the
+/// triangles in the loop's winding, or ``None`` on a degenerate loop
+/// (fewer than 3 vertices, repeated indices, zero projected area, no
+/// ear found). O(n^3) worst case; a numeric pathology fails closed.
+pub fn clip_planar_loop(point_indices: &[usize], points: &[[f32; 3]]) -> Option<Vec<[usize; 3]>> {
+    let n = point_indices.len();
+    if n < 3 {
+        return None;
+    }
+    let mut seen = std::collections::HashSet::new();
+    if point_indices.iter().any(|i| !seen.insert(*i)) {
+        return None;
+    }
+    let coords: Vec<[f64; 3]> = point_indices
+        .iter()
+        .map(|&i| {
+            [
+                points[i][0] as f64,
+                points[i][1] as f64,
+                points[i][2] as f64,
+            ]
+        })
+        .collect();
+    let normal = newell_normal_2d(&coords);
+    let (u, v) = project_axes(&normal);
+    let mut poly2d: Vec<[f64; 2]> = coords.iter().map(|c| [c[u], c[v]]).collect();
+    let area2 = (0..n)
+        .map(|i| cross2([0.0, 0.0], poly2d[i], poly2d[(i + 1) % n]))
+        .sum::<f64>()
+        / 2.0;
+    if area2 == 0.0 {
+        return None;
+    }
+    let order: Vec<usize> = if area2 < 0.0 {
+        poly2d.reverse();
+        point_indices.iter().rev().copied().collect()
+    } else {
+        point_indices.to_vec()
+    };
+    let mut out: Vec<[usize; 3]> = Vec::new();
+    let mut idx: Vec<usize> = (0..n).collect();
+    let mut guard = 0usize;
+    while idx.len() > 3 {
+        guard += 1;
+        if guard > n * n {
+            return None; // numeric pathology; fail-closed, never loop
+        }
+        let mut clipped = false;
+        let m = idx.len();
+        for k in 0..m {
+            let i0 = idx[(k + m - 1) % m];
+            let i1 = idx[k];
+            let i2 = idx[(k + 1) % m];
+            let a = poly2d[i0];
+            let b = poly2d[i1];
+            let c = poly2d[i2];
+            if cross2(a, b, c) <= 0.0 {
+                continue; // reflex or collinear: not an ear
+            }
+            let mut blocker = false;
+            for &j in &idx {
+                if j == i0 || j == i1 || j == i2 {
+                    continue;
+                }
+                if point_in_tri(poly2d[j], a, b, c) {
+                    blocker = true;
+                    break;
+                }
+            }
+            if blocker {
+                continue;
+            }
+            out.push([order[i0], order[i1], order[i2]]);
+            idx.remove(k);
+            clipped = true;
+            break;
+        }
+        if !clipped {
+            return None; // no ear found: self-intersecting input
+        }
+    }
+    out.push([order[idx[0]], order[idx[1]], order[idx[2]]]);
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,5 +424,107 @@ mod tests {
         let c2 = census_family(&buf, 0, buf.len() - 2);
         assert_eq!(c2.records, 1);
         assert_eq!(c2.span_fit_rejects, 1);
+    }
+
+    // --- the deterministic 2D ear clipper -----------------------------------
+    //
+    // The pinned fixtures mirror tests/test_brep_mesh.py one to one —
+    // the expected triangle sequences below were derived from the
+    // Python implementation and asserted verbatim here (the parity bar
+    // for the unwired component).
+
+    const SQUARE: [[f32; 3]; 4] = [
+        [0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [1.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+    ];
+    const CONCAVE: [[f32; 3]; 6] = [
+        [0.0, 0.0, 0.0],
+        [4.0, 0.0, 0.0],
+        [4.0, 4.0, 0.0],
+        [2.0, 4.0, 0.0],
+        [2.0, 1.0, 0.0],
+        [0.0, 1.0, 0.0],
+    ];
+    const STAR: [[f32; 3]; 8] = [
+        [0.0, -2.0, 0.0],
+        [0.6, -0.6, 0.0],
+        [2.0, 0.0, 0.0],
+        [0.6, 0.6, 0.0],
+        [0.0, 2.0, 0.0],
+        [-0.6, 0.6, 0.0],
+        [-2.0, 0.0, 0.0],
+        [-0.6, -0.6, 0.0],
+    ];
+
+    #[test]
+    fn clip_convex_square() {
+        let tris = clip_planar_loop(&[0, 1, 2, 3], &SQUARE).expect("clips");
+        assert_eq!(tris, vec![[3, 0, 1], [1, 2, 3]]);
+    }
+
+    #[test]
+    fn clip_concave_polygon_pinned() {
+        let tris = clip_planar_loop(&[0, 1, 2, 3, 4, 5], &CONCAVE).expect("clips");
+        assert_eq!(tris, vec![[5, 0, 1], [1, 2, 3], [1, 3, 4], [1, 4, 5]]);
+    }
+
+    #[test]
+    fn clip_star_polygon_pinned() {
+        let tris = clip_planar_loop(&[0, 1, 2, 3, 4, 5, 6, 7], &STAR).expect("clips");
+        assert_eq!(
+            tris,
+            vec![
+                [7, 0, 1],
+                [7, 1, 2],
+                [7, 2, 3],
+                [7, 3, 4],
+                [7, 4, 5],
+                [5, 6, 7],
+            ]
+        );
+    }
+
+    #[test]
+    fn clip_normalizes_winding() {
+        let tris = clip_planar_loop(&[3, 2, 1, 0], &SQUARE).expect("clips");
+        assert_eq!(tris, vec![[3, 0, 1], [1, 2, 3]]);
+    }
+
+    #[test]
+    fn clip_refuses_degenerate_inputs() {
+        assert!(clip_planar_loop(&[0, 1], &SQUARE).is_none());
+        assert!(clip_planar_loop(&[0, 1, 2, 0], &SQUARE).is_none());
+        let collinear = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]];
+        assert!(clip_planar_loop(&[0, 1, 2], &collinear).is_none());
+    }
+
+    #[test]
+    fn clip_non_planar_still_triangulates_in_projection() {
+        let tilted = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 1.0],
+            [1.0, 1.0, 1.0],
+            [0.0, 1.0, 0.0],
+        ];
+        let tris = clip_planar_loop(&[0, 1, 2, 3], &tilted).expect("clips");
+        assert_eq!(tris, vec![[0, 3, 2], [2, 1, 0]]);
+    }
+
+    #[test]
+    fn clip_result_is_manifold_local() {
+        let tris = clip_planar_loop(&[0, 1, 2, 3, 4, 5, 6, 7], &STAR).expect("clips");
+        assert_eq!(tris.len(), 6); // n - 2
+        let mut undirected: std::collections::HashMap<[usize; 2], usize> =
+            std::collections::HashMap::new();
+        for tri in &tris {
+            for e in [[tri[0], tri[1]], [tri[1], tri[2]], [tri[2], tri[0]]] {
+                let mut key = e;
+                key.sort();
+                *undirected.entry(key).or_insert(0) += 1;
+            }
+        }
+        assert!(undirected.values().all(|&v| v <= 2));
     }
 }

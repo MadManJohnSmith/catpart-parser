@@ -136,13 +136,24 @@ and the mapping discriminator); both documented.
 - `docs/evidence/data/w2-brep-mesh-claims.csv` — 21 claims rows
   (W2-01..W2-21; passes the claims-quoting checker).
 - `src/catpart/geometry/brep_mesh.py` — the counts-less 0x49 family
-  decoder + census (UNWIRED; the module doc is the negative record).
+  decoder + census (UNWIRED; the module doc is the negative record),
+  plus the **deterministic 2D ear clipper** for planar boundary-cycle
+  loops: fixed projection rule (drop the largest-|component| normal
+  axis, ties toward the earlier axis), f64 shoelace orientation with
+  zero-area refusal, first-ear-in-index-order clipping with
+  boundary-inclusive blocker rule, fail-closed on self-intersecting
+  input; hole bridging is named open (single simple polygon scope).
 - `port/src/geometry/brep_mesh.rs` — the Rust twin (registered in
-  `port/src/geometry/mod.rs`), 8 unit tests, `cargo fmt` + `clippy -D
-  warnings` clean.
-- `tests/test_brep_mesh.py` — 14 synthetic regression tests mirroring
+  `port/src/geometry/mod.rs`), 15 unit tests with the clipper's pinned
+  fixtures asserted verbatim from the Python outputs (square, concave,
+  star, CW-normalization, tilted projection), `cargo fmt` +
+  `clippy -D warnings` clean.
+- `tests/test_brep_mesh.py` — 21 synthetic regression tests mirroring
   the Rust fixtures (structural parity; export-path byte parity
   applies when the route is wired, per the module doc).
+
+Verification: `pytest tests/test_brep_mesh.py tests/test_brep_planar.py`
+42 passed; `cargo test --lib` 240 passed.
 
 ## Next steps
 

@@ -188,3 +188,134 @@ def record_triangles(rec: CountlessTriangleRecord) -> list[tuple[int, int, int]]
         (rec.refs[3 * i], rec.refs[3 * i + 1], rec.refs[3 * i + 2])
         for i in range(rec.ty)
     ]
+
+
+# --- the deterministic 2D ear clipper ---------------------------------------
+#
+# The route's polygon triangulator for planar boundary-cycle loops
+# (0x4c rings and any future correctly-mapped polygon loop). Scope:
+# ONE simple polygon (no holes — hole bridging is named open below),
+# pre-validated coplanar by the caller. The committed fan law
+# (decode_soup) stays untouched; this is the route-side component for
+# the day the mapping lands, and the honest triangulation for
+# concave loops where a fan from the first corner would leave the
+# polygon.
+#
+# Determinism contract (byte-parity with the Rust twin):
+# - the projection drops the |normal| axis with the LARGEST absolute
+#   component (ties break toward the earlier axis in x, y, z order)
+#   and keeps the remaining two axes in x < y < z cyclic order;
+# - the polygon's orientation is the f64 shoelace sign (zero area is
+#   a refusal — a degenerate loop never triangulates);
+# - an ear is (convex at i: cross > 0) and (no reflex vertex strictly
+#   inside the candidate triangle, boundary-inclusive: a reflex
+#   vertex ON an edge blocks); candidates scan in index order and the
+#   FIRST ear wins, clipping one vertex per pass — no numeric
+#   tie-breaks beyond exact f64 comparisons.
+# - Hole bridging is NOT implemented (named open): a multi-loop face
+#   with holes needs the bridge step before clipping.
+
+
+def newell_normal_2d(points):
+    """The loop's Newell normal (f64, exact same arithmetic as the Rust
+    twin: the f32 coordinates are widened once, then f64 throughout)."""
+    nx = ny = nz = 0.0
+    for i in range(len(points)):
+        a = points[i]
+        b = points[(i + 1) % len(points)]
+        nx += (a[1] - b[1]) * (a[2] + b[2])
+        ny += (a[2] - b[2]) * (a[0] + b[0])
+        nz += (a[0] - b[0]) * (a[1] + b[1])
+    return nx, ny, nz
+
+
+def _project_axes(normal):
+    """The (u, v) projection axes: drop the largest-|component| axis."""
+    comps = (abs(normal[0]), abs(normal[1]), abs(normal[2]))
+    drop = 0
+    for axis in (1, 2):
+        if comps[axis] > comps[drop]:
+            drop = axis
+    axes = [a for a in (0, 1, 2) if a != drop]
+    return axes[0], axes[1]
+
+
+def _cross2(o, a, b):
+    return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+
+def _point_in_tri(p, a, b, c):
+    """Boundary-inclusive containment (the ear test's blocker rule)."""
+    d1 = _cross2(a, b, p)
+    d2 = _cross2(b, c, p)
+    d3 = _cross2(c, a, p)
+    has_neg = d1 < 0.0 or d2 < 0.0 or d3 < 0.0
+    has_pos = d1 > 0.0 or d2 > 0.0 or d3 > 0.0
+    return not (has_neg and has_pos)
+
+
+def clip_planar_loop(point_indices, points):
+    """Triangulate one simple planar polygon loop, deterministically.
+
+    ``point_indices`` is the loop's vertex sequence into ``points`` (3D
+    coordinate triples, pre-validated coplanar by the caller); returns
+    the triangle list in the loop's winding, or ``None`` when the loop
+    is degenerate (fewer than 3 vertices, repeated indices in the
+    convex hull sense, or zero projected area). O(n^3) worst case, the
+    classic ear search with the fixed first-ear rule.
+    """
+    n = len(point_indices)
+    if n < 3:
+        return None
+    if len(set(point_indices)) != n:
+        return None
+    coords = [points[i] for i in point_indices]
+    normal = newell_normal_2d(coords)
+    u, v = _project_axes(normal)
+    poly2d = [(c[u], c[v]) for c in coords]
+    area2 = sum(
+        _cross2((0.0, 0.0), poly2d[i], poly2d[(i + 1) % n]) for i in range(n)
+    ) / 2.0
+    if area2 == 0.0:
+        return None
+    # ensure CCW in the projected plane
+    if area2 < 0.0:
+        poly2d.reverse()
+        order = list(reversed(point_indices))
+    else:
+        order = list(point_indices)
+
+    out = []
+    idx = list(range(n))
+    guard = 0
+    while len(idx) > 3:
+        guard += 1
+        if guard > n * n:
+            return None  # numeric pathology; fail-closed, never loop
+        clipped = False
+        m = len(idx)
+        for k in range(m):
+            i0 = idx[(k - 1) % m]
+            i1 = idx[k]
+            i2 = idx[(k + 1) % m]
+            a, b, c = poly2d[i0], poly2d[i1], poly2d[i2]
+            if _cross2(a, b, c) <= 0.0:
+                continue  # reflex or collinear: not an ear
+            blocker = False
+            for j in idx:
+                if j in (i0, i1, i2):
+                    continue
+                if _point_in_tri(poly2d[j], a, b, c):
+                    blocker = True
+                    break
+            if blocker:
+                continue
+            out.append((order[i0], order[i1], order[i2]))
+            idx.pop(k)
+            clipped = True
+            break
+        if not clipped:
+            return None  # no ear found: self-intersecting input
+    i0, i1, i2 = idx[0], idx[1], idx[2]
+    out.append((order[i0], order[i1], order[i2]))
+    return out

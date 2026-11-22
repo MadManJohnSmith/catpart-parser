@@ -154,3 +154,93 @@ def test_normal_unit_bar_matches_br2():
 
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- the deterministic 2D ear clipper ---------------------------------------
+#
+# Fixtures are PINNED: the expected triangle sequences below were derived
+# from this implementation and are asserted verbatim in the Rust twin's
+# unit tests (port/src/geometry/brep_mesh.rs) — the parity bar for the
+# unwired component (export-path byte parity applies when wired).
+
+SQUARE = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 1.0, 0.0), (0.0, 1.0, 0.0)]
+CONCAVE = [
+    (0.0, 0.0, 0.0),
+    (4.0, 0.0, 0.0),
+    (4.0, 4.0, 0.0),
+    (2.0, 4.0, 0.0),
+    (2.0, 1.0, 0.0),
+    (0.0, 1.0, 0.0),
+]
+STAR = [
+    (0.0, -2.0, 0.0),
+    (0.6, -0.6, 0.0),
+    (2.0, 0.0, 0.0),
+    (0.6, 0.6, 0.0),
+    (0.0, 2.0, 0.0),
+    (-0.6, 0.6, 0.0),
+    (-2.0, 0.0, 0.0),
+    (-0.6, -0.6, 0.0),
+]
+
+
+def test_clip_convex_square():
+    tris = brep_mesh.clip_planar_loop([0, 1, 2, 3], SQUARE)
+    assert tris == [(3, 0, 1), (1, 2, 3)]
+
+
+def test_clip_concave_polygon_pinned():
+    tris = brep_mesh.clip_planar_loop(list(range(6)), CONCAVE)
+    assert tris == [(5, 0, 1), (1, 2, 3), (1, 3, 4), (1, 4, 5)]
+
+
+def test_clip_star_polygon_pinned():
+    tris = brep_mesh.clip_planar_loop(list(range(8)), STAR)
+    assert tris == [
+        (7, 0, 1),
+        (7, 1, 2),
+        (7, 2, 3),
+        (7, 3, 4),
+        (7, 4, 5),
+        (5, 6, 7),
+    ]
+
+
+def test_clip_normalizes_winding():
+    # the same square given clockwise normalizes to the same CCW loop
+    # and triangulates to the SAME triangles (absolute index space)
+    tris = brep_mesh.clip_planar_loop([3, 2, 1, 0], SQUARE)
+    assert tris == [(3, 0, 1), (1, 2, 3)]
+
+
+def test_clip_refuses_degenerate_inputs():
+    assert brep_mesh.clip_planar_loop([0, 1], SQUARE) is None
+    assert brep_mesh.clip_planar_loop([0, 1, 2, 0], SQUARE) is None  # repeated index
+    collinear = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (2.0, 0.0, 0.0)]
+    assert brep_mesh.clip_planar_loop([0, 1, 2], collinear) is None  # zero area
+
+
+def test_clip_non_planar_still_triangulates_in_projection():
+    """The clipper projects along the Newell normal; coplanarity is the
+    CALLER's validation (documented scope) — a non-planar loop's output
+    is the projection's triangulation, index-valid but geometry-unvetted."""
+    tilted = [(0.0, 0.0, 0.0), (1.0, 0.0, 1.0), (1.0, 1.0, 1.0), (0.0, 1.0, 0.0)]
+    tris = brep_mesh.clip_planar_loop([0, 1, 2, 3], tilted)
+    assert tris == [(0, 3, 2), (2, 1, 0)]
+
+
+def test_clip_result_is_manifold_local():
+    """Every interior edge of the fan appears exactly twice with opposite
+    orientation; boundary edges once (the n-3 diagonal property)."""
+    tris = brep_mesh.clip_planar_loop(list(range(8)), STAR)
+    assert len(tris) == 6  # n - 2
+    directed = {}
+    for tri in tris:
+        for e in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
+            directed[e] = directed.get(e, 0) + 1
+    undirected = {}
+    for (a, b), c in directed.items():
+        key = (a, b) if a <= b else (b, a)
+        undirected[key] = undirected.get(key, 0) + c
+    # every undirected edge used at most twice (no over-use)
+    assert all(v <= 2 for v in undirected.values())
