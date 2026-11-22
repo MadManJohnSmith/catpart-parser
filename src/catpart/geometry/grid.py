@@ -279,6 +279,21 @@ def _records(data, lo: int, hi: int) -> list[tuple[int, int, int, int]]:
     return out
 
 
+def e5_records(data):
+    """Every admitted ``e5 0d`` record's ``(payload, end, cls)``, in scan order.
+
+    The public form of the admitted-run walk (``>= 3`` chained records that
+    close on their own end, byte scan resuming after each admitted run):
+    the E5-surface route in :mod:`catpart.geometry.surface` consumes the
+    ``0x00e7`` class records from it.
+    """
+    out: list[tuple[int, int, int]] = []
+    for block, hi in regions(data):
+        for _record_start, payload, end, cls in _records(data, block, hi):
+            out.append((payload, end, cls))
+    return out
+
+
 def _metadata_content(data, block: int, hi: int) -> int | None:
     """The content-stream start after the block's metadata table.
 

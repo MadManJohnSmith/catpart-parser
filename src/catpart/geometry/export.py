@@ -281,10 +281,17 @@ def _surface_fallback(
     result = surface.scan_part(data)
     if result.candidates == 0:
         return _grid_fallback(data, original, previous, spans)
+    if result.e5_candidates:
+        frame_detail = (
+            f"{result.candidates - result.e5_candidates} a5 03 34 surface "
+            f"frame(s) + {result.e5_candidates} E5 0xe7 surface record(s): "
+        )
+    else:
+        frame_detail = f"{result.candidates} a5 03 34 surface frame(s): "
     if not result.has_mesh:
         raise ExportError(
             "no-evaluable-surface",
-            f"{result.candidates} a5 03 34 surface frame(s): "
+            frame_detail +
             f"{result.decoded} head-decodable, {result.evaluable} evaluable, "
             f"{result.tessellated} tessellated, {result.refused} refused "
             "(the exact B-spline battery: corner poles, finite samples, "
@@ -296,14 +303,20 @@ def _surface_fallback(
     vertices = list(result.vertices)
     triangles = list(result.triangles)
     stats = mesh.mesh_stats(triangles)
+    if result.e5_evaluable:
+        carrier_detail = (
+            f"{result.evaluable - result.e5_evaluable} evaluable a5 03 34 "
+            f"and {result.e5_evaluable} evaluable E5 0xe7 record(s)"
+        )
+    else:
+        carrier_detail = f"{result.evaluable} evaluable a5 03 34 record(s)"
     warnings = [
         {
             "class": WARN_SURFACE_TESSELLATED,
             "detail": f"{result.tessellated} exact B-spline "
-            f"surface(s) tessellated from {result.evaluable} evaluable "
-            "a5 03 34 record(s) on an adaptive tensor grid (maximum chord "
-            "error 1e-3 of each pole-net bbox diagonal; "
-            "docs/evidence/2026-11-19-surface-tessellation.md)",
+            f"surface(s) tessellated from {carrier_detail} on an adaptive "
+            "tensor grid (maximum chord error 1e-3 of each pole-net bbox "
+            "diagonal; docs/evidence/2026-11-19-surface-tessellation.md)",
         }
     ]
     if result.degenerate:
@@ -361,6 +374,10 @@ def _surface_fallback(
             "evaluable": result.evaluable,
             "tessellated": result.tessellated,
             "refused": result.refused,
+            "e5_records": result.e5_candidates,
+            "e5_decoded": result.e5_decoded,
+            "e5_evaluable": result.e5_evaluable,
+            "e5_tessellated": result.e5_tessellated,
             "pole_points": result.points,
             "grid_points": len(vertices),
             "tolerance_fraction": surface.TOLERANCE_FRACTION,
