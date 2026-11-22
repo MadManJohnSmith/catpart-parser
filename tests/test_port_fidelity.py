@@ -128,6 +128,9 @@ def test_port_fidelity_fixture_mode(tmp_path: Path) -> None:
     known_classes = {
         "missing-geometry-store",
         "undecoded-variant",
+        # The W8 signature law (unclassified.py/unclassified.rs): the
+        # geometry-empty-body fixture's named class, both engines.
+        "empty-geometry-store",
         "malformed-store-header",
         "malformed-pool-group",
         "malformed-pool-vertex",

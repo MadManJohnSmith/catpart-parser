@@ -75,6 +75,10 @@ use std::fmt;
 /// sites (single-sourced so the strings cannot drift between modules).
 pub const MISSING_GEOMETRY_STORE: &str = "missing-geometry-store";
 pub const UNDECODED_VARIANT: &str = "undecoded-variant";
+/// The W8 signature-law class (``unclassified.rs``): a located,
+/// validated store whose body carries no geometry payload of any
+/// pinned kind.
+pub const EMPTY_GEOMETRY_STORE: &str = "empty-geometry-store";
 pub const MALFORMED_STORE_HEADER: &str = "malformed-store-header";
 pub const MALFORMED_POOL_GROUP: &str = "malformed-pool-group";
 pub const MALFORMED_POOL_VERTEX: &str = "malformed-pool-vertex";
@@ -133,6 +137,7 @@ mod tests {
     fn vocabulary_is_the_twin_kebab_classes() {
         // §2.3's exact vocabulary — the classes the harness compares.
         assert_eq!(UNDECODED_VARIANT, "undecoded-variant");
+        assert_eq!(EMPTY_GEOMETRY_STORE, "empty-geometry-store");
         assert_eq!(MALFORMED_STORE_HEADER, "malformed-store-header");
         assert_eq!(MALFORMED_POOL_GROUP, "malformed-pool-group");
         assert_eq!(MALFORMED_POOL_VERTEX, "malformed-pool-vertex");

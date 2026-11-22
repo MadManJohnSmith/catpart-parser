@@ -340,6 +340,10 @@ CORRUPTED_VARIANTS = (
     "geometry-nan-coords",
     "geometry-out-of-range-refs",
     "geometry-truncated-pool",
+    # W8 signature law (2026-11-22): a located store whose body carries
+    # no geometry payload of any pinned kind -> the named
+    # ``empty-geometry-store`` class (unclassified.py).
+    "geometry-empty-body",
     # Exact B-spline surface fail-closed (2026-11-19): the a5 03 34
     # record is present but the pole net has no arc, so no surface
     # passes the evaluable battery -> the named no-evaluable-surface
@@ -417,6 +421,7 @@ GEOMETRY_VARIANTS = (
     "geometry-nan-coords",
     "geometry-out-of-range-refs",
     "geometry-truncated-pool",
+    "geometry-empty-body",
     "geometry-surface-no-evaluable",
     "geometry-point-grid-stalled",
     "geometry-seebody-composite",
@@ -2395,6 +2400,12 @@ def _geometry_store(variant: str) -> bytes:
         # degenerate and skipped (F7), the marker surfaces as an
         # unresolved facet family.
         body_parts.append(_facet_record(0x41, None, (0, 0, 0)))
+    if variant == "geometry-empty-body":
+        # W8: a located, validated store whose body carries no geometry
+        # payload of any pinned kind (0 pool groups, 0 wrapper markers,
+        # 0 facet candidates) -> the named ``empty-geometry-store``
+        # class (the CAA fixture cluster's signature, W8 evidence).
+        body_parts = []
     body = b"".join(body_parts)
 
     catalog_len = NESTED_CATALOG_LEN

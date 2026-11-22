@@ -42,7 +42,7 @@ import mmap
 
 from catpart.geometry.errors import ExportError
 from catpart.geometry import display, face_gp, facets, grid, mesh, pool, ply, store, surface
-from catpart.geometry import composite
+from catpart.geometry import composite, unclassified
 
 EXPORT_SCHEMA_VERSION = 1
 
@@ -782,11 +782,13 @@ def _export_store(data, span, ordinal: int) -> tuple[dict, list, list]:
             ordinal,
             groups,
             kinds,
-            ExportError(
-                "undecoded-variant",
-                "no 01 06 vertex pool decoded from the store body "
-                "(G2 P8 family: strips without a pool, or an empty store)",
-            ),
+            # W8: the no-pool classification routes through the
+            # unclassified signature law — a body with no pinned payload
+            # marker of any kind names ``empty-geometry-store``; any
+            # other body keeps the original ``undecoded-variant`` error
+            # verbatim (fail-closed; the second-chance route below is
+            # untouched).
+            unclassified.no_pool_error(data, span, kinds),
         )
     lex = facets.lex_rank_map(flat)
     # The store-width context is bounded to the clean store class (#35,

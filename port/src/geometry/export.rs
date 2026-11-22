@@ -89,7 +89,9 @@ use super::errors::{
     ExportError, IO_ERROR, MISSING_GEOMETRY_STORE, NO_EVALUABLE_SURFACE, UNDECODED_VARIANT,
     UNREADABLE_FILE,
 };
-use super::{composite, display, face_gp, facets, grid, mesh, ply, pool, store, surface};
+use super::{
+    composite, display, face_gp, facets, grid, mesh, ply, pool, store, surface, unclassified,
+};
 
 /// The summary's schema version (twin: ``EXPORT_SCHEMA_VERSION``).
 pub const EXPORT_SCHEMA_VERSION: u32 = 1;
@@ -1220,18 +1222,17 @@ fn export_store(
         // second-chance element-space route (#34): the composite decode
         // either exports (a composite-path export) or declines and
         // THIS original error re-raises unchanged (fail-closed,
-        // row-identical).
+        // row-identical). W8: the original error routes through the
+        // unclassified signature law — a body with no pinned payload
+        // marker of any kind names ``empty-geometry-store``; any other
+        // body keeps the original ``undecoded-variant`` error verbatim.
         return unrouted_element_space(
             data,
             span,
             ordinal,
             &groups,
             &kinds,
-            ExportError::new(
-                UNDECODED_VARIANT,
-                "no 01 06 vertex pool decoded from the store body (G2 P8 \
-                 family: strips without a pool, or an empty store)",
-            ),
+            unclassified::no_pool_error(data, span, &kinds),
         );
     }
     let lex = facets::lex_rank_map(&flat);
@@ -1807,6 +1808,7 @@ fn export_composite_store(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::errors::EMPTY_GEOMETRY_STORE;
 
     /// The fixture generator's shapes, minimized: a canonical store
     /// (8-vertex pool, 4 strips + 2 polygons over the GEOMETRY_LEX
@@ -2001,6 +2003,37 @@ mod tests {
             err.detail
                 .contains("no 01 06 vertex pool decoded from the store body")
         );
+    }
+
+    #[test]
+    fn empty_store_body_names_the_w8_signature_class() {
+        // The W8 signature law: a located, validated store whose body
+        // carries no geometry payload of any pinned kind (0 pool
+        // groups, 0 wrapper markers, 0 facet candidates) names
+        // ``empty-geometry-store`` — the honest class for the CAA
+        // fixture cluster (10/10 official corpus files, W8 evidence).
+        let file = file_with(&[]);
+        let err = export_data(&file).unwrap_err();
+        assert_eq!(err.error_class, EMPTY_GEOMETRY_STORE);
+        assert!(
+            err.detail
+                .contains("no geometry payload of any pinned kind")
+        );
+    }
+
+    #[test]
+    fn wrapper_marker_body_keeps_undecoded_variant() {
+        // The fail-closed rule: a body with ANY pinned marker (here an
+        // established-but-insane pool wrapper) keeps the original
+        // ``undecoded-variant`` class — only a marker-free body names
+        // the W8 class.
+        let mut body = Vec::new();
+        body.extend_from_slice(pool::FULL_WRAP);
+        body.extend_from_slice(b"\x01\x03"); // non-pool, non-composite sub-kind
+        body.extend_from_slice(&[0x00; 8]);
+        let file = file_with(&body);
+        let err = export_data(&file).unwrap_err();
+        assert_eq!(err.error_class, UNDECODED_VARIANT);
     }
 
     #[test]

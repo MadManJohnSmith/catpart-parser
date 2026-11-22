@@ -19,6 +19,11 @@ convention of kebab-case classes plus evidence-citing detail):
   (G3 claim F8, open question 1), facet references beyond the pool
   (G3 open question 2), or no exportable facet content at all
   (0x41/0x44/0x4b/0x4e-only stores, G3 open questions 3-5).
+- ``empty-geometry-store``: the located store validated (N2/N6) but its
+  body carries no geometry payload of any pinned kind — zero pool
+  groups, zero wrapper markers, zero facet-header candidates (the W8
+  signature law, ``unclassified.py``; a body with any marker keeps
+  ``undecoded-variant``).
 - ``malformed-store-header``: a ``V5_CFV2`` header is present but fails
   the G1 N2 validation (ff x 8, zeros x 8, sane dwords, catalog magic),
   or its catalog tail matches neither the N6 trailer laws nor the two
