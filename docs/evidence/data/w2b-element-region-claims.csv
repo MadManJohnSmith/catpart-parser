@@ -1,0 +1,15 @@
+claim,statement,label,scope,observations,passes,rate
+W2B-01,"U3-variant list node = multi-part container: counts + header 01 00 01 02 (no zero block) or 01 00 01 01 + zero block (Coxa), not the committed table+region layout",fact,12 eligible empty-mesh stores (probe selftest-pinned),12,12,1.0
+W2B-02,"container opens with c1 f32 pairs (pairs_found == c1_element_count)",fact,"7/12 stores (the 01 00 01 02 header family)",7,7,1.0
+W2B-03,"pairs are UV-grid entries: quantized b pitches (separador 0.08 / 1/32; Tornillo symmetric around (0.5, 0.5)); loops' UVs trace axis-aligned face cells",fact,"separador + Tornillo byte-dump",2,2,1.0
+W2B-04,"refs index the declared element count exactly: refs_max == c1-1, zero out-of-range (committed width-vote parse incl. u16le relaxed families)",fact,"stores with parsed loops",7,7,1.0
+W2B-05,"explicit f32 position zones exist after the pairs (all-nice stride-12 runs)",fact,12 eligible stores,7,7,1.0
+W2B-06,"position-zone frame is NOT the pool frame: separador zone bbox ~cubic [-46.4,46.5]^3 vs pool bbox x[-12.475,46.475] y[-46.877,15.137] z[3.5,11.5]; zone re-lists pool coords bit-exact",fact,"separador 2026-11-22 byte search",1,1,1.0
+W2B-07,"Tornillo's position zone is parametric (unit-circle family at constant radius 0.9635), not a 3D point table",fact,Tornillo c6eaac5e,1,1,1.0
+W2B-08,"oracle NEGATIVE - identity mapping ref->position-zone triple: 0 passes",fact,corpus sweep (BR2-10 battery |dot|>0.999),16,0,0.0
+W2B-09,"oracle NEGATIVE - best of 48 signed axis permutations: 1/13 on separador (noise), 0 elsewhere",fact,"separador, Tornillo, Correia 1, Coxa, Base, Tapa",32,1,0.03125
+W2B-10,"oracle NEGATIVE - constant shifts delta in [-c1, 0]: best agreement 1.0 on 1 loop (noise); max coverage 16 loops at 0.188",fact,separador 2026-11-22 shift sweep,3128,0,0.0
+W2B-11,"no c1-length u16be/u16le index array exists in the span (longest u16be run < c1: 2278 = edge/curve tables)",fact,separador 2026-11-22 span scan,1,1,1.0
+W2B-12,"UV-normalization matching (pairs vs position-zone bbox, 3 axis pairs): 0/3128 matches",fact,separador 2026-11-22,3128,0,0.0
+W2B-13,"the per-face UV->3D affine is present nowhere in the node territory in explicit f32 form (inter-record bytes = index streams; edge tables; 0001 sub-node group = 48B transform-like blocks)",inference,"separador + Tornillo structural census",2,2,1.0
+W2B-14,"element->position mapping is law-based (UV grid + per-face affine + store-frame transform), not table-based: 0 flips measured on the 12 probed stores; reopening R1/R2/R3 in the evidence note",inference,12 eligible stores (cota: 16 testable loops 0/16),12,0,0.0
