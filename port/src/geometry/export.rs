@@ -189,6 +189,10 @@ pub struct SurfaceTessellation {
     pub evaluable: usize,
     pub tessellated: usize,
     pub refused: usize,
+    pub e5_records: usize,
+    pub e5_decoded: usize,
+    pub e5_evaluable: usize,
+    pub e5_tessellated: usize,
     pub pole_points: usize,
     pub grid_points: usize,
     pub tolerance_fraction: f64,
@@ -477,17 +481,26 @@ fn surface_fallback(
     if scan.candidates == 0 {
         return grid_fallback(data, original, previous, spans);
     }
+    let frame_detail = if scan.e5_candidates > 0 {
+        format!(
+            "{} a5 03 34 surface frame(s) + {} E5 0xe7 surface record(s): ",
+            scan.candidates - scan.e5_candidates,
+            scan.e5_candidates,
+        )
+    } else {
+        format!("{} a5 03 34 surface frame(s): ", scan.candidates)
+    };
     if !scan.has_mesh() {
         return Err(ExportError::new(
             NO_EVALUABLE_SURFACE,
             format!(
-                "{} a5 03 34 surface frame(s): {} head-decodable, {} evaluable, \
+                "{}{} head-decodable, {} evaluable, \
                  {} tessellated, {} refused (the exact B-spline battery: corner \
                  poles, finite samples, pole hull, no fold, model scale, and the \
                  chord-length band on the grammars that define it; \
                  docs/evidence/2026-11-19-surface-head.md section 5) — no surface \
                  produced a sane mesh",
-                scan.candidates, scan.decoded, scan.evaluable, scan.tessellated, scan.refused,
+                frame_detail, scan.decoded, scan.evaluable, scan.tessellated, scan.refused,
             ),
         ));
     }
@@ -496,13 +509,25 @@ fn surface_fallback(
     let stats = mesh::mesh_stats(&triangles);
     let mut warnings = vec![Warning {
         class: WARN_SURFACE_TESSELLATED.to_string(),
-        detail: format!(
-            "{} exact B-spline surface(s) tessellated from {} \
-             evaluable a5 03 34 record(s) on an adaptive tensor grid (maximum \
-             chord error 1e-3 of each pole-net bbox diagonal; \
-             docs/evidence/2026-11-19-surface-tessellation.md)",
-            scan.tessellated, scan.evaluable,
-        ),
+        detail: if scan.e5_evaluable > 0 {
+            format!(
+                "{} exact B-spline surface(s) tessellated from {} evaluable \
+                 a5 03 34 and {} evaluable E5 0xe7 record(s) on an adaptive tensor \
+                 grid (maximum chord error 1e-3 of each pole-net bbox diagonal; \
+                 docs/evidence/2026-11-19-surface-tessellation.md)",
+                scan.tessellated,
+                scan.evaluable - scan.e5_evaluable,
+                scan.e5_evaluable,
+            )
+        } else {
+            format!(
+                "{} exact B-spline surface(s) tessellated from {} \
+                 evaluable a5 03 34 record(s) on an adaptive tensor grid (maximum \
+                 chord error 1e-3 of each pole-net bbox diagonal; \
+                 docs/evidence/2026-11-19-surface-tessellation.md)",
+                scan.tessellated, scan.evaluable,
+            )
+        },
     }];
     if scan.degenerate > 0 {
         warnings.push(Warning {
@@ -569,6 +594,10 @@ fn surface_fallback(
             evaluable: scan.evaluable,
             tessellated: scan.tessellated,
             refused: scan.refused,
+            e5_records: scan.e5_candidates,
+            e5_decoded: scan.e5_decoded,
+            e5_evaluable: scan.e5_evaluable,
+            e5_tessellated: scan.e5_tessellated,
             pole_points: scan.points,
             grid_points: vertices.len(),
             tolerance_fraction: surface::TOLERANCE_FRACTION,
