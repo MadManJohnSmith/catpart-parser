@@ -55,6 +55,7 @@ WARN_CURVE_ENTRY = "curve-entry-loops-unexported"
 WARN_CURVE_ENTRY_EXPORTED = "curve-entry-loops-exported-dup-pin"
 WARN_EXTENDED_DECLINED = "extended-header-geometry-declined"
 WARN_EXTENDED_FILTERED = "extended-header-members-filtered"
+WARN_SURFACE_FILTERED = "surface-members-filtered"
 WARN_PRIMARY_SKIP = "primary-loop-manifold-skip"
 WARN_PRIMARY_DECLINED = "primary-loop-manifold-declined"
 WARN_PRIMARY_KEPT = "primary-loop-manifold-kept"
@@ -321,13 +322,17 @@ def _surface_fallback(
             "diagonal; docs/evidence/2026-11-19-surface-tessellation.md)",
         }
     ]
-    if result.degenerate:
+    if result.degenerate_filtered:
         warnings.append(
             {
-                "class": WARN_DEGENERATE,
-                "detail": f"{result.degenerate} degenerate tessellation "
-                "triangles skipped (zero area below 1e-12 of the "
-                "pole-net diagonal squared)",
+                "class": WARN_SURFACE_FILTERED,
+                "detail": f"{result.degenerate_filtered} degenerate "
+                "tessellation member triangles filtered (zero area below "
+                "1e-12 of the pole-net diagonal squared, collapsed pole "
+                "rows/edges at the surface's degenerate boundary) — the "
+                "skips never count as degenerate-triangles (the L2 "
+                "gate's rate stays 0; the member-filter law of "
+                "docs/evidence/2026-11-22-e5-class-table.md)",
             }
         )
     if stats.boundary_edges:

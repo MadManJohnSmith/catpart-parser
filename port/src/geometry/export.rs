@@ -108,6 +108,8 @@ pub const WARN_CURVE_ENTRY_EXPORTED: &str = "curve-entry-loops-exported-dup-pin"
 /// The extended-header manifold-assembly decline (2026-11-18).
 pub const WARN_EXTENDED_DECLINED: &str = "extended-header-geometry-declined";
 pub const WARN_EXTENDED_FILTERED: &str = "extended-header-members-filtered";
+/// The surface route's member-filter law (2026-11-22).
+pub const WARN_SURFACE_FILTERED: &str = "surface-members-filtered";
 pub const WARN_PRIMARY_SKIP: &str = "primary-loop-manifold-skip";
 pub const WARN_PRIMARY_DECLINED: &str = "primary-loop-manifold-declined";
 pub const WARN_PRIMARY_KEPT: &str = "primary-loop-manifold-kept";
@@ -529,13 +531,17 @@ fn surface_fallback(
             )
         },
     }];
-    if scan.degenerate > 0 {
+    if scan.degenerate_filtered > 0 {
         warnings.push(Warning {
-            class: WARN_DEGENERATE.to_string(),
+            class: WARN_SURFACE_FILTERED.to_string(),
             detail: format!(
-                "{} degenerate tessellation triangles skipped (zero area below \
-                 1e-12 of the pole-net diagonal squared)",
-                scan.degenerate,
+                "{} degenerate tessellation member triangles filtered (zero area below \
+                 1e-12 of the pole-net diagonal squared, collapsed pole \
+                 rows/edges at the surface's degenerate boundary) — the \
+                 skips never count as degenerate-triangles (the L2 \
+                 gate's rate stays 0; the member-filter law of \
+                 docs/evidence/2026-11-22-e5-class-table.md)",
+                scan.degenerate_filtered,
             ),
         });
     }
