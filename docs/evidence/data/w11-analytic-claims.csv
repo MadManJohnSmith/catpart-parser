@@ -1,0 +1,9 @@
+claim,scope,observations,passes,rate,label,detail
+W11-01,population,10,10,1.0000,fact,"verdict no-evaluable-analytic-surface on the whole undecoded-variant population (no per-part analytic record, no a5 03 34 frame, no NURBS signature)"
+W11-02,population,0,0,,fact,a5 03 34 surface frames across the population (the shipped exact-surface carrier is absent everywhere)
+W11-03,population,0,0,,fact,NURBS signatures (knot runs + weight runs) across store bodies and CATPrtCont regions (BR5 detector)
+W11-04,population,19,19,1.0000,fact,"01 56 plane objects: every observed one carries a measured template direction pair (byte-exact law) — none is per-part geometry, none carries bounds"
+W11-05,population,10,5,0.5000,fact,"bulk dialect split (object-stream vs E5) under the bulk-stream cluster law; E5 frames nothing at 4,116 B template content"
+W11-06,population,0,0,,fact,axis+radius shape hits after the fixed-point alias guard (the phase-census detector is diagnostic only)
+W11-07,population,10,10,1.0000,fact,the export path still classifies every population file undecoded-variant (no runtime change intended or made)
+W11-08,control,6,5,0.8333,fact,"seeded clean-part control: the template plane objects also live in passing files' bodies (format constant, not an undecoded-variant signature)"
