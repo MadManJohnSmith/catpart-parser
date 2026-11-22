@@ -383,19 +383,17 @@ pub fn scan_feature_tree(data: &[u8]) -> FeatureTreeScan {
     let mut i = 0usize;
     while i + 4 <= data.len() {
         let length = data[i] as usize;
-        if (4..=40).contains(&length) && i + length <= data.len() {
-            if let Some(name) = candidate_name(data, i) {
-                if name.len() == length - 1 {
-                    if let Ok(text) = std::str::from_utf8(name) {
-                        if let Some(typ) = feature_type_of(text) {
-                            total += 1;
-                            *counts.entry(typ).or_insert(0) += 1;
-                            if !order.contains(&typ) {
-                                order.push(typ);
-                            }
-                        }
-                    }
-                }
+        if (4..=40).contains(&length)
+            && i + length <= data.len()
+            && let Some(name) = candidate_name(data, i)
+            && name.len() == length - 1
+            && let Ok(text) = std::str::from_utf8(name)
+            && let Some(typ) = feature_type_of(text)
+        {
+            total += 1;
+            *counts.entry(typ).or_insert(0) += 1;
+            if !order.contains(&typ) {
+                order.push(typ);
             }
         }
         i += 1;
@@ -417,18 +415,15 @@ fn find_first_offset(data: &[u8], typ: &str) -> usize {
     let mut i = 0usize;
     while i + 4 <= data.len() {
         let length = data[i] as usize;
-        if (4..=40).contains(&length) && i + length <= data.len() {
-            if let Some(name) = candidate_name(data, i) {
-                if name.len() == length - 1 {
-                    if let Ok(text) = std::str::from_utf8(name) {
-                        if let Some(found) = feature_type_of(text) {
-                            if found == typ {
-                                return i + 1;
-                            }
-                        }
-                    }
-                }
-            }
+        if (4..=40).contains(&length)
+            && i + length <= data.len()
+            && let Some(name) = candidate_name(data, i)
+            && name.len() == length - 1
+            && let Ok(text) = std::str::from_utf8(name)
+            && let Some(found) = feature_type_of(text)
+            && found == typ
+        {
+            return i + 1;
         }
         i += 1;
     }

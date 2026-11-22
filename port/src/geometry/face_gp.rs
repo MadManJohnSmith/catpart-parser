@@ -1123,26 +1123,24 @@ mod tests {
         // one independent triangle, one strip declared by the table
         // (4 values -> 2 windows), one fan (4 values -> 2 triangles):
         // the same mult-3 encoding, kind 0
-        let built = counter_table_bytes(
-            &[(0, 1, 2)],
-            &[&[0, 3, 6, 9]],
-            &[&[0, 6, 9, 12]],
-            true,
-        );
+        let built = counter_table_bytes(&[(0, 1, 2)], &[&[0, 3, 6, 9]], &[&[0, 6, 9, 12]], true);
         let decoded = decode_sub_record(&built, 0, built.len());
         assert_eq!(decoded.flag, FLAG_COUNTER_TABLE);
         assert_eq!(decoded.kind, KIND_COUNTER_TABLE);
-        assert_eq!((decoded.n_tris, decoded.n_strips, decoded.n_fans), (1, 1, 1));
+        assert_eq!(
+            (decoded.n_tris, decoded.n_strips, decoded.n_fans),
+            (1, 1, 1)
+        );
         assert!(decoded.closed_exact);
         assert_eq!(decoded.pos_rel, built.len() - 1);
         assert_eq!(
             decoded.triangles,
             vec![
-                (0, 1, 2),  // the independent triangle
-                (0, 1, 2),  // the strip's first window (values 0, 3, 6)
-                (1, 2, 3),  // the strip's second window (values 3, 6, 9)
-                (0, 2, 3),  // the fan's first triangle (fan head 0; 6, 9)
-                (0, 3, 4),  // the fan's second triangle (fan head 0; 9, 12)
+                (0, 1, 2), // the independent triangle
+                (0, 1, 2), // the strip's first window (values 0, 3, 6)
+                (1, 2, 3), // the strip's second window (values 3, 6, 9)
+                (0, 2, 3), // the fan's first triangle (fan head 0; 6, 9)
+                (0, 3, 4), // the fan's second triangle (fan head 0; 9, 12)
             ]
         );
     }
