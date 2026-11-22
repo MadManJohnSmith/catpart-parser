@@ -16,6 +16,7 @@
 //! ``clippy::suboptimal_flops`` carve-out in each decode module.
 
 pub mod composite;
+pub mod curves;
 pub mod display;
 pub mod errors;
 pub mod export;
