@@ -1,0 +1,22 @@
+claim,statement,label,scope,observations,passes,rate
+W2-01,official empty-mesh rows in fitness run 20261121T103944Z-d2c9ff (207 dev + 4 held-out),fact,committed fitness report,211,,
+W2-02,empty-mesh files with a located store span (77 stdcont / 29 other / 18 seebody),fact,empty-mesh population,211,124,0.5876777
+W2-03,"empty-mesh files with pool points (95,819 points; every one a composite index-space store)",fact,empty-mesh population,211,19,0.0900474
+W2-04,empty-mesh files with facet candidates in-span,fact,empty-mesh population,211,14,0.0663507
+W2-05,in-span accepted facet records (0x42: 616; 0x4a: 2863; 0x4c: 1231; other 1496),fact,empty-mesh spans,178240,6206,0.0348111
+W2-06,"in-span unresolved facet candidates (PalmDown5motors2 carries 171,978)",fact,empty-mesh spans,,172034,
+W2-07,"counts-less 0x49 family records on PalmDown5motors2 (ty 1..16, n==3*ty, unit normal, u16be refs, span-fit) - zero rejects",fact,PalmDown5motors2 CATStdCont span,171916,171916,1.0
+W2-08,"EdgeGuard simulation: records admitted (declined 3695; degenerate members filtered 124; triangles 180,859; manifold true; boundary edges 9869; open shell)",fact,PalmDown5motors2 simulated assembly,177060,173329,0.9791335
+W2-09,mapping refutation - identity mapping: family triangles agreeing with their stored normal (|dot| > 0.999),fact,PalmDown5motors2 family sample (800 records),800,1,0.00125
+W2-10,mapping refutation - lex-rank mapping (facets.lex_rank_map),fact,PalmDown5motors2 family sample (800 records),800,290,0.3625
+W2-11,"mapping refutation - offset-shifted mappings delta in [-16,16]: maximum across all 64 shifts (lex and raw)",fact,PalmDown5motors2 family sample (800 records per shift),800,10,0.0125
+W2-12,accepted-record triangle plane-agreement under lex mapping (a correct mapping scores ~1.0; pool-only scope validates 0.989967 per BR2-10),fact,PalmDown5motors2 accepted soup records,12036,3964,0.3293453
+W2-13,"0x42 loops of accepted 0x42 records across the empty-mesh files (the brief's 796 figure measures 784 here - a 12-loop discrepancy left named, not massaged)",fact,9 empty-mesh files with 0x42 records + pool,,784,
+W2-14,0x42 loops in-pool under raw references,fact,9 empty-mesh files with 0x42 records + pool,784,232,0.2959184
+W2-15,0x42 in-pool loops passing the BR2 coplanarity bar (on stores whose mapping W2-09..12 refute),fact,9 empty-mesh files with 0x42 records + pool,232,135,0.5818966
+W2-16,edge-group (01 02) records whose refs stay under the pool count (11 files),fact,empty-mesh spans,98877,98543,0.9966222
+W2-17,unwrapped 01 01 polyline-list records with refs under the pool count (0 in-pool; 303 out) on 8 files,fact,empty-mesh spans,303,0,0.0
+W2-18,33 32 line records holding BOTH G2 laws (file-wide walk) on 63 files,fact,empty-mesh files,178688,8670,0.0485205
+W2-19,segment-length discriminator for the edge-group refs on PalmDown5motors2 - identity jumps 9.18% vs lex 11.28% (INCONCLUSIVE: no mapping separates),fact,PalmDown5motors2 edge-group segments,98469,9036,0.0917497
+W2-20,cgm_nurbs.py surface-evaluation entry points (the module is a signature detector only; BR5 documented-open),fact,committed module src/catpart/brep/cgm_nurbs.py,0,0,
+W2-21,BLANK-classified rows in the committed fitness report (classifications are clean/missing-invariant/crash - the brief's 22 BLANK roster is not a committed artifact here),fact,fitness run 20261121T103944Z-d2c9ff,0,0,

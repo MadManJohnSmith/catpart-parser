@@ -15,6 +15,7 @@
 //! §2.2) lives in the crate docs (``../lib.rs``) and as the pinned
 //! ``clippy::suboptimal_flops`` carve-out in each decode module.
 
+pub mod brep_mesh;
 pub mod composite;
 pub mod display;
 pub mod errors;
