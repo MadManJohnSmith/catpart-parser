@@ -493,6 +493,15 @@ pub fn bind_position_layer(
 ///   identity frames) carries no instance placements and its instances decode
 ///   identity; a document mixing refused records with anything else stays
 ///   fail-closed.
+/// - W9 law R (rotation witness, 2026-11-22): the sharing rule is bounded by
+///   the body's rotation content. A document whose records are ALL one shared
+///   body, count-matched to its own children, with a NON-identity rotation,
+///   binds the matrix to every own child — the MD-MTU-16V-652-MB81 STEP
+///   export carries MD-base-motor-01's children at Rz(180 deg), byte-exact
+///   the rotation of the shared body `ba2a3c4e20f91f95` (rotation error
+///   0.000 deg per instance), while MB81-0001/0003 carrying the same body
+///   have all children at identity rotation. Identity-rotation shared bodies
+///   keep the W5 refusal.
 ///
 /// Returns the number of non-root position records seen.
 pub fn bind_name_table(
@@ -530,6 +539,29 @@ pub fn bind_name_table(
             rec.kind == PositionKind::Explicit && rec.matrix_body == records[0].matrix_body
         });
     let refused_only = n_records > 0 && n_refused + n_clause3 == n_records;
+    // W9 law R (rotation witness): a shared body whose rotation is NON-identity
+    // witnesses an instance placement when count-matched. The MB81 STEP export
+    // carries MD-base-motor-01's children at Rz(180 deg) — byte-exact the
+    // rotation of the shared body ba2a3c4e20f91f95 — while MB81-0001/0003
+    // (same body) have all children at identity rotation, and the
+    // vela/flooding/bow extent refutations cover the identity-rotation shared
+    // bodies. An identity rotation cannot distinguish a placement from a
+    // connector frame, so those keep the W5 refusal.
+    let rotation_witness_places = refused_only
+        && n_clause3 == 0
+        && n_own.is_some_and(|n_own| n_own == n_records)
+        && records
+            .iter()
+            .all(|rec| rec.matrix_body == records[0].matrix_body)
+        && records[0].transform.quaternion[0].abs() < 1.0 - 1e-9;
+    let rotation_witness_detail = format!(
+        "rotation-witnessed shared placement (W9 law R): {n_records} byte-identical _Position \
+         matrices == own children count ({}); the shared body's NON-identity rotation witnesses \
+         an instance placement (MD-base-motor-01 oracle-confirmed at Rz(180 deg) in \
+         MD-MTU-16V-652-MB81.stp, rotation error 0.000 deg per instance); identity-rotation \
+         shared bodies stay refused (W5 law C)",
+        n_own.unwrap_or_default()
+    );
     for inst in instances.iter_mut() {
         if n_records == 0 {
             inst.placement_status = PlacementStatus::Identity;
@@ -540,6 +572,12 @@ pub fn bind_name_table(
                 "name-table enumeration: no _Position transform records (identity at origin)"
                     .to_string(),
             );
+        } else if rotation_witness_places {
+            inst.placement_status = PlacementStatus::Placed;
+            inst.transform = Some(records[0].to_transform_7());
+            inst.has_position_attr = true;
+            inst.object_tag = None;
+            inst.classification_detail = Some(rotation_witness_detail.clone());
         } else if refused_only {
             inst.placement_status = PlacementStatus::Identity;
             inst.transform = Some(IDENTITY_TRANSFORM);
@@ -1115,6 +1153,110 @@ mod tests {
         for inst in &instances {
             assert_eq!(inst.placement_status, PlacementStatus::Placed);
             assert_eq!(inst.transform, Some([12.5, 0.0, 14.4, 1.0, 0.0, 0.0, 0.0]));
+        }
+    }
+
+    /// One explicit record with an Rz(180 deg) rotation, diag(-1, -1, +1),
+    /// at translation `(tx, 0, 0)` — the MD-base-motor-01 record shape.
+    fn rotated_position_bytes(tx: f64, records: usize) -> Vec<u8> {
+        let mut data = Vec::new();
+        for _ in 0..records {
+            data.extend_from_slice(&crate::product::transforms::POSITION_EXPLICIT_HEADER);
+            data.extend_from_slice(&crate::product::transforms::R15_MATRIX_MARKER);
+            data.extend_from_slice(&[0xE9, 0xE8, 0xE8]);
+            data.extend_from_slice(&[0xE8, 0xE9, 0xE8]);
+            data.extend_from_slice(&[0xE8, 0xE8, 0xE7]);
+            for v in [tx, 0.0, 0.0] {
+                data.push(0xE6);
+                data.extend_from_slice(&v.to_le_bytes());
+            }
+            data.push(0xFE);
+        }
+        data
+    }
+
+    // --- W9 law R (rotation witness) ---------------------------------------
+
+    #[test]
+    fn rotation_witness_places_a_shared_body_at_matching_count() {
+        // The MD-base-motor-01 shape: 2 byte-identical Rz(180 deg) records
+        // for 2 own children, the body shared with 4 other documents — the
+        // MB81 STEP export confirms the children's per-instance rotation
+        // exactly (rotation error 0.000 deg).
+        let mut instances = vec![
+            make_test_instance("Widget", "Widget", false),
+            make_test_instance("Bracket", "Bracket", false),
+        ];
+        let data = rotated_position_bytes(-4682.6207, 2);
+        let body = scan_position_matrix_streams(&data)[0].matrix_body.clone();
+        let shared: HashSet<Vec<u8>> = [body].into();
+
+        let n = bind_name_table(&mut instances, &data, Some(2), Some(&shared));
+
+        assert_eq!(n, 2);
+        for inst in &instances {
+            assert_eq!(inst.placement_status, PlacementStatus::Placed);
+            assert_eq!(
+                inst.transform,
+                Some([-4682.6207, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0])
+            );
+            let detail = inst.classification_detail.as_deref().unwrap();
+            assert!(
+                detail.contains("rotation-witnessed shared placement (W9 law R)"),
+                "{detail}"
+            );
+        }
+    }
+
+    #[test]
+    fn identity_rotation_shared_body_stays_refused_at_matching_count() {
+        // The law-R negative arm: an identity rotation cannot distinguish a
+        // placement from a connector frame, so the count-matched shared body
+        // keeps the W5 refusal (the vela/flooding/bow extent-refuted class).
+        let mut instances = vec![
+            make_test_instance("Widget", "Widget", false),
+            make_test_instance("Bracket", "Bracket", false),
+        ];
+        let data = name_table_position_bytes(2);
+        let body = scan_position_matrix_streams(&data)[0].matrix_body.clone();
+        let shared: HashSet<Vec<u8>> = [body].into();
+
+        let n = bind_name_table(&mut instances, &data, Some(2), Some(&shared));
+
+        assert_eq!(n, 2);
+        for inst in &instances {
+            assert_eq!(inst.placement_status, PlacementStatus::Identity);
+            let detail = inst.classification_detail.as_deref().unwrap();
+            assert!(
+                detail.contains("connector-frame records: all 2"),
+                "{detail}"
+            );
+        }
+    }
+
+    #[test]
+    fn rotation_witness_requires_matching_count() {
+        // The MB81-0001/0002 negative: 1 rotated shared record, 4 own
+        // children — the record may be ONE child's placement or none, and
+        // binary structure is identical either way, so the count law keeps
+        // the document all-refused -> identity.
+        let mut instances: Vec<ProductInstanceRecord> = (0..4)
+            .map(|i| make_test_instance(&format!("Part{i}"), "Part", false))
+            .collect();
+        let data = rotated_position_bytes(-4682.6207, 1);
+        let body = scan_position_matrix_streams(&data)[0].matrix_body.clone();
+        let shared: HashSet<Vec<u8>> = [body].into();
+
+        let n = bind_name_table(&mut instances, &data, Some(4), Some(&shared));
+
+        assert_eq!(n, 1);
+        for inst in &instances {
+            assert_eq!(inst.placement_status, PlacementStatus::Identity);
+            let detail = inst.classification_detail.as_deref().unwrap();
+            assert!(
+                detail.contains("connector-frame records: all 1"),
+                "{detail}"
+            );
         }
     }
 

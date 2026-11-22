@@ -47,6 +47,8 @@ _OF_INTEREST = {
     "REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION",
     "PRODUCT_DEFINITION",
     "PRODUCT_DEFINITION_FORMATION",
+    # CATIA writes the WITH_SPECIFIED_SOURCE subtype; same first-3 signature.
+    "PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE",
     "PRODUCT",
 }
 # Wide entities can span lines; keep scanning until parens balance.
@@ -115,7 +117,7 @@ def parse_step_assembly(path: Path) -> dict:
     pds: dict[int, int] = {}  # PRODUCT_DEFINITION_SHAPE -> definition ref
     shape_reps: dict[int, dict] = {}
     products: dict[int, str] = {}
-    prod_defs: dict[int, int] = {}  # PRODUCT_DEFINITION -> PRODUCT ref
+    prod_def_formation: dict[int, int] = {}  # PRODUCT_DEFINITION -> formation ref
     formations: dict[int, int] = {}  # PRODUCT_DEFINITION_FORMATION -> PRODUCT
     rrw_transform: dict[int, int] = {}  # complex entity -> IDT ref
 
@@ -190,15 +192,26 @@ def parse_step_assembly(path: Path) -> dict:
             elif etype == "SHAPE_REPRESENTATION":
                 shape_reps[eid] = {"name": _str(args[0]), "items": len(args) - 2}
             elif etype == "PRODUCT_DEFINITION":
-                # (id, descr, formation, frame_of_reference)
-                prod_defs[eid] = formations.get(_ref(args[2]), -1)
-            elif etype == "PRODUCT_DEFINITION_FORMATION":
-                # (id, descr, product)
+                # (id, descr, formation, frame_of_reference) — resolved in the
+                # post-pass below: the formation may be declared later in the
+                # file, and parse-time resolution lost it (W9 fix).
+                r = _ref(args[2])
+                if r is not None:
+                    prod_def_formation[eid] = r
+            elif etype in ("PRODUCT_DEFINITION_FORMATION",
+                           "PRODUCT_DEFINITION_FORMATION_WITH_SPECIFIED_SOURCE"):
+                # (id, descr, product[, source])
                 r = _ref(args[2])
                 if r is not None:
                     formations[eid] = r
             elif etype == "PRODUCT":
                 products[eid] = _str(args[0])
+
+    # PRODUCT_DEFINITION -> PRODUCT, resolved after the parse loop (the
+    # formation entity may be declared after the definition).
+    prod_defs = {
+        eid: formations.get(f, -1) for eid, f in prod_def_formation.items()
+    }
 
     # placement -> rotation matrix + translation
     for pid, pl in placements.items():

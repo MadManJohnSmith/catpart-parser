@@ -69,6 +69,11 @@ POSITION_IDENTITY_HEADER = b"\xe9\xf4\x07\x04\x37"
 POSITION_ROOT_HEADER = b"\xe8\xe0\x07\x37"
 IDENTITY_TRANSFORM = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]
 
+# W9 law R: a quaternion w this close to 1 is an identity rotation — it
+# cannot witness a placement, so the shared-body refusal stands (|qw| below
+# this bound is a real rotation and witnesses one).
+_ROTATION_WITNESS_IDENTITY = 1.0 - 1e-9
+
 POOL_TOKENS: tuple[str, ...] = (
     "ASMPRODUCT",
     "PRDREP",
@@ -1046,11 +1051,25 @@ def _name_table_placement(
     ``T = (-0.0, -2.241, 2179.457)`` body appears in 13 unrelated documents —
     and the STEP oracle places those documents' children at the parent origin
     (Z within [-88.7, +31.7] mm for VM-vela-Mast, where the matrix would put
-    them at Z = +2179.457 mm). A shared body is therefore a connector frame,
-    never an instance placement: refused records do not bind. A document
-    whose records are ALL refused (or Clause 3 identity frames) carries no
-    instance placements at all and its instances decode identity — the
-    oracle-confirmed state for the four STEP-backed products. A document
+    them at Z = +2179.457 mm). An identity-rotation shared body is therefore
+    a connector frame, never an instance placement: refused records do not
+    bind.
+
+    W9 law R (rotation witness, 2026-11-22): the sharing rule is bounded by
+    the body's rotation content. The MD-MTU-16V-652-MB81 STEP export carries
+    per-instance transforms for MD-base-motor-01's children at Rz(180°) —
+    byte-exact the rotation of the shared body ``ba2a3c4e20f91f95``
+    (``T = (-4682.6207, 0, 0)`` mm) — while MB81-0001/0003, carrying the
+    SAME body, have all their children at identity rotation in the same
+    export, and the vela/flooding/bow extent refutations cover the
+    identity-rotation shared bodies. So: a document whose records are ALL
+    one shared body, count-matched to its own children, with a NON-identity
+    rotation, binds the matrix to every own child (the rotation witnesses an
+    instance placement; an identity rotation cannot distinguish a placement
+    from a connector frame). Identity-rotation shared bodies keep the W5
+    refusal, and a document whose records are ALL refused (or Clause 3
+    identity frames) otherwise still decodes identity — the
+    oracle-confirmed state for the W5 STEP-backed products. A document
     mixing refused records with anything else keeps the fail-closed path.
     """
     n_records = len(records)
@@ -1075,6 +1094,30 @@ def _name_table_placement(
     clause3 = [rec for rec in records if rec["kind"] == "identity"]
     if refused or clause3:
         if len(refused) + len(clause3) == n_records:
+            if (
+                n_own is not None
+                and not clause3
+                and n_records == n_own
+                and len({rec["matrix"] for rec in records}) == 1
+                and abs(records[0]["quaternion"][0]) < _ROTATION_WITNESS_IDENTITY
+            ):
+                t = records[0]["translation"]
+                q = records[0]["quaternion"]
+                return {
+                    "has_position_attr": True,
+                    "placement_status": "placed",
+                    "transform": [t[0], t[1], t[2], q[0], q[1], q[2], q[3]],
+                    "object_tag": None,
+                    "classification_detail": (
+                        f"rotation-witnessed shared placement (W9 law R): {n_records} "
+                        f"byte-identical _Position matrices == own children count "
+                        f"({n_own}); the shared body's NON-identity rotation witnesses "
+                        "an instance placement (MD-base-motor-01 oracle-confirmed at "
+                        "Rz(180 deg) in MD-MTU-16V-652-MB81.stp, rotation error "
+                        "0.000 deg per instance); identity-rotation shared bodies "
+                        "stay refused (W5 law C)"
+                    ),
+                }
             return {
                 "has_position_attr": True,
                 "placement_status": "identity",

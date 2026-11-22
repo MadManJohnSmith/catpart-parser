@@ -150,3 +150,19 @@ with error 0.
    ports/mating axes) is inferred from the `_Connectors` pool token and the
    submarine-scale positions; the STEP files do not export connectors.
    *Reopen when*: a connector-bearing STEP export becomes available.
+
+## W9 correction (2026-11-22): law C is bounded by law R (rotation witness)
+
+The five new snapshot STEP exports (see
+`2026-11-22-w9-step-assemblies.md`) carry per-instance rotations for three
+assemblies, and they refute law C's sharing rule as a universal law: the
+shared body `ba2a3c4e20f91f95` is count-matched in `MD-base-motor-01`
+(2 records == 2 own children) and the `MD-MTU-16V-652-MB81.stp` export
+shows both children at Rz(180°) — byte-exact the body's rotation, error
+0.000 deg per instance — so the law-C identity for those rows was
+oracle-refuted. W9 law R bounds the sharing rule: a count-matched
+single-shared-body document with a NON-identity rotation binds the matrix
+to every own child; identity-rotation shared bodies (including this note's
+`9178dabde3636d53` refutation set) keep the W5 refusal, and the vela/bow
+extent refutations stand unchanged. The four W5 parity SHAs are unchanged
+by law R.
