@@ -4,4 +4,4 @@ MB-Frames-middle-centr-YL.CATPart,1323822,682,3475,1320,0,0,0,H1 cross-check: sa
 MB-Frames-middle-centr-YR.CATPart,1330160,682,3467,1320,0,0,0,H1 cross-check
 census-submarino-757,0,0,0,0,95150,12542,1299,census totals: records by class across 757 parts (367 files in-bounds / 118 files OOB / 49 files half-read)
 not-manifold-cross,0,0,0,0,195,86,41,failed_check=not-manifold files carrying each census class
-submarino-before-after,757,0,0,0,0,0,0,not-manifold 277->275 (fixed acc-Cont-Lft, VM-base_floord-bow-A; 0 new not-manifold, 0 new degenerate), l2_pass 446->448, triangles 1822962->1821817
+submarino-before-after,757,0,0,0,0,0,0,"not-manifold 277->275 (fixed acc-Cont-Lft, VM-base_floord-bow-A; 0 new not-manifold, 0 new degenerate), l2_pass 446->448, triangles 1822962->1821817"
