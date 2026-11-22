@@ -689,3 +689,83 @@ def test_raw_block_regions_drop_the_parametric_blocks_without_resizing_neighbour
     regions = display._raw_block_regions(data)
     assert [lo for lo, _hi in regions] == [0, len(geometry) + 16 + len(part_tree) + 16]
     assert regions[0][1] == len(geometry) + 16
+
+
+def framed(name: str) -> bytes:
+    """The writer's length-framed name: ``len = strlen + 1`` then the
+    ASCII bytes (``07 Sketch``, ``05 Pad1``, ``09 Sketch.1``)."""
+    raw = name.encode("ascii")
+    return bytes([len(raw) + 1]) + raw
+
+
+def test_feature_tree_scans_the_length_framed_names() -> None:
+    # Sketch (bare type), Pad1 (digit instance), Sketch.1 (dotted
+    # instance) all classify; the length byte must frame the FULL name
+    data = (
+        b"\x00" + framed("Sketch")
+        + b"\x80\x40" + framed("Pad1")
+        + framed("Sketch.1")
+        + framed("EdgeFillet")
+        + b"\x00\x00"
+    )
+    tree = display.scan_feature_tree(data)
+    assert tree.containers == 0
+    assert tree.feature_names == 4
+    assert [typ for typ, _count, _off in tree.features] == [
+        "Sketch",
+        "Pad",
+        "EdgeFillet",
+    ]
+    assert tree.features[0][2] == 2  # Sketch's name offset (the byte after its length byte)
+    assert tree.has_tree
+
+
+def test_feature_tree_rejects_wrong_framing_and_unknown_types() -> None:
+    # the length byte must equal strlen + 1: 05 before "Sketch" (7
+    # chars) frames the wrong span and is rejected; a full name outside
+    # the vocabulary ("PointVisuAttr") is rejected; the parameter-type
+    # family ("Volume") is not in the shipped vocabulary
+    data = (
+        b"\x05Sketch"
+        + b"\x0e" + b"PointVisuAttr"
+        + b"\x07Volume"
+        + b"\x00"
+    )
+    tree = display.scan_feature_tree(data)
+    assert tree.feature_names == 0
+    assert tree.features == ()
+    assert not tree.has_tree
+
+
+def test_feature_tree_block_is_the_additive_summary_shape() -> None:
+    tree = display.scan_feature_tree(b"\x00" + framed("Pocket.2") + b"\x00")
+    block = tree.block()
+    assert block["source"] == display.SOURCE_FEATURE_TREE
+    assert block["kind"] == display.FEATURE_KIND
+    assert block["surface"] is False
+    assert block["containers"] == {"catprtcont": 0}
+    assert block["features"] == [
+        {"type": "Pocket", "count": 1, "first_offset": 2}
+    ]
+    assert block["feature_names"] == 1
+    # every value is a string / int / bool / list / dict (parsed-document
+    # parity against the port)
+    def check(value) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                assert isinstance(key, str)
+                check(item)
+        elif isinstance(value, list):
+            for item in value:
+                check(item)
+        else:
+            assert isinstance(value, (str, int, float, bool))
+    check(block)
+
+
+def test_feature_tree_counts_the_container_token() -> None:
+    data = b"CATPrtCont\x80" + b"\x00" + framed("Pad") + b"\x9f" + b"CATPrtCont"
+    tree = display.scan_feature_tree(data)
+    assert tree.containers == 2
+    assert tree.feature_names == 1
+    assert tree.has_tree

@@ -1,0 +1,6 @@
+claim,scope,observations,passes,rate,label,detail
+FT-01,population:56,56,55,0.017857142857142856,fact,the open-rate note's BLANK table rows resolve through the corpus manifest (1 missing on disk - the sha-drift quarantine file)
+FT-02,framing,237,237,1.0,fact,"every shipped feature name sits in the len = strlen + 1 framing (the byte before the name equals its length + 1); anchors: 00 07 'Sketch', 05 'Pad1', 09 'Sketch.1', 0b 'EdgeFillet', fe 12 'EdgeFillet_Radius'"
+FT-03,classes:56,56,38,0.6785714285714286,fact,"class feature-tree (>= 1 framed feature name): 38; prtcont-only (CATPrtCont, no framed name): 13; none: 4"
+FT-04,vocabulary,41,17,0.4146341463414634,fact,"the shipped vocabulary is the measured subset of the candidate list (>= 1 framed occurrence) minus the parameter-type family (Volume): Axis, Boundary, Chamfer, Circle, Curve, EdgeFillet, Hole, Line, Mirror, Offset, Pad, Pattern, Plane, Pocket, Point, Rib, Sketch"
+FT-05,no-geometry,51,0,0.0,fact,"the feature tree is a display block (feature-tree-only): no triangle, no point, no segment is emitted from it and the honest open rate does not credit it"

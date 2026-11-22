@@ -36,6 +36,8 @@ const els = {
   errorDetail: document.getElementById("error-detail"),
   gate: document.getElementById("gate"),
   gatePanel: document.getElementById("gate-panel"),
+  featurePanel: document.getElementById("feature-panel"),
+  featureTree: document.getElementById("feature-tree"),
   meta: document.getElementById("meta"),
   metaPanel: document.getElementById("meta-panel"),
   displayLabel: document.getElementById("display-label"),
@@ -139,6 +141,7 @@ function setUIMode(mode) {
     if (els.inspectorPanel) els.inspectorPanel.hidden = false;
     if (els.explodedToolbar) els.explodedToolbar.hidden = false;
     if (els.gatePanel) els.gatePanel.hidden = true;
+    if (els.featurePanel) els.featurePanel.hidden = true;
     if (els.metaPanel) els.metaPanel.hidden = true;
     viewerState.mode = "assembly";
   } else {
@@ -146,6 +149,7 @@ function setUIMode(mode) {
     if (els.inspectorPanel) els.inspectorPanel.hidden = true;
     if (els.explodedToolbar) els.explodedToolbar.hidden = true;
     if (els.gatePanel) els.gatePanel.hidden = false;
+    if (els.featurePanel) els.featurePanel.hidden = false;
     if (els.metaPanel) els.metaPanel.hidden = false;
     viewerState.mode = "part";
   }
@@ -321,6 +325,145 @@ function clearGate() {
   }
 }
 
+/* ---- Feature / Spec Tree (w4, 2026-11-22) ----
+   The part's parametric records, named from the writer's length-framed
+   feature-type names: a length byte L (4..40) followed by exactly L-1
+   ASCII bytes whose FULL text matches a pinned PartDesign/GSD type with
+   an optional instance suffix (.N / N) — the measured framing
+   00 07 "Sketch", 05 "Pad1", 09 "Sketch.1", 0b "EdgeFillet"
+   (docs/evidence/2026-11-22-feature-tree.md).  The same vocabulary and
+   framing the Python reference scans (catpart.geometry.display
+   .scan_feature_tree) and the summary's additive feature_tree block
+   carries; the client-side scan here covers the parts whose export
+   classified-failed (no summary is emitted for them), so the tree is
+   still on screen — labeled feature-tree-only, never geometry. */
+
+const FEATURE_TYPES = [
+  "Axis", "Boundary", "Chamfer", "Circle", "Curve", "EdgeFillet", "Hole",
+  "Line", "Mirror", "Offset", "Pad", "Pattern", "Plane", "Point", "Pocket",
+  "Rib", "Sketch",
+];
+
+function featureTypeOf(name) {
+  for (const typ of FEATURE_TYPES) {
+    if (!name.startsWith(typ)) continue;
+    const rest = name.slice(typ.length);
+    const digits = rest.startsWith(".")
+      ? rest.slice(1)
+      : rest;
+    const ok = rest.startsWith(".")
+      ? digits.length > 0 && /^\d+$/.test(digits)
+      : rest.length === 0 || /^\d+$/.test(rest);
+    if (ok) return typ;
+  }
+  return null;
+}
+
+function scanFeatureTree(bytes) {
+  const containers = countToken(bytes, "CATPrtCont");
+  const order = [];
+  const counts = new Map();
+  const offsets = new Map();
+  let total = 0;
+  for (let i = 0; i + 4 <= bytes.length; i++) {
+    const length = bytes[i];
+    if (length < 4 || length > 40 || i + length > bytes.length) continue;
+    // the maximal [A-Za-z0-9_.] run (the twin's candidate regex), capped
+    // at 39 characters, validated against the length byte's promise
+    let run = 0;
+    const cap = Math.min(bytes.length - (i + 1), 39);
+    while (
+      run < cap &&
+      isNameByte(bytes[i + 1 + run])
+    ) run++;
+    if (run < 3 || run !== length - 1) continue;
+    let text = "";
+    for (let k = 0; k < run; k++) text += String.fromCharCode(bytes[i + 1 + k]);
+    const typ = featureTypeOf(text);
+    if (!typ) continue;
+    total++;
+    counts.set(typ, (counts.get(typ) || 0) + 1);
+    if (!offsets.has(typ)) {
+      offsets.set(typ, i + 1);
+      order.push(typ);
+    }
+  }
+  return {
+    containers,
+    features: order.map((typ) => ({
+      type: typ,
+      count: counts.get(typ),
+      first_offset: offsets.get(typ),
+    })),
+    feature_names: total,
+  };
+}
+
+function isNameByte(b) {
+  return (
+    (b >= 0x41 && b <= 0x5a) ||
+    (b >= 0x61 && b <= 0x7a) ||
+    (b >= 0x30 && b <= 0x39) ||
+    b === 0x5f ||
+    b === 0x2e
+  );
+}
+
+function countToken(bytes, token) {
+  let count = 0;
+  for (let i = 0; i + token.length <= bytes.length; i++) {
+    let hit = true;
+    for (let k = 0; k < token.length; k++) {
+      if (bytes[i + k] !== token.charCodeAt(k)) {
+        hit = false;
+        break;
+      }
+    }
+    if (hit) count++;
+  }
+  return count;
+}
+
+function renderFeatureTree(tree, hasGeometry) {
+  if (!els.featurePanel || !els.featureTree) return;
+  if (!tree || (!tree.containers && tree.features.length === 0)) {
+    els.featurePanel.hidden = true;
+    return;
+  }
+  els.featurePanel.hidden = false;
+  const rows = tree.features
+    .map(
+      (feature) =>
+        `<li class="feature-row"><span class="feature-type">${esc(feature.type)}</span>` +
+        `<span class="feature-count">${feature.count}</span></li>`,
+    )
+    .join("");
+  const badge = hasGeometry
+    ? ""
+    : `<span class="feature-badge">no-geometry</span>`;
+  els.featureTree.innerHTML = `
+    <div class="feature-head">
+      <span class="feature-kind">feature-tree-only</span>${badge}
+    </div>
+    <ul class="feature-list">
+      <li class="feature-row feature-container">
+        <span class="feature-type">CATPrtCont</span>
+        <span class="feature-count">${tree.containers}</span>
+      </li>
+      ${rows || `<li class="feature-row dim"><span class="feature-type">no framed feature name</span></li>`}
+    </ul>
+    <p class="feature-note dim">${tree.feature_names} framed feature-name record(s), byte order —
+    a name census of the parametric records, never a surface and never
+    counted as geometry.</p>
+  `;
+}
+
+function clearFeatureTree() {
+  if (!els.featurePanel || !els.featureTree) return;
+  els.featurePanel.hidden = true;
+  els.featureTree.innerHTML = "";
+}
+
 function esc(text) {
   return String(text)
     .replaceAll("&", "&amp;")
@@ -488,6 +631,20 @@ async function loadFile(file) {
   } else {
     clearGate();
   }
+  // The Feature / Spec Tree: the summary's additive block when the
+  // export emitted one, the client-side scan over the raw bytes
+  // otherwise (the classified-failure parts keep their error panel AND
+  // their tree — a name census, never geometry).
+  const featureTree =
+    summary && summary.feature_tree
+      ? summary.feature_tree
+      : scanFeatureTree(bytes);
+  const hasGeometry =
+    (summary && summary.triangle_count > 0) ||
+    hasDisplay ||
+    (decoded && decoded.triangles.length > 0);
+  renderFeatureTree(featureTree, hasGeometry);
+
   // A decode can succeed and still export no surface. Two outcomes are
   // distinct and never conflated:
   //  - the part carries decoded carriers (points / law-pinned curve
@@ -561,6 +718,7 @@ async function loadAssemblyFromCatalog(catalog, preferredRoot = null) {
   els.drop.classList.add("compact");
   clearGate();
   clearError();
+  clearFeatureTree();
   clearScene();
   viewerState.status = "decoding";
   viewerState.error = null;

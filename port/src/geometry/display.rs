@@ -57,6 +57,39 @@ pub const SOURCE_BAGREP: &str = "bagrep-f32-points";
 pub const SOURCE_F32_RUNS: &str = "store-f32-points";
 pub const SURFACE: bool = false;
 
+/// The feature/spec-tree block's honesty label: the tree is a display
+/// of the part's parametric records, never geometry (no triangle, no
+/// point, no segment comes from it and the honest open rate does not
+/// credit it) — the twin's ``FEATURE_KIND``.
+pub const FEATURE_KIND: &str = "feature-tree-only";
+/// The feature-tree block's source label (the framing the names sit in).
+pub const SOURCE_FEATURE_TREE: &str = "catprtcont-feature-tokens";
+/// The part-container token the kind law names the part marker.
+pub const CONTAINER_TOKEN: &[u8] = b"CATPrtCont";
+/// The measured feature-type vocabulary (the audit probe's shipped
+/// subset): every type carries >= 1 length-framed occurrence in the
+/// BLANK population.  The parameter-type family (``Volume``/``Density``
+/// /``Area``/``Mass`` — mass-properties headers) is excluded.
+pub const FEATURE_TYPES: [&str; 17] = [
+    "Axis",
+    "Boundary",
+    "Chamfer",
+    "Circle",
+    "Curve",
+    "EdgeFillet",
+    "Hole",
+    "Line",
+    "Mirror",
+    "Offset",
+    "Pad",
+    "Pattern",
+    "Plane",
+    "Point",
+    "Pocket",
+    "Rib",
+    "Sketch",
+];
+
 /// The empty-scan fallback's 12-byte f32 point-run law (the missing-store
 /// census measurement, the twin's ``F32_RUN_*``): finite triples inside
 /// the (1e-2, 1e5) envelope (no near-zero coordinates — the measured
@@ -251,6 +284,155 @@ pub fn label_for(points: usize, segments: usize) -> String {
     let point_word = if points == 1 { "point" } else { "points" };
     let segment_word = if segments == 1 { "segment" } else { "segments" };
     format!("no surface — showing {points} {point_word}, {segments} curve {segment_word}")
+}
+
+/// One part's feature/spec tree: the framed feature-type names — the
+/// twin's :class:`catpart.geometry.display.FeatureTreeScan`.  Nothing
+/// here is geometry: the scan names records, it does not decode
+/// coordinates.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FeatureTreeScan {
+    /// The ``CATPrtCont`` token count (the kind law's part marker).
+    pub containers: usize,
+    /// ``(type, count, first_offset)`` in first-occurrence (byte) order
+    /// — the writer emits the feature records in creation order, so the
+    /// byte order approximates the spec tree's order.
+    pub features: Vec<(String, usize, usize)>,
+    /// The total framed occurrences.
+    pub feature_names: usize,
+}
+
+impl FeatureTreeScan {
+    pub fn has_tree(&self) -> bool {
+        self.containers > 0 || !self.features.is_empty()
+    }
+}
+
+/// Count ``token``'s occurrences (the twin's ``_count_token``).
+fn count_token(data: &[u8], token: &[u8]) -> usize {
+    let mut count = 0usize;
+    let mut pos = 0usize;
+    while let Some(at) = super::store::find(data, token, pos, data.len()) {
+        count += 1;
+        pos = at + 1;
+    }
+    count
+}
+
+/// The candidate-name charset (the twin's ``[A-Za-z0-9_.]``).
+fn name_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_' || b == b'.'
+}
+
+/// The type of one framed name, ``Some(type)`` when the full text
+/// matches a pinned :data:`FEATURE_TYPES` entry with an optional
+/// instance suffix (``.N`` / ``N``) — the twin's
+/// ``_FEATURE_INSTANCE_RE`` full-name match.
+fn feature_type_of(name: &str) -> Option<&'static str> {
+    for typ in FEATURE_TYPES {
+        if let Some(rest) = name.strip_prefix(typ) {
+            // the instance suffix is optional: bare types match too
+            let ok = match rest.strip_prefix('.') {
+                Some(digits) => !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()),
+                None => rest.is_empty() || rest.bytes().all(|b| b.is_ascii_digit()),
+            };
+            if ok {
+                return Some(typ);
+            }
+        }
+    }
+    None
+}
+
+/// The name bytes one candidate regex reads at ``i`` (the twin's
+/// ``FEATURE_CANDIDATE_RE`` greedy ``[A-Z][A-Za-z0-9_.]{2,38}``): the
+/// maximal charset run from ``i + 1``, capped at 39 characters, or
+/// ``None`` when the run is shorter than the regex's minimum (an
+/// uppercase letter + 2 more).
+fn candidate_name(data: &[u8], i: usize) -> Option<&[u8]> {
+    let mut run = 0usize;
+    let cap = (data.len() - (i + 1)).min(39);
+    while run < cap && name_byte(data[i + 1 + run]) {
+        run += 1;
+    }
+    if run < 3 {
+        return None;
+    }
+    Some(&data[i + 1..i + 1 + run])
+}
+
+/// Decode one part's feature/spec-tree names — the twin's
+/// :func:`catpart.geometry.display.scan_feature_tree`.
+///
+/// The whole file is scanned for the writer's length-framed ASCII names:
+/// a length byte ``L`` (4..40) followed by exactly ``L - 1`` ASCII name
+/// bytes whose FULL text matches one of the pinned ``FEATURE_TYPES``
+/// (instance suffixes ``.N`` / ``N`` allowed) — the framing measured on
+/// the anchors (``00 07 Sketch``, ``05 Pad1``, ``09 Sketch.1``,
+/// ``0b EdgeFillet``).  The name is the candidate regex's maximal
+/// charset run, so a run that continues past the length byte's promise
+/// rejects (the same validation the twin's regex + ``len(name) + 1``
+/// check performs).  A name census only: no coordinate is decoded, no
+/// geometry is claimed.
+pub fn scan_feature_tree(data: &[u8]) -> FeatureTreeScan {
+    let containers = count_token(data, CONTAINER_TOKEN);
+    // first-occurrence offset per type, in scan order (byte order)
+    let mut order: Vec<&'static str> = Vec::new();
+    let mut counts: BTreeMap<&'static str, usize> = BTreeMap::new();
+    let mut total = 0usize;
+    let mut i = 0usize;
+    while i + 4 <= data.len() {
+        let length = data[i] as usize;
+        if (4..=40).contains(&length) && i + length <= data.len() {
+            if let Some(name) = candidate_name(data, i) {
+                if name.len() == length - 1 {
+                    if let Ok(text) = std::str::from_utf8(name) {
+                        if let Some(typ) = feature_type_of(text) {
+                            total += 1;
+                            *counts.entry(typ).or_insert(0) += 1;
+                            if !order.contains(&typ) {
+                                order.push(typ);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        i += 1;
+    }
+    let features = order
+        .into_iter()
+        .map(|typ| (typ.to_string(), counts[&typ], find_first_offset(data, typ)))
+        .collect();
+    FeatureTreeScan {
+        containers,
+        features,
+        feature_names: total,
+    }
+}
+
+/// The first framed occurrence's name offset for ``typ`` (the twin's
+/// ``match.start() + 1``: the length byte's position + 1).
+fn find_first_offset(data: &[u8], typ: &str) -> usize {
+    let mut i = 0usize;
+    while i + 4 <= data.len() {
+        let length = data[i] as usize;
+        if (4..=40).contains(&length) && i + length <= data.len() {
+            if let Some(name) = candidate_name(data, i) {
+                if name.len() == length - 1 {
+                    if let Ok(text) = std::str::from_utf8(name) {
+                        if let Some(found) = feature_type_of(text) {
+                            if found == typ {
+                                return i + 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        i += 1;
+    }
+    0
 }
 
 /// Round one coordinate to f32 (the viewer's precision), kept as f64.
@@ -996,5 +1178,65 @@ mod tests {
             raw_block_regions(&data),
             vec![(0, part_tree), (body, data.len())]
         );
+    }
+
+    /// The writer's length-framed name: ``len = strlen + 1`` then the
+    /// ASCII bytes (the twin's ``tests.test_no_surface_fallback.framed``).
+    fn framed(name: &str) -> Vec<u8> {
+        let mut out = vec![name.len() as u8 + 1];
+        out.extend_from_slice(name.as_bytes());
+        out
+    }
+
+    #[test]
+    fn the_feature_tree_scans_the_length_framed_names() {
+        let mut data = Vec::new();
+        data.push(0x00);
+        data.extend_from_slice(&framed("Sketch"));
+        data.extend_from_slice(&[0x80, 0x40]);
+        data.extend_from_slice(&framed("Pad1"));
+        data.extend_from_slice(&framed("Sketch.1"));
+        data.extend_from_slice(&framed("EdgeFillet"));
+        data.extend_from_slice(&[0x00, 0x00]);
+        let tree = scan_feature_tree(&data);
+        assert_eq!(tree.containers, 0);
+        assert_eq!(tree.feature_names, 4);
+        assert_eq!(
+            tree.features
+                .iter()
+                .map(|(typ, count, _off)| (typ.as_str(), *count))
+                .collect::<Vec<_>>(),
+            vec![("Sketch", 2), ("Pad", 1), ("EdgeFillet", 1)]
+        );
+        assert_eq!(tree.features[0].2, 2); // the name offset after its length byte
+        assert!(tree.has_tree());
+    }
+
+    #[test]
+    fn the_feature_tree_rejects_wrong_framing_and_unknown_types() {
+        // the length byte must equal strlen + 1; a full name outside
+        // the vocabulary is rejected; the parameter-type family is not
+        // in the shipped vocabulary
+        let mut data = Vec::new();
+        data.extend_from_slice(b"\x05Sketch");
+        data.extend_from_slice(b"\x0ePointVisuAttr");
+        data.extend_from_slice(b"\x07Volume");
+        data.push(0x00);
+        let tree = scan_feature_tree(&data);
+        assert_eq!(tree.feature_names, 0);
+        assert!(tree.features.is_empty());
+        assert!(!tree.has_tree());
+    }
+
+    #[test]
+    fn the_feature_tree_counts_the_container_token() {
+        let mut data = b"CATPrtCont\x80".to_vec();
+        data.push(0x00);
+        data.extend_from_slice(&framed("Pad"));
+        data.extend_from_slice(b"\x9fCATPrtCont");
+        let tree = scan_feature_tree(&data);
+        assert_eq!(tree.containers, 2);
+        assert_eq!(tree.feature_names, 1);
+        assert!(tree.has_tree());
     }
 }

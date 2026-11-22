@@ -62,17 +62,27 @@ use super::store::find_all;
 /// The route's source label (the twin's ``face_gp.SOURCE``).
 pub const SOURCE: &str = "bagrep-face-gp";
 
-/// The 8-byte pattern + the ``0x51`` face-GP flag (``0x50`` = different
-/// counter framing, ``0x00`` = boundary artifact: both ignored).
+/// The 8-byte pattern + the two sub-record flags: ``0x51`` = the face-GP
+/// framing (kind 3, marker-anchored ``u16be`` stream), ``0x50`` = the
+/// counter-table framing (kind 0, table-anchored ``u16be`` stream —
+/// decoded 2026-11-22); ``0x00`` = boundary artifact: ignored.
 pub const SUBREC: &[u8; 8] = b"\x30\x04\x04\xff\xff\xff\xd2\xd2";
 pub const FLAG_FACE_GP: u8 = 0x51;
-/// The kind/counts header sits at ``+57..+72``; the stream starts after
-/// the first marker at ``>= +73`` (or at ``+73`` when neither appears).
+pub const FLAG_COUNTER_TABLE: u8 = 0x50;
+/// The kind/counts header sits at ``+57..+72``; the ``0x51`` stream
+/// starts after the first marker at ``>= +73`` (or at ``+73`` when
+/// neither appears); the ``0x50`` stream starts at ``+74`` — one pad
+/// word after the header, before the ``u16be`` values and the count
+/// table.
 pub const HEADER_AT: usize = 57;
 pub const STREAM_AT: usize = 73;
+pub const COUNTER_TABLE_AT: usize = 74;
 const MARKERS: [&[u8; 2]; 2] = [b"\xff\x7f", b"\x01\x80"];
-/// kind 3 = the CAT3DFaceGP primitive (the approved design's header law).
+/// kind 3 = the CAT3DFaceGP primitive of the ``0x51`` framing; kind 0 =
+/// the counter-table primitive of the ``0x50`` framing (both measured
+/// corpus-wide, every sub-record carrying its framing's kind).
 pub const KIND_FACE_GP: u32 = 3;
+pub const KIND_COUNTER_TABLE: u32 = 0;
 /// Count-first framing bounds (the bag-rep measurement's).
 const MAX_FLOATS: u32 = 3_000_000;
 /// The candidate filter's bounded head (the probe's pool-scale bound).
@@ -93,11 +103,13 @@ const DENORMAL_MAX: f64 = 1e-30;
 /// ``CATSurfacicRep`` spans.
 const CLASS_RECORDS: [(&[u8], u32); 2] = [(b"CAT3DBagRep", 11), (b"CATSurfacicRep", 14)];
 
-/// One ``0x51`` sub-record's decode under the CAT3DFaceGP law — the
-/// twin's :class:`catpart.geometry.face_gp.SubRecord` dataclass.
+/// One patch sub-record's decode under its framing's law — the twin's
+/// :class:`catpart.geometry.face_gp.SubRecord` dataclass.  ``flag``
+/// names the framing (``0x51`` face-GP, ``0x50`` counter table); the
+/// gate checks ``kind`` against the framing's kind.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SubRecord {
-    /// The ``+57`` kind word (3 = the face GP).
+    /// The ``+57`` kind word (3 = the face GP, 0 = the counter table).
     pub kind: u32,
     /// The declared independent-triangle count.
     pub n_tris: u32,
@@ -115,6 +127,8 @@ pub struct SubRecord {
     pub indices: Vec<u32>,
     /// The decoded ``v = idx // 3`` triples (windows and fans included).
     pub triangles: Vec<(u32, u32, u32)>,
+    /// The framing flag (``0x51`` face-GP, ``0x50`` counter table).
+    pub flag: u8,
 }
 
 /// One part's face-gp decode: the folded patch meshes — the twin's
@@ -131,14 +145,18 @@ pub struct FaceGpScan {
     pub triangles: Vec<(u32, u32, u32)>,
     /// Spans that emitted triangles (patch streams).
     pub records: usize,
-    /// Every ``0x51`` sub-record in the ``CATSurfacicRep`` spans.
+    /// Every ``0x51``/``0x50`` sub-record in the ``CATSurfacicRep`` spans.
     pub sub_records: usize,
-    /// Strict-gate passes.
+    /// Strict-gate passes (both framings).
     pub sub_records_gated: usize,
     /// Assembly refusals (the incremental guard).
     pub guard_refused: usize,
     /// Unordered duplicate triangles dropped.
     pub dedup_dropped: usize,
+    /// The ``0x50`` counter-table sub-records.
+    pub sub_records_counter: usize,
+    /// Their strict-gate passes.
+    pub sub_records_counter_gated: usize,
 }
 
 fn u32_le(data: &[u8], at: usize) -> u32 {
@@ -191,12 +209,17 @@ fn class_record_spans(data: &[u8]) -> Vec<(usize, usize, bool)> {
     out
 }
 
-/// The ``0x51`` sub-record openings in ``[lo, hi)``, in order — the
-/// twin's :func:`catpart.geometry.face_gp._subrecord_positions`.
+/// The patch sub-record openings in ``[lo, hi)``, in order — the twin's
+/// :func:`catpart.geometry.face_gp._subrecord_positions`.  Both framings
+/// count (``0x51`` face-GP and ``0x50`` counter table): a sub-record's
+/// extent ends at the NEXT sub-record of either kind, so an interleaved
+/// ``0x50`` record ends the ``0x51`` it sits inside — the measured
+/// writer emits them interleaved, and a span that runs past a
+/// neighboring sub-record cannot close byte-exact.
 fn subrecord_positions(data: &[u8], lo: usize, hi: usize) -> Vec<usize> {
     find_all(data, SUBREC, lo, hi)
         .into_iter()
-        .filter(|&hit| data[hit + 8] == FLAG_FACE_GP)
+        .filter(|&hit| data[hit + 8] == FLAG_FACE_GP || data[hit + 8] == FLAG_COUNTER_TABLE)
         .collect()
 }
 
@@ -288,8 +311,130 @@ fn declared_arrays(data: &[u8], lo: usize, hi: usize) -> Vec<(usize, usize, u32,
     keep
 }
 
+/// One patch sub-record's decode under its framing's law — the twin's
+/// :func:`catpart.geometry.face_gp.decode_sub_record`.  The flag byte
+/// at ``+8`` picks the framing: ``0x51`` decodes the CAT3DFaceGP law
+/// (kind 3, marker-anchored stream), ``0x50`` the counter-table law
+/// (kind 0, table-anchored stream).
+pub fn decode_sub_record(data: &[u8], start: usize, end: usize) -> SubRecord {
+    if start + 8 < data.len() && data[start + 8] == FLAG_COUNTER_TABLE {
+        return decode_counter_table(data, start, end);
+    }
+    decode_face_gp(data, start, end)
+}
+
+/// The counter-table law on one ``0x50`` sub-record — the twin's
+/// :func:`catpart.geometry.face_gp._decode_counter_table`.
+///
+/// Measured corpus-wide (every ``0x50`` sub-record of the 44-carrier
+/// population closes byte-exact under it — 100/100): the same
+/// ``kind/N_tris/N_strips/N_fans`` header at ``+57`` with kind **0**,
+/// then ONE pad word at ``+73`` and the ``u16be`` stream at ``+74``:
+/// ``3 * N_tris`` values (the independent triangles), a **count
+/// table** (one ``u16be`` count per strip, then one per fan), then the
+/// table's values concatenated in the same order — strips through
+/// their sliding windows, fans fanned from their first vertex.  The
+/// reads close byte-exact at ``rel_len - 1`` and every value is
+/// ``3 * vertex_id`` into the span's declared array.
+fn decode_counter_table(data: &[u8], start: usize, end: usize) -> SubRecord {
+    let rel_len = end.saturating_sub(start);
+    if start + HEADER_AT + 16 > data.len() {
+        return SubRecord {
+            kind: 0,
+            n_tris: 0,
+            n_strips: 0,
+            n_fans: 0,
+            pos_rel: rel_len,
+            rel_len,
+            closed_exact: false,
+            indices: Vec::new(),
+            triangles: Vec::new(),
+            flag: FLAG_COUNTER_TABLE,
+        };
+    }
+    let kind = u32_le(data, start + HEADER_AT);
+    let n_tris = u32_le(data, start + HEADER_AT + 4);
+    let n_strips = u32_le(data, start + HEADER_AT + 8);
+    let n_fans = u32_le(data, start + HEADER_AT + 12);
+    let mut pos = COUNTER_TABLE_AT;
+    let mut indices: Vec<u32> = Vec::new();
+    let mut counts: Vec<u32> = Vec::new();
+    let mut ok = true;
+    for _ in 0..(n_tris.saturating_mul(3)) {
+        if pos + 2 > rel_len {
+            ok = false;
+            break;
+        }
+        indices.push(u16_be(data, start + pos));
+        pos += 2;
+    }
+    if ok {
+        for _ in 0..(n_strips + n_fans) {
+            if pos + 2 > rel_len {
+                ok = false;
+                break;
+            }
+            counts.push(u16_be(data, start + pos));
+            pos += 2;
+        }
+    }
+    if ok {
+        for &count in &counts {
+            for _ in 0..count {
+                if pos + 2 > rel_len {
+                    ok = false;
+                    break;
+                }
+                indices.push(u16_be(data, start + pos));
+                pos += 2;
+            }
+            if !ok {
+                break;
+            }
+        }
+    }
+    let mut triangles: Vec<(u32, u32, u32)> = Vec::new();
+    // bound by what was READ: a junk-huge declared N_tris must not spin
+    // this loop past the sub-record's own bytes
+    let head = (3 * n_tris).min(indices.len() as u32) as usize;
+    let mut j = 0usize;
+    while j + 3 <= head {
+        triangles.push((indices[j] / 3, indices[j + 1] / 3, indices[j + 2] / 3));
+        j += 3;
+    }
+    let mut cursor = head;
+    for (k, &count) in counts.iter().enumerate() {
+        let end_at = (cursor + count as usize).min(indices.len());
+        let values = &indices[cursor..end_at];
+        cursor += count as usize;
+        if k < n_strips as usize {
+            if values.len() >= 3 {
+                for w in 0..=(values.len() - 3) {
+                    triangles.push((values[w] / 3, values[w + 1] / 3, values[w + 2] / 3));
+                }
+            }
+        } else {
+            for w in 1..values.len().saturating_sub(1) {
+                triangles.push((values[0] / 3, values[w] / 3, values[w + 1] / 3));
+            }
+        }
+    }
+    SubRecord {
+        kind,
+        n_tris,
+        n_strips,
+        n_fans,
+        pos_rel: pos,
+        rel_len,
+        closed_exact: ok && pos == rel_len - 1,
+        indices,
+        triangles,
+        flag: FLAG_COUNTER_TABLE,
+    }
+}
+
 /// The CAT3DFaceGP law on one ``0x51`` sub-record — the twin's
-/// :func:`catpart.geometry.face_gp.decode_sub_record` (with the raw
+/// :func:`catpart.geometry.face_gp._decode_face_gp` (with the raw
 /// index list the strict gate reads).
 ///
 /// ``kind/N_tris/N_strips/N_fans`` at ``+57`` (``u32le``); the stream
@@ -298,7 +443,7 @@ fn declared_arrays(data: &[u8], lo: usize, hi: usize) -> Vec<(usize, usize, u32,
 /// strips and fans (``count:u32be`` + ``count`` ``u16be``).  A declared
 /// count larger than the remaining bytes stops the reads (the record
 /// then cannot close and the gate refuses it).
-pub fn decode_sub_record(data: &[u8], start: usize, end: usize) -> SubRecord {
+fn decode_face_gp(data: &[u8], start: usize, end: usize) -> SubRecord {
     let rel_len = end.saturating_sub(start);
     if start + HEADER_AT + 16 > data.len() {
         // a pattern match whose header would run past the file:
@@ -314,6 +459,7 @@ pub fn decode_sub_record(data: &[u8], start: usize, end: usize) -> SubRecord {
             closed_exact: false,
             indices: Vec::new(),
             triangles: Vec::new(),
+            flag: FLAG_FACE_GP,
         };
     }
     let kind = u32_le(data, start + HEADER_AT);
@@ -424,18 +570,25 @@ pub fn decode_sub_record(data: &[u8], start: usize, end: usize) -> SubRecord {
         closed_exact: ok && pos == rel_len - 1,
         indices,
         triangles,
+        flag: FLAG_FACE_GP,
     }
 }
 
 /// The strict per-sub-record gate (the approved design) — the twin's
 /// :func:`catpart.geometry.face_gp._gate_sub_record`.
 ///
-/// Byte-exact closure, kind 3, every raw index ``mult-3`` and in-bounds
-/// against the record's declared point array, no repeated-index
-/// triangle, and self-manifold (every undirected edge used at most
-/// twice).  An empty read is refused (the probe's ``empty`` arm).
+/// Byte-exact closure, the framing's kind (3 for ``0x51``, 0 for
+/// ``0x50``), every raw index ``mult-3`` and in-bounds against the
+/// record's declared point array, no repeated-index triangle, and
+/// self-manifold (every undirected edge used at most twice).  An empty
+/// read is refused (the probe's ``empty`` arm).
 fn gate_sub_record(sub: &SubRecord, n_declared: u32) -> bool {
-    if !sub.closed_exact || sub.kind != KIND_FACE_GP {
+    let expected = if sub.flag == FLAG_COUNTER_TABLE {
+        KIND_COUNTER_TABLE
+    } else {
+        KIND_FACE_GP
+    };
+    if !sub.closed_exact || sub.kind != expected {
         return false;
     }
     if sub.triangles.is_empty() {
@@ -520,6 +673,8 @@ pub fn scan_part(data: &[u8]) -> Option<FaceGpScan> {
     let mut gated = 0usize;
     let mut guard_refused = 0usize;
     let mut dedup_dropped = 0usize;
+    let mut counter_records = 0usize;
+    let mut counter_gated = 0usize;
     for (start, end, surfacic) in class_record_spans(data) {
         if !surfacic {
             continue;
@@ -529,6 +684,10 @@ pub fn scan_part(data: &[u8]) -> Option<FaceGpScan> {
             continue;
         }
         sub_records += subs.len();
+        counter_records += subs
+            .iter()
+            .filter(|&&hit| data[hit + 8] == FLAG_COUNTER_TABLE)
+            .count();
         let arrays = declared_arrays(data, start, end);
         if arrays.is_empty() {
             continue;
@@ -551,6 +710,9 @@ pub fn scan_part(data: &[u8]) -> Option<FaceGpScan> {
             let sub = decode_sub_record(data, sub_start, sub_end);
             if gate_sub_record(&sub, points_count) {
                 gated += 1;
+                if sub.flag == FLAG_COUNTER_TABLE {
+                    counter_gated += 1;
+                }
                 members.push(sub.triangles);
             }
         }
@@ -583,6 +745,8 @@ pub fn scan_part(data: &[u8]) -> Option<FaceGpScan> {
         sub_records_gated: gated,
         guard_refused,
         dedup_dropped,
+        sub_records_counter: counter_records,
+        sub_records_counter_gated: counter_gated,
     })
 }
 
@@ -592,16 +756,19 @@ pub fn scan_part(data: &[u8]) -> Option<FaceGpScan> {
 pub fn warning_detail(scan: &FaceGpScan) -> String {
     format!(
         "no surface decoded: the CATSurfacicRep patch sub-records (30 04 04 ff ff \
-         ff d2 d2 51) decode under the CAT3DFaceGP law (#63): kind 3 at +57, \
-         u16be indices after the ff 7f / 01 80 marker, v = idx // 3 into the \
-         record's declared f32 point array (one word after its count); {} \
-         gated sub-record(s) of {} folded into a manifold mesh across {} patch \
-         stream(s), guard refused {}, duplicate unordered triangles dropped {}; \
-         source {SOURCE}. Every gated sub-record closes byte-exact (end == \
-         sub_len - 1) with mult-3 in-bounds indices and no repeated-index \
-         triangle; zero-area slivers from the writer's duplicate pinned \
-         coordinates ride as decoded (no skip convention fired, degenerate \
-         count 0). docs/evidence/2026-11-21-bagrep-face-gp.md",
+         ff d2 d2 51|50) decode under their framing's law (#63): kind 3 at +57 \
+         with u16be indices after the ff 7f / 01 80 marker (0x51), or kind 0 at \
+         +57 with the u16be stream at +74 \u{2014} 3*N_tris values, then a u16be \
+         count table (one per strip, then one per fan), then the concatenated \
+         values (0x50); v = idx // 3 into the record's declared f32 point array \
+         (one word after its count); {} gated sub-record(s) of {} folded into a \
+         manifold mesh across {} patch stream(s), guard refused {}, duplicate \
+         unordered triangles dropped {}; source {SOURCE}. Every gated sub-record \
+         closes byte-exact (end == sub_len - 1) with mult-3 in-bounds indices \
+         and no repeated-index triangle; zero-area slivers from the writer's \
+         duplicate pinned coordinates ride as decoded (no skip convention \
+         fired, degenerate count 0). docs/evidence/2026-11-21-bagrep-face-gp.md, \
+         docs/evidence/2026-11-22-face-gp-counter-table.md",
         scan.sub_records_gated,
         scan.sub_records,
         scan.records,
@@ -908,5 +1075,149 @@ mod tests {
         );
         body.truncate(body.len() - 40);
         assert!(scan_part(&body).is_none());
+    }
+
+    /// One ``0x50`` counter-table sub-record's bytes: pattern + flag +
+    /// padding + the ``+57`` header (kind 0) + the pad word + the
+    /// ``u16be`` stream at ``+74`` (``3 * N_tris`` values, the count
+    /// table, the concatenated values) + the dangling byte (the twin's
+    /// ``tests.test_face_gp.counter_table_record`` helper).
+    fn counter_table_bytes(
+        tris: &[(u32, u32, u32)],
+        strips: &[&[u32]],
+        fans: &[&[u32]],
+        dangling: bool,
+    ) -> Vec<u8> {
+        let mut stream = Vec::new();
+        for &(v0, v1, v2) in tris {
+            for vertex in [v0 * 3, v1 * 3, v2 * 3] {
+                stream.extend_from_slice(&(vertex as u16).to_be_bytes());
+            }
+        }
+        for values in strips.iter().chain(fans.iter()) {
+            stream.extend_from_slice(&(values.len() as u16).to_be_bytes());
+        }
+        for values in strips.iter().chain(fans.iter()) {
+            for &value in *values {
+                stream.extend_from_slice(&(value as u16).to_be_bytes());
+            }
+        }
+        let mut out = Vec::new();
+        out.extend_from_slice(SUBREC);
+        out.push(FLAG_COUNTER_TABLE);
+        out.extend(std::iter::repeat(0x11).take(HEADER_AT - 9));
+        out.extend_from_slice(&KIND_COUNTER_TABLE.to_le_bytes());
+        out.extend_from_slice(&(tris.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(strips.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(fans.len() as u32).to_le_bytes());
+        out.extend(std::iter::repeat(0x00).take(COUNTER_TABLE_AT - HEADER_AT - 16));
+        out.extend_from_slice(&stream);
+        if dangling {
+            out.push(0x00);
+        }
+        out
+    }
+
+    #[test]
+    fn the_counter_table_law_reads_triangles_and_the_count_table() {
+        // one independent triangle, one strip declared by the table
+        // (4 values -> 2 windows), one fan (4 values -> 2 triangles):
+        // the same mult-3 encoding, kind 0
+        let built = counter_table_bytes(
+            &[(0, 1, 2)],
+            &[&[0, 3, 6, 9]],
+            &[&[0, 6, 9, 12]],
+            true,
+        );
+        let decoded = decode_sub_record(&built, 0, built.len());
+        assert_eq!(decoded.flag, FLAG_COUNTER_TABLE);
+        assert_eq!(decoded.kind, KIND_COUNTER_TABLE);
+        assert_eq!((decoded.n_tris, decoded.n_strips, decoded.n_fans), (1, 1, 1));
+        assert!(decoded.closed_exact);
+        assert_eq!(decoded.pos_rel, built.len() - 1);
+        assert_eq!(
+            decoded.triangles,
+            vec![
+                (0, 1, 2),  // the independent triangle
+                (0, 1, 2),  // the strip's first window (values 0, 3, 6)
+                (1, 2, 3),  // the strip's second window (values 3, 6, 9)
+                (0, 2, 3),  // the fan's first triangle (fan head 0; 6, 9)
+                (0, 3, 4),  // the fan's second triangle (fan head 0; 9, 12)
+            ]
+        );
+    }
+
+    #[test]
+    fn the_counter_table_gate_is_the_strict_gate_at_kind_0() {
+        let points = twelve_points();
+        let n = points.len() as u32;
+        let built = counter_table_bytes(&[(0, 1, 2), (2, 3, 4)], &[], &[], true);
+        let good = decode_sub_record(&built, 0, built.len());
+        assert!(gate_sub_record(&good, n));
+
+        // a kind other than the framing's kind refuses
+        let mut wrong_kind = built.clone();
+        let kind_at = wrong_kind
+            .windows(4)
+            .position(|w| w == KIND_COUNTER_TABLE.to_le_bytes())
+            .expect("the header carries the kind word");
+        wrong_kind[kind_at..kind_at + 4].copy_from_slice(&3u32.to_le_bytes());
+        let sub = decode_sub_record(&wrong_kind, 0, wrong_kind.len());
+        assert!(!gate_sub_record(&sub, n));
+
+        // an out-of-bounds index refuses
+        let oob = counter_table_bytes(&[(0, 1, 20)], &[], &[], true);
+        let sub = decode_sub_record(&oob, 0, oob.len());
+        assert!(!gate_sub_record(&sub, n));
+
+        // two dangling bytes: not byte-exact, refused
+        let loose = counter_table_bytes(&[(0, 1, 2)], &[], &[], true);
+        let mut two = loose.clone();
+        two.push(0x00);
+        let sub = decode_sub_record(&two, 0, two.len());
+        assert!(!sub.closed_exact);
+        assert!(!gate_sub_record(&sub, n));
+    }
+
+    #[test]
+    fn the_counter_table_folds_into_the_span_scan() {
+        let points = twelve_points();
+        let body = span_bytes(
+            &points,
+            &[
+                counter_table_bytes(&[(0, 1, 2)], &[&[6, 9, 12, 15]], &[], true),
+                sub_record_bytes(&[(0, 1, 2), (2, 3, 4)], &[], &[], 3, true, true),
+            ],
+        );
+        let scan = scan_part(&body).expect("both framings fold");
+        assert_eq!(scan.records, 1);
+        assert_eq!(scan.sub_records, 2);
+        assert_eq!(scan.sub_records_gated, 2);
+        assert_eq!(scan.sub_records_counter, 1);
+        assert_eq!(scan.sub_records_counter_gated, 1);
+        // counter-table member first ((0,1,2) + strip windows (2,3,4),
+        // (3,4,5)); the face-GP member's two triangles re-list both
+        // sorted keys, so the dedup drops them (first copy wins)
+        assert_eq!(scan.triangles, vec![(0, 1, 2), (2, 3, 4), (3, 4, 5)]);
+        assert_eq!(scan.dedup_dropped, 2);
+    }
+
+    #[test]
+    fn an_interleaved_counter_table_ends_the_face_gp_record() {
+        // the writer emits 0x50/0x51 interleaved: the 0x51 record's
+        // extent ends at the 0x50 that follows it, so the scan must not
+        // run it past its neighbor (that span could not close)
+        let points = twelve_points();
+        let body = span_bytes(
+            &points,
+            &[
+                sub_record_bytes(&[(0, 1, 2), (2, 3, 4)], &[], &[], 3, true, true),
+                counter_table_bytes(&[], &[&[9, 12, 15]], &[], true),
+            ],
+        );
+        let scan = scan_part(&body).expect("both members fold");
+        assert_eq!(scan.sub_records, 2);
+        assert_eq!(scan.sub_records_gated, 2);
+        assert_eq!(scan.triangles, vec![(0, 1, 2), (2, 3, 4), (3, 4, 5)]);
     }
 }

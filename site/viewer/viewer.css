@@ -539,3 +539,59 @@
   min-width: 32px;
 }
 
+
+/* ---- Feature / Spec Tree panel (w4, 2026-11-22) ----
+   A name census of the part's parametric records — labeled
+   feature-tree-only and never presented as geometry. */
+.feature-tree {
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+.feature-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.feature-kind {
+  color: var(--accent);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+}
+.feature-badge {
+  font-size: 10.5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 200, 87, 0.5);
+  color: var(--warn);
+  letter-spacing: 0.03em;
+}
+.feature-list {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+}
+.feature-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 3px 8px;
+  border-left: 2px solid rgba(139, 123, 255, 0.45);
+  margin-bottom: 2px;
+  background: rgba(139, 123, 255, 0.06);
+}
+.feature-container .feature-type {
+  color: var(--accent);
+}
+.feature-type {
+  color: var(--ink);
+}
+.feature-count {
+  color: var(--ink-faint);
+  font-size: 11.5px;
+}
+.feature-note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+}

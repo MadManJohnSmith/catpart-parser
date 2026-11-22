@@ -591,6 +591,8 @@ def _face_gp_fallback(data, original, previous, spans, grid_scan) -> tuple[dict,
             "sub_records_gated": scan.sub_records_gated,
             "guard_refused": scan.guard_refused,
             "dedup_dropped": scan.dedup_dropped,
+            "sub_records_counter": scan.sub_records_counter,
+            "sub_records_counter_gated": scan.sub_records_counter_gated,
         },
     }
     _self_check(summary)
@@ -611,7 +613,12 @@ def _display_fallback(data, original, previous, spans, grid_scan) -> tuple[dict,
     ``no_surface_display`` block.  Nothing is triangulated, welded or
     joined.  A part with no displayable carrier keeps its pre-display
     classification (``original``), or its vertices-only success when the
-    store path returned one.
+    store path returned one.  When the summary is emitted and the part's
+    bytes carry the feature/spec tree (the length-framed ``CATPrtCont``
+    feature-type names, the w4 lever), the additive ``feature_tree``
+    block rides on it — a name census labeled ``feature-tree-only``:
+    no triangle, no point, no segment comes from it and the honest open
+    rate does not credit it.
     """
     previous_vertices = list(previous[1]) if previous is not None else []
     scan = display.scan_part(data, spans, previous_vertices)
@@ -619,7 +626,13 @@ def _display_fallback(data, original, previous, spans, grid_scan) -> tuple[dict,
         if previous is not None:
             return previous
         raise original
+    tree = display.scan_feature_tree(data)
+    return _display_summary(previous, scan, tree, grid_scan)
 
+
+def _display_summary(previous, scan, tree, grid_scan) -> tuple[dict, list, list]:
+    """Build the display fallback's summary (the carriers' block, the
+    optional additive ``feature_tree`` block, the shared shape)."""
     flat_points = [value for point in scan.points for value in point]
     flat_segments = [index for pair in scan.segments for index in pair]
     warnings = list(previous[0]["warnings"]) if previous is not None else []
@@ -688,14 +701,24 @@ def _display_fallback(data, original, previous, spans, grid_scan) -> tuple[dict,
         display_block["grid_shaped"] = grid_scan.shaped
         display_block["grid_refusals"] = dict(grid_scan.refusals)
 
+    tree_block = tree.block() if tree is not None else None
+
     if previous is not None:
         summary = dict(previous[0])
         summary["warnings"] = warnings
         summary["no_surface_display"] = display_block
+        if tree_block is not None:
+            summary["feature_tree"] = tree_block
         _self_check(summary)
         return summary, previous[1], previous[2]
 
-    bbox_min, bbox_max = mesh.bounding_box(list(scan.points))
+    if scan.points:
+        bbox_min, bbox_max = mesh.bounding_box(list(scan.points))
+    else:
+        # no decoded carrier point (an empty display): the zero box
+        # (finite, min <= max — the L2 plausibility check passes)
+        bbox_min = [0.0, 0.0, 0.0]
+        bbox_max = [0.0, 0.0, 0.0]
     summary = {
         "schema_version": EXPORT_SCHEMA_VERSION,
         "vertex_count": 0,
@@ -717,6 +740,8 @@ def _display_fallback(data, original, previous, spans, grid_scan) -> tuple[dict,
         },
         "no_surface_display": display_block,
     }
+    if tree_block is not None:
+        summary["feature_tree"] = tree_block
     _self_check(summary)
     return summary, [], []
 
