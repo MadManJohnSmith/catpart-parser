@@ -1892,7 +1892,11 @@ PRIMARY_SEAM_FLIPS = {
     "44e63faa2d9abf84": 2520,
     "4a32f59c1e637acd": 2451,
     "4abf3eeaf892be44": 1973,
-    "612c5e7cc7291c71": 4505,
+    # 612c5e7cc7291c71 gained its extended-header records' valid
+    # siblings through the 2026-11-21 member-filter law (4505 -> 4521;
+    # the degenerate members are filtered and named, the manifold
+    # assembly gate unchanged) — the seam-flip pins the law recovers.
+    "612c5e7cc7291c71": 4521,
     "6ab9e107b7f30308": 959,
     "97a0a420923c5c67": 8641,
     "a61588e5fe2cca5f": 3017,

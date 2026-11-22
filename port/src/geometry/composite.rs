@@ -2360,7 +2360,6 @@ fn decode_per_rep(
         ext_triangles += tri_res.extended_triangles as usize;
         ext_filtered += tri_res.extended_members_filtered as usize;
         ext_declined += tri_res.extended_declined as usize;
-        ext_filtered += tri_res.extended_members_filtered as usize;
         write_count += d.write_count as usize;
         table_bytes += d.table_bytes;
         element_decl += d.elem as usize;
@@ -4273,7 +4272,6 @@ fn decode_mixedwrite(
         ext_triangles += tri_res.extended_triangles as usize;
         ext_filtered += tri_res.extended_members_filtered as usize;
         ext_declined += tri_res.extended_declined as usize;
-        ext_filtered += tri_res.extended_members_filtered as usize;
         write_count += d.write_count as usize;
         // the twin's ``table_bytes += (d["elem"] + 3) // 4`` — the
         // table-law reps' declared table length only
