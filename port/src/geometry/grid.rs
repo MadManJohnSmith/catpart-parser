@@ -353,22 +353,6 @@ pub fn regions(data: &[u8]) -> Vec<(usize, usize)> {
         .collect()
 }
 
-/// Every admitted ``e5 0d`` record's ``(payload, end, class)``, in scan order.
-///
-/// The public form of the admitted-run walk (``>= 3`` chained records that
-/// close on their own end, byte scan resuming after each admitted run):
-/// the E5-surface route in :mod:`catpart.geometry.surface` consumes the
-/// ``0x00e7`` class records from it.
-pub fn e5_records(data: &[u8]) -> Vec<(usize, usize, u16)> {
-    let mut out = Vec::new();
-    for (block, hi) in regions(data) {
-        for (_start, payload, end, cls) in records(data, block, hi) {
-            out.push((payload, end, cls));
-        }
-    }
-    out
-}
-
 fn ratio(axes: &[Vec<f64>; 3], spans: &[f64; 3], n: usize, cols: usize, axis: usize) -> f64 {
     if spans[axis] <= 0.0 {
         return f64::INFINITY;
