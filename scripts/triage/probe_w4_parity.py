@@ -13,7 +13,6 @@ Run::
     .venv/bin/python -I scripts/triage/probe_w4_parity.py
 """
 
-import csv
 import gc
 import json
 import numbers

@@ -40,7 +40,6 @@ import csv
 import gc
 import os
 import re
-import struct
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
