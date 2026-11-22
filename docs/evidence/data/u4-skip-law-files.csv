@@ -1,0 +1,4 @@
+part,reps_unique,skips,unpinnable,skipref_loops,battery_coplanar,battery_nonplanar,normalless,degenerate_emission_loops,split_real_tris,split_real_area_mm2,all_degenerate_loops,curve_entries,loops_curve_entry,loops_curve_entry_exported
+Motor.CATPart,113,5616,0,4073,463,0,3610,36,121,5534.2,4,5616,81,3992
+AUDINSKLOPIC_AllCATPart.CATPart,96,22466,0,12289,2096,0,10193,359,761,13586894.8,128,22466,629,11660
+CP92 Aston Martin VULCAN.CATPart,192,445719,0,267594,4126,18,263450,3269,22421,19033923.5,668,445719,12124,255470
