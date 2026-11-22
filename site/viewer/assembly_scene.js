@@ -311,8 +311,13 @@ export class GeometryPool {
       throw new Error(`Cannot register null geometry for PartNumber "${partNumber}"`);
     }
     const norm = normalizePartNumber(partNumber);
+    // The CATIA-style crease-edge overlay (2026-11-21): built ONCE per
+    // unique part geometry (the 25-degree threshold of EdgesGeometry)
+    // and shared by every instance's overlay; disposes with the pool.
+    const edges = geometry.index ? new THREE.EdgesGeometry(geometry, 25) : null;
     const item = {
       geometry,
+      edges,
       curves,
       summary,
       material,
@@ -354,6 +359,9 @@ export class GeometryPool {
     for (const entry of this.entries.values()) {
       if (entry.geometry && typeof entry.geometry.dispose === "function") {
         entry.geometry.dispose();
+      }
+      if (entry.edges && typeof entry.edges.dispose === "function") {
+        entry.edges.dispose();
       }
       if (entry.material && typeof entry.material.dispose === "function") {
         entry.material.dispose();
@@ -615,6 +623,14 @@ export class AssemblyScene {
 
     /** @type {boolean} Global wireframe state */
     this.wireframe = false;
+    /** @type {boolean} Global crease-edge overlay state (CATIA-style; on by default) */
+    this.edgesEnabled = true;
+    /** @type {THREE.LineBasicMaterial} Shared dark subtle edge-line material */
+    this.edgesMaterial = new THREE.LineBasicMaterial({
+      color: 0x16202e,
+      transparent: true,
+      opacity: 0.85,
+    });
 
     /** @type {boolean} Global curves visibility state */
     this.curvesVisible = false;
@@ -733,6 +749,19 @@ export class AssemblyScene {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       instanceGroup.add(mesh);
+
+      // The crease-edge overlay: a LineSegments child sharing the
+      // pool's once-built EdgesGeometry (one per unique part, never
+      // per instance); visibility rides this.edgesEnabled.
+      if (geomEntry.edges) {
+        const edgesLine = new THREE.LineSegments(
+          geomEntry.edges,
+          this.edgesMaterial
+        );
+        edgesLine.name = `${instanceName}__edges`;
+        edgesLine.visible = this.edgesEnabled;
+        instanceGroup.add(edgesLine);
+      }
 
       // Attach curve overlay if present
       if (geomEntry.curves) {
@@ -1235,6 +1264,23 @@ export class AssemblyScene {
   }
 
   /**
+   * Toggles the CATIA-style crease-edge overlays across all instances
+   * (each overlay shares its pool entry's once-built EdgesGeometry).
+   *
+   * @param {boolean} enabled
+   */
+  setEdges(enabled) {
+    this.edgesEnabled = !!enabled;
+    for (const inst of this.instances.values()) {
+      inst.traverse((child) => {
+        if (child.name && child.name.endsWith("__edges")) {
+          child.visible = this.edgesEnabled;
+        }
+      });
+    }
+  }
+
+  /**
    * Toggles visibility of curve overlays across all instances.
    *
    * @param {boolean} visible
@@ -1273,6 +1319,9 @@ export class AssemblyScene {
    */
   dispose() {
     this.clear();
+    if (this.edgesMaterial && typeof this.edgesMaterial.dispose === "function") {
+      this.edgesMaterial.dispose();
+    }
     this.geometryPool.dispose();
     if (this.scene) {
       this.scene.remove(this.root);
