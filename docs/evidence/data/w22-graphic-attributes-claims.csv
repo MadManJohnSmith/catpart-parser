@@ -1,0 +1,9 @@
+claim_id,claim,verdict,label,rate,scope
+W22-GA-01,CATGraphicAttributeSet token present,negative (measured),fact,0/1442 files; occurrences 0; ASCII + case variants + UTF-16LE swept,"available corpus parts, this host"
+W22-GA-02,vis-token family (GraphicAttribute/VisProperties/CATViz/CATMaterialRef) present,negative (measured),fact,0/1442 files for every family token,"available corpus parts, this host"
+W22-GA-03,plain 'Transparency' ASCII token (name-table framing) present,positive (measured),fact,85/1442 files,"available corpus parts, this host"
+W22-GA-04,fe-framed material-property family present,positive (measured),fact,"33/1442 files (~2.3%); framing fe <len=strlen+1> <Name>, the feature names' law","available corpus parts, this host"
+W22-GA-05,Color/TransparentColor short values carry a 3-byte triple behind the 84 81 header,positive (measured),candidate,"25/1442 files with >= 1 color-short Color block; measured triples include (231,231,231), (102,102,102), (0,0,0)","candidate RGB — the byte triple is measured, the RGB semantics are not validated against a render"
+W22-GA-06,e6 + 8-byte LE double value class with clean physical values,positive (measured),fact (bytes) / candidate (semantics),"Reflectivity f64 blocks 15 across 15 files; measured values include 0.7, 0.495, 0.4, 0.05",the double decode is byte-exact; the property semantics are unvalidated
+W22-GA-07,e8 empty value dominates Transparency (no per-part opacity stored there),positive (measured),fact,Transparency blocks: 26 empty vs 1 f64,"available corpus parts, this host"
+W22-GA-08,the detector does NOT discriminate,declared limit,fact,"ordering of properties, per-face vs per-part attribution, the e8-variant descriptor (81 e8 d4 <T> 01, 4-file variant), and the long color form are not discriminated by this probe",declared before review (dispatch-recipes hard rule)
