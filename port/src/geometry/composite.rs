@@ -431,6 +431,11 @@ pub struct CompositeInfo {
     /// than the sliver bound (real surface — never dropped).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub primary_loop_kept: Option<u32>,
+    /// The W27 primary-loop member filter (2026-11-22): the degenerate
+    /// member triangles of primary strips/fans, NAMED instead of
+    /// counting as the L2 anomaly (absent when 0).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary_loop_members_filtered: Option<u32>,
     /// The T3 relaxed families (#61): loops the strict guard accepted
     /// (absent when none).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1725,6 +1730,10 @@ struct Triangulation {
     /// The primary-emit seam: over-using loops kept because each is
     /// larger than the sliver bound (the twin's ``primary_loop_kept``).
     primary_loop_kept: u32,
+    /// The W27 primary-loop member filter: the named degenerate
+    /// members of primary loops (the twin's
+    /// ``primary_loop_members_filtered``).
+    primary_loop_members_filtered: u32,
     /// Fase 3 L1 (#70): the relist pass's declined kept loops' triangles
     /// and counters (empty/0 outside the relist pass).
     kept_loop_tris: Vec<(u32, u32, u32)>,
@@ -1752,6 +1761,9 @@ struct EmitState {
     /// The primary-emit seam counters (the twin's stats keys).
     primary_loop_skips: u32,
     primary_loop_kept: u32,
+    /// The W27 primary-loop member filter: the named degenerate
+    /// members of primary loops.
+    primary_members_filtered: u32,
     /// Fase 3 L1 (#70): the relist pass's declined kept loops' triangles
     /// (recorded for the vertex-coverage gate) and counters.
     kept_tris: Vec<(u32, u32, u32)>,
@@ -1811,8 +1823,30 @@ impl EmitCtx<'_> {
                 )
             })
             .collect();
-        let (tris, deg) = loop_triangles(kind, &idxs, self.points);
-        st.degenerate += deg;
+        let tris = if guard {
+            // The W27 primary-loop member filter (2026-11-22): the
+            // extended family's member-filter law applied to the
+            // PRIMARY strips and fans.  A degenerate member is the
+            // writer's strip convention — the G3 F7 skip convention
+            // already excludes it from the emission — so it is NAMED
+            // (``primary_members_filtered``) and never counts as the
+            // L2 anomaly.  ``loop_triangles_split`` is the same
+            // enumeration, so the emitted triangles are byte-identical;
+            // only the counters and the gates that read them change.
+            let (tris, deg, _degen_tris) =
+                loop_triangles_split(kind, &idxs, self.points);
+            if deg > 0 {
+                st.primary_members_filtered += deg;
+            }
+            tris
+        } else {
+            // The extended lineage (guard=false): the record-level
+            // member filter reads ``rec_st.degenerate`` — the counting
+            // enumeration stays.
+            let (tris, deg) = loop_triangles(kind, &idxs, self.points);
+            st.degenerate += deg;
+            tris
+        };
         // The primary-loop seam (2026-11-18, #34): the same incremental
         // manifold guard the weld and the extended family use, made
         // fidelity-neutral by the area rule — a refused loop is dropped
@@ -2039,6 +2073,7 @@ fn triangulate(
         relaxed_loops_declined: relaxed_declined,
         primary_loop_skips: st.primary_loop_skips,
         primary_loop_kept: st.primary_loop_kept,
+        primary_loop_members_filtered: st.primary_members_filtered,
         kept_loop_tris: st.kept_tris,
         kept_loop_count: st.kept_loops,
         relist_forced: st.relist_forced,
@@ -2314,6 +2349,7 @@ fn decode_per_rep(
     let mut ext_filtered = 0usize;
     // The primary-emit seam counters (per rep; summed at store level).
     let mut primary_loop_skips = 0u32;
+    let mut primary_loop_members_filtered = 0u32;
     let mut relaxed_loops_accepted = 0u32;
     let mut relaxed_loops_declined = 0u32;
     let mut primary_loop_kept = 0u32;
@@ -2440,6 +2476,7 @@ fn decode_per_rep(
         loops_curve_entry += tri_res.loops_curve_entry;
         primary_loop_skips += tri_res.primary_loop_skips;
         primary_loop_kept += tri_res.primary_loop_kept;
+        primary_loop_members_filtered += tri_res.primary_loop_members_filtered;
         if !tri_res.kept_loop_tris.is_empty() {
             for &(a, b, c) in &tri_res.kept_loop_tris {
                 kept_loop_tris.push((a + base as u32, b + base as u32, c + base as u32));
@@ -2547,6 +2584,7 @@ fn decode_per_rep(
         relaxed_loops_declined: None,
         primary_loop_seam_declined: None,
         primary_loop_kept: None,
+        primary_loop_members_filtered: None,
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
         multiregion_reps: None,
@@ -2570,6 +2608,9 @@ fn decode_per_rep(
     }
     if primary_loop_kept > 0 {
         info.primary_loop_kept = Some(primary_loop_kept);
+        if primary_loop_members_filtered > 0 {
+            info.primary_loop_members_filtered = Some(primary_loop_members_filtered);
+        }
     }
     if relaxed_loops_accepted > 0 || relaxed_loops_declined > 0 {
         // the twin emits BOTH keys whenever either counter is nonzero
@@ -3106,6 +3147,7 @@ fn mr_emit_reps(
     let mut loops_exported = 0u32;
     let mut loops_curve_entry = 0u32;
     let mut primary_loop_skips = 0u32;
+    let mut primary_loop_members_filtered = 0u32;
     let mut primary_loop_kept = 0u32;
     let mut relaxed_loops_accepted = 0u32;
     let mut relaxed_loops_declined = 0u32;
@@ -3193,6 +3235,7 @@ fn mr_emit_reps(
         loops_curve_entry += tri_res.loops_curve_entry;
         primary_loop_skips += tri_res.primary_loop_skips;
         primary_loop_kept += tri_res.primary_loop_kept;
+        primary_loop_members_filtered += tri_res.primary_loop_members_filtered;
         relaxed_loops_accepted += tri_res.relaxed_loops_accepted;
         relaxed_loops_declined += tri_res.relaxed_loops_declined;
         facet_candidates += n_hdrs + ext_cands;
@@ -3280,6 +3323,7 @@ fn mr_emit_reps(
         relaxed_loops_declined: None,
         primary_loop_seam_declined: None,
         primary_loop_kept: None,
+        primary_loop_members_filtered: None,
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
         primary_loop_relist_skips: None,
@@ -3300,6 +3344,9 @@ fn mr_emit_reps(
     }
     if primary_loop_kept > 0 {
         info.primary_loop_kept = Some(primary_loop_kept);
+        if primary_loop_members_filtered > 0 {
+            info.primary_loop_members_filtered = Some(primary_loop_members_filtered);
+        }
     }
     if relaxed_loops_accepted > 0 || relaxed_loops_declined > 0 {
         info.relaxed_loops_accepted = Some(relaxed_loops_accepted);
@@ -3779,6 +3826,7 @@ fn decode_store_once(
         relaxed_loops_declined: None,
         primary_loop_seam_declined: None,
         primary_loop_kept: None,
+        primary_loop_members_filtered: None,
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
         multiregion_reps: None,
@@ -3802,6 +3850,9 @@ fn decode_store_once(
     }
     if tri_res.primary_loop_kept > 0 {
         info.primary_loop_kept = Some(tri_res.primary_loop_kept);
+        if tri_res.primary_loop_members_filtered > 0 {
+            info.primary_loop_members_filtered = Some(tri_res.primary_loop_members_filtered);
+        }
     }
     if curve_entry_law > 0 {
         info.curve_entry_law = Some("e0b-dup-pin");
@@ -4167,6 +4218,7 @@ fn decode_raw_array_path(
         relaxed_loops_declined: None,
         primary_loop_seam_declined: None,
         primary_loop_kept: None,
+        primary_loop_members_filtered: None,
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
         multiregion_reps: None,
@@ -4191,6 +4243,9 @@ fn decode_raw_array_path(
     }
     if tri_res.primary_loop_kept > 0 {
         info.primary_loop_kept = Some(tri_res.primary_loop_kept);
+        if tri_res.primary_loop_members_filtered > 0 {
+            info.primary_loop_members_filtered = Some(tri_res.primary_loop_members_filtered);
+        }
     }
     // One index space on this path (see the single-region note above).
     // The §2.3 curve exposure: the raw element space has NO skip
@@ -4829,6 +4884,7 @@ fn decode_mixedwrite(
     let mut ext_filtered = 0usize;
     // The primary-emit seam counters (per rep; summed at store level).
     let mut primary_loop_skips = 0u32;
+    let mut primary_loop_members_filtered = 0u32;
     let mut relaxed_loops_accepted = 0u32;
     let mut relaxed_loops_declined = 0u32;
     let mut primary_loop_kept = 0u32;
@@ -4919,6 +4975,7 @@ fn decode_mixedwrite(
         loops_curve_entry += tri_res.loops_curve_entry;
         primary_loop_skips += tri_res.primary_loop_skips;
         primary_loop_kept += tri_res.primary_loop_kept;
+        primary_loop_members_filtered += tri_res.primary_loop_members_filtered;
         if !tri_res.kept_loop_tris.is_empty() {
             for &(a, b, c) in &tri_res.kept_loop_tris {
                 kept_loop_tris.push((a + base as u32, b + base as u32, c + base as u32));
@@ -5025,6 +5082,7 @@ fn decode_mixedwrite(
         relaxed_loops_declined: None,
         primary_loop_seam_declined: None,
         primary_loop_kept: None,
+        primary_loop_members_filtered: None,
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
         multiregion_reps: None,
@@ -5048,6 +5106,9 @@ fn decode_mixedwrite(
     }
     if primary_loop_kept > 0 {
         info.primary_loop_kept = Some(primary_loop_kept);
+        if primary_loop_members_filtered > 0 {
+            info.primary_loop_members_filtered = Some(primary_loop_members_filtered);
+        }
     }
     if relaxed_loops_accepted > 0 || relaxed_loops_declined > 0 {
         // the twin emits BOTH keys whenever either counter is nonzero
@@ -5284,6 +5345,72 @@ mod tests {
         assert_eq!(pin.refused, 1);
     }
 
+    /// The W27 primary-loop member filter (2026-11-22, the twin of
+    /// ``test_triangulate_primary_degenerate_member_is_filtered_not_
+    /// counted``): a degenerate member of a PRIMARY strip is the
+    /// writer's strip convention — named on
+    /// ``primary_loop_members_filtered``, never counted as the L2
+    /// anomaly; the real remainder's triangles are byte-identical to
+    /// the pre-law emission (the member was never appended).
+    #[test]
+    fn primary_degenerate_member_is_filtered_not_counted() {
+        // elements 0..3: the strip's first triangle (0,1,2) is
+        // collinear on y=0 (the zero-cross strip-reversal marker), the
+        // flipped second (3,2,1) is real surface.
+        let elements: Vec<Element> = vec![
+            (0, Some((0.0, 0.0, 0.0))),
+            (0, Some((1.0, 0.0, 0.0))),
+            (0, Some((2.0, 0.0, 0.0))),
+            (0, Some((1.0, 1.0, 0.0))),
+        ];
+        let strip = CompositeRecord {
+            offset: 0,
+            marker: 0x42,
+            normal: None,
+            counts: vec![4],
+            refs: vec![0, 1, 2, 3],
+            width: 1,
+        };
+        let res = triangulate(&elements, &[strip], &[], None, false);
+        assert_eq!(res.degenerate, 0);
+        assert_eq!(res.primary_loop_members_filtered, 1);
+        assert_eq!(res.triangles, vec![(3u32, 2u32, 1u32)]);
+        assert_eq!(res.loops_exported, 1);
+        // the fan arm: (0,3,0) collapses by a==c, the first fan
+        // triangle is real.
+        let fan = CompositeRecord {
+            offset: 0,
+            marker: 0x4C,
+            normal: None,
+            counts: vec![4],
+            refs: vec![0, 1, 3, 0],
+            width: 1,
+        };
+        let res = triangulate(&elements, &[fan], &[], None, false);
+        assert_eq!(res.degenerate, 0);
+        assert_eq!(res.primary_loop_members_filtered, 1);
+        assert_eq!(res.triangles, vec![(0u32, 1u32, 3u32)]);
+        // The extended lineage (guard=false) keeps the counting
+        // enumeration: the record-level member filter reads
+        // rec_st.degenerate and is the 2026-11-21 law, unchanged.
+        let extended_rec = ExtendedFacetRecord {
+            offset: 0,
+            marker: 0x47,
+            triangles: 1,
+            strips: 0,
+            polygons: 0,
+            counts: vec![],
+            refs: vec![0, 1, 2],
+            end: 0,
+            normal: None,
+            width: 1,
+        };
+        let res = triangulate(&elements, &[], &[extended_rec], None, false);
+        assert_eq!(res.degenerate, 0);
+        assert_eq!(res.extended_members_filtered, 1);
+        assert_eq!(res.extended_declined, 1); // empty remainder declined
+    }
+
     /// The stage-15 unordered-triangle dedup: fires on a not-manifold
     /// mesh whose duplicate unordered triple resolves it; declines
     /// when the duplicates do not explain the over-use; a manifold
@@ -5326,6 +5453,7 @@ mod tests {
             relaxed_loops_declined: None,
             primary_loop_seam_declined: None,
             primary_loop_kept: None,
+            primary_loop_members_filtered: None,
             curve_entry_law: None,
             loops_curve_entry_exported: None,
             unordered_dedup_dropped: None,
@@ -5418,6 +5546,7 @@ mod tests {
             relaxed_loops_declined: None,
             primary_loop_seam_declined: None,
             primary_loop_kept: None,
+            primary_loop_members_filtered: None,
             curve_entry_law: None,
             loops_curve_entry_exported: None,
             unordered_dedup_dropped: None,

@@ -58,6 +58,7 @@ WARN_EXTENDED_FILTERED = "extended-header-members-filtered"
 WARN_PRIMARY_SKIP = "primary-loop-manifold-skip"
 WARN_PRIMARY_DECLINED = "primary-loop-manifold-declined"
 WARN_PRIMARY_KEPT = "primary-loop-manifold-kept"
+WARN_PRIMARY_FILTERED = "primary-loop-members-filtered"
 WARN_PRIMARY_RELIST_SKIP = "primary-loop-relist-skip"
 WARN_DEDUP = "duplicate-triangles-deduped"
 WARN_DEDUP_DECLINED = "duplicate-triangles-dedup-declined"
@@ -1091,6 +1092,20 @@ def _export_composite_store(
                 "before (the over-use is named, not hidden; owner "
                 "decision, docs/evidence/"
                 "2026-11-18-primary-emit-seam.md)",
+            }
+        )
+    if info.get("primary_loop_members_filtered"):
+        warnings.append(
+            {
+                "class": WARN_PRIMARY_FILTERED,
+                "detail": f"{info['primary_loop_members_filtered']} degenerate "
+                "member triangles of primary facet loops (strips and fans) "
+                "filtered: a degenerate member is the writer's strip "
+                "convention — the G3 F7 skip convention already excludes it "
+                "from the emission — so it is named here instead of counting "
+                "as the degenerate-triangles anomaly (the W27 member-filter "
+                "law; the extended family's same law, 2026-11-21). The "
+                "emitted triangles are unchanged",
             }
         )
     if info.get("primary_loop_relist_skips"):

@@ -109,6 +109,7 @@ pub const WARN_EXTENDED_FILTERED: &str = "extended-header-members-filtered";
 pub const WARN_PRIMARY_SKIP: &str = "primary-loop-manifold-skip";
 pub const WARN_PRIMARY_DECLINED: &str = "primary-loop-manifold-declined";
 pub const WARN_PRIMARY_KEPT: &str = "primary-loop-manifold-kept";
+pub const WARN_PRIMARY_FILTERED: &str = "primary-loop-members-filtered";
 pub const WARN_PRIMARY_RELIST_SKIP: &str = "primary-loop-relist-skip";
 pub const WARN_DEDUP: &str = "duplicate-triangles-deduped";
 pub const WARN_DEDUP_DECLINED: &str = "duplicate-triangles-dedup-declined";
@@ -1621,6 +1622,22 @@ fn export_composite_store(
                  before (the over-use is named, not hidden; owner \
                  decision, docs/evidence/\
                  2026-11-18-primary-emit-seam.md)"
+            ),
+        });
+    }
+    if let Some(filtered) = info.primary_loop_members_filtered {
+        warnings.push(Warning {
+            class: WARN_PRIMARY_FILTERED.to_string(),
+            detail: format!(
+                "{filtered} degenerate \
+                 member triangles of primary facet loops (strips and \
+                 fans) filtered: a degenerate member is the writer's \
+                 strip convention — the G3 F7 skip convention already \
+                 excludes it from the emission — so it is named here \
+                 instead of counting as the degenerate-triangles \
+                 anomaly (the W27 member-filter law; the extended \
+                 family's same law, 2026-11-21). The emitted triangles \
+                 are unchanged"
             ),
         });
     }

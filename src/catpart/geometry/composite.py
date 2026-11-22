@@ -96,6 +96,16 @@ stage-3b table law dated 2026-11-11, byte-measured on the corpus):
   seam fail-closed and keeps its pre-seam emission
   (``primary-loop-manifold-declined``).  The 24 not-manifold corpus
   parts split 15 flips / 9 kept with no surface above 0.76% dropped.
+- Primary-loop member filter (W27, 2026-11-22): the extended family's
+  member-filter law (2026-11-21, the Audi R8 forensics) applied to the
+  primary strips and fans — a degenerate member of a primary loop is
+  the writer's strip convention (the G3 F7 skip convention already
+  excludes it from the emission) and is NAMED in
+  ``primary_loop_members_filtered`` / ``primary-loop-members-filtered``
+  instead of counting as the L2 anomaly.  The emitted triangles are
+  byte-identical (:func:`_loop_triangles_split` is the same
+  enumeration); only the counters and the gates that read them change
+  (the merged multi-region reading's adoption gate among them).
 - Loop plane law: coplanarity against the record's stored 12-B normal
   (the corner quads are slanted planes; the axis-constant reading was
   too strict).  It is the weld's validation battery (above) and the
@@ -1513,14 +1523,19 @@ def _triangulate(
     skipped slivers are counted in ``primary_loop_skips``; the two
     counters and the warning classes ``primary-loop-manifold-skip`` /
     ``primary-loop-manifold-kept`` name both outcomes
-    (docs/evidence/2026-11-18-primary-emit-seam.md).
+    (docs/evidence/2026-11-18-primary-emit-seam.md).  A primary loop's
+    degenerate members are the writer's strip convention (the G3 F7
+    skip convention already excludes them from the emission): they are
+    named in ``primary_loop_members_filtered`` and never count as the
+    L2 anomaly (the W27 member-filter law).
 
     Returns ``(triangles, degenerate, stats)`` where ``stats`` carries
     the loop counters for the summary's composite block (plus the
     ``dup_pin`` block exactly when at least one dropped loop was
     evaluated; consumers pop it before assembling ``info``, offset it
     per rep and merge the welded loops; the two primary-seam counters
-    ride ``stats`` and are summed per rep by the multi-rep paths).
+    ride ``stats`` and are summed per rep by the multi-rep paths, as
+    does the member-filter counter).
     """
     written_rank: dict[int, int] = {}
     skips: set[int] = set()
@@ -1538,6 +1553,7 @@ def _triangulate(
     extended_triangles = 0
     primary_skips = 0
     primary_kept = 0
+    primary_filtered = 0
     guard = EdgeGuard()
     dropped = []
     # The re-listed-keep skip (Fase 3 L1, #70): with ``relist_skip`` a
@@ -1552,6 +1568,7 @@ def _triangulate(
     def emit(kind, normal, loop, count_loop=True):
         nonlocal degenerate, loops_exported, loops_curve_entry
         nonlocal primary_skips, primary_kept, kept_loops, relist_forced
+        nonlocal primary_filtered
         if not loop:
             return
         if any(r in skips for r in loop):
@@ -1561,8 +1578,21 @@ def _triangulate(
         if count_loop:
             loops_exported += 1
         idxs = [written_rank[r] for r in loop]
-        tris, deg = _loop_triangles(kind, idxs, points)
-        degenerate += deg
+        # The primary-loop member filter (W27, 2026-11-22): the
+        # extended family's member-filter law (2026-11-21, the Audi R8
+        # forensics) applied to the primary strips and fans.  A
+        # degenerate member of a primary loop is the writer's strip
+        # convention — the G3 F7 skip convention ALREADY excludes it
+        # from the emission (``_loop_triangles`` never appends it) —
+        # so it is NAMED in ``primary_loop_members_filtered`` and never
+        # counts as the L2 anomaly (the degenerate counter the
+        # ``MAX_DEGENERATE_TRIANGLES`` gate reads).  The W16 A4 split
+        # (:func:`_loop_triangles_split`) is the same enumeration, so
+        # the emitted triangles are byte-identical; only the counters
+        # and the gates that read them change.
+        tris, deg, _deg_tris = _loop_triangles_split(kind, idxs, points)
+        if deg:
+            primary_filtered += deg
         area = loop_area(tris, points)
         # The primary-loop seam (2026-11-18, #34): the same incremental
         # manifold guard the weld and the extended family use, made
@@ -1704,6 +1734,8 @@ def _triangulate(
         stats["primary_loop_skips"] = primary_skips
     if primary_kept:
         stats["primary_loop_kept"] = primary_kept
+    if primary_filtered:
+        stats["primary_loop_members_filtered"] = primary_filtered
     if kept_tris:
         stats["kept_loop_tris"] = kept_tris
         stats["kept_loop_count"] = kept_loops
@@ -2135,6 +2167,7 @@ def _decode_multiregion(data, lo: int, hi: int):
             for _key in (
                 "primary_loop_skips",
                 "primary_loop_kept",
+                "primary_loop_members_filtered",
                 "relist_forced",
                 "relaxed_loops_accepted",
                 "relaxed_loops_declined",
@@ -3071,6 +3104,7 @@ def _decode_per_rep(
         for _key in (
             "primary_loop_skips",
             "primary_loop_kept",
+            "primary_loop_members_filtered",
             "relist_forced",
             "relaxed_loops_accepted",
             "relaxed_loops_declined",
@@ -3926,6 +3960,7 @@ def _decode_mixedwrite(
         for _key in (
             "primary_loop_skips",
             "primary_loop_kept",
+            "primary_loop_members_filtered",
             "relist_forced",
             "relaxed_loops_accepted",
             "relaxed_loops_declined",

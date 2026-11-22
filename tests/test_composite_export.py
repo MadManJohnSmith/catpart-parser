@@ -1470,12 +1470,18 @@ def test_composite_dedup_declined_fail_closed(tmp_path, capsys):
 
 
 def test_composite_dedup_degenerate_separate_gate(tmp_path, capsys):
-    """The b912cbef shape: the dedup fires (box + duplicate -> 12
-    triangles, manifold) while a PRE-EXISTING degenerate skip rides
-    UNTOUCHED — degenerates are counted at emission, never deduped, and
-    stay a separate L2 gate check (the corpus: b912cbef dedups to a
-    manifold mesh and still fails on its 3 pre-existing skips,
-    declared).  The dedup eating the skip count would zero it — red."""
+    """The b912cbef shape under the W27 member-filter law (2026-11-22;
+    CORRECTION of the pre-law pin, which held
+    ``degenerate_triangle_count == 1``): the dedup fires (box +
+    duplicate -> 12 triangles, manifold) while the primary loop's
+    degenerate member is NAMED on ``primary-loop-members-filtered`` and
+    never counts as the degenerate-triangles anomaly — the corpus part
+    this fixture pins (b912cbef: a manifold deduped mesh that
+    pre-law still failed on its 3 counted primary skips) passes under
+    the member-filter law exactly as the extended family's 2026-11-21
+    law made its accepted records pass.  The dedup eating the skip
+    count would zero it — the filter naming it here is the designed
+    law, and the deduped mesh's bytes are unchanged."""
     code, captured, ply_path = run_export(
         tmp_path, capsys, "geometry-composite-law-dedup-degenerate"
     )
@@ -1484,12 +1490,13 @@ def test_composite_dedup_degenerate_separate_gate(tmp_path, capsys):
     info = summary["composite"]
     assert info["unordered_dedup_dropped"] == 1
     assert summary["triangle_count"] == 12
-    assert summary["degenerate_triangle_count"] == 1  # the skip survives
+    assert summary["degenerate_triangle_count"] == 0  # the member is named
+    assert info["primary_loop_members_filtered"] == 1
     assert summary["mesh"]["manifold"] is True
     assert summary["mesh"]["closed"] is True
     classes = _warning_classes(summary)
     assert "duplicate-triangles-deduped" in classes
-    assert "degenerate-triangles-skipped" in classes
+    assert "primary-loop-members-filtered" in classes
 
 
 def test_composite_dedup_coordinate_relist_across_reps(tmp_path, capsys):
@@ -1926,6 +1933,41 @@ def test_triangulate_extended_degenerate_member_is_filtered_not_declining() -> N
     assert degenerate == 0
     assert stats["extended_members_filtered"] == 1
     assert stats["extended_declined"] == 1
+
+
+def test_triangulate_primary_degenerate_member_is_filtered_not_counted() -> None:
+    """The W27 primary-loop member filter (2026-11-22): a degenerate
+    member of a PRIMARY strip is the writer's strip convention (the G3
+    F7 skip convention already excludes it from the emission) — it is
+    named on ``primary_loop_members_filtered`` and never counts as the
+    L2 anomaly (``degenerate`` stays 0).  The W16 A4 split
+    (:func:`_loop_triangles_split`) is the same enumeration, so the
+    emitted triangles are byte-identical to the pre-law emission (the
+    member was never appended)."""
+    # elements 0..3: the strip's first triangle (0,1,2) is collinear
+    # on y=0 (the zero-cross strip-reversal marker), the flipped second
+    # (3,2,1) is real surface.
+    elements = [
+        (0, (0.0, 0.0, 0.0)),      # 0
+        (0, (1.0, 0.0, 0.0)),      # 1
+        (0, (2.0, 0.0, 0.0)),      # 2 collinear with 0,1
+        (0, (1.0, 1.0, 0.0)),      # 3
+    ]
+    records = [(0, 0x42, None, (4,), (0, 1, 2, 3), 1)]
+    triangles, degenerate, stats = composite._triangulate(elements, records)
+    assert degenerate == 0  # the L2 gate stays clean
+    assert stats["primary_loop_members_filtered"] == 1
+    assert len(triangles) == 1
+    assert triangles == [(3, 2, 1)]  # t=1's flip, the real remainder
+    assert stats["loops_exported"] == 1
+    # the fan arm: a 0x4C loop whose last fan triangle repeats ref 0 —
+    # (0,3,0) collapses by a==c, the first fan triangle is real.
+    records = [(0, 0x4C, None, (4,), (0, 1, 3, 0), 1)]
+    triangles, degenerate, stats = composite._triangulate(elements, records)
+    assert degenerate == 0
+    assert stats["primary_loop_members_filtered"] == 1
+    assert len(triangles) == 1
+    assert triangles == [(0, 1, 3)]
 
 
 # --- 2026-11-18: the primary-emit seam's port parity on the corpus flips --
@@ -2594,6 +2636,29 @@ def test_composite_multiregion_merges_per_period_regions():
     # both reps' open boxes export over their own disjoint space
     assert sum(1 for t in triangles if all(i < 12 for i in t)) == 10
     assert sum(1 for t in triangles if all(i >= 12 for i in t)) == 10
+
+
+def test_composite_multiregion_primary_degenerate_member_is_filtered_not_blocking():
+    """The W27 law at the adoption gate (2026-11-22): rep 1's primary
+    strip carries a degenerate member (the repeated-ref strip marker,
+    refs (0, 2, 2) — one collapsed triangle, nothing real).  Under the
+    pre-law counting the merged multi-region reading carried
+    degenerate == 1 and the adoption gate declined it (the single-rep
+    emission was kept, still not-manifold); under the member filter the
+    member is NAMED on ``primary_loop_members_filtered``, the merged
+    reading's gate sees degenerate == 0 and ADOPTS."""
+    rep1 = _mr_other_diagonal_faces() + [(0x42, None, (0, 2, 2))]
+    body = _mr_body(_mr_open_faces(), rep1)
+    points, triangles, degenerate, info = _mr_decode(body)
+    assert info["stage"] == "identity-multiregion"
+    assert info["multiregion_reps"] == 2
+    assert degenerate == 0
+    assert info["primary_loop_members_filtered"] == 1
+    stats = mesh.mesh_stats(list(triangles))
+    assert stats.manifold is True
+    # rep 1's degenerate loop contributed no real triangles: the merge
+    # is the two-rep reading's 20 triangles
+    assert len(triangles) == 20
 
 
 def test_composite_multiregion_nonmanifold_rep_declines_fail_closed():
