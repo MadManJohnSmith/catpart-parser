@@ -1,0 +1,6 @@
+file,part_size,elem_decl,tail_len,tail_count,events_u16be_exact_inbounds,events_u16be_exact_oob,events_u8_gap_u16_oob,note
+acc-Cont-Lft.CATPart,406528,220,1004,440,57,8,2,H1 tail structure + record 0x5255e u16be refs to 255 declined; the u8 winner decline is unit 2
+MB-Frames-middle-centr-YL.CATPart,1323822,682,3475,1320,0,0,0,H1 cross-check: same tail family (ff-escaped count + duplicated i16 stream)
+MB-Frames-middle-centr-YR.CATPart,1330160,682,3467,1320,0,0,0,H1 cross-check
+census-submarino-757,0,0,0,0,95150,12542,1299,census totals: records by class across 757 parts (367 files in-bounds / 118 files OOB / 49 files half-read)
+not-manifold-cross,0,0,0,0,195,86,41,failed_check=not-manifold files carrying each census class
