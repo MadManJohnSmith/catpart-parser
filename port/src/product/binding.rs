@@ -32,6 +32,8 @@
 
 #![allow(clippy::suboptimal_flops)]
 
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 
 use super::pairing::ProductInstanceRecord;
@@ -482,15 +484,36 @@ pub fn bind_position_layer(
 ///   (`e9 f4 07 04 37`) are constraint/connector placeholders (Clause 3); a
 ///   record set containing one never places. `None` (single-document reads,
 ///   where `own(D)` needs the document set) keeps the strict path.
+/// - W5 law C, only when the walker supplies `shared_bodies`: an explicit
+///   matrix body byte-identical across two or more documents of the walked
+///   set is a shared connector frame (the snapshot's `T = (-0.0, -2.241,
+///   2179.457)` body appears in 13 unrelated documents; the STEP oracle places
+///   those documents' children at the parent origin instead). Refused records
+///   never bind. A document whose records are ALL refused (or Clause 3
+///   identity frames) carries no instance placements and its instances decode
+///   identity; a document mixing refused records with anything else stays
+///   fail-closed.
 ///
 /// Returns the number of non-root position records seen.
 pub fn bind_name_table(
     instances: &mut [ProductInstanceRecord],
     data: &[u8],
     n_own: Option<usize>,
+    shared_bodies: Option<&HashSet<Vec<u8>>>,
 ) -> usize {
     let records = scan_position_matrix_streams(data);
     let n_records = records.len();
+    let n_refused = records
+        .iter()
+        .filter(|rec| {
+            rec.kind == PositionKind::Explicit
+                && shared_bodies.is_some_and(|set| set.contains(&rec.matrix_body))
+        })
+        .count();
+    let n_clause3 = records
+        .iter()
+        .filter(|rec| rec.kind == PositionKind::Identity)
+        .count();
     let placed_detail = n_own.map(|n_own| {
         format!(
             "name-table placed law: {n_records} byte-identical _Position matrices == own \
@@ -500,10 +523,13 @@ pub fn bind_name_table(
     });
     let places = placed_detail.is_some()
         && n_records > 0
+        && n_refused == 0
+        && n_clause3 == 0
         && n_records == n_own.unwrap_or_default()
         && records.iter().all(|rec| {
             rec.kind == PositionKind::Explicit && rec.matrix_body == records[0].matrix_body
         });
+    let refused_only = n_records > 0 && n_refused + n_clause3 == n_records;
     for inst in instances.iter_mut() {
         if n_records == 0 {
             inst.placement_status = PlacementStatus::Identity;
@@ -514,6 +540,27 @@ pub fn bind_name_table(
                 "name-table enumeration: no _Position transform records (identity at origin)"
                     .to_string(),
             );
+        } else if refused_only {
+            inst.placement_status = PlacementStatus::Identity;
+            inst.transform = Some(IDENTITY_TRANSFORM);
+            inst.has_position_attr = true;
+            inst.object_tag = None;
+            inst.classification_detail = Some(format!(
+                "connector-frame records: all {n_records} _Position record(s) are \
+                 non-placement frames (byte-identical across documents of the walked set / \
+                 Clause 3 identity frames); the document carries no instance placements \
+                 (W5 law C)"
+            ));
+        } else if n_refused + n_clause3 > 0 {
+            inst.placement_status = PlacementStatus::Undecodable;
+            inst.transform = None;
+            inst.has_position_attr = true;
+            inst.object_tag = None;
+            inst.classification_detail = Some(format!(
+                "connector-frame refusal blocks binding: {n_refused} shared-body + \
+                 {n_clause3} identity frame(s) among {n_records} records; the remainder \
+                 cannot be attributed to names (the name table carries no instance order)"
+            ));
         } else if places {
             inst.placement_status = PlacementStatus::Placed;
             inst.transform = Some(records[0].to_transform_7());
@@ -859,7 +906,7 @@ mod tests {
             make_test_instance("Bracket", "Bracket", false),
         ];
 
-        let n = bind_name_table(&mut instances, &[], None);
+        let n = bind_name_table(&mut instances, &[], None, None);
 
         assert_eq!(n, 0);
         for inst in &instances {
@@ -878,7 +925,7 @@ mod tests {
         ];
         let data = name_table_position_bytes(2);
 
-        let n = bind_name_table(&mut instances, &data, None);
+        let n = bind_name_table(&mut instances, &data, None, None);
 
         assert_eq!(n, 2);
         for inst in &instances {
@@ -899,7 +946,7 @@ mod tests {
         ];
         let data = name_table_position_bytes(2);
 
-        let n = bind_name_table(&mut instances, &data, Some(2));
+        let n = bind_name_table(&mut instances, &data, Some(2), None);
 
         assert_eq!(n, 2);
         for inst in &instances {
@@ -924,7 +971,7 @@ mod tests {
         ];
         let data = name_table_position_entries(&[[12.5, 0.0, 14.4], [1.0, 2.0, 3.0]]);
 
-        let n = bind_name_table(&mut instances, &data, Some(2));
+        let n = bind_name_table(&mut instances, &data, Some(2), None);
 
         assert_eq!(n, 2);
         for inst in &instances {
@@ -942,7 +989,7 @@ mod tests {
             .collect();
         let data = name_table_position_bytes(5);
 
-        let n = bind_name_table(&mut instances, &data, Some(18));
+        let n = bind_name_table(&mut instances, &data, Some(18), None);
 
         assert_eq!(n, 5);
         for inst in &instances {
@@ -966,7 +1013,7 @@ mod tests {
         data.extend_from_slice(&[0xE7, 0xE8, 0xE8, 0xE8]);
         data.extend_from_slice(&[0xE7, 0xE8, 0xE8, 0xE8]);
 
-        let n = bind_name_table(&mut instances, &data, Some(2));
+        let n = bind_name_table(&mut instances, &data, Some(2), None);
 
         assert_eq!(n, 2);
         for inst in &instances {
@@ -990,8 +1037,97 @@ mod tests {
         data.push(0xFE);
 
         let mut instances = vec![make_test_instance("Widget", "Widget", false)];
-        let n = bind_name_table(&mut instances, &data, None);
+        let n = bind_name_table(&mut instances, &data, None, None);
         assert_eq!(n, 0);
         assert_eq!(instances[0].placement_status, PlacementStatus::Identity);
+    }
+
+    // --- W5 law C ----------------------------------------------------------
+
+    #[test]
+    fn name_table_shared_body_refuses_to_identity() {
+        // The S7 shape (#R == #own == 2, byte-identical) plus the body
+        // present in another walked document: refused to identity.
+        let mut instances = vec![
+            make_test_instance("Widget", "Widget", false),
+            make_test_instance("Bracket", "Bracket", false),
+        ];
+        let data = name_table_position_bytes(2);
+        let body = scan_position_matrix_streams(&data)[0].matrix_body.clone();
+        let shared: HashSet<Vec<u8>> = [body, b"other-body".to_vec()].into();
+
+        let n = bind_name_table(&mut instances, &data, Some(2), Some(&shared));
+
+        assert_eq!(n, 2);
+        for inst in &instances {
+            assert_eq!(inst.placement_status, PlacementStatus::Identity);
+            assert_eq!(inst.transform, Some(IDENTITY_TRANSFORM));
+            let detail = inst.classification_detail.as_deref().unwrap();
+            assert!(detail.contains("connector-frame records: all 2"), "{detail}");
+        }
+    }
+
+    #[test]
+    fn name_table_mixed_refusal_stays_undecodable() {
+        // A shared body among non-shared records: refusal blocks the whole
+        // set, the remainder stays undecodable (fail-closed).
+        let mut instances = vec![
+            make_test_instance("Widget", "Widget", false),
+            make_test_instance("Bracket", "Bracket", false),
+        ];
+        let mut data = name_table_position_bytes(1);
+        data.extend_from_slice(&other_position_bytes(9.0));
+        let body = scan_position_matrix_streams(&data)[0].matrix_body.clone();
+        let shared: HashSet<Vec<u8>> = [body].into();
+
+        let n = bind_name_table(&mut instances, &data, Some(2), Some(&shared));
+
+        assert_eq!(n, 2);
+        for inst in &instances {
+            assert_eq!(inst.placement_status, PlacementStatus::Undecodable);
+            assert!(inst.transform.is_none());
+            let detail = inst.classification_detail.as_deref().unwrap();
+            assert!(
+                detail.contains("connector-frame refusal blocks binding"),
+                "{detail}"
+            );
+        }
+    }
+
+    #[test]
+    fn name_table_unique_body_still_places() {
+        // The S7 shape with a body unique to the document: places as before.
+        let mut instances = vec![
+            make_test_instance("Widget", "Widget", false),
+            make_test_instance("Bracket", "Bracket", false),
+        ];
+        let data = name_table_position_bytes(2);
+        let body = scan_position_matrix_streams(&data)[0].matrix_body.clone();
+        let shared: HashSet<Vec<u8>> = [b"unrelated-body".to_vec()].into();
+        assert!(!shared.contains(&body));
+
+        let n = bind_name_table(&mut instances, &data, Some(2), Some(&shared));
+
+        assert_eq!(n, 2);
+        for inst in &instances {
+            assert_eq!(inst.placement_status, PlacementStatus::Placed);
+            assert_eq!(inst.transform, Some([12.5, 0.0, 14.4, 1.0, 0.0, 0.0, 0.0]));
+        }
+    }
+
+    /// One explicit record at translation `t` (the test-record shape).
+    fn other_position_bytes(t: f64) -> Vec<u8> {
+        let mut data = Vec::new();
+        data.extend_from_slice(&crate::product::transforms::POSITION_EXPLICIT_HEADER);
+        data.extend_from_slice(&crate::product::transforms::R15_MATRIX_MARKER);
+        data.extend_from_slice(&[0xE7, 0xE8, 0xE8, 0xE8]);
+        data.extend_from_slice(&[0xE7, 0xE8, 0xE8, 0xE8]);
+        data.push(0xE7);
+        for v in [t, 0.0, 0.0] {
+            data.push(0xE6);
+            data.extend_from_slice(&v.to_le_bytes());
+        }
+        data.push(0xFE);
+        data
     }
 }

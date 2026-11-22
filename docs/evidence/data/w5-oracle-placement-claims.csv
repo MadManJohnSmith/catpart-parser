@@ -1,0 +1,228 @@
+root,instance,depth,status_before,status_after,transform_T_mm,step_n_points,step_bbox_min,step_bbox_max,position_error_mm,note
+VM-vela-Mast,VM-base-Floor-Mast-Sk,0,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+VM-vela-Mast,VM-base_floord-bow-A,1,identity,identity,none,148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",0.000,identity
+VM-vela-Mast,VM-tapas-bas-flrd,1,identity,identity,none,148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",0.000,identity
+VM-vela-Mast,VM-pipe-gas-flow-up,1,identity,identity,none,148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",0.000,identity
+VM-vela-Mast,VM-pipe-gas-flow-up-YL,2,identity,identity,none,148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",0.000,identity
+VM-vela-Mast,VM-pipe-gas-flow-up-YR,2,identity,identity,none,148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",0.000,identity
+VM-vela-Mast,VM-base_F323-Mast,1,identity,identity,none,148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",0.000,identity
+VM-vela-Mast,VM-base_Floor-Mast-K,1,identity,identity,none,148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",0.000,identity
+VM-vela-Mast,VM-boma_air213,0,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+VM-vela-Mast,VM-conning-tower-17,0,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+VM-vela-Mast,VM-Door-cummins,0,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+VM-vela-Mast,VM-Hydraulic_22,0,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+VM-vela-Mast,VM-Hydraulic_25,0,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+VM-vela-Mast,VM-Hydraulic_Radar,0,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+VM-vela-Mast,VM-Mast-Optronic,0,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+VM-vela-Mast,VM-prisms,1,identity,identity,none,148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",0.000,identity
+VM-vela-Mast,VM-acrilic,1,identity,identity,none,148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",0.000,identity
+VM-vela-Mast,VM-rotate-base,1,identity,identity,none,148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",0.000,identity
+VM-vela-Mast,VM-alumin-Op,1,identity,identity,none,148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",0.000,identity
+VM-vela-Mast,VM-256-Optk,1,identity,identity,none,148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",0.000,identity
+VM-vela-Mast,VM-Elevator-guide-rail,1,identity,identity,none,148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",0.000,identity
+VM-vela-Mast,VM-mastil-comunication-151,0,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+VM-vela-Mast,VM-Periscope_17,0,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+VM-vela-Mast,VM-Radar-42,0,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+VM-vela-Mast,VM-snorkel_union-14,0,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+VM-vela-Mast,VM-snort-head-tube,0,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+VM-vela-Mast,VM-snort-head-tube-G,1,identity,identity,none,148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",0.000,identity
+VM-vela-Mast,VM-Varilla-Snork-Hd,1,identity,identity,none,148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",0.000,identity
+VM-vela-Mast,Box-rail-guide-Snork,1,identity,identity,none,148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",0.000,identity
+VM-vela-Mast,VM-snort-head-Exhaust,1,identity,identity,none,148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",0.000,identity
+VM-vela-Mast,VM-Tube-exhaust-gas,0,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+VM-vela-Mast,VM-exhaust-gas-YR,1,placed,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+VM-vela-Mast,VM-exhaust-gas-YL,1,placed,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+VM-vela-Mast,VM-varios-snork-System,0,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+VM-vela-Mast,VM-compart-YL,1,placed,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+VM-vela-Mast,VM-compart-YR,1,placed,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+VM-vela-Mast,VM-varios-221G,1,placed,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+VM-vela-Mast,VM-varios_02VK,0,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+VM-vela-Mast,VM-Vela-only-Body,0,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+VM-vela-Mast,VM-wing-Up-YR,1,identity,identity,none,148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",0.000,identity
+VM-vela-Mast,VM-wing-Up-YL,1,identity,identity,none,148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",0.000,identity
+VM-vela-Mast,VM-Vela-only-Parts-four,1,identity,identity,none,148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",0.000,identity
+VM-vela-Mast,VM-Vela-only-YR,1,identity,identity,none,148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",0.000,identity
+VM-vela-Mast,VM-Vela-only-YL,1,identity,identity,none,148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",0.000,identity
+VM-vela-Mast,VM-Mast-Bass-Punta,0,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",148087,"(-14.1425, -603.3894, -88.7161)","(166.3530, 602.2994, 31.6895)",frame-outside,refused-connector; T_z / exported Z-span = 18.1x
+MD-swbd-panel-0A1w,MD-swbd-cuerpo-A3K,0,undecodable,undecodable,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,MD-switch-f2,1,undecodable,identity,"(0.000000, -148.896000, 0.000000)",88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",frame-outside,refused-connector (outlier-polluted export)
+MD-swbd-panel-0A1w,MD-manija,1,undecodable,identity,"(0.000000, -148.896000, 0.000000)",88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",frame-outside,refused-connector (outlier-polluted export)
+MD-swbd-panel-0A1w,MD-cobre-co-A02,1,undecodable,identity,"(0.000000, -148.896000, 0.000000)",88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",frame-outside,refused-connector (outlier-polluted export)
+MD-swbd-panel-0A1w,MD-swbd-cuerpo-A3K Geometry,1,undecodable,identity,"(0.000000, -148.896000, 0.000000)",88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",frame-outside,refused-connector (outlier-polluted export)
+MD-swbd-panel-0A1w,MD-swbd-cuerpo-A0K,0,undecodable,undecodable,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,MD-cobre-co-A0,1,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,MD-swbd-cuerpo-A0K Geometry,1,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,MD-swbd-cuerpo-A2K,0,undecodable,undecodable,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,MD-cobre-co-A2,1,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,MD-pern-57,1,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,MD-swbd-cuerpo-A2,1,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,MD-swbd-cuerpo-A2K Geometry,1,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,MD-swbd-cuerpo-A1K,0,undecodable,undecodable,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,MD-cobre-co,1,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,MD-pern-56,1,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,MD-swbd-cuerpo-A1-2019,1,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,MD-swbd-0A1W-nut-bt,0,undecodable,undecodable,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,MD-nut-bt-17,1,placed,placed,"(0.140466, 145.906043, 0.000000)",88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,
+MD-swbd-panel-0A1w,N-0B2W-0171,2,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,N-0B2W-0172,2,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,N-0B2W-0173,2,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,N-0B2W-0174,2,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,MD-nut-bt-18,1,placed,placed,"(0.140466, 145.906043, 0.000000)",88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,
+MD-swbd-panel-0A1w,N-0B2W-0175,2,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,N-0B2W-0176,2,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,N-0B2W-0177,2,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,N-0B2W-0178,2,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,MD-nut-bt-19,1,placed,placed,"(0.140466, 145.906043, 0.000000)",88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,
+MD-swbd-panel-0A1w,N-0B2W-179,2,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,N-0B2W-180,2,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,N-0B2W-181,2,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,N-0B2W-182,2,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,MD-nut-bt-20,1,placed,placed,"(0.140466, 145.906043, 0.000000)",88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,
+MD-swbd-panel-0A1w,N-0B2W-183,2,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,N-0B2W-184,2,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,N-0B2W-185,2,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,N-0B2W-186,2,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,MD-nut-bt-21,1,placed,placed,"(0.140466, 145.906043, 0.000000)",88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,
+MD-swbd-panel-0A1w,N-0B2W-187,2,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,N-0B2W-188,2,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,N-0B2W-189,2,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+MD-swbd-panel-0A1w,N-0B2W-190,2,identity,identity,none,88819,"(0.0000, -0.5956, -0.1954)","(0.2219, 1.2774, 2.1795)",0.000,identity
+BW-Flooding-compartment-sup,BW-Flood-comprt-sup-Varios,0,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-capstans-proa-A,1,undecodable,undecodable,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-hatch_torp_load,1,undecodable,undecodable,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-interior_proa,1,undecodable,undecodable,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-floor access hatch,1,undecodable,undecodable,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-frame_cargo-escape,1,undecodable,undecodable,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-base_cargo-escape,1,undecodable,undecodable,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-Eske-33dZ-YR,1,undecodable,undecodable,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-Eske-33dZ-YL,1,undecodable,undecodable,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-Bollard-35,1,undecodable,undecodable,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-Bollard-36,1,undecodable,undecodable,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-tapa-cub-sup,1,undecodable,undecodable,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-Door-Ade,0,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-Door-Ade-YL,1,placed,identity,"(-0.000000, -2.241190, 2179.457060)",122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,refused-connector (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-Door-Ade-YR,1,placed,identity,"(-0.000000, -2.241190, 2179.457060)",122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,refused-connector (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-hatch-escape-crew,0,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-handw-htch-scap-crew,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-cover-hatch-escape-crew,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-hatch-escape-crew-G,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-hatch-cargo-torp-up,0,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,Handwell-Carg-T,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,Cover-hatch-carg-trp-up,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-hatch-cargo-torp-up-G,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-hatch-up-Top,0,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,HandWell-Hatch-up-top,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,Cover-hatch-up-Top,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-hatch-up-Top-G,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-container-liferaft,0,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,acc-Cont-Lft,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,body-cont-Lft,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,inside-container-liferaft,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-manhole-fwd,0,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,cover-Manhole-fwd,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,Ring-Marco-Ext-Manh,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,cover-Ext-Manh,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,Marco-Ext-Manh,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,Marco-Manh,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,hinge-YR,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,hinge-YL,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-Cubierta-Superior-BY,0,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-Rejilla-Cub-Sup-BYL,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-Frame-Cub-Sup-BYL,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-Rejilla-Cub-Sup-BYR,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-Frame-Cub-Sup-BYR,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-Cubierta_Superior-BYR,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-Cubierta_Superior-BYL,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-Flange-Sup,0,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-Intercostal-Sup-YL,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-Traverse-Sup-YL,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-Intercostal-Sup-YR,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-Traverse-Sup-YR,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-cubierta-principal-B,0,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-cub-princ-YL,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-Flooding-compartment-sup,BW-cub-princ-YR,1,identity,identity,none,122601,"(-4843768.9445, -5000007.6380, -4910049.2566)","(4859370.9921, 5000007.6376, 5001611.3402)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-windlass-enginer-Up,0,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,base-winch,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,part-4881,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-Winch-UP,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-Motor-W,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-container-chain-anchor,0,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-base_sonar-Atlas,0,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-Sonar-Atlas,0,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-hinge_muzzle,0,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-chain-vertical,0,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-head-tubes-torpedo,0,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-head-tubes-06,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-head-tubes-05,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-head-tubes-04,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-head-tubes-03,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-head-tubes-02,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-head-tubes-01,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-Main-Ballast-tank-bow,0,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-Main-Ballast-tank-bow-YR,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-Main-Ballast-tank-bow-YL,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-frente_bow,0,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-frente_bow-YR,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-frente_bow-YL,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-tank-ballast-bow,0,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-tank-ballast-bow-YL,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-tank-ballast-bow-YR,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-bow-infe-down,0,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-bow_infe_down_YR,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-bow_infe_down_YL,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-tube-muzzles-door,0,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-tube-muzzles-door-05,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-tube-muzzles-door-06,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-tube-muzzles-door-01,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-tube-muzzles-door-03,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-tube-muzzles-door-04,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-tube-muzzles-door-02,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-mechanisms-muzzle-Dorr,0,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-mechanisms-muzzle-YR,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-mechanisms-muzzle-YL,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-Punta-proa,0,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-Punta-pro-YR,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-Punta-pro-YL,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-Hull-Bow,0,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-Hull-Bow-YR,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-Hull-Bow-YL,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-tapa-cover-front,0,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-tapa-front-01,1,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,refused-connector (outlier-polluted export)
+BW-section-bow,BW-tapa-front-02,1,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,refused-connector (outlier-polluted export)
+BW-section-bow,BW-tapa-front-03,1,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,refused-connector (outlier-polluted export)
+BW-section-bow,BW-tapa-front-04,1,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,refused-connector (outlier-polluted export)
+BW-section-bow,BW-tapa-front-05,1,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,refused-connector (outlier-polluted export)
+BW-section-bow,BW-tapa-front-06,1,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,refused-connector (outlier-polluted export)
+BW-section-bow,BW-ske-Tank-Bow,0,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-ske-Tank-Bow-YR,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-ske-Tank-Bow-YL,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-anchor-heavy,0,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,bas-Anchor,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,body-anchor,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,spoke,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-cover-sonar,0,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,Bitt,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,steel mooring bitt,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,box-bitt,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,cover-sn,1,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-chain-spiral-194,0,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-Aleta-tapa,0,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-Aleta-tapa-R,1,placed,identity,"(-0.000000, -2.241190, 2179.457060)",139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,refused-connector (outlier-polluted export)
+BW-section-bow,BW-Aleta-tapa-L,1,placed,identity,"(-0.000000, -2.241190, 2179.457060)",139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,refused-connector (outlier-polluted export)
+BW-section-bow,BW-varius,0,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-separate_muzz,1,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,refused-connector (outlier-polluted export)
+BW-section-bow,BW-drain_muzzle,1,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,refused-connector (outlier-polluted export)
+BW-section-bow,BW-Proa-A01B75,1,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,refused-connector (outlier-polluted export)
+BW-section-bow,BW-Frame-bow-K,1,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,refused-connector (outlier-polluted export)
+BW-section-bow,BW-Frame-bow-3-0R,2,placed,identity,"(-0.000000, -2.241190, 2179.457060)",139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,refused-connector (outlier-polluted export)
+BW-section-bow,BW-Frame-bow-3-0L,2,placed,identity,"(-0.000000, -2.241190, 2179.457060)",139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,refused-connector (outlier-polluted export)
+BW-section-bow,BW-Frame-bow-2-R,2,placed,identity,"(-0.000000, -2.241190, 2179.457060)",139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,refused-connector (outlier-polluted export)
+BW-section-bow,BW-Frame-bow-2-L,2,placed,identity,"(-0.000000, -2.241190, 2179.457060)",139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,refused-connector (outlier-polluted export)
+BW-section-bow,BW-Frame-bow-1-0R,2,placed,identity,"(-0.000000, -2.241190, 2179.457060)",139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,refused-connector (outlier-polluted export)
+BW-section-bow,BW-Frame-bow-1-0L,2,placed,identity,"(-0.000000, -2.241190, 2179.457060)",139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,refused-connector (outlier-polluted export)
+BW-section-bow,BW-sepa-bow,1,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,refused-connector (outlier-polluted export)
+BW-section-bow,BW-sepa-bow-YR,2,placed,identity,"(-0.000000, -2.241190, 2179.457060)",139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,refused-connector (outlier-polluted export)
+BW-section-bow,BW-sepa-bow-YL,2,placed,identity,"(-0.000000, -2.241190, 2179.457060)",139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,refused-connector (outlier-polluted export)
+BW-section-bow,BW-anchor-winches-frame,1,undecodable,identity,"(-0.000000, -2.241190, 2179.457060)",139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,refused-connector (outlier-polluted export)
+BW-section-bow,BW-anchor-winches-frame-YR,2,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)
+BW-section-bow,BW-anchor-winches-frame-YL,2,identity,identity,none,139936,"(-3739232.6173, -504917.1090, -6291430.1979)","(202212.0200, 504917.1090, 87121.5422)",n/a,identity (outlier-polluted export)

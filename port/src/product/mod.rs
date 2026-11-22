@@ -141,7 +141,7 @@ pub fn parse_product(data: &[u8]) -> Result<ProductStructureDocument, ProductErr
                 // `n_own` is `None` and the binding stays fail-closed. The
                 // S7 placed refinement fires only in the tree walker
                 // (`ownership::resolve_owned_assembly`).
-                let n_records = bind_name_table(&mut instances, data, None);
+                let n_records = bind_name_table(&mut instances, data, None, None);
                 warnings.push(ProductWarning {
                     class: "name-table-v5r26".to_string(),
                     detail: format!(

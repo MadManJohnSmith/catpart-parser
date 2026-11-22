@@ -20,7 +20,7 @@
 
 #![allow(clippy::suboptimal_flops)]
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -30,6 +30,14 @@ use super::pairing::{
     PairingRule, ProductInstanceRecord, extract_name_table_instances, read_name_table,
 };
 use super::pool::decode_pool_texts;
+use super::transforms::{PositionKind, scan_position_matrix_streams};
+
+/// One additive warning of the reconstructed tree.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OwnedTreeWarning {
+    pub class: String,
+    pub detail: String,
+}
 
 /// One instance of the reconstructed name-table tree.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -59,6 +67,7 @@ pub struct OwnedTreeDocument {
     pub placed_instances: usize,
     pub identity_instances: usize,
     pub undecodable_instances: usize,
+    pub warnings: Vec<OwnedTreeWarning>,
     pub instances: Vec<OwnedInstanceRecord>,
 }
 
@@ -94,6 +103,9 @@ struct Walker<'a> {
     docs: BTreeMap<String, &'a [u8]>,
     names_cache: BTreeMap<String, Option<Vec<String>>>,
     records_cache: BTreeMap<String, Option<Vec<ProductInstanceRecord>>>,
+    /// W5 law C: matrix bodies byte-identical across two or more documents of
+    /// the walked set — shared connector frames, never instance placements.
+    shared_bodies: HashSet<Vec<u8>>,
     rows: Vec<OwnedInstanceRecord>,
     visiting: BTreeSet<String>,
 }
@@ -122,9 +134,10 @@ impl Walker<'_> {
             let mut records = extract_name_table_instances(&texts)?;
             // The walker holds the document set, so `own(D)` is known here and
             // the S7 placed refinement may fire (`#R == #own(D)` with
-            // byte-identical matrices). `bind_name_table` stays fail-closed
-            // when the count mismatches or the matrices differ.
-            bind_name_table(&mut records, data, Some(n_own));
+            // byte-identical matrices, none of them shared connector frames).
+            // `bind_name_table` stays fail-closed when the count mismatches,
+            // the matrices differ, or a shared connector body is present.
+            bind_name_table(&mut records, data, Some(n_own), Some(&self.shared_bodies));
             Some(records)
         });
         self.records_cache.insert(name.to_string(), records.clone());
@@ -190,14 +203,46 @@ pub fn resolve_owned_assembly(
     root: &str,
     documents: &BTreeMap<String, Vec<u8>>,
 ) -> OwnedTreeDocument {
-    let docs = documents
+    let docs: BTreeMap<String, &[u8]> = documents
         .iter()
         .map(|(key, data)| (normalize_stem(key), data.as_slice()))
         .collect();
+
+    // W5 law C census: a matrix body byte-identical across two or more
+    // documents of the walked set is a shared connector frame (never an
+    // instance placement). Every document of the set participates, not only
+    // the visited ones — connector frames propagate through references across
+    // unrelated subtrees.
+    let mut body_docs: HashMap<Vec<u8>, BTreeSet<String>> = HashMap::new();
+    for (name, data) in &docs {
+        for rec in scan_position_matrix_streams(data) {
+            body_docs
+                .entry(rec.matrix_body.clone())
+                .or_default()
+                .insert(name.clone());
+        }
+    }
+    let shared_bodies: HashSet<Vec<u8>> = body_docs
+        .into_iter()
+        .filter(|(_, names)| names.len() >= 2)
+        .map(|(body, _)| body)
+        .collect();
+    let n_refused_docs = docs
+        .iter()
+        .filter(|(_name, data)| {
+            let records = scan_position_matrix_streams(data);
+            !records.is_empty()
+                && records.iter().all(|rec| {
+                    rec.kind == PositionKind::Identity || shared_bodies.contains(&rec.matrix_body)
+                })
+        })
+        .count();
+
     let mut walker = Walker {
         docs,
         names_cache: BTreeMap::new(),
         records_cache: BTreeMap::new(),
+        shared_bodies: shared_bodies.clone(),
         rows: Vec::new(),
         visiting: BTreeSet::new(),
     };
@@ -211,6 +256,20 @@ pub fn resolve_owned_assembly(
             .filter(|row| row.placement_status == status)
             .count()
     };
+    let warnings = if shared_bodies.is_empty() {
+        Vec::new()
+    } else {
+        vec![OwnedTreeWarning {
+            class: "connector-frame-records-v5r26".to_string(),
+            detail: format!(
+                "{} _Position matrix body(ies) appear byte-identical in >= 2 documents of \
+                 the walked set; {} document(s) carry only such connector frames (W5 law C) \
+                 and their instances decode identity",
+                shared_bodies.len(),
+                n_refused_docs
+            ),
+        }]
+    };
     OwnedTreeDocument {
         schema_version: 1,
         root: root.to_string(),
@@ -218,6 +277,7 @@ pub fn resolve_owned_assembly(
         placed_instances: count(PlacementStatus::Placed),
         identity_instances: count(PlacementStatus::Identity),
         undecodable_instances: count(PlacementStatus::Undecodable),
+        warnings,
         instances: walker.rows,
     }
 }
@@ -225,9 +285,16 @@ pub fn resolve_owned_assembly(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::product::IDENTITY_TRANSFORM;
 
-    /// Build a minimal, genuine-shaped V5R26 product with a name table.
-    fn name_table_product(name: &str, names: &[&str], position_records: usize) -> Vec<u8> {
+    /// Build a minimal, genuine-shaped V5R26 product with a name table and
+    /// `translations.len()` explicit position records, record `i` carrying
+    /// `translations[i]`.
+    fn name_table_product_translations(
+        name: &str,
+        names: &[&str],
+        translations: &[[f64; 3]],
+    ) -> Vec<u8> {
         let mut data = vec![0u8; 32];
         data[..8].copy_from_slice(b"V5_CFV2\x00");
         data.extend_from_slice(b"\x00\x00CNEXTINFOS\x00\x00B24\x00\x00");
@@ -280,19 +347,25 @@ mod tests {
         data.push(0xBF);
         data.extend_from_slice(&payload);
 
-        for _ in 0..position_records {
+        for t in translations {
             data.extend_from_slice(&crate::product::transforms::POSITION_EXPLICIT_HEADER);
             data.extend_from_slice(&crate::product::transforms::R15_MATRIX_MARKER);
             data.extend_from_slice(&[0xE7, 0xE8, 0xE8, 0xE8]);
             data.extend_from_slice(&[0xE7, 0xE8, 0xE8, 0xE8]);
             data.push(0xE7);
-            for v in [12.5f64, 0.0, 14.4] {
+            for v in t {
                 data.push(0xE6);
                 data.extend_from_slice(&v.to_le_bytes());
             }
             data.push(0xFE);
         }
         data
+    }
+
+    /// The standard helper: `position_records` identical records at the
+    /// S7-era translation (12.5, 0.0, 14.4).
+    fn name_table_product(name: &str, names: &[&str], position_records: usize) -> Vec<u8> {
+        name_table_product_translations(name, names, &vec![[12.5, 0.0, 14.4]; position_records])
     }
 
     fn documents(pairs: &[(&str, Vec<u8>)]) -> BTreeMap<String, Vec<u8>> {
@@ -448,5 +521,143 @@ mod tests {
             .collect();
         assert_eq!(names, vec!["Widget", "Ghost"]);
         assert!(tree.instances[1].child_product.is_none());
+    }
+
+    // --- W5 law C: shared connector bodies ---------------------------------
+
+    #[test]
+    fn owned_walk_refuses_shared_connector_bodies() {
+        // One matrix body in two unrelated documents: a shared connector
+        // frame. Neither document places; both decode identity with the
+        // law-C detail and the walk-level warning.
+        let docs = documents(&[
+            (
+                "Left",
+                name_table_product_translations("Left", &["Widget"], &[[12.5, 0.0, 14.4]]),
+            ),
+            (
+                "Right",
+                name_table_product_translations("Right", &["Bracket"], &[[12.5, 0.0, 14.4]]),
+            ),
+        ]);
+
+        let tree = resolve_owned_assembly("Left", &docs);
+
+        assert_eq!(tree.total_instances, 1);
+        assert_eq!(tree.placed_instances, 0);
+        assert_eq!(tree.identity_instances, 1);
+        assert_eq!(tree.undecodable_instances, 0);
+        let row = &tree.instances[0];
+        assert_eq!(row.placement_status, PlacementStatus::Identity);
+        assert_eq!(row.transform, Some(IDENTITY_TRANSFORM));
+        assert!(row.has_position_attr);
+        let detail = row.classification_detail.as_deref().unwrap();
+        assert!(
+            detail.contains("connector-frame records: all 1"),
+            "{detail}"
+        );
+        assert!(detail.contains("(W5 law C)"), "{detail}");
+        assert!(
+            tree.warnings
+                .iter()
+                .any(|w| w.class == "connector-frame-records-v5r26")
+        );
+    }
+
+    #[test]
+    fn shared_body_blocks_the_placed_refinement() {
+        // #R == #own(D) == 2 with byte-identical matrices would fire S7 —
+        // but the same body also sits in an unrelated document, so the
+        // records are connector frames and the set refuses to identity.
+        let docs = documents(&[
+            (
+                "Solo",
+                name_table_product_translations(
+                    "Solo",
+                    &["Widget", "Bracket"],
+                    &[[12.5, 0.0, 14.4], [12.5, 0.0, 14.4]],
+                ),
+            ),
+            (
+                "Elsewhere",
+                name_table_product_translations("Elsewhere", &["Nut"], &[[12.5, 0.0, 14.4]]),
+            ),
+        ]);
+
+        let tree = resolve_owned_assembly("Solo", &docs);
+
+        assert_eq!(tree.placed_instances, 0);
+        assert_eq!(tree.identity_instances, 2);
+        assert_eq!(tree.undecodable_instances, 0);
+        for row in &tree.instances {
+            assert_eq!(row.placement_status, PlacementStatus::Identity);
+            let detail = row.classification_detail.as_deref().unwrap();
+            assert!(
+                detail.contains("connector-frame records: all 2"),
+                "{detail}"
+            );
+        }
+    }
+
+    #[test]
+    fn mixed_refusal_stays_fail_closed() {
+        // A shared body next to a unique body: the shared record refuses,
+        // the unique one cannot be attributed either -> undecodable.
+        let docs = documents(&[
+            (
+                "Mixed",
+                name_table_product_translations(
+                    "Mixed",
+                    &["Widget", "Bracket"],
+                    &[[12.5, 0.0, 14.4], [9.0, 0.0, 0.0]],
+                ),
+            ),
+            (
+                "Elsewhere",
+                name_table_product_translations("Elsewhere", &["Nut"], &[[12.5, 0.0, 14.4]]),
+            ),
+        ]);
+
+        let tree = resolve_owned_assembly("Mixed", &docs);
+
+        assert_eq!(tree.placed_instances, 0);
+        assert_eq!(tree.undecodable_instances, 2);
+        for row in &tree.instances {
+            assert_eq!(row.placement_status, PlacementStatus::Undecodable);
+            assert!(row.transform.is_none());
+            let detail = row.classification_detail.as_deref().unwrap();
+            assert!(
+                detail.contains("connector-frame refusal blocks binding"),
+                "{detail}"
+            );
+        }
+    }
+
+    #[test]
+    fn unique_body_keeps_the_s7_placement() {
+        // The S7 shape still places when the body appears in exactly one
+        // document of the walked set (the swbd nut-bt family).
+        let docs = documents(&[
+            (
+                "Solo",
+                name_table_product_translations(
+                    "Solo",
+                    &["Widget", "Bracket"],
+                    &[[12.5, 0.0, 14.4], [12.5, 0.0, 14.4]],
+                ),
+            ),
+            (
+                "Elsewhere",
+                name_table_product_translations("Elsewhere", &["Nut"], &[[1.0, 2.0, 3.0]]),
+            ),
+        ]);
+
+        let tree = resolve_owned_assembly("Solo", &docs);
+
+        assert_eq!(tree.placed_instances, 2);
+        for row in &tree.instances {
+            assert_eq!(row.placement_status, PlacementStatus::Placed);
+            assert_eq!(row.transform, Some([12.5, 0.0, 14.4, 1.0, 0.0, 0.0, 0.0]));
+        }
     }
 }
