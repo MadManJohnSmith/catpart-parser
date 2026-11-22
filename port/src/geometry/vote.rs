@@ -238,12 +238,7 @@ fn rank_key(candidate: &WidthCandidate, oob: bool, repeats: bool, nonplanar: u32
             1
         },
         u8::from(candidate.little),
-        // W7-B (2026-11-22): full ties prefer the WIDER candidate — the
-        // narrow preference left the u8 half-read of a u16 stream
-        // standing on the ties (Guntle/M3x16/LedStrips_5V's kept
-        // over-use loops broke the L2 manifold gate; the wider readings
-        // fix all three and keep every micro-batch file at PASS).
-        255 - candidate.width,
+        candidate.width,
         candidate.k,
     )
 }
