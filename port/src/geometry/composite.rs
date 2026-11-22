@@ -1129,6 +1129,30 @@ fn parse_strip_records(
             // not a u8 record (the Audi 0x301e912 false header).
             continue;
         }
+        if width == 1
+            && n >= 8
+            && end + n as usize <= hi
+            && (0..2 * n as usize)
+                .step_by(2)
+                .all(|j| data[end - n as usize + j] == 0)
+            && (0..2 * n as usize).step_by(2).any(|j| {
+                u32::from(u16::from_be_bytes([
+                    data[end - n as usize + j],
+                    data[end - n as usize + j + 1],
+                ])) >= element_count
+            })
+        {
+            // W1 marathon anti-half-read (twin of the Python arm): the
+            // u8 winner's block is a u16be stream's high-half zeros
+            // (every even byte 0x00 over n >= 8 refs) whose u16be
+            // re-reading leaves the element space — the store's element
+            // space is truncated and the u8 reading is the permuted
+            // garbage the gap-edge OOB tiebreak kept (acc-Cont-Lft
+            // 0x5255e family). The u8 triangles are false surface and
+            // the u16be reading fails the #66 gate too; decline
+            // fail-closed.
+            continue;
+        }
         out.push(CompositeRecord {
             offset: o,
             marker: mk,
@@ -5210,5 +5234,55 @@ mod tests {
         let (records, n_hdrs) = parse_strip_records(&rec, 0, rec.len(), 3000, None);
         assert_eq!(n_hdrs, 1);
         assert!(records.is_empty());
+    }
+
+    /// W1 marathon anti-half-read: the acc-Cont-Lft 0x5255e record,
+    /// byte for byte. `01 42 11 ff`, n=97, counts [5,5,5,5,9,5,5,9,
+    /// 5,5,5,5,5,5,5,5,9], a ref block whose every even byte is 0x00
+    /// (a u16be stream 0, 58, 1, 61, ... 253, 188, 255) over a store
+    /// whose declared space is 220. The u16be parse ends past the
+    /// truncated span so the vote's only viable candidate is the u8
+    /// reading (0, 0, 0, 58, 0, 1, ...) — the permuted garbage; the
+    /// u16be re-reading leaves the space too (refs to 255), so the
+    /// record is declined fail-closed instead of exporting it.
+    #[test]
+    fn u8_winner_over_a_truncated_u16be_stream_is_declined() {
+        let hex = concat!(
+            "014211ff6100000005050505090505090505050505050505090000003a0001",
+            "003d00030003003d00080042000e000e004200120048001500150048001900",
+            "4e001e001e004e0022005500270059002b005e002f002f005e003300650035",
+            "003500650039006b00510051006b00630072007000750079007b0080008000",
+            "7b00880081009200920081009e008700ab00ab008700be008d00c200c2008d",
+            "00c6009400ca00ca009400ce009900d200d2009900d600a200db00db00a200",
+            "df00aa00e300e300aa00e800b500ed00ed00b500f400b700fb00b900fd00bc",
+            "00ff"
+        );
+        let mut data = Vec::with_capacity(hex.len() / 2 + 16);
+        for b in (0..hex.len()).step_by(2) {
+            data.push(u8::from_str_radix(&hex[b..b + 2], 16).unwrap());
+        }
+        assert_eq!(data.len(), 219);
+        data.extend_from_slice(&[0u8; 16]);
+        let (records, n_hdrs) = parse_strip_records(&data, 0, data.len(), 220, None);
+        assert_eq!(n_hdrs, 1);
+        assert!(records.is_empty());
+    }
+
+    /// W1 marathon anti-half-read, the negative control: the same
+    /// 0-heavy signature over a store whose u16be re-reading stays
+    /// inside the declared space is NOT declined.
+    #[test]
+    fn u8_record_with_in_bounds_u16be_reread_still_exports() {
+        let counts = [5u8, 5, 5, 5, 9, 5, 5, 9, 5, 5, 5, 5, 5, 5, 5, 5, 9];
+        let mut rec = vec![0x01, 0x42, 0x11, 0xFF];
+        rec.extend_from_slice(&97u32.to_le_bytes());
+        rec.extend_from_slice(&counts);
+        rec.extend_from_slice(&[0u8; 97]);
+        rec.extend_from_slice(&[0u8; 16]);
+        let (records, n_hdrs) = parse_strip_records(&rec, 0, rec.len(), 220, None);
+        assert_eq!(n_hdrs, 1);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].width, 1);
+        assert_eq!(records[0].refs, vec![0u32; 97]);
     }
 }

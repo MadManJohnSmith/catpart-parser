@@ -538,6 +538,63 @@ def test_composite_relaxed_primitive_falls_back_to_u8():
     assert refs == (36, 29, 27, 34, 1)
 
 
+def test_composite_u8_winner_over_a_truncated_u16be_stream_is_declined():
+    """W1 marathon anti-half-read: the acc-Cont-Lft 0x5255e record,
+    reproduced byte for byte.
+
+    ``01 42 11 ff``, n=97, counts [5,5,5,5,9,5,5,9,5,5,5,5,5,5,5,5,9]
+    (sum 97), and a ref block whose every even byte is 0x00 — a u16be
+    stream (refs 0, 58, 1, 61, ... 253, 188, 255) over a store whose
+    declared element space is 220. The u16be parse ends past the
+    truncated span, so the vote's only viable candidate is the u8
+    reading (0, 0, 0, 58, 0, 1, ...) — the permuted garbage the OOB
+    gap-edge tiebreak kept; its triangles are false surface. The
+    u16be re-reading leaves the element space too (refs to 255), so
+    the record is unresolvable either way and is declined
+    fail-closed instead of exporting the garbage (the real store's
+    not-manifold flips to pass with the decline).
+    """
+    block = bytes.fromhex(
+        "014211ff6100000005050505090505090505050505050505090000003a0001"
+        "003d00030003003d00080042000e000e004200120048001500150048001900"
+        "4e001e001e004e0022005500270059002b005e002f002f005e003300650035"
+        "003500650039006b00510051006b00630072007000750079007b0080008000"
+        "7b00880081009200920081009e008700ab00ab008700be008d00c200c2008d"
+        "00c6009400ca00ca009400ce009900d200d2009900d600a200db00db00a200"
+        "df00aa00e300e300aa00e800b500ed00ed00b500f400b700fb00b900fd00bc"
+        "00ff"
+    )
+    assert len(block) == 219
+    # The body carries the full u16be stream (the decline must be able
+    # to re-read it) with zero filler past it — no further headers.
+    data = block + bytes(16)
+    records, n_hdrs = parse_strip_records(data, 0, len(data), 220)
+    assert n_hdrs == 1
+    assert records == []
+
+
+def test_composite_u8_record_with_in_bounds_u16be_reread_still_exports():
+    """W1 marathon anti-half-read, the negative control: the same
+    0-heavy signature over a store whose u16be re-reading stays inside
+    the declared element space is NOT declined — the decline fires
+    only where the u16 stream leaves the space (fail-closed scope)."""
+    counts = bytes([5, 5, 5, 5, 9, 5, 5, 9, 5, 5, 5, 5, 5, 5, 5, 5, 9])
+    refs = bytes(97)  # every byte 0x00: the u16be re-read is in-bounds (0s)
+    rec = (
+        bytes([0x01, 0x42, 0x11, 0xFF])
+        + struct.pack("<I", 97)
+        + counts
+        + refs
+        + bytes(16)
+    )
+    records, n_hdrs = parse_strip_records(rec, 0, len(rec), 220)
+    assert n_hdrs == 1
+    assert len(records) == 1
+    _o, _mk, _normal, _counts, got_refs, width = records[0]
+    assert width == 1
+    assert got_refs == (0,) * 97
+
+
 def test_composite_relaxed_u8_half_read_of_a_u16le_stream_is_declined():
     """#66: the Audi 0x301e912 false header, reproduced byte for byte.
 

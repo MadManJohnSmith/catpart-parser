@@ -684,6 +684,33 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
             # M3x10) or leave OOB u16 refs (tn.1.1.1) — corpus census,
             # so this declines no measured record.
             continue
+        if (
+            width == 1
+            and n >= 8
+            and end + n <= hi
+            and all(data[end - n + j] == 0 for j in range(0, 2 * n, 2))
+            and any(
+                int.from_bytes(
+                    data[end - n + j : end - n + j + 2], "big"
+                )
+                >= element_count
+                for j in range(0, 2 * n, 2)
+            )
+        ):
+            # W1 marathon anti-half-read (2026-11-22): a u8 winner whose
+            # ref block is a u16be stream's high-half zeros — every even
+            # byte 0x00 over n >= 8 refs — whose u16be re-reading leaves
+            # the element space. The block is a u16 ref stream the
+            # declared space cannot resolve (the store's element space is
+            # truncated; acc-Cont-Lft 0x5255e: refs to 255 over
+            # elem_decl 220, the u8 reading the OOB gap-edge tiebreak
+            # kept is the permuted 0/value garbage). The u8 triangles are
+            # false surface; the u16be reading fails the #66 gate too, so
+            # the record is unresolvable either way — decline fail-closed
+            # (Submarino census: 1,299 records in 49 parts, 41 of them
+            # not-manifold; no L2 Dev/Held-out store carries the
+            # signature).
+            continue
         out.append((o, mk, normal, counts, refs, width))
     return out, len(hdrs)
 
