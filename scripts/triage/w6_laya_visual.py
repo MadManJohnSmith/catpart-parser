@@ -33,50 +33,60 @@ DEFECT_RANK = {  # worst-case aggregation across views
     "debris_spaghetti": 3,
 }
 
-QUESTIONS = {
-    "render_class": {
-        "type": "choice",
-        "instructions": (
-            "This is one orthographic view of a mesh decoded from a CATPart "
-            "by a reverse-engineered parser. Judge what the render shows."
-        ),
-        "criteria": {
-            "solid_ok": "a coherent solid part, clean silhouette, no junk",
-            "debris_spaghetti": (
-                "visible junk: splinters, slivers, thin stray triangles or "
-                " tangled debris that is not part of any real surface"
-            ),
-            "missing_faces": (
-                "a recognizable solid with clearly missing/holes faces "
-                "(open gaps where a closed surface should be)"
-            ),
-            "wireframe_only": "only points/line segments, no filled surface",
-            "blank": "nothing rendered",
+QUESTIONS_CONTEXT = (
+    "This is one orthographic view of a mesh decoded from a CATPart "
+    "by a reverse-engineered parser. Judge what the render shows."
+)
+
+
+def questions_for(rec: dict) -> dict:
+    # predict takes exactly one of state=/image=, so the file context
+    # rides inside the per-mesh question instructions
+    ctx = (
+        f"{QUESTIONS_CONTEXT} File: {rec['path']} ({rec['source']}); parser "
+        f"outcome: {rec['fail_family']}, {rec.get('ply_triangles') or 0} triangles; "
+        f"parser warnings: {', '.join(rec['warnings']) or 'none'}."
+    )
+    return {
+        "render_class": {
+            "type": "choice",
+            "instructions": ctx,
+            "criteria": {
+                "solid_ok": "a coherent solid part, clean silhouette, no junk",
+                "debris_spaghetti": (
+                    "visible junk: splinters, slivers, thin stray triangles or "
+                    " tangled debris that is not part of any real surface"
+                ),
+                "missing_faces": (
+                    "a recognizable solid with clearly missing/holes faces "
+                    "(open gaps where a closed surface should be)"
+                ),
+                "wireframe_only": "only points/line segments, no filled surface",
+                "blank": "nothing rendered",
+            },
         },
-    },
-    "debris_score": {
-        "type": "score",
-        "instructions": (
-            "Amount of visible debris/junk geometry in this view: "
-            "1 none, 2 a few stray slivers, 3 noticeable clutter, "
-            "4 heavy debris, 5 dominated by junk."
-        ),
-    },
-}
+        "debris_score": {
+            "type": "score",
+            "instructions": f"{ctx} Amount of visible debris/junk geometry in this view.",
+            "criteria": [
+                "none",
+                "a few stray slivers",
+                "noticeable clutter",
+                "heavy debris",
+                "dominated by junk",
+            ],
+        },
+    }
 
 
 def judge_mesh(agent, rec: dict, png_dir: Path) -> dict:
-    state = (
-        f"Mesh decoded from {rec['path']} ({rec['source']}). Parser outcome: "
-        f"{rec['fail_family']}, {rec.get('ply_triangles') or 0} triangles, "
-        f"warnings: {', '.join(rec['warnings']) or 'none'}. Judge the rendered view."
-    )
+    questions = questions_for(rec)
     per_view = {}
     for view in rec.get("views") or []:
         png = png_dir / f"{rec['stem']}-{view}.png"
         if not png.exists():
             continue
-        pred = agent.predict(state, QUESTIONS, image=str(png))
+        pred = agent.predict(image=str(png), questions=questions)
         ans = (pred or {}).get("answers", {})
         rc = ans.get("render_class") or {}
         ds = ans.get("debris_score") or {}
@@ -84,7 +94,7 @@ def judge_mesh(agent, rec: dict, png_dir: Path) -> dict:
             "route": rc.get("route"),
             "choice": rc.get("choice"),
             "probabilities": rc.get("probabilities"),
-            "debris_score": ds.get("choice"),
+            "debris_score": ds.get("score") if ds.get("score") is not None else ds.get("choice"),
             "debris_route": ds.get("route"),
             "abstain": rc.get("abstain"),
         }

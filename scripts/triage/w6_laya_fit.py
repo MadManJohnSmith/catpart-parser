@@ -156,9 +156,11 @@ def jev_answer(key: str, state_text: str, timeout: int = 60) -> dict | None:
 
 
 def prf(confusion: dict[str, Counter], cls: str) -> tuple[float, float, float]:
-    tp = confusion[cls][cls]
+    # a predicted class with zero truth rows has no entry under its own
+    # key — P=0/R=0 is the honest score for it
+    tp = confusion.get(cls, Counter())[cls]
     fp = sum(c[cls] for k, c in confusion.items() if k != cls)
-    fn = sum(confusion[cls].values()) - tp
+    fn = sum(confusion.get(cls, Counter()).values()) - tp
     p = tp / (tp + fp) if tp + fp else 0.0
     r = tp / (tp + fn) if tp + fn else 0.0
     f1 = 2 * p * r / (p + r) if p + r else 0.0
@@ -216,7 +218,7 @@ def evaluate(name: str, subset: list[dict], agent, questions: dict, out_dir: Pat
     per_class = {}
     for cls in classes:
         p, r_, f1 = prf(confusion, cls)
-        per_class[cls] = {"P": p, "R": r_, "F1": f1, "support": sum(confusion[cls].values())}
+        per_class[cls] = {"P": p, "R": r_, "F1": f1, "support": sum(confusion.get(cls, Counter()).values())}
         print(f"  {cls:34s} P={p:.3f} R={r_:.3f} F1={f1:.3f} n={per_class[cls]['support']}", flush=True)
     return {
         "accuracy_gated": acc,

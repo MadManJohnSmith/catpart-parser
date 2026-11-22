@@ -48,18 +48,24 @@ FEATURE_NAMES = [
     "ext_header_declined",
 ]
 
+GEOMETRY_ONLY = ["log1p_tris", "log1p_verts", "degen_ratio", "has_boundary"]
+
 POSITIVE = {"debris_spaghetti", "missing_faces"}
 NEGATIVE = {"solid_ok"}
 
 
-def featurize(r: dict) -> list[float]:
+def featurize(r: dict, geometry_only: bool = False) -> list[float]:
     tris = r["triangle_count"] or 0
     warns = set(r["warnings"])
-    return [
+    base = [
         math.log1p(tris),
         math.log1p(r["vertex_count"] or 0),
         (r["degenerate_triangle_count"] or 0) / max(1, tris),
         1.0 if (r["boundary_edge_count"] or 0) > 0 else 0.0,
+    ]
+    if geometry_only:
+        return base  # no warning-derived inputs: no label leakage
+    return base + [
         float(len(r["warnings"])),
         1.0 if "duplicate-triangles-dedup-declined" in warns else 0.0,
         1.0 if "primary-loop-manifold-kept" in warns else 0.0,
@@ -113,6 +119,12 @@ def main() -> int:
         type=Path,
         default=REPO / "docs/evidence/data/residue-family-census.csv",
     )
+    ap.add_argument(
+        "--geometry-only",
+        action="store_true",
+        help="drop warning-derived features (no label leakage; the honest "
+        "separation test when labels are defined from warning classes)",
+    )
     args = ap.parse_args()
 
     feats = {}
@@ -141,8 +153,9 @@ def main() -> int:
             continue
         rows.append((v, f))
 
-    xs = [featurize(f) for _, f in rows]
+    xs = [featurize(f, args.geometry_only) for _, f in rows]
     ys = [1 if v["verdict"] in POSITIVE else 0 for v, _ in rows]
+    names = GEOMETRY_ONLY if args.geometry_only else FEATURE_NAMES
     print(f"training rows: {len(rows)} (pos={sum(ys)}, neg={len(ys) - sum(ys)})")
     if len(rows) < 8 or not sum(ys) or not (len(ys) - sum(ys)):
         print("NEGATIVE RESULT: not enough labeled variety to fit a head "
@@ -157,13 +170,13 @@ def main() -> int:
 
     print("\nweights (distillation artifact):")
     print(f"  intercept {b:+.4f}")
-    for name, wi in zip(FEATURE_NAMES, w):
+    for name, wi in zip(names, w):
         print(f"  {name:22s} {wi:+.4f}")
 
     # ambiguous band: elem_decl <= 255 where the census knows the file
     amb = [(v, f) for v, f in rows if elem_by_sha.get(f.get("sha256") or "", 10**9) <= 255]
     if amb:
-        ax = [featurize(f) for _, f in amb]
+        ax = [featurize(f, args.geometry_only) for _, f in amb]
         ay = [1 if v["verdict"] in POSITIVE else 0 for v, _ in amb]
         aacc = sum(int((predict(w, b, x) >= 0.5) == (y == 1)) for x, y in zip(ax, ay)) / len(ax)
         print(f"\nambiguous band (elem_decl<=255): n={len(amb)} sep-accuracy={aacc:.3f}")

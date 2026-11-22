@@ -48,7 +48,10 @@ def version_family(detected: str | None) -> str:
 
 
 def fail_family(l2: dict) -> str:
-    if l2.get("status") == "pass":
+    # fitness-report l2 blocks carry "status"; m1_files.csv rows carry
+    # "l2_status" — same verdict, two shapes
+    status = l2.get("status") or l2.get("l2_status")
+    if status == "pass":
         return "pass"
     if l2.get("error_class"):
         return f"error:{l2['error_class']}"
@@ -59,11 +62,11 @@ def fail_family(l2: dict) -> str:
 
 def corpus_records(args) -> Counter:
     """Yield one feature record per official part with an l2 verdict."""
-    # sha256 -> size_bytes
-    sizes: dict[str, int] = {}
+    # sha256 -> (size_bytes, local_path)
+    manifest: dict[str, dict] = {}
     with open(args.manifest, newline="", encoding="utf-8") as fh:
         for row in csv.DictReader(fh):
-            sizes[row["sha256"]] = int(row["size_bytes"])
+            manifest[row["sha256"]] = row
 
     # sha16 -> open-rate outcome
     openrate: dict[str, dict] = {}
@@ -80,16 +83,18 @@ def corpus_records(args) -> Counter:
                 continue
             sha16 = f["sha256"][:16]
             orow = openrate.get(sha16)
+            mrow = manifest.get(f["sha256"]) or {}
             mesh = l2.get("mesh") or {}
             rec = {
                 "source": "corpus",
                 "split": f.get("split") or "unknown",
                 "sha256": f["sha256"],
                 "path": f["path"],
+                "local_path": mrow.get("local_path") or "",
                 "version_family": version_family(f.get("detected_version")),
                 "classification": f.get("classification") or "",
                 "containers": list(f.get("container_names") or []),
-                "size_bytes": sizes.get(f["sha256"], 0),
+                "size_bytes": int(mrow.get("size_bytes") or 0),
                 "l2_status": l2.get("status") or "",
                 "error_class": l2.get("error_class") or "",
                 "failed_check": l2.get("failed_check") or "",
