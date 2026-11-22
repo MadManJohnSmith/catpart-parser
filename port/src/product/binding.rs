@@ -1063,7 +1063,10 @@ mod tests {
             assert_eq!(inst.placement_status, PlacementStatus::Identity);
             assert_eq!(inst.transform, Some(IDENTITY_TRANSFORM));
             let detail = inst.classification_detail.as_deref().unwrap();
-            assert!(detail.contains("connector-frame records: all 2"), "{detail}");
+            assert!(
+                detail.contains("connector-frame records: all 2"),
+                "{detail}"
+            );
         }
     }
 
