@@ -1993,6 +1993,46 @@ def _composite_raw_node_payload(points, escape: str = "end") -> bytes:
     return body
 
 
+def _container_node_payload(
+    points, records: bytes = b"", edges: int | None = None
+) -> bytes:
+    """The ``00 00 00 01`` container node payload (W17, 2026-11-22):
+    the raw-array family's continuation — ``[29-B header][token][c1][c2]
+    ["00 00 00 01"][c1 raw f32 triples][P1g count 2*c2][c2 4-B edge
+    entries][facet records]``.  No zero block, no 2-bit table, no write
+    count (the table walk fails at element 0); the triples ARE the
+    node's own point region (nice 1.000 on the 4 measured instances);
+    the records AFTER the middle parse against the container's OWN
+    element space (the measured spokes/Clocke/ntu/acc law).
+
+    ``edges`` is the container's c2 (the count the pair field counts
+    twice); it defaults to ``len(points)`` — the measured instances
+    carry c2 == c1 (spoke's c2=8 on c1=12 is the one counter-example;
+    the fixture keeps the measured common shape and the edge entries'
+    content is undecoded filler the record parsers skip)."""
+    c2 = len(points) if edges is None else edges
+    header = (
+        struct.pack("<I", 1)  # 00 00 00 01
+        + struct.pack("<I", 7)  # node id
+        + struct.pack("<I", 0)  # flags
+        + struct.pack("<fff", 10.0, 60.0, 30.0)  # origin
+        + struct.pack("<I", 3)  # kind
+        + b"\x00"  # trailing header byte (the 29-B corpus header)
+    )
+    body = header
+    body += LIST_TOKEN_MARKER
+    body += _p1g_count(len(points)) + _p1g_count(c2)
+    body += b"\x00\x00\x00\x01"  # the container marker (the counts end)
+    body += b"".join(struct.pack("<fff", *p) for p in points)
+    body += _p1g_count(2 * c2)
+    # c2 four-byte edge entries (XX 00 00 YY — the measured shape;
+    # undecoded middle, skipped by the record parsers' header scan)
+    for i in range(c2):
+        body += bytes([0x10 + (i % 16), 0x00, 0x00, 0x6A + (i % 16)])
+    body += records
+    return body
+
+
 #: The stage-9 false-match floats (artifact 1): adjacent f32s whose
 #: little-endian bytes ``00 00 01 45`` and ``00 ff 00 42`` contain the
 #: STRIP_RE sequence ``01 45 00 ff`` — a false strip header INSIDE the

@@ -2681,3 +2681,143 @@ def test_composite_multiregion_extent_recovery_adopts_leading_zero_table():
     assert degenerate == 0
     stats = mesh.mesh_stats(list(triangles))
     assert stats.manifold is True
+
+
+# W17 (2026-11-22): the 00 00 00 01 container second chance — a
+# walk-FAILING token node whose counts end carries 00 00 00 01 is the
+# raw-array family's continuation: c1 raw f32 triples (the node's own
+# point region) + a 2*c2-counted middle + facet records INSIDE the
+# payload against the container's OWN element space.  W10's
+# head-record negative (LS-Valv-75): the three 0x4A records live inside
+# the failing nodes' payloads and prepending them to rep 0 was the
+# misattribution that emitted 11 degenerates.
+
+def _mr_container_body(rep0_records, container_records):
+    """A two-node body: rep 0 = a P1t table node (padded the largest,
+    find_list_node's winner) with its records in its territory; node 1
+    = a CONTAINER node whose records sit inside its own payload over
+    its own +200x point space."""
+    from fixtures_gen import _composite_elements, _composite_node_payload
+    from fixtures_gen import _container_node_payload
+
+    pts0 = tuple(COMPOSITE_POINTS)
+    elements0 = _composite_elements(pts0)
+    pts1 = tuple((x + 200.0, y, z) for x, y, z in COMPOSITE_POINTS)
+    container_records_b = b"".join(
+        _mr_record(m, n, r) for m, n, r in container_records
+    )
+    parts = [
+        b"\x04\x04\xfd\xff"
+        + _composite_node_payload(elements0)
+        + b"\x00" * 140  # node 0's payload the largest (find_list_node)
+    ]
+    for m, n, r in rep0_records:
+        parts.append(_mr_record(m, n, r))
+    parts.append(
+        b"\x04\x04\xfd\xff"
+        + _container_node_payload(pts1, records=container_records_b)
+    )
+    return b"".join(parts)
+
+
+def test_composite_multiregion_container_adopts_own_space():
+    """The W17 container second chance (2026-11-22): the multiregion
+    scan's walk-failing node decodes as a ``00 00 00 01`` container —
+    its records parsed from inside its payload against its OWN element
+    space — and the merged mesh (table rep + container rep, disjoint
+    spaces) is adopted.  The single-rep reading misresolves the
+    container's records against node 0's space (the same-space
+    other-diagonal over-use) and stays not-manifold, so the route
+    fires; the adoption is manifold + degenerate-free with the
+    container rep named in ``multiregion_container_reps``."""
+    body = _mr_container_body(_mr_open_faces(), _mr_other_diagonal_faces())
+    points, triangles, degenerate, info = _mr_decode(body)
+    assert info["stage"] == "identity-multiregion"
+    assert info["multiregion_reps"] == 2
+    assert info["multiregion_container_reps"] == 1
+    assert degenerate == 0
+    assert len(points) == 24
+    assert len(triangles) == 20
+    stats = mesh.mesh_stats(list(triangles))
+    assert stats.manifold is True
+    # the container's records resolved against ITS OWN space: its
+    # triangles index the +200x space (>= 12), not node 0's
+    assert sum(1 for t in triangles if all(i < 12 for i in t)) == 10
+    assert sum(1 for t in triangles if all(i >= 12 for i in t)) == 10
+
+
+def test_composite_multiregion_container_head_guard_keeps_skip_node_records():
+    """The head guard's fail-closed arm is unchanged by the container
+    law: a walk-FAILING node NO law decodes (the write-count-lie shape,
+    not a container) keeps its payload's records unattributed — the
+    head guard still declines the reading (the per-rep attribution
+    would drop them).  Unit level: ``_decode_multiregion`` on a body
+    whose first decodable node follows the skip node."""
+    from fixtures_gen import (
+        _composite_elements,
+        _composite_node_payload,
+    )
+
+    pts1 = tuple((x + 200.0, y, z) for x, y, z in COMPOSITE_POINTS)
+    pts2 = tuple((x + 400.0, y, z) for x, y, z in COMPOSITE_POINTS)
+    elements1 = _composite_elements(pts1)
+    elements2 = _composite_elements(pts2)
+    skip_node_payload = _composite_node_payload(
+        _composite_elements(tuple(COMPOSITE_POINTS)),
+        write_count_override=6,  # the walk-mismatch lie: walk fails
+    ) + b"".join(_mr_record(m, n, r) for m, n, r in _mr_open_faces())
+    parts = [
+        # the skip node: walk fails, extent fails, not a container —
+        # its records stay unattributed inside its payload
+        b"\x04\x04\xfd\xff" + skip_node_payload,
+        # table rep A (records in its territory)
+        b"\x04\x04\xfd\xff" + _composite_node_payload(elements1),
+    ]
+    parts.extend(_mr_record(m, n, r) for m, n, r in _mr_open_faces())
+    parts.append(b"\x04\x04\xfd\xff" + _composite_node_payload(elements2))
+    parts.extend(_mr_record(m, n, r) for m, n, r in _mr_open_faces())
+    body = b"".join(parts)
+    status, result, failure = composite._decode_multiregion(body, 0, len(body))
+    assert status == "family-declined"
+    assert "surviving record(s) precede" in failure
+    assert result is None
+
+
+def test_composite_multiregion_container_head_records_attributed():
+    """The W17 law's head-record case (the LS-Valv-75 shape): the head
+    window's records live INSIDE a container node's payload — they are
+    the container rep's own surface, so the head guard passes them and
+    the reading proceeds to the per-rep emission (unit level, guard
+    scope only)."""
+    from fixtures_gen import (
+        _composite_elements,
+        _composite_node_payload,
+        _container_node_payload,
+    )
+
+    pts0 = tuple((x + 600.0, y, z) for x, y, z in COMPOSITE_POINTS)
+    pts1 = tuple((x + 200.0, y, z) for x, y, z in COMPOSITE_POINTS)
+    container_records = b"".join(
+        _mr_record(m, n, r) for m, n, r in _mr_open_faces()
+    )
+    parts = [
+        # the container first: its records sit INSIDE its payload
+        b"\x04\x04\xfd\xff"
+        + _container_node_payload(pts0, records=container_records),
+        # table rep A
+        b"\x04\x04\xfd\xff"
+        + _composite_node_payload(_composite_elements(pts1)),
+    ]
+    parts.extend(_mr_record(m, n, r) for m, n, r in _mr_open_faces())
+    body = b"".join(parts)
+    status, result, failure = composite._decode_multiregion(body, 0, len(body))
+    # with ONE table rep + the container the strict family gate (< 2
+    # table nodes... the scan admits any >= 2 decodable nodes) runs:
+    # the reading proceeds past the guard either way — the decline
+    # (if any) must NOT be the head-record one
+    assert status in ("ok", "family-declined")
+    if status == "family-declined":
+        assert "surviving record(s) precede" not in failure
+    else:
+        info = result[3]
+        assert info["multiregion_container_reps"] == 1

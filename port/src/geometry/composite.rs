@@ -248,8 +248,13 @@ pub struct RegionInfo {
     pub write_count: u32,
     /// ``4 * write_count`` (the region's byte span).
     pub region_bytes: usize,
-    /// The payload-relative offset the walk ended at.
+    /// The payload-relative offset the walk ended at.  A container
+    /// rep's ``walk_end`` is its payload END (its territory beyond the
+    /// payload carries no records of its own).
     pub walk_end: usize,
+    /// A container rep's point-window end (payload-relative); ``None``
+    /// for a table node (records parse from ``walk_end`` on).
+    pub container_window_end: Option<usize>,
 }
 
 /// One composite facet record parsed under the width rank — the
@@ -463,6 +468,9 @@ pub struct CompositeInfo {
     /// stage-8 leading-zero-table overshoot family; absent when none).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub multiregion_extent_reps: Option<usize>,
+    /// The W17 container reps (the ``00 00 00 01`` family) among
+    /// the merged reading's reps (None when none decoded).
+    pub multiregion_container_reps: Option<usize>,
 }
 
 /// The decoded export of one composite store span — the twin's
@@ -812,6 +820,7 @@ fn decode_region(
             write_count,
             region_bytes: 4 * write_count as usize,
             walk_end: pos,
+            container_window_end: None,
         },
     ))
 }
@@ -2487,6 +2496,7 @@ fn decode_per_rep(
         unordered_dedup_declined: None,
         multiregion_reps: None,
         multiregion_extent_reps: None,
+        multiregion_container_reps: None,
         multiregion_declined: None,
     };
     if ext_records > 0 {
@@ -2849,6 +2859,7 @@ fn region_decode_with_extent(
                         write_count: te.write_count,
                         region_bytes: 4 * te.write_count as usize,
                         walk_end: te.region_end_rel,
+                        container_window_end: None,
                     },
                     true,
                 )),
@@ -2856,6 +2867,67 @@ fn region_decode_with_extent(
             }
         }
     }
+}
+
+/// The head-record container's own reading (W17, 2026-11-22; twin:
+/// ``_container_decode``).
+///
+/// The W10 negative's ``00 00 00 01`` family: token nodes whose region
+/// fails the table walk carry, at the counts end, the 4 bytes
+/// ``00 00 00 01`` and then the node's OWN point region as ``c1`` RAW
+/// f32 triples (no zero block, no 2-bit table, no P1g write count —
+/// the second layout family the U3-era probes named, and the
+/// raw-array family's continuation past its trail escape).  Byte
+/// evidence (4 local instances, probe
+/// ``scripts/triage/probe_w17_container_scan.py``): spoke (c1=12),
+/// Clocke-pf-Spl (c1=146), ntu-57YL (c1=156), acc-Cont-Lft (c1=256) —
+/// every window decodes at nice-rate 1.000 under the walk's own
+/// finite/plausible predicate, and the facet records AFTER the window
+/// parse under the committed record laws against the container's OWN
+/// c1 and triangulate manifold with 0 degenerate emissions (the
+/// ntu-57YL container is closed and oriented: 312 triangles, boundary
+/// 0).
+///
+/// Fail-closed: no ``00 00 00 01`` at the counts end, a window that
+/// overruns the payload, or one implausible coordinate — ``None``.
+/// The bytes between the window and the first record (the container's
+/// middle: edge/curve-side data, undecoded) are skipped by the record
+/// parsers' own header scan, and the adoption gate (merged manifold +
+/// 0 degenerate) is what makes the reading safe to attempt, not the
+/// middle's silence.
+fn container_decode(payload: &[u8], element_count: u32) -> Option<(Vec<Element>, RegionInfo)> {
+    let tok = find(payload, LIST_TOKEN, 0, payload.len())?;
+    let (_c1, mut q) = read_count_checked(payload, tok + 5)?;
+    let (_c2, q2) = read_count_checked(payload, q)?;
+    q = q2;
+    if payload.get(q..q + 4)? != b"\x00\x00\x00\x01" {
+        return None;
+    }
+    let start = q + 4;
+    let end = start + 12 * element_count as usize;
+    if end > payload.len() {
+        return None;
+    }
+    let mut elements: Vec<Element> = Vec::with_capacity(element_count as usize);
+    for k in 0..element_count as usize {
+        let x = f32_widen(payload, start + 12 * k);
+        let y = f32_widen(payload, start + 12 * k + 4);
+        let z = f32_widen(payload, start + 12 * k + 8);
+        if !nice(x) || !nice(y) || !nice(z) {
+            return None;
+        }
+        elements.push((3, Some((x, y, z))));
+    }
+    Some((
+        elements,
+        RegionInfo {
+            table_bytes: 0,
+            write_count: 3 * element_count,
+            region_bytes: 12 * element_count as usize,
+            walk_end: payload.len(),
+            container_window_end: Some(end),
+        },
+    ))
 }
 
 /// Returns ``NotFamily`` when fewer than 2 walk-exact nodes exist —
@@ -2873,13 +2945,30 @@ fn decode_multiregion(data: &[u8], lo: usize, hi: usize) -> MrOutcome {
                 extent_reps += 1;
             }
             nodes.push((tn.pos, tn.elem, elements, rinfo));
+            continue;
+        }
+        // The W17 container second chance: a walk-FAILING node may be
+        // the ``00 00 00 01`` container family — its own raw triple
+        // region plus the head records (W10's negative).  A node no
+        // law decodes stays skipped, as before.
+        if let Some((elements, rinfo)) = container_decode(payload, tn.elem) {
+            nodes.push((tn.pos, tn.elem, elements, rinfo));
         }
     }
     if nodes.len() < 2 {
         return MrOutcome::NotFamily;
     }
     let region_end_0 = nodes[0].0 + 4 + nodes[0].3.walk_end;
-    let (head_recs, _) = parse_strip_records(data, lo, region_end_0, nodes[0].1, None);
+    // Node 0 being a container rep puts its records inside its own
+    // payload (attributed to it): the head guard keeps its old law
+    // only on the bytes BEFORE the node — the same bytes the per-rep
+    // attribution would drop.
+    let guard_hi = if nodes[0].3.container_window_end.is_some() {
+        nodes[0].0 + 4
+    } else {
+        region_end_0
+    };
+    let (head_recs, _) = parse_strip_records(data, lo, guard_hi, nodes[0].1, None);
     if !head_recs.is_empty() {
         return MrOutcome::FamilyDeclined(format!(
             "{} surviving record(s) precede node 0's region end: the \
@@ -2954,16 +3043,28 @@ fn mr_emit_reps(
     let mut ext_declined = 0usize;
     let mut ext_filtered = 0usize;
     let mut reps = 0usize;
+    let mut container_reps = 0usize;
     for (k, (npos, c1, elements, rinfo)) in nodes.iter().enumerate() {
         let region_end = npos + 4 + rinfo.walk_end;
         let t1 = match nodes.get(k + 1) {
             Some((next_pos, ..)) => *next_pos,
             None => hi,
         };
-        let (records, n_hdrs) = parse_strip_records(data, region_end, t1, *c1, Some(elements));
+        let parse_lo = match rinfo.container_window_end {
+            // The container's records live INSIDE its payload, from
+            // the raw triple window's end on (the middle bytes the
+            // parsers skip over); its territory beyond the payload
+            // end carries no records of its own.
+            Some(win_end) => npos + 4 + win_end,
+            None => region_end,
+        };
+        if rinfo.container_window_end.is_some() {
+            container_reps += 1;
+        }
+        let (records, n_hdrs) = parse_strip_records(data, parse_lo, t1, *c1, Some(elements));
         let (ext_k, ext_cands) = parse_extended_facet_records(
             data,
-            region_end,
+            parse_lo,
             t1,
             *c1,
             Some(elements),
@@ -3065,6 +3166,11 @@ fn mr_emit_reps(
         multiregion_reps: Some(reps),
         multiregion_extent_reps: if extent_reps > 0 {
             Some(extent_reps)
+        } else {
+            None
+        },
+        multiregion_container_reps: if container_reps > 0 {
+            Some(container_reps)
         } else {
             None
         },
@@ -3590,6 +3696,7 @@ fn decode_store_once(
         unordered_dedup_declined: None,
         multiregion_reps: None,
         multiregion_extent_reps: None,
+        multiregion_container_reps: None,
         multiregion_declined: None,
     };
     if !extended.is_empty() {
@@ -3973,6 +4080,7 @@ fn decode_raw_array_path(
         unordered_dedup_declined: None,
         multiregion_reps: None,
         multiregion_extent_reps: None,
+        multiregion_container_reps: None,
         multiregion_declined: None,
     };
     let mut info = info;
@@ -4827,6 +4935,7 @@ fn decode_mixedwrite(
         unordered_dedup_declined: None,
         multiregion_reps: None,
         multiregion_extent_reps: None,
+        multiregion_container_reps: None,
         multiregion_declined: None,
     };
     if ext_records > 0 {
@@ -5083,6 +5192,7 @@ mod tests {
             unordered_dedup_declined: None,
             multiregion_reps: None,
             multiregion_extent_reps: None,
+            multiregion_container_reps: None,
             multiregion_declined: None,
         };
         let pts: Vec<(f64, f64, f64)> = vec![
@@ -5173,6 +5283,7 @@ mod tests {
             unordered_dedup_declined: None,
             multiregion_reps: None,
             multiregion_extent_reps: None,
+            multiregion_container_reps: None,
             multiregion_declined: None,
         };
         // Space 0 = points 0..3, space 1 = points 3..8 (joint at 3).
@@ -5990,6 +6101,101 @@ mod tests {
             inv[face[2] as usize] as u32,
             inv[face[3] as usize] as u32,
         ]
+    }
+
+    /// The twin's ``_container_node_payload`` (W17, 2026-11-22): the
+    /// ``00 00 00 01`` container continuation of the raw-array family
+    /// — token + counts + the 4-byte marker + ``c1`` raw f32 triples +
+    /// a ``2*c2`` P1g count + ``c2`` four-byte edge entries (undecoded
+    /// middle) + the facet records INSIDE the payload.
+    fn mr_container_payload(points: &[(f64, f64, f64)], records: &[u8]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&1u32.to_le_bytes());
+        body.extend_from_slice(&7u32.to_le_bytes());
+        body.extend_from_slice(&0u32.to_le_bytes());
+        for v in [10.0f32, 60.0, 30.0] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        body.extend_from_slice(&3u32.to_le_bytes());
+        body.push(0x00);
+        body.extend_from_slice(&[0xFF, 0xFF, 0x02, 0x00, 0x01]);
+        body.extend(mr_p1g(points.len()));
+        body.extend(mr_p1g(points.len()));
+        body.extend_from_slice(&[0x00, 0x00, 0x00, 0x01]);
+        for &(x, y, z) in points {
+            for v in [x, y, z] {
+                body.extend_from_slice(&(v as f32).to_le_bytes());
+            }
+        }
+        body.extend(mr_p1g(2 * points.len()));
+        for i in 0..points.len() {
+            body.extend_from_slice(&[0x10 + (i % 16) as u8, 0x00, 0x00, 0x6A + (i % 16) as u8]);
+        }
+        body.extend_from_slice(records);
+        body
+    }
+
+    #[test]
+    fn multiregion_container_adopts_own_space() {
+        // The W17 container second chance (2026-11-22): node 0 = the
+        // padded table rep (open faces, its territory); node 1 = a
+        // ``00 00 00 01`` container whose records sit inside its own
+        // payload over its own +200x space (the other diagonal).  The
+        // single-rep reading misresolves the container's records
+        // against node 0's space (not-manifold) so the route fires;
+        // the merged reading (table rep + container rep, disjoint
+        // spaces) is adopted manifold + degenerate-free.  The
+        // LS-Valv-75 law: the head records are the failing nodes'
+        // own surface, not rep 0's.
+        let rep0: Vec<(u8, Option<(f64, f64, f64)>, [u32; 4])> = vec![
+            (0x4A, Some((0.0, 0.0, -1.0)), [6, 0, 9, 3]),
+            (0x4A, Some((0.0, 1.0, 0.0)), [11, 9, 5, 3]),
+            (0x4A, Some((0.0, -1.0, 0.0)), [6, 8, 0, 2]),
+            (0x4C, Some((-1.0, 0.0, 0.0)), [0, 2, 5, 3]),
+            (0x4C, Some((1.0, 0.0, 0.0)), [6, 9, 11, 8]),
+        ];
+        let cont_recs: Vec<(u8, Option<(f64, f64, f64)>, Vec<u32>)> = vec![
+            (0x4A, Some((0.0, 0.0, -1.0)), vec![0, 6, 3, 9]),
+            (0x4A, Some((0.0, 1.0, 0.0)), vec![9, 11, 3, 5]),
+            (0x4A, Some((0.0, -1.0, 0.0)), vec![8, 6, 2, 0]),
+            (0x4C, Some((-1.0, 0.0, 0.0)), vec![2, 5, 3, 0]),
+            (0x4C, Some((1.0, 0.0, 0.0)), vec![9, 11, 8, 6]),
+        ];
+        let pts1: Vec<(f64, f64, f64)> = MR_POINTS
+            .iter()
+            .map(|&(x, y, z)| (x + 200.0, y, z))
+            .collect();
+        let mut container_records = Vec::new();
+        for (m, n, r) in &cont_recs {
+            container_records.extend(mr_record(*m, *n, r));
+        }
+        let mut body = Vec::new();
+        body.extend_from_slice(NODE_MAGIC);
+        body.extend(mr_node_payload(&mr_elements(&MR_POINTS)));
+        body.extend_from_slice(&[0x00; 140]);
+        for (m, n, r) in &rep0 {
+            body.extend(mr_record(*m, *n, r));
+        }
+        body.extend_from_slice(NODE_MAGIC);
+        body.extend(mr_container_payload(&pts1, &container_records));
+        let span = mr_span(body.len());
+        let decode = decode_composite_store(&body, &span, &[], &[], true).unwrap();
+        assert_eq!(decode.info.stage, "identity-multiregion");
+        assert_eq!(decode.info.multiregion_reps, Some(2));
+        assert_eq!(decode.info.multiregion_container_reps, Some(1));
+        assert_eq!(decode.degenerate, 0);
+        assert_eq!(decode.points.len(), 24);
+        assert_eq!(decode.triangles.len(), 20);
+        let stats = mesh::mesh_stats(&decode.triangles);
+        assert!(stats.manifold);
+        let lo = decode
+            .triangles
+            .iter()
+            .filter(|t| t.0 < 12 && t.1 < 12 && t.2 < 12)
+            .count();
+        let hi = decode.triangles.iter().filter(|t| t.0 >= 12).count();
+        assert_eq!(lo, 10);
+        assert_eq!(hi, 10);
     }
 
     #[test]

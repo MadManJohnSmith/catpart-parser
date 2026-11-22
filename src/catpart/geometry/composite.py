@@ -1807,6 +1807,69 @@ def _region_decode_with_extent(payload, element_count):
         }
 
 
+def _container_decode(payload, element_count):
+    """The head-record container's own reading (W17, 2026-11-22).
+
+    The W10 negative's ``00 00 00 01`` family: token nodes whose region
+    fails the table walk carry, at the counts end, the 4 bytes
+    ``00 00 00 01`` and then the node's OWN point region as ``c1`` RAW
+    f32 triples (no zero block, no 2-bit table, no P1g write count —
+    the second layout family the U3-era probes named).  Byte evidence
+    (4 local instances, probe
+    ``scripts/triage/probe_w17_container_scan.py``): spoke (c1=12,
+    payload 28,042 B), Clocke-pf-Spl (c1=146), ntu-57YL (c1=156),
+    acc-Cont-Lft (c1=256, counts escaped) — every window decodes at
+    nice-rate 1.000 under the walk's own finite/plausible predicate,
+    and the facet records AFTER the window (the W10 head-record family)
+    parse under the committed record laws against the container's OWN
+    c1 and triangulate manifold with 0 degenerate emissions (the
+    ntu-57YL container is closed and oriented: 312 triangles, boundary
+    0).
+
+    Fail-closed: no ``00 00 00 01`` at the counts end, a window that
+    overruns the payload, or one implausible coordinate — the node
+    stays declined (``None``).  The bytes between the window and the
+    first record (the container's middle: edge/curve-side data, undec-
+    oded) are skipped by the record parsers' own header scan — the
+    same skip the single-rep reading's record window runs — and the
+    adoption gate (merged manifold + 0 degenerate) is what makes the
+    reading safe to attempt, not the middle's silence.
+
+    Returns ``(elements, info)`` with ``info["container"]`` and
+    ``info["container_window_end"]`` (the point window's payload-
+    relative end — where the container's own records parse from), or
+    ``None``.
+    """
+    counts_end = _token_counts_end(payload)
+    if counts_end is None:
+        return None
+    if payload[counts_end : counts_end + 4] != b"\x00\x00\x00\x01":
+        return None
+    start = counts_end + 4
+    end = start + 12 * element_count
+    if end > len(payload):
+        return None
+    elements = []
+    for k in range(element_count):
+        x = _f32(payload, start + 12 * k)
+        y = _f32(payload, start + 12 * k + 4)
+        z = _f32(payload, start + 12 * k + 8)
+        if not _nice(x) or not _nice(y) or not _nice(z):
+            return None
+        elements.append((3, (x, y, z)))
+    return elements, {
+        "table_bytes": 0,
+        "write_count": 3 * element_count,
+        "region_bytes": 12 * element_count,
+        # The container's own territory beyond its payload is empty:
+        # its records live INSIDE the payload, from the window end on
+        # (the rep loop parses them from ``container_window_end``).
+        "walk_end": len(payload),
+        "container": True,
+        "container_window_end": end,
+    }
+
+
 def _decode_multiregion(data, lo: int, hi: int):
     """The multi-region second-chance reading (W1-B, 2026-11-22).
 
@@ -1864,6 +1927,16 @@ def _decode_multiregion(data, lo: int, hi: int):
        outcome keeps the strict (seam-off) emission byte-for-byte.
        Measured precedent: 138 of the 270 multi-node corpus passers
        carry seam sliver drops (docs/evidence/marathon/w10-progress.md).
+    7. the ``00 00 00 01`` container second chance (W17, 2026-11-22):
+       a walk-FAILING token node whose counts end carries
+       ``00 00 00 01`` decodes as its own rep — ``c1`` raw f32
+       triples, its records parsed from inside its payload against
+       its OWN c1 (:func:`_container_decode`; W10's head-record
+       negative: LS-Valv-75's three 0x4A records live inside the
+       failing nodes' payloads, and prepending them to rep 0 was the
+       misattribution that emitted 11 degenerates).  The head guard's
+       law is unchanged outside container payloads; the merged mesh
+       gate (law 5) is what adopts.
 
     Returns ``(status, result, failure)``: ``'ok'`` with ``result`` =
     ``(points, triangles, degenerate, info, space_offsets)``;
@@ -1875,18 +1948,34 @@ def _decode_multiregion(data, lo: int, hi: int):
     scanned = _scan_token_nodes(data, lo, hi)
     nodes = []
     extent_reps = 0
+    container_reps = 0
     for npos, payload, c1, _c2 in scanned:
         try:
             elements, rinfo = _region_decode_with_extent(payload, c1)
         except ExportError:
-            continue
+            # The W17 container second chance: a walk-FAILING node may
+            # be the ``00 00 00 01`` container family — its own raw
+            # triple region plus the head records (W10's negative).
+            # A node no law decodes stays skipped, as before.
+            cont = _container_decode(payload, c1)
+            if cont is None:
+                continue
+            elements, rinfo = cont
+            container_reps += 1
         if "extent" in rinfo:
             extent_reps += 1
         nodes.append((npos, payload, c1, elements, rinfo))
     if len(nodes) < 2:
         return "not-family", None, ""
     region_end_0 = nodes[0][0] + 4 + nodes[0][4]["walk_end"]
-    head_recs, _n = parse_strip_records(data, lo, region_end_0, nodes[0][2])
+    if nodes[0][4].get("container"):
+        # Node 0 IS a container rep: its records live inside its own
+        # payload (attributed to it), so the head guard keeps its old
+        # law only on the bytes BEFORE the node — the same bytes the
+        # per-rep attribution would drop.
+        head_recs, _n = parse_strip_records(data, lo, nodes[0][0] + 4, nodes[0][2])
+    else:
+        head_recs, _n = parse_strip_records(data, lo, region_end_0, nodes[0][2])
     if head_recs:
         return "family-declined", None, (
             f"{len(head_recs)} surviving record(s) precede node 0's "
@@ -1923,16 +2012,24 @@ def _decode_multiregion(data, lo: int, hi: int):
         for k, (npos, payload, c1, elements, rinfo) in enumerate(nodes):
             region_end = npos + 4 + rinfo["walk_end"]
             t1 = nodes[k + 1][0] if k + 1 < len(nodes) else hi
+            if rinfo.get("container"):
+                # The container's records live INSIDE its payload, from
+                # the raw triple window's end on (the middle bytes the
+                # parsers skip over); its territory beyond the payload
+                # end carries no records of its own.
+                parse_lo = npos + 4 + rinfo["container_window_end"]
+            else:
+                parse_lo = region_end
             records, n_hdrs = parse_strip_records(
-                data, region_end, t1, c1, elements
+                data, parse_lo, t1, c1, elements
             )
             ext, ext_cands = parse_extended_facet_records(
                 data,
-                region_end,
+                parse_lo,
                 t1,
                 c1,
                 elements=elements,
-                shipped_spans=_short_record_spans(data, region_end, t1, records),
+                shipped_spans=_short_record_spans(data, parse_lo, t1, records),
             )
             all_refs = [
                 r
@@ -2017,6 +2114,8 @@ def _decode_multiregion(data, lo: int, hi: int):
         }
         if extent_reps:
             info["multiregion_extent_reps"] = extent_reps
+        if container_reps:
+            info["multiregion_container_reps"] = container_reps
         if ext_records:
             info["extended_header_records"] = ext_records
             info["extended_header_triangles"] = ext_triangles
