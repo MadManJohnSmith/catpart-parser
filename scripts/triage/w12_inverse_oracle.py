@@ -313,14 +313,22 @@ def main(argv=None) -> int:
             identity_missing_cells(ours, ref_keys, cell)
         )
         del ref_keys
+        extra_clusters = []
+        for member_keys in cluster_cells(extra_cells):
+            c = summarize_cluster(member_keys, extra_cells)
+            c["n_cells"] = len(member_keys)
+            extra_clusters.append(c)
         report["extra_triangles"] = {
             "extra_tris": extra_tris,
             "extra_area_mm2": round(extra_area, 2),
             "matched_tris": extra_matched,
             "matched_area_mm2": round(extra_matched_area, 2),
             "conservation": round(extra_matched_area + extra_area - report["area_ours"], 4),
+            "clusters": len(extra_clusters),
             "seconds": round(time.monotonic() - t0, 1),
         }
+        for rank, c in enumerate(top_clusters(extra_clusters, args.top), 1):
+            rows.append(("extra_triangles", rank, c))
         # The net signal: positive-net clusters (retriangulation cancels).
         t0 = time.monotonic()
         net_clusters, net_total = net_missing_clusters(miss_cells, extra_cells)

@@ -116,13 +116,16 @@ unused), #3 22,072 (3,952), #4 13,060, #5/#6 ~12,400 single-cell with
 ## 3. dodge-challenger: the regime REFUTED, the ref object absent
 
 matched = **0 of 435,988** ref triangles; missing = the WHOLE ref
-surface (149,504.95 mm² = area_ref, conservation exact); 216,739 of
-216,739 ref vertices ≥ 80 mm (ring-cap floor) from every one of our
-1.25M vertices. Our export (2,496,624 tris / 26.51M mm², bbox diag
-5,621 mm vs the ref's 553 mm — the 10.16× the brief names) contains NO
-part of the reference object: it is a DIFFERENT geometry at ~10×
-scale. (Complete extra-direction cluster inventory in
-`w12-oracle-raw-dodge-challenger.csv`; store-side map below.)
+surface (149,504.95 mm² = area_ref, conservation exact); extra = ALL
+2,496,624 of our triangles (26.51M mm², 594 clusters — top cluster
+195,237 cells / 2,034,946 tris, the main foreign body); 216,739 of
+216,739 ref vertices ≥ 80 mm (ring-cap floor, `--max-ring 8`) from
+every one of our 1.25M vertices. Our export (2,496,624 tris / 26.51M
+mm², bbox diag 5,621 mm vs the ref's 553 mm — the 10.16× the brief
+names) contains NO part of the reference object: it is a DIFFERENT
+geometry at ~10× scale. (Cluster inventories:
+`w12-oracle-raw-dodge-challenger.csv`; the pair column there reads
+`original` because the dodge commands pass `--catpart` explicitly.)
 
 ## 4. The store side: what was declined, per pair
 
@@ -136,14 +139,14 @@ rebuilt by the decode's own gates (absorption + refs); `base_check`
 
 | signal | audi-r8 | ducati Motor | dodge |
 |---|---|---|---|
-| stage | identity-per-rep | identity-mixedwrite-reps | (see map) |
-| reps exported / declined | 96 / 0 | 113 / 0 | (see map) |
-| unused pool vertices | **11,751** | **21,936** | (see map) |
-| curve entries (in store) | 22,466 | 5,616 | (see map) |
-| seam-skipped loops | 6 loops = 73 tris = **642,702 mm²** | 36 loops = 71 tris = 13,017 mm² | (see map) |
-| extended-header declined | 29 (members filtered 985) | 33 (418) | (see map) |
-| gap clusters (unresolved candidates) | 137 | 1,034 | (see map) |
-| gap records owning unused verts | 10 | 20 | (see map) |
+| stage | identity-per-rep | identity-mixedwrite-reps | identity-mixedwrite-reps |
+| reps exported / declined | 96 / 0 | 113 / 0 | **6,310 / 0** |
+| unused pool vertices | **11,751** | **21,936** | **531,614** (26% of points) |
+| curve entries (in store) | 22,466 | 5,616 | 7 |
+| seam-skipped loops | 6 loops = 73 tris = **642,702 mm²** | 36 loops = 71 tris = 13,017 mm² | 0 (no seam) |
+| extended-header declined | 29 (members filtered 985) | 33 (418) | 72 (**126,722 filtered**) |
+| gap clusters (unresolved candidates) | 137 | 1,034 | 236 |
+| gap records owning unused verts | 10 | 20 | **124** |
 
 The dominant family on BOTH audi and Motor: the unused pool vertices
 are the written vertices of curve-entry/U4 loops declined at emission
@@ -156,6 +159,17 @@ families. The join (`registros_candidatos` column) ties clusters to
 reps and to the owning gap records (audi #1: reps 38/53/80/90/…, gap
 offsets 45031183, 50424943, 48515236, 48549226, 49656244, 49677046;
 Motor #1: rep 7 gaps 50218123/50365277/50384964, rep 18 gap 52321935).
+
+Dodge differs: 6,310 tiny reps (≈320 points each), NO seam skips,
+only 7 curve entries — and 124 of 236 gap records OWN unused vertices
+(ext 0x47×51, 0x4f×27, 0x41×19, short 0x4a×18, 0x42×13, 0x48×13,
+0x46×12, 0x4d×11). Its missing-ref clusters' join: the three largest
+(#1 74,242 mm², #2/#3 33,991 mm² each — the ref object's main faces)
+carry ZERO unused pool vertices (the ref's vertices are not in our
+pool at all), while #4 (5,475 mm²) carries 22,144 unused vertices of
+rep 244 owned by gap offsets 62431761/62435201/62462384/62464933/
+62466205/62516390 — one rep whose declined records sit exactly where
+reference geometry should be.
 
 ## 5. What the oracle does NOT discriminate (per the detector rule)
 
@@ -192,8 +206,12 @@ Motor #1: rep 7 gaps 50218123/50365277/50384964, rep 18 gap 52321935).
   foreign geometry, not a fidelity loss: matched=0 with exact
   conservation and ≥80 mm vertex floors. The fix class is ROUTING
   (which reps/scale the exporter picks for this file), not emission
-  law — the store map + extra-direction clusters in
-  `w12-oracle-raw-dodge-challenger.csv` are the entry point.
+  law — the store map's numbers (6,310 reps, 531,614 unused points,
+  126,722 extended-header members filtered, 124 gap records owning
+  unused vertices) plus the extra-direction clusters in
+  `w12-oracle-raw-dodge-challenger.csv` are the entry point; the
+  rep-244 gap cluster (22,144 unused verts at the ref's own location)
+  is the first concrete probe target.
 
 ## Artifacts
 
