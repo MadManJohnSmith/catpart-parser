@@ -164,3 +164,45 @@ Verification: `pytest tests/test_brep_mesh.py tests/test_brep_planar.py`
    EdgeGuard assembly, member-filter law).
 2. The display.py owner can adopt the 63-file `33 32` region
    extension (W2-18) for the honest Open-Rate lift.
+
+## W2-B (ola 4, 2026-11-22) — the U3 element region vs the normal oracle: NEGATIVE (law-based, not table-based)
+
+Branch `marathon/w2b-element-region`, base `065634b`. The hand-off
+question (find the elemento→región/vértice indirection table using the
+records' stored normals as an exact oracle) is answered NEGATIVE with
+the container structure measured:
+
+- The U3-variant list node is a **multi-part container**: counts + a
+  4-B header (`01 00 01 02`, no zero block — or `01 00 01 01` + zero
+  block on Coxa), then **c1 f32 UV pairs** (pairs_found == c1 on all 7
+  `..02` stores), then explicit f32 position zones (all-nice
+  stride-12 runs; separador 1499, Part 3 14063 ≈ c1 − 599), the facet
+  records, the pool, the edge tables. The committed `layout()` reads
+  data bytes as the 2-bit table and misaligns from there.
+- The refs index the declared element count exactly (refs_max == c1−1,
+  zero OOB, committed width-vote parse incl. the u16le relaxed
+  families) — but the position zones live in a frame that is NOT the
+  pool's (separador zone bbox ≈ cubic vs the pool's plate bbox; pool
+  coords re-listed bit-exact inside), and Tornillo's zone is
+  parametric (unit-circle family, radius 0.9635), not points.
+- Oracle (BR2-10 plane battery): identity 0/16 testable loops
+  corpus-wide; best of 48 signed axis permutations 1/13 (noise);
+  constant shifts ≤ 0.188 at coverage 16; **no c1-length u16
+  indirection array exists** in the span; UV-normalization matching
+  0/3128. W2's mapping refutation extends to every direct mapping.
+
+**Cota: 0 flips** on the 12 probed stores; the 211 official
+`empty-mesh` rows stand; the counts-less `0x49` family stays out of
+scope (its only population is the >65,535 store — closed negative,
+excluded by the probe's oversize guard). The mapping is **law-based**:
+UV grid + per-face affine + a store-frame transform, none of which is
+present in explicit f32 form in the node territory.
+
+Deliverables: `scripts/triage/w2b_element_region_probe.py` (selftest
+pinned), `docs/evidence/data/w2b-element-region-oracle.csv` (12 rows),
+`docs/evidence/data/w2b-element-region-claims.csv` (W2B-01..14), note
+`docs/evidence/2026-11-22-w2b-element-region.md` (structure facts
+F1–F6, negative N1–N5, cota, reopening R1–R3). Reopening stays where
+W2 left it: a composite.py-level law (per-face UV→3D frames —
+candidates: the `0001` sub-node group's transform blocks; the
+post-refs record structures — or the store↔pool frame transform).

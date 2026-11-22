@@ -1,0 +1,13 @@
+sha16,split,size_bytes,c1_element_count,c2_edge_ref_bound,pool_points,pairs_found,pairs_bbox_a_min,pairs_bbox_a_max,pairs_bbox_b_min,pairs_bbox_b_max,pair_serial_pairs,pos_zone_triples,pos_zone_abs_start,records,normal_loops,refs_total,refs_max,refs_ge_c2,oracle_identity_ok,oracle_identity_testable,oracle_bestperm_ok,excluded,path
+12dc542ec3f8b414,dev,1029257,1870,1780,248,0,,,,,,39,16394,84,65,352,1869,209,0,1,0,,corpus/dolganin/SO_SPIDAR300/spidar300/robot/cad/Pata/Coxa.CATPart
+17dca565dc361627,dev,600900,1646,1646,73,0,,,,,,17,17126,31,0,0,,,0,0,0,,corpus/dolganin/SO_SPIDAR300/spidar300/robot/cad/Pata/Femur_lateral.CATPart
+1b0eef98e01e25cf,dev,313304,1312,604,82,1312,0.0958,0.9042,0.0958,0.9042,0.569,22,11158,41,23,92,1310,92,0,0,0,,corpus/dolganin/SO_SPIDAR300/spidar300/robot/cad/Pinza/Tapa_Superior.CATPart
+219c099e910ec9c9,held-out,1149103,1325,1004,340,1325,-1.3410,2.4882,-0.0980,1.3000,0.234,196,18774,168,66,264,1324,120,0,2,0,,corpus/Guilherme115/Motor-V6/04_Comando_Correias/Correia 1.CATPart
+38d65967335d739e,held-out,251757,424,400,56,424,0.5000,5.5000,-24.5000,25.5000,1.000,154,3552,29,13,52,423,52,0,0,0,,corpus/Guilherme115/Motor-V6/01_Bloco_Carter/Base (2).CATPart
+3bceb97f2669bc16,dev,134098,482,482,16,0,,,,,,10,4909,0,0,0,,,0,0,0,,corpus/povdoigt/SP-02/CATIA/preparation_commande_sepa/SP02_ALPHA_BETA_SEPA/Billes.CATPart
+90d343ed2b071acc,dev,151925,614,614,16,0,,,,,,14,5010,0,0,0,,,0,0,0,,corpus/povdoigt/SP-02/CATIA/preparation_commande_sepa/SP02_ALPHA_BETA_SEPA/Billes_1.CATPart
+a722b491d306ee84,held-out,3247831,2430,2430,1056,2430,-0.3237,1.3237,0.4784,2.0000,0.683,55,23458,528,192,768,2391,0,0,0,0,,corpus/Guilherme115/Motor-V6/04_Comando_Correias/Correia 2.CATPart
+abacf1100cdb8dac,held-out,1313017,14662,14662,40,14662,-7.2209,2.6759,-10.2438,-3.6221,0.245,14063,121016,19,0,0,,,0,0,0,,corpus/Guilherme115/Motor-V6/02_Pistao_Biela/Part 3.CATPart
+bad44bdf52f5c411,dev,237851950,,,,,,,,,,,,,,,,,,,,oversize-guard,corpus/Dictor/HaneulMyo/model/PalmDown5motors2.CATPart
+c6eaac5e07fe3ab0,dev,475841,792,540,46,792,0.1100,0.5600,0.4400,0.6106,0.326,111,6588,23,14,88,777,88,0,0,0,,corpus/dolganin/SO_SPIDAR300/spidar300/robot/cad/Tornilleria/Tornillo cabeza hexagonal M3 x20.CATPart
+e42e380569bd4c77,dev,930443,3128,1376,288,3128,-0.0891,0.9794,0.0312,0.9688,0.642,1499,25860,149,93,372,3127,344,0,13,1,,corpus/dolganin/SO_SPIDAR300/spidar300/robot/cad/cuerpo/separador.CATPart
