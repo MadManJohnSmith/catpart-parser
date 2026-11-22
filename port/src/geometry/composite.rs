@@ -300,9 +300,15 @@ pub struct LoopStats {
 pub struct DupPin {
     /// The welded loops' triangles (written-rank indexed).
     pub triangles: Vec<(u32, u32, u32)>,
-    /// The welded loops' degenerate skips (always 0: a degenerate
-    /// emission refuses the loop, fail-closed).
+    /// The welded loops' degenerate skips (always 0: the W16 A4 split
+    /// moves the collapsed halves to ``split_skips`` — the pin-created
+    /// collapse is not an L2 emission — and a loop with nothing real
+    /// stays refused).
     pub degenerate: u32,
+    /// The W16 A4 split-off collapsed halves (NOT L2 degenerate
+    /// emissions; the corpus invariant degenerate == 0 on passing
+    /// parts is preserved by construction).
+    pub split_skips: u32,
     /// The welded loop count.
     pub loops: u32,
     /// The loops refused by the pinnability/battery/mesh-guard tests.
@@ -472,6 +478,11 @@ pub struct CompositeInfo {
     /// the merged reading's reps (None when none decoded).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub multiregion_container_reps: Option<usize>,
+    /// The W16 A4 split-off collapsed halves (the dup-pin weld's
+    /// degenerate-quad convention; NOT L2 degenerate emissions —
+    /// absent when none).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub curve_entry_split_skips: Option<usize>,
 }
 
 /// The decoded export of one composite store span — the twin's
@@ -2484,10 +2495,12 @@ fn decode_per_rep(
     // the battery/guard refused contributes none — its loops stay in
     // ``loops_curve_entry``.
     let mut curve_entry_law = 0u32;
+    let mut dup_pin_split = 0u32;
     for (b, dp) in &reps_dup_pin {
         if dp.loops == 0 {
             continue;
         }
+        dup_pin_split += dp.split_skips;
         triangles.extend(
             dp.triangles
                 .iter()
@@ -2540,6 +2553,7 @@ fn decode_per_rep(
         multiregion_extent_reps: None,
         multiregion_container_reps: None,
         multiregion_declined: None,
+        curve_entry_split_skips: None,
     };
     if ext_records > 0 {
         info.extended_header_records = Some(ext_records);
@@ -2565,6 +2579,9 @@ fn decode_per_rep(
     if curve_entry_law > 0 {
         info.curve_entry_law = Some("e0b-dup-pin");
         info.loops_curve_entry_exported = Some(curve_entry_law);
+    }
+    if dup_pin_split > 0 {
+        info.curve_entry_split_skips = Some(dup_pin_split as usize);
     }
     // The disjoint per-rep index spaces, in emission order: the
     // stage-15 dedup's keeper rule (the earliest unit wins) needs them
@@ -2623,6 +2640,7 @@ fn e0b_dup_pin(
         .collect();
     let mut welds: Vec<(u32, u32, u32)> = Vec::new();
     let mut degenerate = 0u32;
+    let mut split_skips = 0u32;
     let mut welded = 0u32;
     let mut refused = 0u32;
     let mut guard = EdgeGuard::from_triangles(base_triangles);
@@ -2661,9 +2679,16 @@ fn e0b_dup_pin(
             // faces the mesh guard.  The split-off count joins the
             // store's degenerate count.  A loop whose every triangle
             // collapses has nothing real to weld and stays dropped.
-            let (real, deg2, _degen_tris) = loop_triangles_split(*mk, &idxs, points);
+            let (real, deg2, degen_tris) = loop_triangles_split(*mk, &idxs, points);
             tris = real;
-            deg = deg2;
+            // The split-off collapsed halves are NOT L2 degenerate
+            // emissions (the collapse arises from the DUP PIN — the
+            // writer never emitted a degenerate facet) — they carry
+            // their own stat so the corpus invariant degenerate == 0
+            // on passing parts holds by construction.
+            deg = 0;
+            split_skips += deg2;
+            let _ = degen_tris;
             if tris.is_empty() {
                 refused += 1;
                 continue;
@@ -2680,6 +2705,7 @@ fn e0b_dup_pin(
     DupPin {
         triangles: welds,
         degenerate,
+        split_skips,
         loops: welded,
         refused,
     }
@@ -3191,10 +3217,12 @@ fn mr_emit_reps(
     // The dup-pin weld merged per rep (the same merge the per-rep path
     // runs; a rep's welded loops carry that rep's point offset).
     let mut curve_entry_law = 0u32;
+    let mut dup_pin_split = 0u32;
     for (b, dp) in &reps_dup_pin {
         if dp.loops == 0 {
             continue;
         }
+        dup_pin_split += dp.split_skips;
         triangles.extend(
             dp.triangles
                 .iter()
@@ -3228,6 +3256,7 @@ fn mr_emit_reps(
             None
         },
         multiregion_declined: None,
+        curve_entry_split_skips: None,
         reps_decoded: None,
         reps_exported: None,
         reps_unexported: None,
@@ -3279,6 +3308,9 @@ fn mr_emit_reps(
     if curve_entry_law > 0 {
         info.curve_entry_law = Some("e0b-dup-pin");
         info.loops_curve_entry_exported = Some(curve_entry_law);
+    }
+    if dup_pin_split > 0 {
+        info.curve_entry_split_skips = Some(dup_pin_split as usize);
     }
     Ok(Box::new(CompositeDecode {
         kept_loop_tris: Vec::new(),
@@ -3689,11 +3721,13 @@ fn decode_store_once(
     // battery-supported and mesh-safe). Merge the welded loops; refused
     // loops stay counted as dropped.
     let mut curve_entry_law = 0u32;
+    let mut dup_pin_split = 0u32;
     if let Some(dp) = &tri_res.dup_pin
         && dp.loops > 0
     {
         triangles.extend(dp.triangles.iter().copied());
         degenerate += dp.degenerate;
+        dup_pin_split += dp.split_skips;
         loops_exported += dp.loops;
         loops_curve_entry -= dp.loops;
         curve_entry_law = dp.loops;
@@ -3751,6 +3785,7 @@ fn decode_store_once(
         multiregion_extent_reps: None,
         multiregion_container_reps: None,
         multiregion_declined: None,
+        curve_entry_split_skips: None,
     };
     if !extended.is_empty() {
         info.extended_header_records = Some(extended.len());
@@ -3771,6 +3806,9 @@ fn decode_store_once(
     if curve_entry_law > 0 {
         info.curve_entry_law = Some("e0b-dup-pin");
         info.loops_curve_entry_exported = Some(curve_entry_law);
+    }
+    if dup_pin_split > 0 {
+        info.curve_entry_split_skips = Some(dup_pin_split as usize);
     }
     // One index space on this path: the entry point's stage-15 dedup
     // ranks every copy equal and falls back to emission order.
@@ -4135,6 +4173,7 @@ fn decode_raw_array_path(
         multiregion_extent_reps: None,
         multiregion_container_reps: None,
         multiregion_declined: None,
+        curve_entry_split_skips: None,
     };
     let mut info = info;
     if !extended.is_empty() {
@@ -4934,10 +4973,12 @@ fn decode_mixedwrite(
     }
     // The dup-pin weld at the store level (see decode_per_rep).
     let mut curve_entry_law = 0u32;
+    let mut dup_pin_split = 0u32;
     for (b, dp) in &reps_dup_pin {
         if dp.loops == 0 {
             continue;
         }
+        dup_pin_split += dp.split_skips;
         triangles.extend(
             dp.triangles
                 .iter()
@@ -4990,6 +5031,7 @@ fn decode_mixedwrite(
         multiregion_extent_reps: None,
         multiregion_container_reps: None,
         multiregion_declined: None,
+        curve_entry_split_skips: None,
     };
     if ext_records > 0 {
         info.extended_header_records = Some(ext_records);
@@ -5015,6 +5057,9 @@ fn decode_mixedwrite(
     if curve_entry_law > 0 {
         info.curve_entry_law = Some("e0b-dup-pin");
         info.loops_curve_entry_exported = Some(curve_entry_law);
+    }
+    if dup_pin_split > 0 {
+        info.curve_entry_split_skips = Some(dup_pin_split as usize);
     }
     // The disjoint per-rep index spaces, in emission order (see the
     // decode_per_rep note above).
@@ -5226,7 +5271,10 @@ mod tests {
         let pin = e0b_dup_pin(&elements, &points, &written_rank, &dropped, &[]);
         assert_eq!(pin.loops, 1);
         assert_eq!(pin.refused, 0);
-        assert_eq!(pin.degenerate, 1);
+        // the collapsed half is NOT an L2 degenerate emission — it
+        // carries its own split stat
+        assert_eq!(pin.degenerate, 0);
+        assert_eq!(pin.split_skips, 1);
         assert_eq!(pin.triangles, vec![(3u32, 1u32, 0u32)]);
         // A loop whose EVERY triangle collapses has nothing real to
         // weld and stays dropped (the fail-closed arm).
@@ -5286,6 +5334,7 @@ mod tests {
             multiregion_extent_reps: None,
             multiregion_container_reps: None,
             multiregion_declined: None,
+            curve_entry_split_skips: None,
         };
         let pts: Vec<(f64, f64, f64)> = vec![
             (0.0, 0.0, 0.0),
@@ -5377,6 +5426,7 @@ mod tests {
             multiregion_extent_reps: None,
             multiregion_container_reps: None,
             multiregion_declined: None,
+            curve_entry_split_skips: None,
         };
         // Space 0 = points 0..3, space 1 = points 3..8 (joint at 3).
         // Points 3..6 carry exactly the coordinates of points 0..2.

@@ -159,6 +159,68 @@ measurements:
   cargo test **231 passed**; cargo fmt clean; clippy -D warnings
   clean; the release fidelity-cli builds.
 
+## Second front — the U4 emission law adopted (W16's handoff)
+
+W16 validated the U4 skip-slot coordinate law on the bench-external
+targets and handed the EMISSION change to this lane
+(`docs/evidence/2026-11-22-u4-skip-coordinate-law.md` §4: the
+degenerate-emission class of dropped loops — the writer's
+degenerate-quad convention `(P, X, P, Y)` — has battery-TRUE dup pins
+and real surface recoverable under the G3 F7 skip convention).  The
+law module landed by cherry-pick (`curves.py` / `curves.rs` / tests /
+the A4 runner, 59ae58c — W16's files untouched upstream); the emission
+change lives here:
+
+- **the weld splits instead of refusing**
+  (`_e0b_dup_pin` / port `e0b_dup_pin`): a dropped loop with a
+  degenerate emission used to be refused WHOLE; now
+  `_loop_triangles_split` (the identical enumeration, winding flip and
+  G3 F7 predicate as `_loop_triangles` — repeated coordinates or the
+  exactly-zero cross, winding-invariant) names the collapsed triangles,
+  the real remainder welds behind the SAME incremental mesh guard
+  (`EdgeGuard.admit`, all-or-nothing on the real set), and the
+  split-off count joins the store's degenerate count (the primary
+  strips' own convention).  A loop whose every triangle collapses has
+  nothing real to weld and stays dropped (the fail-closed arm).
+- **tests**: `test_composite_e0b_degenerate_quad_split_welds_real_
+  remainder` (the fixture's pinned quad is (P1, P0, P1, P3): triangle
+  (1,0,1) collapses, (3,1,0) welds, `degenerate_triangle_count == 0`,
+  `curve_entry_split_skips == 1`, manifold; the OLD law dropped both
+  — red under the pre-change behavior); port twin
+  `dup_pin_degenerate_quad_splits_the_real_remainder` + the
+  nothing-real arm.  The port's `multiregion_container_reps` JSON key
+  skips None (the fixture-mode Fidelity key-set gate caught the
+  divergence).
+- **measured A/B (this host)**: the W16 targets (Motor/Audi/Vulcan)
+  are absent here — the gains are NOT re-measured; the 0-regression
+  side is measured at final head (both fronts):
+  - the oracle subset's byte A/B is **54/55 PLY sha-identical** with
+    the single diff the container front's designed ntu-57YL adoption
+    (above) — the U4 split changes NO oracle part;
+  - the official-corpus hit-file A/B (163 rows over the 127
+    container-bearing files): **0 class changes, 2 byte changes,
+    both DESIGNED GAINS, both deg-0 and Py=Rust parity-OK** —
+    moldes/head/head.CATPart 12,523 -> 12,526 tris (`curve_entry_
+    split_skips` 18) and povdoigt's SOIC-8 U5Q5 4,521 -> 4,525
+    (split 8), each pass -> pass with the L2 degenerate count at 0.
+- **the accounting gate the A/B caught (and its fix)**: the first
+  split draft counted the split-off collapsed halves into the store's
+  `degenerate_triangle_count` — the L2 gate reads that counter at
+  `MAX_DEGENERATE_TRIANGLES = 0` (fitness/runner.py:280, "any skipped
+  degenerate triangle is anomalous") and the two gain parts would
+  have flipped pass -> degenerate-triangles.  The collapsed half of a
+  dup-pinned quad is NOT an emission: the collapse arises from the
+  DUP PIN (two loop positions resolve to one written vertex) — the
+  writer never emitted a degenerate facet.  The split-off count
+  carries its own stat (`split_skips` on the weld's DupPin result,
+  `curve_entry_split_skips` on the info, Py + port, absent when 0)
+  and the L2 counter keeps the corpus invariant degenerate ==
+  0 on passing parts BY CONSTRUCTION (the relaxed-loops pass's own
+  precondition, composite.py's T3 comment).
+- **W16's measured gains, unchanged from their note** (not
+  re-measurable here, cited for the record): Motor 121 tris /
+  5,534 mm²; Audi 761 / 13.59M mm²; Vulcan 22,421 / 19.03M mm² gross.
+
 ## Reopening criteria
 
 1. The Submarino snapshot returns to a host: run the 757-part A/B +

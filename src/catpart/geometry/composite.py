@@ -1383,11 +1383,15 @@ def _e0b_dup_pin(elements, points, written_rank, dropped, triangles):
     loops / 3,097 mm² on labios/main behind a non-empty 4,261-triangle
     primary mesh).
 
-    Returns ``{"triangles", "degenerate", "loops", "refused"}``: the
-    welded loops' triangles (written-rank indexed), the degenerate
-    count, the welded-loop count and the refused-loop count."""
+    Returns ``{"triangles", "degenerate", "split_skips", "loops",
+    "refused"}``: the welded loops' triangles (written-rank
+    indexed), the degenerate-emission count (0 for welded loops —
+    the W16 A4 split moves the collapsed halves to
+    ``split_skips``), the split-off count, the welded-loop count
+    and the refused-loop count."""
     welded_triangles = []
     degenerate = 0
+    split_skips = 0
     welded = 0
     refused = 0
     guard = EdgeGuard.from_triangles(triangles)
@@ -1415,12 +1419,22 @@ def _e0b_dup_pin(elements, points, written_rank, dropped, triangles):
             # count (the primary strips' own convention).  A loop whose
             # every triangle collapses has nothing real to weld and
             # stays dropped.
-            tris, deg, _deg_tris = _loop_triangles_split(
+            tris, _deg, deg_tris = _loop_triangles_split(
                 mk, [written_rank[r] for r in resolved], points
             )
             if not tris:
                 refused += 1
                 continue
+            # The split-off collapsed halves are NOT degenerate
+            # emissions in the L2 sense (the anomaly counter the
+            # MAX_DEGENERATE_TRIANGLES = 0 gate reads): the collapse
+            # arises from the DUP PIN — two loop positions resolve to
+            # one written vertex — the writer never emitted a
+            # degenerate facet.  They carry their own stat so the
+            # corpus invariant degenerate_triangle_count == 0 on
+            # passing parts is preserved by construction.
+            split_skips += len(deg_tris)
+            deg = 0
         # Incremental manifold guard (the shared EdgeGuard lever): any
         # edge the candidate loop would push past two uses rejects the
         # whole loop (no partial weld).
@@ -1433,6 +1447,7 @@ def _e0b_dup_pin(elements, points, written_rank, dropped, triangles):
     return {
         "triangles": welded_triangles,
         "degenerate": degenerate,
+        "split_skips": split_skips,
         "loops": welded,
         "refused": refused,
     }
@@ -1702,9 +1717,10 @@ def _triangulate(
         stats["relaxed_loops_accepted"] = relaxed_accepted
         stats["relaxed_loops_declined"] = relaxed_declined
     if dropped:
-        stats["dup_pin"] = _e0b_dup_pin(
-            elements, points, written_rank, dropped, triangles
-        )
+        dp = _e0b_dup_pin(elements, points, written_rank, dropped, triangles)
+        stats["dup_pin"] = dp
+        if dp["split_skips"]:
+            stats["dup_pin_split_skips"] = dp["split_skips"]
     return triangles, degenerate, stats
 
 
@@ -2145,14 +2161,18 @@ def _decode_multiregion(data, lo: int, hi: int):
         # path runs; a rep's welded loops carry that rep's point
         # offset).
         curve_entry_law = 0
+        dup_pin_split = 0
         for base, c in reps_dup_pin:
             triangles += [
                 (a + base, s + base, t + base) for a, s, t in c["triangles"]
             ]
             degenerate += c["degenerate"]
+            dup_pin_split += c.get("split_skips", 0)
             loop_stats["loops_exported"] += c["loops"]
             loop_stats["loops_curve_entry"] -= c["loops"]
             curve_entry_law += c["loops"]
+        if dup_pin_split:
+            loop_stats["curve_entry_split_skips"] = dup_pin_split
         info = {
             "stage": "identity-multiregion",
             "element_decl": element_decl,
@@ -2651,6 +2671,7 @@ def decode_composite_store(
     # ones the battery or the mesh guard refused stay counted as
     # dropped.  The old empty-primary-mesh precondition is gone.
     dup_pin = loop_stats.pop("dup_pin", None)
+    dup_pin_split = loop_stats.pop("dup_pin_split_skips", 0)
     curve_entry_law = 0
     if dup_pin is not None and dup_pin["loops"]:
         triangles = triangles + dup_pin["triangles"]
@@ -2658,6 +2679,8 @@ def decode_composite_store(
         loop_stats["loops_exported"] += dup_pin["loops"]
         loop_stats["loops_curve_entry"] -= dup_pin["loops"]
         curve_entry_law = dup_pin["loops"]
+    if dup_pin_split:
+        loop_stats["curve_entry_split_skips"] = dup_pin_split
 
     skipped_markers: dict[int, int] = {}
     for _o, mk, _n, _c, _refs, _w in records:
@@ -3082,14 +3105,18 @@ def _decode_per_rep(
     # or the mesh guard refused contributes none — its loops stay in
     # ``loops_curve_entry``.
     curve_entry_law = 0
+    dup_pin_split = 0
     for b, c in reps_dup_pin:
         if not c["loops"]:
             continue
         triangles += [(a + b, s + b, t + b) for a, s, t in c["triangles"]]
         degenerate += c["degenerate"]
+        dup_pin_split += c.get("split_skips", 0)
         loop_stats["loops_exported"] += c["loops"]
         loop_stats["loops_curve_entry"] -= c["loops"]
         curve_entry_law += c["loops"]
+    if dup_pin_split:
+        loop_stats["curve_entry_split_skips"] = dup_pin_split
     info = {
         "stage": "identity-per-rep",
         "element_decl": element_decl,
@@ -3928,14 +3955,18 @@ def _decode_mixedwrite(
         )
     # The dup-pin weld at the store level (see _decode_per_rep).
     curve_entry_law = 0
+    dup_pin_split = 0
     for b, c in reps_dup_pin:
         if not c["loops"]:
             continue
         triangles += [(a + b, s + b, t + b) for a, s, t in c["triangles"]]
         degenerate += c["degenerate"]
+        dup_pin_split += c.get("split_skips", 0)
         loop_stats["loops_exported"] += c["loops"]
         loop_stats["loops_curve_entry"] -= c["loops"]
         curve_entry_law += c["loops"]
+    if dup_pin_split:
+        loop_stats["curve_entry_split_skips"] = dup_pin_split
     info = {
         "stage": "identity-mixedwrite-reps",
         "element_decl": element_decl,

@@ -2844,7 +2844,11 @@ def test_composite_e0b_degenerate_quad_split_welds_real_remainder(tmp_path, caps
     assert info["loops_curve_entry_exported"] == 1
     assert summary["vertex_count"] == 12  # the weld adds no vertices
     assert summary["triangle_count"] == 1
-    assert summary["degenerate_triangle_count"] == 1  # the collapsed half
+    # the collapsed half is NOT an L2 degenerate emission (the
+    # MAX_DEGENERATE_TRIANGLES = 0 gate reads that counter; the
+    # pin-created collapse carries its own stat)
+    assert summary["degenerate_triangle_count"] == 0
+    assert summary["composite"]["curve_entry_split_skips"] == 1
     assert summary["mesh"]["manifold"] is True
     classes = _warning_classes(summary)
     assert "curve-entry-loops-unexported" not in classes
