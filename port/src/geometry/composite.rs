@@ -449,6 +449,16 @@ pub struct CompositeInfo {
     /// Stage-15: a fired-and-declined dedup (fail-closed).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unordered_dedup_declined: Option<u32>,
+    /// W1-B multi-region second chance (2026-11-22): the merged rep
+    /// count on an adopted multi-region decode (stage
+    /// ``identity-multiregion``).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub multiregion_reps: Option<usize>,
+    /// W1-B multi-region second chance: the fail-closed decline reason
+    /// on the still-not-manifold residue (the single-rep emission is
+    /// kept byte-for-byte; absent when the route never ran).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub multiregion_declined: Option<String>,
 }
 
 /// The decoded export of one composite store span — the twin's
@@ -2471,6 +2481,8 @@ fn decode_per_rep(
         primary_loop_kept: None,
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
+        multiregion_reps: None,
+        multiregion_declined: None,
     };
     if ext_records > 0 {
         info.extended_header_records = Some(ext_records);
@@ -2748,6 +2760,273 @@ fn curve_sequence(loop_refs: &[u32], elements: &[Element]) -> Vec<(f64, f64, f64
         .collect()
 }
 
+/// The multi-region second-chance reading (W1-B, 2026-11-22; twin:
+/// ``_decode_multiregion``).
+///
+/// The single-rep reading resolves EVERY record of the body against the
+/// FIRST token node's region (``find_list_node`` — the largest
+/// payload).  On a multi-period body that misresolves every period
+/// after the first: each period carries its OWN token node with its
+/// OWN element region, and the periods' records share one byte
+/// topology, so the misresolved facets are identical index triples
+/// over the wrong vertices.  Byte evidence (MB-Frames-middle-centr-YL):
+/// 50 walk-exact token nodes (payloads 7,803 B, elem_decl
+/// 658/676/679/682), the k-th node's first written point at
+/// x = 1646.04 + 120k — a row of frame panels; the single-rep reading
+/// exports 40,893 triangles of which 38,873 are unordered duplicates
+/// (the dedup declines: the unique mesh still carries 368 over-edges);
+/// the multi-region reading merges 50 reps (each manifold) into
+/// 33,925 points / 50,423 triangles / 0 degenerate / manifold /
+/// 0 over-edges.  Census: 553 of 757 snapshot parts carry >= 2
+/// walk-exact nodes; 270 of them PASS L2 through the single-rep
+/// reading and are never touched (the route fires only on the
+/// still-not-manifold residue); 251 of the 296 failing multi-node
+/// parts resolve under this reading (237 not-manifold + 14
+/// degenerate-triangles), with 0 out-of-bounds reps
+/// (docs/evidence/marathon/w1b-progress.md).
+///
+/// The law, fail-closed at every step: every token node decodes
+/// walk-exact under the committed table law (fewer than 2 is not the
+/// family); rep k = node k's territory ``[region_end_k, node k+1)`` —
+/// its records parse under the SAME committed record laws against node
+/// k's OWN element space; every gated reference resolves in-bounds
+/// (one OOB rep declines the whole reading); no surviving record may
+/// precede node 0's region end; the merged mesh is adopted ONLY when
+/// it is manifold, degenerate and non-empty (the caller enforces this
+/// and keeps the single-rep emission byte-for-byte otherwise).
+///
+/// The multi-region reading's outcome (the twin's
+/// ``('ok' | 'family-declined' | 'not-family', result, failure)``).
+enum MrOutcome {
+    Adopted(Box<CompositeDecode>),
+    FamilyDeclined(String),
+    NotFamily,
+}
+
+/// Returns ``NotFamily`` when fewer than 2 walk-exact nodes exist —
+/// the single-rep reading is the law there and no decline is named
+/// (the not-manifold warning already carries the store's failure).
+fn decode_multiregion(data: &[u8], lo: usize, hi: usize) -> MrOutcome {
+    let scanned = scan_token_nodes(data, lo, hi);
+    let mut nodes: Vec<(usize, u32, Vec<Element>, RegionInfo)> = Vec::new();
+    for tn in &scanned {
+        let payload = &data[tn.plo..tn.phi];
+        if let Ok((elements, rinfo)) = decode_region(payload, tn.elem) {
+            nodes.push((tn.pos, tn.elem, elements, rinfo));
+        }
+    }
+    if nodes.len() < 2 {
+        return MrOutcome::NotFamily;
+    }
+    let region_end_0 = nodes[0].0 + 4 + nodes[0].3.walk_end;
+    let (head_recs, _) = parse_strip_records(data, lo, region_end_0, nodes[0].1, None);
+    if !head_recs.is_empty() {
+        return MrOutcome::FamilyDeclined(format!(
+            "{} surviving record(s) precede node 0's region end: the \
+             per-rep attribution would drop them",
+            head_recs.len()
+        ));
+    }
+    let mut points: Vec<(f64, f64, f64)> = Vec::new();
+    let mut triangles: Vec<(u32, u32, u32)> = Vec::new();
+    let mut degenerate = 0u32;
+    let mut curves: Vec<Vec<(f64, f64, f64)>> = Vec::new();
+    let mut space_offsets: Vec<usize> = Vec::new();
+    let mut reps_dup_pin: Vec<(usize, DupPin)> = Vec::new();
+    let mut loops_exported = 0u32;
+    let mut loops_curve_entry = 0u32;
+    let mut primary_loop_skips = 0u32;
+    let mut primary_loop_kept = 0u32;
+    let mut relaxed_loops_accepted = 0u32;
+    let mut relaxed_loops_declined = 0u32;
+    let mut skipped_markers: BTreeMap<u8, u32> = BTreeMap::new();
+    let mut facet_candidates = 0usize;
+    let mut facet_records = 0usize;
+    let mut write_count = 0usize;
+    let mut table_bytes = 0usize;
+    let mut element_decl = 0usize;
+    let mut curve_entries = 0usize;
+    let mut node_bytes = 0usize;
+    let mut ext_records = 0usize;
+    let mut ext_triangles = 0usize;
+    let mut ext_declined = 0usize;
+    let mut ext_filtered = 0usize;
+    let mut reps = 0usize;
+    for (k, (npos, c1, elements, rinfo)) in nodes.iter().enumerate() {
+        let region_end = npos + 4 + rinfo.walk_end;
+        let t1 = match nodes.get(k + 1) {
+            Some((next_pos, ..)) => *next_pos,
+            None => hi,
+        };
+        let (records, n_hdrs) = parse_strip_records(data, region_end, t1, *c1, Some(elements));
+        let (ext_k, ext_cands) = parse_extended_facet_records(
+            data,
+            region_end,
+            t1,
+            *c1,
+            Some(elements),
+            &short_record_spans(data, t1, &records),
+        );
+        let mut grefs: Vec<u32> = records
+            .iter()
+            .filter(|r| GATED.contains(&r.marker))
+            .flat_map(|r| r.refs.iter().copied())
+            .collect();
+        grefs.extend(ext_k.iter().flat_map(|r| r.refs.iter().copied()));
+        let oob: Vec<u32> = grefs.iter().copied().filter(|&r| r >= *c1).collect();
+        if !oob.is_empty() {
+            let mx = oob.iter().copied().max().unwrap_or(0);
+            return MrOutcome::FamilyDeclined(format!(
+                "rep {k} (node at {npos}): {} gated reference(s) leave \
+                 the rep's element space ({mx} >= elem_decl {c1}); the \
+                 multi-region reading does not resolve",
+                oob.len()
+            ));
+        }
+        let tri_res = triangulate(elements, &records, &ext_k, None, false);
+        let base = points.len();
+        let pts: Vec<(f64, f64, f64)> = elements
+            .iter()
+            .filter_map(|(_v, pt)| pt.as_ref().map(|p| (p.0, p.1, p.2)))
+            .collect();
+        if let Some(dp) = &tri_res.dup_pin {
+            reps_dup_pin.push((base, dp.clone()));
+        }
+        points.extend(pts.iter().copied());
+        triangles.extend(
+            tri_res
+                .triangles
+                .iter()
+                .map(|&(a, b, c)| (a + base as u32, b + base as u32, c + base as u32)),
+        );
+        degenerate += tri_res.degenerate;
+        space_offsets.push(base);
+        // The §2.3 curve exposure: this rep's dropped loops' pre-weld
+        // sequences (additive, outside Fidelity).
+        for (_mk, _normal, loop_refs) in &tri_res.dropped_loops {
+            curves.push(curve_sequence(loop_refs, elements));
+        }
+        reps += 1;
+        loops_exported += tri_res.loops_exported;
+        loops_curve_entry += tri_res.loops_curve_entry;
+        primary_loop_skips += tri_res.primary_loop_skips;
+        primary_loop_kept += tri_res.primary_loop_kept;
+        relaxed_loops_accepted += tri_res.relaxed_loops_accepted;
+        relaxed_loops_declined += tri_res.relaxed_loops_declined;
+        facet_candidates += n_hdrs + ext_cands;
+        facet_records += records.len() + ext_k.len();
+        ext_records += ext_k.len();
+        ext_triangles += tri_res.extended_triangles as usize;
+        ext_filtered += tri_res.extended_members_filtered as usize;
+        ext_declined += tri_res.extended_declined as usize;
+        write_count += rinfo.write_count as usize;
+        table_bytes += rinfo.table_bytes;
+        element_decl += *c1 as usize;
+        curve_entries += elements.len() - pts.len();
+        node_bytes += t1 - (npos + 4);
+        for rec in &records {
+            if !EXPORTED_SHORT_MARKERS.contains(&rec.marker)
+                && !RELAXED_SHORT_MARKERS.contains(&rec.marker)
+            {
+                *skipped_markers.entry(rec.marker).or_insert(0) += 1;
+            }
+        }
+    }
+    // The dup-pin weld merged per rep (the same merge the per-rep path
+    // runs; a rep's welded loops carry that rep's point offset).
+    let mut curve_entry_law = 0u32;
+    for (b, dp) in &reps_dup_pin {
+        if dp.loops == 0 {
+            continue;
+        }
+        triangles.extend(
+            dp.triangles
+                .iter()
+                .map(|&(a, s, t)| (a + *b as u32, s + *b as u32, t + *b as u32)),
+        );
+        degenerate += dp.degenerate;
+        loops_exported += dp.loops;
+        loops_curve_entry -= dp.loops;
+        curve_entry_law += dp.loops;
+    }
+    let mut info = CompositeInfo {
+        stage: "identity-multiregion",
+        element_decl,
+        node_points: points.len(),
+        curve_entries,
+        write_count: Some(write_count),
+        table_bytes: Some(table_bytes),
+        facet_candidates,
+        facet_records,
+        skipped_markers,
+        node_bytes,
+        multiregion_reps: Some(reps),
+        multiregion_declined: None,
+        reps_decoded: None,
+        reps_exported: None,
+        reps_unexported: None,
+        rep_reasons: None,
+        rep_laws: None,
+        raw_start: None,
+        raw_nice_rate: None,
+        raw_x_asc_rate: None,
+        raw_trail_bytes: None,
+        raw_count3: None,
+        loops_exported,
+        loops_curve_entry,
+        extended_header_records: None,
+        extended_header_triangles: None,
+        extended_header_declined: None,
+        extended_members_filtered: None,
+        curve_entry_law: None,
+        loops_curve_entry_exported: None,
+        primary_loop_skips: None,
+        relaxed_loops_accepted: None,
+        relaxed_loops_declined: None,
+        primary_loop_seam_declined: None,
+        primary_loop_kept: None,
+        unordered_dedup_dropped: None,
+        unordered_dedup_declined: None,
+        primary_loop_relist_skips: None,
+        primary_loop_relist_boundary: None,
+    };
+    if ext_records > 0 {
+        info.extended_header_records = Some(ext_records);
+        info.extended_header_triangles = Some(ext_triangles);
+        if ext_declined > 0 {
+            info.extended_header_declined = Some(ext_declined);
+        }
+        if ext_filtered > 0 {
+            info.extended_members_filtered = Some(ext_filtered);
+        }
+    }
+    if primary_loop_skips > 0 {
+        info.primary_loop_skips = Some(primary_loop_skips);
+    }
+    if primary_loop_kept > 0 {
+        info.primary_loop_kept = Some(primary_loop_kept);
+    }
+    if relaxed_loops_accepted > 0 || relaxed_loops_declined > 0 {
+        info.relaxed_loops_accepted = Some(relaxed_loops_accepted);
+        info.relaxed_loops_declined = Some(relaxed_loops_declined);
+    }
+    if curve_entry_law > 0 {
+        info.curve_entry_law = Some("e0b-dup-pin");
+        info.loops_curve_entry_exported = Some(curve_entry_law);
+    }
+    MrOutcome::Adopted(Box::new(CompositeDecode {
+        kept_loop_tris: Vec::new(),
+        kept_loop_count: 0,
+        relist_forced: 0,
+        points,
+        triangles,
+        degenerate,
+        info,
+        curves,
+        space_offsets,
+    }))
+}
+
 /// Decode one composite store span — the primary-emit seam's entry
 /// point (2026-11-18, #34; twin: ``decode_composite_store``).
 ///
@@ -2898,6 +3177,49 @@ pub fn decode_composite_store(
                 curves: rel.curves,
                 space_offsets: rel.space_offsets,
             };
+        }
+    }
+    // The multi-region second chance (W1-B, 2026-11-22): the
+    // still-not-manifold residue of a MULTI-PERIOD body is the
+    // single-rep reading's misresolution (every period after the first
+    // resolved against node 0's region — see :fn:`decode_multiregion`
+    // for the byte evidence).  The route fires ONLY here (a passing
+    // store's decode never reaches it, so its PLY is byte-identical),
+    // re-reads the body per period, and is adopted ONLY when the
+    // merged mesh is manifold, degenerate and non-empty; any other
+    // outcome keeps the emission above byte-for-byte, with the gap
+    // named.
+    if !chosen.triangles.is_empty() && !mesh::mesh_stats(&chosen.triangles).manifold {
+        match decode_multiregion(data, span.body_lo, span.body_hi) {
+            MrOutcome::NotFamily => {}
+            MrOutcome::FamilyDeclined(reason) => {
+                chosen.info.multiregion_declined = Some(reason);
+            }
+            MrOutcome::Adopted(cand) => {
+                let cand_stats = mesh::mesh_stats(&cand.triangles);
+                if !cand.triangles.is_empty() && cand_stats.manifold && cand.degenerate == 0 {
+                    chosen = CompositeDecode {
+                        kept_loop_tris: Vec::new(),
+                        kept_loop_count: 0,
+                        relist_forced: 0,
+                        points: cand.points,
+                        triangles: cand.triangles,
+                        degenerate: cand.degenerate,
+                        info: cand.info,
+                        curves: cand.curves,
+                        space_offsets: cand.space_offsets,
+                    };
+                } else {
+                    chosen.info.multiregion_declined = Some(format!(
+                        "decoded {} reps: the merged mesh is not adopted \
+                         (manifold={}, degenerate={}, triangles={})",
+                        cand.info.multiregion_reps.unwrap_or(0),
+                        cand_stats.manifold,
+                        cand.degenerate,
+                        cand.triangles.len()
+                    ));
+                }
+            }
         }
     }
     Ok(chosen)
@@ -3151,6 +3473,8 @@ fn decode_store_once(
         primary_loop_kept: None,
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
+        multiregion_reps: None,
+        multiregion_declined: None,
     };
     if !extended.is_empty() {
         info.extended_header_records = Some(extended.len());
@@ -3531,6 +3855,8 @@ fn decode_raw_array_path(
         primary_loop_kept: None,
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
+        multiregion_reps: None,
+        multiregion_declined: None,
     };
     let mut info = info;
     if !extended.is_empty() {
@@ -4382,6 +4708,8 @@ fn decode_mixedwrite(
         primary_loop_kept: None,
         unordered_dedup_dropped: None,
         unordered_dedup_declined: None,
+        multiregion_reps: None,
+        multiregion_declined: None,
     };
     if ext_records > 0 {
         info.extended_header_records = Some(ext_records);
@@ -4426,6 +4754,7 @@ fn decode_mixedwrite(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::geometry::store::{CONTAINER_STDCONT, ORIGIN_KIND_HEADER, TAIL_LAW_SHIPPED};
 
     /// The twin's ``_nice`` constants, verbatim.
     #[test]
@@ -4634,6 +4963,8 @@ mod tests {
             loops_curve_entry_exported: None,
             unordered_dedup_dropped: None,
             unordered_dedup_declined: None,
+            multiregion_reps: None,
+            multiregion_declined: None,
         };
         let pts: Vec<(f64, f64, f64)> = vec![
             (0.0, 0.0, 0.0),
@@ -4721,6 +5052,8 @@ mod tests {
             loops_curve_entry_exported: None,
             unordered_dedup_dropped: None,
             unordered_dedup_declined: None,
+            multiregion_reps: None,
+            multiregion_declined: None,
         };
         // Space 0 = points 0..3, space 1 = points 3..8 (joint at 3).
         // Points 3..6 carry exactly the coordinates of points 0..2.
@@ -5284,5 +5617,229 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].width, 1);
         assert_eq!(records[0].refs, vec![0u32; 97]);
+    }
+
+    // --- the W1-B multi-region second chance (2026-11-22) ------------------
+    //
+    // Function-level twins of the twin's test_composite_export tests: a
+    // two-period body (each period = its own token node + records over
+    // that node's region; no pool groups, no edge groups — the stage-13
+    // unrouted family).
+
+    /// The twin's COMPOSITE_POINTS (12 corners, region order).
+    const MR_POINTS: [(f64, f64, f64); 12] = [
+        (0.0, 10.0, 0.0),
+        (0.0, 10.0, 30.0),
+        (0.0, 10.0, 60.0),
+        (0.0, 110.0, 0.0),
+        (0.0, 110.0, 30.0),
+        (0.0, 110.0, 60.0),
+        (20.0, 10.0, 0.0),
+        (20.0, 10.0, 30.0),
+        (20.0, 110.0, 0.0),
+        (20.0, 110.0, 30.0),
+        (20.0, 110.0, 60.0),
+        (20.0, 10.0, 60.0),
+    ];
+
+    /// The LCP slot walk (the twin's ``_composite_elements``).
+    fn mr_elements(points: &[(f64, f64, f64)]) -> Vec<Element> {
+        let mut out = Vec::new();
+        let (mut px, mut py) = (0.0f64, 0.0f64);
+        for &(x, y, z) in points {
+            let slot = if x != px {
+                0u8
+            } else if y != py {
+                3
+            } else {
+                2
+            };
+            out.push((slot, Some((x, y, z))));
+            px = x;
+            py = y;
+        }
+        out
+    }
+
+    fn mr_p1g(n: usize) -> Vec<u8> {
+        if n < 0xFF {
+            vec![n as u8]
+        } else {
+            let mut v = vec![0xFFu8];
+            v.extend_from_slice(&(n as u32).to_le_bytes());
+            v
+        }
+    }
+
+    /// The twin's ``_composite_node_payload`` (29-B header, token,
+    /// counts, zero block, 2-bit table, write count, region, U2 tail).
+    fn mr_node_payload(elements: &[Element]) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(&1u32.to_le_bytes());
+        body.extend_from_slice(&7u32.to_le_bytes());
+        body.extend_from_slice(&0u32.to_le_bytes());
+        for v in [10.0f32, 60.0, 30.0] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        body.extend_from_slice(&3u32.to_le_bytes());
+        body.push(0x00);
+        body.extend_from_slice(&[0xFF, 0xFF, 0x02, 0x00, 0x01]);
+        body.extend(mr_p1g(elements.len()));
+        body.extend(mr_p1g(elements.len()));
+        body.extend_from_slice(&[0x00; 4]);
+        let n = elements.len();
+        let mut table = vec![0u8; (n + 3) / 4];
+        for (i, (slot, _pt)) in elements.iter().enumerate() {
+            table[i / 4] |= slot << (2 * (i % 4));
+        }
+        body.extend_from_slice(&table);
+        let words: usize = elements
+            .iter()
+            .map(|(s, _pt)| match s {
+                0 => 3,
+                3 => 2,
+                _ => 1,
+            })
+            .sum();
+        body.extend(mr_p1g(words));
+        for (slot, pt) in elements {
+            let Some((x, y, z)) = pt else { continue };
+            let (x, y, z) = (*x, *y, *z);
+            match slot {
+                0 => {
+                    for v in [x, y, z] {
+                        body.extend_from_slice(&(v as f32).to_le_bytes());
+                    }
+                }
+                3 => {
+                    for v in [y, z] {
+                        body.extend_from_slice(&(v as f32).to_le_bytes());
+                    }
+                }
+                _ => body.extend_from_slice(&(z as f32).to_le_bytes()),
+            }
+        }
+        body.extend_from_slice(&[0x00; 4]);
+        body.extend_from_slice(&[0x00, 0x04, 0x02, 0x0a, 0x02]);
+        body
+    }
+
+    /// The twin's ``_facet_record`` (u8 refs, one count byte).
+    fn mr_record(marker: u8, normal: Option<(f64, f64, f64)>, refs: &[u32]) -> Vec<u8> {
+        let mut rec = vec![0x01, marker, 0x01, 0xFF];
+        rec.extend_from_slice(&(refs.len() as u32).to_le_bytes());
+        if let Some((x, y, z)) = normal {
+            for v in [x, y, z] {
+                rec.extend_from_slice(&(v as f32).to_le_bytes());
+            }
+        }
+        rec.push(refs.len() as u8);
+        rec.extend(refs.iter().map(|&r| r as u8));
+        rec
+    }
+
+    fn mr_body(
+        rep0: &[(u8, Option<(f64, f64, f64)>, [u32; 4])],
+        rep1: &[(u8, Option<(f64, f64, f64)>, Vec<u32>)],
+    ) -> Vec<u8> {
+        let mut body = Vec::new();
+        body.extend_from_slice(NODE_MAGIC);
+        body.extend(mr_node_payload(&mr_elements(&MR_POINTS)));
+        for (m, n, r) in rep0 {
+            body.extend(mr_record(*m, *n, r));
+        }
+        let pts1: Vec<(f64, f64, f64)> = MR_POINTS
+            .iter()
+            .map(|&(x, y, z)| (x + 200.0, y, z))
+            .collect();
+        body.extend_from_slice(NODE_MAGIC);
+        body.extend(mr_node_payload(&mr_elements(&pts1)));
+        for (m, n, r) in rep1 {
+            body.extend(mr_record(*m, *n, r));
+        }
+        body
+    }
+
+    fn mr_span(len: usize) -> StoreSpan {
+        StoreSpan {
+            block_start: 0,
+            origin: 0,
+            origin_kind: ORIGIN_KIND_HEADER,
+            body_lo: 0,
+            body_hi: len,
+            catalog_len: 0,
+            container: CONTAINER_STDCONT,
+            tail_law: TAIL_LAW_SHIPPED,
+        }
+    }
+
+    #[test]
+    fn multiregion_merges_per_period_regions() {
+        // the box's five quads (the z+ face dropped: an open shell) —
+        // rep 0 as written, rep 1 with the OTHER diagonal (strips swap
+        // to (b, a, d, c), fans rotate to (b, c, d, a)).
+        let rep0: Vec<(u8, Option<(f64, f64, f64)>, [u32; 4])> = vec![
+            (0x4A, Some((0.0, 0.0, -1.0)), [6, 0, 9, 3]),
+            (0x4A, Some((0.0, 1.0, 0.0)), [11, 9, 5, 3]),
+            (0x4A, Some((0.0, -1.0, 0.0)), [6, 8, 0, 2]),
+            (0x4C, Some((-1.0, 0.0, 0.0)), [0, 2, 5, 3]),
+            (0x4C, Some((1.0, 0.0, 0.0)), [6, 9, 11, 8]),
+        ];
+        let rep1: Vec<(u8, Option<(f64, f64, f64)>, Vec<u32>)> = vec![
+            (0x4A, Some((0.0, 0.0, -1.0)), vec![0, 6, 3, 9]),
+            (0x4A, Some((0.0, 1.0, 0.0)), vec![9, 11, 3, 5]),
+            (0x4A, Some((0.0, -1.0, 0.0)), vec![8, 6, 2, 0]),
+            (0x4C, Some((-1.0, 0.0, 0.0)), vec![2, 5, 3, 0]),
+            (0x4C, Some((1.0, 0.0, 0.0)), vec![9, 11, 8, 6]),
+        ];
+        let body = mr_body(&rep0, &rep1);
+        let span = mr_span(body.len());
+        let decode = decode_composite_store(&body, &span, &[], &[], true).unwrap();
+        assert_eq!(decode.info.stage, "identity-multiregion");
+        assert_eq!(decode.info.multiregion_reps, Some(2));
+        assert_eq!(decode.degenerate, 0);
+        assert_eq!(decode.points.len(), 24);
+        assert_eq!(decode.triangles.len(), 20);
+        let stats = mesh::mesh_stats(&decode.triangles);
+        assert!(stats.manifold);
+        let lo = decode
+            .triangles
+            .iter()
+            .filter(|t| t.0 < 12 && t.1 < 12 && t.2 < 12)
+            .count();
+        let hi = decode.triangles.iter().filter(|t| t.0 >= 12).count();
+        assert_eq!(lo, 10);
+        assert_eq!(hi, 10);
+    }
+
+    #[test]
+    fn multiregion_nonmanifold_rep_declines_fail_closed() {
+        // rep 1 carries one fin triangle over-using the box edge (0, 2)
+        // — its own reading is not manifold, the merged mesh is not
+        // adopted, and the single-rep emission is kept with the gap
+        // named.
+        let rep0: Vec<(u8, Option<(f64, f64, f64)>, [u32; 4])> = vec![
+            (0x4A, Some((0.0, 0.0, -1.0)), [6, 0, 9, 3]),
+            (0x4A, Some((0.0, 1.0, 0.0)), [11, 9, 5, 3]),
+            (0x4A, Some((0.0, -1.0, 0.0)), [6, 8, 0, 2]),
+            (0x4C, Some((-1.0, 0.0, 0.0)), [0, 2, 5, 3]),
+            (0x4C, Some((1.0, 0.0, 0.0)), [6, 9, 11, 8]),
+        ];
+        let mut rep1: Vec<(u8, Option<(f64, f64, f64)>, Vec<u32>)> = vec![
+            (0x4A, Some((0.0, 0.0, -1.0)), vec![0, 6, 3, 9]),
+            (0x4A, Some((0.0, 1.0, 0.0)), vec![9, 11, 3, 5]),
+            (0x4A, Some((0.0, -1.0, 0.0)), vec![8, 6, 2, 0]),
+            (0x4C, Some((-1.0, 0.0, 0.0)), vec![2, 5, 3, 0]),
+            (0x4C, Some((1.0, 0.0, 0.0)), vec![9, 11, 8, 6]),
+        ];
+        rep1.push((0x42, None, vec![0, 2, 4]));
+        let body = mr_body(&rep0, &rep1);
+        let span = mr_span(body.len());
+        let decode = decode_composite_store(&body, &span, &[], &[], true).unwrap();
+        assert_eq!(decode.info.stage, "identity-table-walk");
+        let declined = decode.info.multiregion_declined.clone().unwrap();
+        assert!(declined.contains("not adopted"), "{declined}");
+        let stats = mesh::mesh_stats(&decode.triangles);
+        assert!(!stats.manifold);
     }
 }

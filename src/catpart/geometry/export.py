@@ -61,6 +61,8 @@ WARN_PRIMARY_KEPT = "primary-loop-manifold-kept"
 WARN_PRIMARY_RELIST_SKIP = "primary-loop-relist-skip"
 WARN_DEDUP = "duplicate-triangles-deduped"
 WARN_DEDUP_DECLINED = "duplicate-triangles-dedup-declined"
+WARN_MULTIREGION = "composite-multiregion-decode"
+WARN_MULTIREGION_DECLINED = "composite-multiregion-declined"
 WARN_SURFACE_TESSELLATED = "bspline-surface-tessellated"
 WARN_GRID_MESHED = "point-grid-meshed"
 WARN_GRID_REFUSED = "grid-candidates-refused"
@@ -1141,6 +1143,30 @@ def _export_composite_store(
                 "declined fail-closed and the emitted triangles are "
                 "kept verbatim (the over-use joins distinct triangles; "
                 "the L2 gate records not-manifold)",
+            }
+        )
+    if info.get("stage") == "identity-multiregion":
+        warnings.append(
+            {
+                "class": WARN_MULTIREGION,
+                "detail": f"{info.get('multiregion_reps', 0)} token-node "
+                "regions decoded per period and merged (W1-B "
+                "2026-11-22): the single-rep reading resolved every "
+                "period after the first against node 0's region — the "
+                "misresolved facets were the store's duplicate-"
+                "triangle signature; the multi-region reading fires "
+                "only on the still-not-manifold residue and is "
+                "adopted only when the merged mesh is manifold and "
+                "degenerate-free",
+            }
+        )
+    if info.get("multiregion_declined"):
+        warnings.append(
+            {
+                "class": WARN_MULTIREGION_DECLINED,
+                "detail": f"the multi-region second chance declined: "
+                f"{info['multiregion_declined']} — the single-rep "
+                "emission is kept byte-for-byte (fail-closed)",
             }
         )
     skipped_markers = info.get("skipped_markers") or {}
