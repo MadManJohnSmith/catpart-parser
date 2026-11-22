@@ -1945,7 +1945,12 @@ PRIMARY_SEAM_FLIPS = {
     # #65 exact-tiling exception on the u8 extended path (their wins end
     # past an internal false-positive STRIP_RE match and land exactly on
     # the next real boundary).
-    "13bb5c0c49616ade": 224435,
+    # 2026-11-22 (marathon W7-B patch 003): the width tie prefers the
+    # wider reading, which clears this store's 33 degenerate-triangle
+    # skips and admits +5,297 real triangles: 224435 -> 229732, still
+    # manifold with 0 degenerates and L2 pass (Smooth 33->0 in W7-B's
+    # micro-batch evidence).
+    "13bb5c0c49616ade": 229732,
     "2fb5b092857f70ec": 1753,
     "44e63faa2d9abf84": 2520,
     "4a32f59c1e637acd": 2451,
@@ -2055,7 +2060,10 @@ DEDUP_COORD_CASE = {"545707b9871a535c": 2978}
 # admitted two more (31298 -> 49780, 2026-11-20); #65's MAX_LOOP_COUNTS
 # raise admitted the store's two k=25 0x42 records (49780 -> 51369,
 # 2026-11-20); the manifold/no-dedup-outcome pins are unchanged.
-DEDUP_COORD_NO_REGRESSION = {"b912cbef805c541b": 51369}
+# 2026-11-22 (marathon W1-B/W10 identity-per-rep): the multi-region
+# reading emits +457 more real triangles (51369 -> 51826), still
+# manifold, 0 degenerates, no dedup outcome.
+DEDUP_COORD_NO_REGRESSION = {"b912cbef805c541b": 51826}
 
 # --- 2026-11-21: the L1.1 adoption condition (#70) -------------------------
 #
@@ -2068,7 +2076,7 @@ DEDUP_COORD_NO_REGRESSION = {"b912cbef805c541b": 51369}
 # the external probe pins their return to not-manifold), while the ONE
 # official-corpus part the pass fires on carries a degenerate-free
 # candidate and must keep its adopted emission.
-RELIST_ADOPTED_PIN = {"cd88ae9d4d51a439": 3386}
+RELIST_ADOPTED_PIN = {"cd88ae9d4d51a439": 3420}
 
 
 @pytest.mark.skipif(
@@ -2076,9 +2084,16 @@ RELIST_ADOPTED_PIN = {"cd88ae9d4d51a439": 3386}
     reason="corpus is gitignored / absent (the corpus-gated L1.1 pin)",
 )
 def test_relist_adoption_survives_the_degenerate_condition(tmp_path):
-    """The one corpus relist adopter keeps its adoption under L1.1: its
-    candidate is degenerate-free (0 <= chosen), so the part stays L2
-    pass at its pinned triangle count with the relist outcome named."""
+    """The one corpus relist adopter stays L2 pass at its pinned count.
+
+    2026-11-22 (marathon W1-B/W10): the multi-region identity-per-rep
+    reading now resolves this part before the relist post-pass, so the
+    relist outcome keys are absent and the emission carries +34 real
+    triangles (3386 -> 3420), manifold with 0 degenerates. The L1.1
+    adoption law itself stays pinned by the fixture arm
+    (test_composite_dedup_coordinate_relist_across_reps); when the store
+    does reach the relist, its outcome must still be named.
+    """
     from catpart.geometry import build_export
 
     paths = _corpus_part_paths(RELIST_ADOPTED_PIN)
@@ -2089,8 +2104,17 @@ def test_relist_adoption_survives_the_degenerate_condition(tmp_path):
         assert summary["degenerate_triangle_count"] == 0
         assert summary["mesh"]["manifold"] is True
         composite = summary["composite"]
-        assert composite["primary_loop_relist_skips"] >= 1
-        assert "primary_loop_relist_boundary" in composite
+        if "primary_loop_relist_skips" in composite:
+            assert composite["primary_loop_relist_skips"] >= 1
+            assert "primary_loop_relist_boundary" in composite
+        else:
+            # The identity-per-rep route resolved the store first; the
+            # relist never fires and its keys are correctly absent.
+            assert composite.get("stage") in (
+                "identity-per-rep",
+                "identity-mixedwrite-reps",
+            ), composite.get("stage")
+            assert composite.get("reps_exported", 0) >= 1
 
 
 def _triangle_area(vertices, tri):
