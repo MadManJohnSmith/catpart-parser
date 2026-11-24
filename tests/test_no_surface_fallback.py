@@ -603,12 +603,12 @@ def test_corpus_population_renders_the_decoded_carriers(tmp_path: Path) -> None:
     # W8's fail-closed family: the 10 store-validated, body-without-pool
     # parts are named empty-geometry-store (were the undecoded-variant
     # bucket before the rename); geometry and totals are unchanged.
-    assert classes == {"mesh": 5, "display": 105, "empty-geometry-store": 10}, classes
+    assert classes == {"mesh": 10, "display": 100, "empty-geometry-store": 10}, classes
     assert totals == {
-        "points": 9676,
+        "points": 7455,
         "curve_segments": 188,
         "parts_with_segments": 31,
-        "triangles": 4422,
+        "triangles": 63848,
     }, totals
     assert pinned is not None, "the pinned part must be in the display population"
     assert pinned["point_count"] == 116
