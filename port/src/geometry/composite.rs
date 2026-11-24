@@ -1113,9 +1113,16 @@ fn parse_strip_records(
     // short form needs the merged boundary list (strip + facet header
     // positions) — Motor.CATPart's u16 record at 51508595 exact-tiles
     // onto a 0x47 facet header, and _NPart#194321's u24 record onto a
-    // short header; the strip-only list misses both.
+    // short header; the strip-only list misses both.  Only the committed
+    // 6-byte extended witnesses enter: a 5-byte multi-primitive pattern
+    // is common in ref bytes and two such false candidates tile onto
+    // each other (MB-base-tubes-YR).
     let mut bounds = hdrs.clone();
-    bounds.extend(facets::facet_headers(data, lo, hi));
+    bounds.extend(
+        facets::facet_headers(data, lo, hi)
+            .into_iter()
+            .filter(|&h| facets::header_len(data, h) == Some(6)),
+    );
     bounds.sort_unstable();
     bounds.dedup();
     // The #65 overlap guard's own accepts: exception-admitted records
@@ -3687,8 +3694,14 @@ pub fn decode_composite_store(
     // re-reads the body per period, and is adopted ONLY when the
     // merged mesh is manifold, degenerate and non-empty; any other
     // outcome keeps the emission above byte-for-byte, with the gap
-    // named.
-    if !chosen.triangles.is_empty() && !mesh::mesh_stats(&chosen.triangles).manifold {
+    // named.  It also fires on a manifold reading that still skips
+    // degenerate members: the unified 5/6-byte records can leave 2
+    // skipped slivers where the multiregion reading is clean
+    // (MB-Torpedo-rail-Bow-YR), and adoption already requires the
+    // degenerate-free merge.
+    if !chosen.triangles.is_empty()
+        && (chosen.degenerate > 0 || !mesh::mesh_stats(&chosen.triangles).manifold)
+    {
         match decode_multiregion(data, span.body_lo, span.body_hi) {
             MrOutcome::NotFamily => {}
             MrOutcome::FamilyDeclined(reason) => {

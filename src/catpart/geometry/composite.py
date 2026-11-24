@@ -619,7 +619,15 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
     # positions) — Motor.CATPart's u16 record at 51508595 exact-tiles
     # onto a 0x47 facet header, and _NPart#194321's u24 record onto a
     # short header; the strip-only list misses both.
-    bounds = sorted(hdrs + facet_headers(data, lo, hi))
+    # The boundary list admits only the committed extended witnesses (the
+    # 6-byte 0x47/0x4f forms): a 5-byte multi-primitive pattern is common
+    # in ref bytes, and two such false candidates tile onto each other
+    # (MB-base-tubes-YR: the short walk lost 104 records when the 5-byte
+    # patterns entered the exact-tiling bounds).  The 5-byte records are
+    # still parsed as records by parse_extended_facet_records.
+    bounds = sorted(
+        hdrs + [h for h in facet_headers(data, lo, hi) if header_len(data, h) == 6]
+    )
     # The #65 overlap guard's own accepts: exception-admitted records
     # may span past the next candidate header, so in-span positions are
     # false positives in the record's refs and must not parse.
@@ -2664,7 +2672,14 @@ def decode_composite_store(
         # is adopted ONLY when the merged mesh is manifold, degenerate
         # and non-empty; any other outcome keeps the emission above
         # byte-for-byte, with the gap named.
-        if triangles and not mesh.mesh_stats(list(triangles)).manifold:
+        # Fires on the not-manifold residue and on a manifold reading
+        # that still skips degenerate members: the unified 5/6-byte
+        # records can leave 2 skipped slivers where the multiregion
+        # reading is clean (MB-Torpedo-rail-Bow-YR), and adoption
+        # already requires a manifold, degenerate-free merge.
+        if triangles and (
+            degenerate or not mesh.mesh_stats(list(triangles)).manifold
+        ):
             mr_status, mr_result, mr_failure = _decode_multiregion(
                 data, span.body_lo, span.body_hi
             )
