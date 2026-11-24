@@ -626,6 +626,26 @@ def test_composite_relaxed_u8_half_read_of_a_u16le_stream_is_declined():
     assert records == []
 
 
+def test_composite_0x41_no_count_triangle_list_is_read():
+    """The unified 4-bit 0x41 reading: bit0 only -> ``ty`` and
+    ``n == 3*ty`` with NO count table (the normal-less twin of 0x49).
+    The two 3-ref triangles tile exactly to the next header."""
+    rec = (
+        bytes([0x01, 0x41, 0x02, 0xFF])
+        + struct.pack("<I", 6)
+        + struct.pack(">6H", 0, 1, 2, 2, 3, 4)
+        + bytes([0x01, 0x42, 0x01, 0xFF])
+        + struct.pack("<I", 0)
+        + bytes(12)
+    )
+    records, n_hdrs = parse_strip_records(rec, 0, len(rec), 10)
+    assert n_hdrs == 2
+    assert records[0][1] == 0x41
+    assert records[0][3] == (3, 3)
+    assert records[0][4] == (0, 1, 2, 2, 3, 4)
+    assert records[0][5] == 2
+
+
 
 # --- stage-6: the walk-mismatch residue's raw-array law (stage-4a,
 # integrated 2026-11-12, #34) -------------------------------------------

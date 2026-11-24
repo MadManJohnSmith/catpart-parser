@@ -227,6 +227,7 @@ from catpart.geometry.errors import ExportError
 from catpart.geometry.facets import (
     EXTENDED_ESCAPED_B4_RE,
     EXTENDED_ESCAPED_TY_RE,
+    MULTI_PRIM_HEADER_LEN,
     MAX_REFS,
     NORMAL_MARKERS_ALL,
     STRIP_RE,
@@ -505,6 +506,74 @@ def parse_049_record(data, o: int, nxt: int, n: int, normal, element_count):
     return (o, 0x49, normal, (3,) * ty, refs, 2)
 
 
+def _has_count_table(data, base: int, n: int, limit: int) -> bool:
+    """Whether a valid u8/P1g count table summing to ``n`` sits at ``base``.
+
+    The unified 4-bit reading makes 0x41 a no-count triangle list; a
+    valid table after its ``n`` field is the committed count law's
+    record (or the u8/u16le half-read the relaxed law declines), so the
+    no-count reader must not claim those bytes.
+    """
+    for k in range(0, MAX_LOOP_COUNTS + 1):
+        read = read_counts(data, base, k, limit)
+        if read is None:
+            return False
+        counts, _clen = read
+        if sum(counts) == n:
+            return True
+    return False
+
+
+def parse_041_record(data, o: int, nxt: int, n: int, element_count, bounds, hi: int, accepted_spans):
+    """The 0x41 triangle-list record under the unified 4-bit bitmask (bit0=ty,
+    no normal, no count table — the normal-less twin of :func:`parse_049_record`).
+
+    ``01 41 ty ff`` + ``u32le n`` (``n == 3 * ty``), followed directly by ``n``
+    element refs (3 consecutive refs per triangle, no count table). Uses the
+    same width vote (u8/u16be/u24be when elem > 65535) and exact-tiling onto
+    merged ``bounds``. Returns ``(offset, 0x41, None, (3,) * ty, refs, width, end)``
+    or ``None`` when the record does not fit the no-count triangle-list law.
+    """
+    ty = data[o + 2]
+    if ty == 0 or n != 3 * ty:
+        return None
+    refs_start = o + 8
+    widths = (1, 2, 3) if element_count is not None and element_count > 65_535 else (1, 2)
+
+    def _cands():
+        for width in widths:
+            end = refs_start + width * n
+            if end > hi:
+                continue
+            j = bisect.bisect_left(bounds, end)
+            nxt_eff = bounds[j] if j < len(bounds) else hi
+            if end > nxt:
+                if end != nxt_eff or any(a < end and o < e for a, e in accepted_spans):
+                    continue
+            yield WidthCandidate(
+                width=width,
+                little=False,
+                counts=(3,) * ty,
+                counts_end=refs_start,
+                end=end,
+                exact=(end == nxt_eff),
+                tri_count=ty,
+            )
+
+    won = vote_ref_width(
+        data,
+        n,
+        _cands(),
+        element_count=element_count,
+        normal=None,
+        elements=None,
+    )
+    if won is None:
+        return None
+    refs, counts, width, end = won
+    return (o, 0x41, None, counts, refs, width, end)
+
+
 def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=None):
     """Every strip record with the width disambiguated (stage-3b rule,
     extended 2026-11-11 stage 4b: u24be candidate + the loop plane
@@ -588,8 +657,8 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
             continue
         nxt = hdrs[i + 1] if i + 1 < len(hdrs) else hi
         hlen = header_len(data, o)
-        if hlen is None or hlen == 6:
-            continue  # the extended 6-byte form has its own parser
+        if hlen is None or hlen in (5, 6):
+            continue  # the 5-byte and 6-byte multi-primitive forms have their own parser
         mk = data[o + 1]
         if o + hlen + 4 > nxt:
             continue
@@ -615,6 +684,20 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
                 if rec is not None:
                     out.append(rec)
             continue
+        if (
+            mk == 0x41
+            and hlen == 4
+            and n == 3 * data[o + 2]
+            and not _has_count_table(data, o + 8, n, nxt)
+        ):
+            rec41 = parse_041_record(
+                data, o, nxt, n, element_count, bounds, hi, accepted_spans
+            )
+            if rec41 is not None:
+                o41, mk41, nrm41, cnt41, refs41, w41, end41 = rec41
+                out.append((o41, mk41, nrm41, cnt41, refs41, w41))
+                accepted_spans.append((o41, end41))
+                continue
         relaxed = mk in RELAXED_SHORT_MARKERS
         i6 = bisect.bisect_right(ext_hdrs, o) if relaxed else len(ext_hdrs)
         h6 = ext_hdrs[i6] if i6 < len(ext_hdrs) else None
@@ -810,11 +893,13 @@ RELAXED_SHORT_MARKERS = (0x44, 0x41)
 # and the decoded mesh is a closed manifold whose three 0x4f faces
 # reproduce pi*(r_out^2 - r_in^2) to <2%.
 
-#: Markers observed in the extended-header form (the family's scope).
-EXTENDED_HEADER_MARKERS = (0x47, 0x4F)
+#: Multi-primitive markers under the unified 4-bit bitmask
+#: (bit0=ty triangles, bit1=b3 strips, bit2=b4 polygons, bit3=12B normal):
+#: 5-byte 2-primitive forms (0x43/45/46/4b/4d/4e) and 6-byte 3-primitive forms (0x47/4f).
+EXTENDED_HEADER_MARKERS = (0x43, 0x45, 0x46, 0x47, 0x4B, 0x4D, 0x4E, 0x4F)
 
-#: Extended-header markers carrying the 12-byte normal payload.
-EXTENDED_NORMAL_MARKERS = (0x4F,)
+#: Multi-primitive markers carrying the 12-byte normal payload (bit3 set).
+EXTENDED_NORMAL_MARKERS = (0x4B, 0x4D, 0x4E, 0x4F)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -877,7 +962,8 @@ def _parse_escaped_extended_records(data, lo, hi, hdrs, element_count, elements,
     positions |= {
         h
         for h in hdrs
-        if data[h + 1] in EXTENDED_HEADER_MARKERS and header_len(data, h) != 6
+        if data[h + 1] in EXTENDED_HEADER_MARKERS
+        and header_len(data, h) != MULTI_PRIM_HEADER_LEN.get(data[h + 1])
     }
     if not positions:
         return [], 0
@@ -897,9 +983,14 @@ def _parse_escaped_extended_records(data, lo, hi, hdrs, element_count, elements,
         if mk not in EXTENDED_HEADER_MARKERS:
             continue
         try:
-            ty, p = read_count(data, o + 2)
-            b3, p = read_count(data, p)
-            b4, p = read_count(data, p)
+            p = o + 2
+            ty = b3 = b4 = 0
+            if mk & 1:
+                ty, p = read_count(data, p)
+            if mk & 2:
+                b3, p = read_count(data, p)
+            if mk & 4:
+                b4, p = read_count(data, p)
             if p >= hi or data[p] != 0xFF or p + 5 > hi:
                 continue
             n = int.from_bytes(data[p + 1 : p + 5], "little")
@@ -986,6 +1077,15 @@ def _short_record_spans(data, lo, hi, records):
         if mk == 0x49:
             spans.append((o, o + 20 + 2 * sum(counts)))
             continue
+        if mk == 0x41 and header_len(data, o) == 4 and all(c == 3 for c in counts):
+            n41 = int.from_bytes(data[o + 4 : o + 8], "little")
+            if n41 == 3 * data[o + 2] and n41 == sum(counts):
+                if not _has_count_table(data, o + 8, n41, hi):
+                    # The no-count reading's refs start at +8; a count-law
+                    # record (valid table present) falls through to the
+                    # generic span below.
+                    spans.append((o, o + 8 + width * n41))
+                    continue
         hlen = header_len(data, o)
         has_normal = mk in NORMAL_MARKERS_ALL
         base = o + hlen + 4 + (12 if has_normal else 0)
@@ -1112,7 +1212,9 @@ def parse_extended_facet_records(
     widths = (1, 2, 3) if element_count is not None and element_count > 65_535 else (1, 2)
     accepted: list[tuple[int, int]] = []
     for i, o in enumerate(hdrs):
-        if header_len(data, o) != 6:
+        mk = data[o + 1]
+        expected_hlen = MULTI_PRIM_HEADER_LEN.get(mk)
+        if expected_hlen is None or header_len(data, o) != expected_hlen:
             continue
         if any(a <= o < e for a, e in shipped_spans) or any(
             a <= o < e for a, e in accepted
@@ -1124,20 +1226,32 @@ def parse_extended_facet_records(
             continue
         candidates += 1
         nxt = hdrs[i + 1] if i + 1 < len(hdrs) else hi
-        mk = data[o + 1]
         if mk not in EXTENDED_HEADER_MARKERS:
             continue
-        ty, b3, b4 = data[o + 2], data[o + 3], data[o + 4]
+        p_hdr = o + 2
+        ty = b3 = b4 = 0
+        if mk & 1:
+            ty = data[p_hdr]
+            p_hdr += 1
+        if mk & 2:
+            b3 = data[p_hdr]
+            p_hdr += 1
+        if mk & 4:
+            b4 = data[p_hdr]
+            p_hdr += 1
         k = b3 + b4
         has_normal = mk in EXTENDED_NORMAL_MARKERS
-        base = o + 10 + (12 if has_normal else 0)
+        n_off = o + expected_hlen
+        if n_off + 4 + (12 if has_normal else 0) > hi:
+            continue
+        base = n_off + 4 + (12 if has_normal else 0)
         normal = None
         if has_normal:
-            normal = struct.unpack("<fff", data[o + 10 : o + 22])
+            normal = struct.unpack("<fff", data[n_off + 4 : n_off + 16])
         refs_start = base + k
         if refs_start > hi:
             continue
-        n = int.from_bytes(data[o + 6 : o + 10], "little")
+        n = int.from_bytes(data[n_off : n_off + 4], "little")
 
         def _nxt_eff(end):
             # The exact-tiling boundary past the internal false
@@ -1711,13 +1825,16 @@ def _triangulate(
             o += c
             if not loop:
                 continue
+            # Unified 4-bit bitmask: 0x44 (0100) is closed polygon fan (0x4C
+            # without normal), 0x41 (0001) is triangle list (3-ref loops).
+            kind = 0x4C if mk == 0x44 else 0x42
             if any(r in skips for r in loop):
                 loops_curve_entry += 1
-                dropped.append((mk, normal, loop))
+                dropped.append((kind, normal, loop))
                 continue
             loops_exported += 1
             idxs = [written_rank[r] for r in loop]
-            tris, deg = _loop_triangles(mk, idxs, points)
+            tris, deg = _loop_triangles(kind, idxs, points)
             if deg:
                 # The extended-family precondition: a loop carrying a
                 # degenerate emission is declined WHOLE and its skip is

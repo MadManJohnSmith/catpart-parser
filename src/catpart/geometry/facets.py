@@ -78,7 +78,7 @@ STRIP_RE = re.compile(rb"\x01[\x41-\x4f].\xff", re.DOTALL)
 #: discovery: its semantics are open (G2 unknown 6) and this scanner does
 #: not change its status. The header length is derived from the ff position
 #: (:func:`header_len`), never assumed to be +3.
-FACET_HEADER_RE = re.compile(rb"\x01[\x41-\x4f](?:.\xff|...\xff)", re.DOTALL)
+FACET_HEADER_RE = re.compile(rb"\x01[\x41-\x4f](?:.\xff|..\xff|...\xff)", re.DOTALL)
 
 #: The extended family's P1g-escaped header forms (#64, 2026-11-20): the
 #: ``ty``/``b3``/``b4`` header bytes may each escape to ``ff + u32le``, so
@@ -88,8 +88,8 @@ FACET_HEADER_RE = re.compile(rb"\x01[\x41-\x4f](?:.\xff|...\xff)", re.DOTALL)
 #: escaped). The +2 and +4 shapes are invisible to both committed
 #: patterns, so they get their own candidates; the parse itself
 #: (``ty/b3/b4`` through ``read_count``) validates them.
-EXTENDED_ESCAPED_TY_RE = re.compile(rb"\x01[\x47\x4f]\xff", re.DOTALL)
-EXTENDED_ESCAPED_B4_RE = re.compile(rb"\x01[\x47\x4f].{2}\xff", re.DOTALL)
+EXTENDED_ESCAPED_TY_RE = re.compile(rb"\x01[\x43\x45\x46\x47\x4b\x4d\x4e\x4f]\xff", re.DOTALL)
+EXTENDED_ESCAPED_B4_RE = re.compile(rb"\x01[\x43\x45\x46\x47\x4b\x4d\x4e\x4f].{2}\xff", re.DOTALL)
 
 #: Loop families: strips (triangle-strip segments) and closed polygons.
 STRIP_MARKERS = (0x41, 0x42, 0x49, 0x4A)
@@ -196,7 +196,7 @@ def parse_facet_record(
     mk = data[o + 1]
     ty = data[o + 2]
     hlen = header_len(data, o)
-    if hlen is None or hlen == 6:
+    if hlen is None or hlen in (5, 6):
         # The extended 6-byte form is a different grammar (its own parser:
         # catpart.geometry.composite.parse_extended_facet_records).
         return None
@@ -258,21 +258,27 @@ def parse_facet_record(
     )
 
 
-def facet_headers(data, lo: int, hi: int) -> list[int]:
-    """Every extended-header candidate position in ``[lo, hi)``.
+#: 5-byte (2-of-3 primitive) and 6-byte (3-of-3 primitive) multi-primitive
+#: markers under the unified 4-bit facet bitmask:
+#: bit0=triangles (ty), bit1=strips (b3), bit2=polygons (b4), bit3=normal.
+MULTI_PRIM_HEADER_LEN = {
+    0x43: 5, 0x45: 5, 0x46: 5,
+    0x4B: 5, 0x4D: 5, 0x4E: 5,
+    0x47: 6, 0x4F: 6,
+}
 
-    Discovery for the 6-byte extended form only (:data:`FACET_HEADER_RE`
-    matches both forms; :func:`header_len` filters). The committed
-    short-form discovery (:data:`STRIP_RE`) is unchanged, so the
-    short-record parses of existing stores stay byte-identical — the
-    extended records are parsed by their own law
-    (:func:`catpart.geometry.composite.parse_extended_facet_records`) and
-    counted on the summary instead of silently sitting in the gaps.
+
+def facet_headers(data, lo: int, hi: int) -> list[int]:
+    """Every multi-primitive (5-byte or 6-byte) header candidate in ``[lo, hi)``.
+
+    Discovery for the 5-byte (0x43/45/46/4b/4d/4e) and 6-byte (0x47/0x4f)
+    multi-primitive forms under the unified 4-bit facet bitmask. The
+    committed short-form discovery (:data:`STRIP_RE`) is unchanged.
     """
     return [
         m.start()
         for m in FACET_HEADER_RE.finditer(data, lo, hi)
-        if header_len(data, m.start()) == 6
+        if header_len(data, m.start()) == MULTI_PRIM_HEADER_LEN.get(data[m.start() + 1])
     ]
 
 
