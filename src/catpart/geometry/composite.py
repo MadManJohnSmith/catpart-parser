@@ -506,24 +506,6 @@ def parse_049_record(data, o: int, nxt: int, n: int, normal, element_count):
     return (o, 0x49, normal, (3,) * ty, refs, 2)
 
 
-def _has_count_table(data, base: int, n: int, limit: int) -> bool:
-    """Whether a valid u8/P1g count table summing to ``n`` sits at ``base``.
-
-    The unified 4-bit reading makes 0x41 a no-count triangle list; a
-    valid table after its ``n`` field is the committed count law's
-    record (or the u8/u16le half-read the relaxed law declines), so the
-    no-count reader must not claim those bytes.
-    """
-    for k in range(0, MAX_LOOP_COUNTS + 1):
-        read = read_counts(data, base, k, limit)
-        if read is None:
-            return False
-        counts, _clen = read
-        if sum(counts) == n:
-            return True
-    return False
-
-
 def parse_041_record(data, o: int, nxt: int, n: int, element_count, bounds, hi: int, accepted_spans):
     """The 0x41 triangle-list record under the unified 4-bit bitmask (bit0=ty,
     no normal, no count table — the normal-less twin of :func:`parse_049_record`).
@@ -684,23 +666,39 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
                 if rec is not None:
                     out.append(rec)
             continue
-        if (
-            mk == 0x41
-            and hlen == 4
-            and n == 3 * data[o + 2]
-            and not _has_count_table(data, o + 8, n, nxt)
-        ):
-            rec41 = parse_041_record(
-                data, o, nxt, n, element_count, bounds, hi, accepted_spans
-            )
-            if rec41 is not None:
-                o41, mk41, nrm41, cnt41, refs41, w41, end41 = rec41
-                out.append((o41, mk41, nrm41, cnt41, refs41, w41))
-                accepted_spans.append((o41, end41))
-                continue
         relaxed = mk in RELAXED_SHORT_MARKERS
         i6 = bisect.bisect_right(ext_hdrs, o) if relaxed else len(ext_hdrs)
         h6 = ext_hdrs[i6] if i6 < len(ext_hdrs) else None
+
+        def _half_read(width: int, end: int) -> bool:
+            """The #66/W1 anti-half-read battery for one short winner."""
+            if (
+                relaxed
+                and width == 1
+                and h6 is not None
+                and end < h6 < end + n
+                and h6 + 2 <= end + n
+                and all(
+                    int.from_bytes(data[p : p + 2], "little") < element_count
+                    for p in range(end - n, end + n, 2)
+                )
+            ):
+                return True
+            if (
+                width == 1
+                and n >= 8
+                and end + n <= hi
+                and all(data[end - n + j] == 0 for j in range(0, 2 * n, 2))
+                and any(
+                    int.from_bytes(
+                        data[end - n + j : end - n + j + 2], "big"
+                    )
+                    >= element_count
+                    for j in range(0, 2 * n, 2)
+                )
+            ):
+                return True
+            return False
 
         def _candidates():
             for width in widths:
@@ -782,57 +780,31 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
             normal=normal,
             elements=elements,
         )
+        if won is not None:
+            _refs, _counts, _width, _end = won
+            if _half_read(_width, _end):
+                # The committed winner is a half-read of a wider stream:
+                # the record is unresolvable either way. Do NOT let the
+                # 0x41 no-count reading resurrect it (the Audi
+                # 0x301e912 canary).
+                continue
+        if mk == 0x41 and hlen == 4 and n == 3 * data[o + 2]:
+            # The unified 4-bit no-count reading is the 0x41 primitive:
+            # it replaces a viable count-law winner (the small u16 refs
+            # can spell a coincidental count table) but never a winner
+            # the anti-half-read battery declined above.
+            rec41 = parse_041_record(
+                data, o, nxt, n, element_count, bounds, hi, accepted_spans
+            )
+            if rec41 is not None:
+                _o41, _mk41, _nrm41, cnt41, refs41, w41, end41 = rec41
+                won = (refs41, cnt41, w41, end41)
         if won is None:
             continue
         refs, counts, width, end = won
-        if (
-            relaxed
-            and width == 1
-            and h6 is not None
-            and end < h6 < end + n
-            and h6 + 2 <= end + n
-            and all(
-                int.from_bytes(data[p : p + 2], "little") < element_count
-                for p in range(end - n, end + n, 2)
-            )
-        ):
-            # #66: a u8 winner whose u16le reading is a complete,
-            # in-bounds ref stream reaching at least one whole ref past
-            # a 6-byte header is a half-read of that stream, not a u8
-            # record — the Audi 0x301e912 false header (refs
-            # 1264/1098/770/903/1008/932/1008/391/2119, all inside
-            # 5,561 elements, its ninth ref sitting after a real 0x47).
-            # The only other u8 records that touch an extended candidate
-            # either straddle it by the single header byte (SP02,
-            # M3x10) or leave OOB u16 refs (tn.1.1.1) — corpus census,
-            # so this declines no measured record.
-            continue
-        if (
-            width == 1
-            and n >= 8
-            and end + n <= hi
-            and all(data[end - n + j] == 0 for j in range(0, 2 * n, 2))
-            and any(
-                int.from_bytes(
-                    data[end - n + j : end - n + j + 2], "big"
-                )
-                >= element_count
-                for j in range(0, 2 * n, 2)
-            )
-        ):
-            # W1 marathon anti-half-read (2026-11-22): a u8 winner whose
-            # ref block is a u16be stream's high-half zeros — every even
-            # byte 0x00 over n >= 8 refs — whose u16be re-reading leaves
-            # the element space. The block is a u16 ref stream the
-            # declared space cannot resolve (the store's element space is
-            # truncated; acc-Cont-Lft 0x5255e: refs to 255 over
-            # elem_decl 220, the u8 reading the OOB gap-edge tiebreak
-            # kept is the permuted 0/value garbage). The u8 triangles are
-            # false surface; the u16be reading fails the #66 gate too, so
-            # the record is unresolvable either way — decline fail-closed
-            # (Submarino census: 1,299 records in 49 parts, 41 of them
-            # not-manifold; no L2 Dev/Held-out store carries the
-            # signature).
+        if _half_read(width, end):
+            # The no-count winner carries the same guard (a width-1
+            # no-count parse can still be a half-read on its own).
             continue
         out.append((o, mk, normal, counts, refs, width))
         # The #65 overlap guard's input (W7-B short-form extension): the
@@ -1080,12 +1052,12 @@ def _short_record_spans(data, lo, hi, records):
         if mk == 0x41 and header_len(data, o) == 4 and all(c == 3 for c in counts):
             n41 = int.from_bytes(data[o + 4 : o + 8], "little")
             if n41 == 3 * data[o + 2] and n41 == sum(counts):
-                if not _has_count_table(data, o + 8, n41, hi):
-                    # The no-count reading's refs start at +8; a count-law
-                    # record (valid table present) falls through to the
-                    # generic span below.
-                    spans.append((o, o + 8 + width * n41))
-                    continue
+                # The unified 0x41 reading is the no-count triangle list:
+                # its refs start at +8, with no count table. Accepted
+                # 0x41 records that are NOT this form (a failed no-count
+                # parse) carry non-(3,)-counts, so they fall through.
+                spans.append((o, o + 8 + width * n41))
+                continue
         hlen = header_len(data, o)
         has_normal = mk in NORMAL_MARKERS_ALL
         base = o + hlen + 4 + (12 if has_normal else 0)
