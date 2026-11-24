@@ -2996,13 +2996,18 @@ struct NodeMixedwrite {
 ///     required, no zero block or table — all-nice under :fn:`nice`
 ///     (the exporter predicate; the raw scan's 1e-6 floor rejects
 ///     real near-zero coordinates on these stores), x-ascending >=
-///     RAW_FIT_RATE OR the pool fully re-listed verbatim (junk spans
-///     absorb nothing and fail here).
+///     RAW_FIT_RATE OR **one pool group** fully re-listed verbatim
+///     (junk spans absorb nothing and fail here).  The pool test is
+///     per group, not over the union: a multi-rep store's flat region
+///     re-lists its own ``01 06`` pool (the B2 twin family,
+///     TolerantSweepDev0/1 — the committed table walk's slot-shape
+///     sum is one word over its declared write count while the flat
+///     reading re-lists each rep's 8-vertex group).
 fn decode_node_mixedwrite(
     payload: &[u8],
     element_count: u32,
     counts_end: usize,
-    poolv: &[(f64, f64, f64)],
+    pool_groups: &[&[(f64, f64, f64)]],
 ) -> NodeMixedwrite {
     match table_decode_extents(payload, element_count, counts_end) {
         Some(Ok(td)) => {
@@ -3074,11 +3079,18 @@ fn decode_node_mixedwrite(
                 .iter()
                 .map(|t| (f32_widen(t, 0), f32_widen(t, 4), f32_widen(t, 8)))
                 .collect();
-            let pset: HashSet<(u64, u64, u64)> = poolv.iter().copied().map(vkey).collect();
-            let hits = pset
-                .intersection(&pts.iter().copied().map(vkey).collect::<HashSet<_>>())
-                .count();
-            if asc >= RAW_FIT_RATE || (!pset.is_empty() && hits == pset.len()) {
+            let pts_set: HashSet<(u64, u64, u64)> = pts.iter().copied().map(vkey).collect();
+            // Per rep: one pool group fully re-listed (the union can
+            // never be absorbed by one node on a multi-rep store).
+            let pool_hit = pool_groups.iter().any(|group| {
+                !group.is_empty()
+                    && group
+                        .iter()
+                        .copied()
+                        .map(vkey)
+                        .all(|v| pts_set.contains(&v))
+            });
+            if asc >= RAW_FIT_RATE || pool_hit {
                 return NodeMixedwrite {
                     law: Some("flat"),
                     elements: pts.iter().map(|&pt| (0, Some(pt))).collect(),
@@ -3156,6 +3168,8 @@ fn decode_mixedwrite(
         .flat_map(|g| g.vertices.iter().copied())
         .collect();
     let pool_set: HashSet<(u64, u64, u64)> = poolv.iter().copied().map(vkey).collect();
+    let pool_groups: Vec<&[(f64, f64, f64)]> =
+        groups.iter().map(|g| g.vertices.as_slice()).collect();
     let nodes = scan_token_nodes(data, lo, hi);
     let n_nodes = nodes.len();
     let mut decoded: Vec<MixedRep> = Vec::new();
@@ -3171,7 +3185,7 @@ fn decode_mixedwrite(
             // unreachable behind scan_token_nodes
             continue;
         };
-        let nd = decode_node_mixedwrite(payload, node.elem, counts_end, &poolv);
+        let nd = decode_node_mixedwrite(payload, node.elem, counts_end, &pool_groups);
         let Some(law) = nd.law else {
             node_failures.push(if nd.failure.is_empty() {
                 format!("node@{}: undecoded", node.pos)
@@ -4024,5 +4038,41 @@ mod tests {
         let before = uses.clone();
         assert!(!mesh_safe(&mut uses, &[(0, 2, 9)]));
         assert_eq!(uses, before);
+    }
+
+    /// The flat arm's pool test is per GROUP (the B2 twin family): one
+    /// fully re-listed group fires it even when the store's other
+    /// groups are absent from this node, while the union of every
+    /// group could never be absorbed by one node on a multi-rep store.
+    /// Three non-ascending triples straight after the 4-B field; the
+    /// table extent law sees the non-zero field and declines, the raw
+    /// probe has no start.
+    #[test]
+    fn flat_law_requires_one_pool_group_not_the_union() {
+        let pts = [(2.0f64, 0.0, 0.0), (0.0, 1.0, 0.0), (1.0, 0.0, 1.0)];
+        let mut payload = vec![0xFF, 0xFF, 0x02, 0x00, 0x01, 3, 3, 0, 0, 0, 1];
+        for p in pts {
+            for c in [p.0, p.1, p.2] {
+                payload.extend_from_slice(&(c as f32).to_le_bytes());
+            }
+        }
+        let counts_end = 7;
+        let other = (9.0, 9.0, 9.0);
+        // One group is fully re-listed; the union of both is not.
+        let hit: [&[(f64, f64, f64)]; 2] = [&pts, &[other]];
+        let nd = decode_node_mixedwrite(&payload, 3, counts_end, &hit);
+        assert_eq!(nd.law, Some("flat"));
+        assert_eq!(nd.pts, pts.to_vec());
+        assert_eq!(nd.write_count, 9);
+        // No single group is fully re-listed -> not the flat law.
+        let part0 = [pts[0], other];
+        let part1 = [pts[1], other];
+        let split: [&[(f64, f64, f64)]; 2] = [&part0, &part1];
+        let nd = decode_node_mixedwrite(&payload, 3, counts_end, &split);
+        assert!(nd.law.is_none(), "a subset of every group must not fire");
+        // An unrelated group leaves the node undecoded.
+        let miss: [&[(f64, f64, f64)]; 1] = [&[other]];
+        let nd = decode_node_mixedwrite(&payload, 3, counts_end, &miss);
+        assert!(nd.law.is_none());
     }
 }

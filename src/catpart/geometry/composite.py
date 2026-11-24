@@ -2197,7 +2197,7 @@ def _raw_escape_probe(payload: bytes, element_count: int):
     return s, rate, asc
 
 
-def _decode_node_mixedwrite(payload: bytes, element_count: int, counts_end: int, poolv):
+def _decode_node_mixedwrite(payload: bytes, element_count: int, counts_end: int, pool_groups):
     """Decode one token-node payload with the stage-8 law set (ported
     from ``mixedwrite_decode.decode_node`` — not re-derived), in the
     census's order:
@@ -2215,8 +2215,24 @@ def _decode_node_mixedwrite(payload: bytes, element_count: int, counts_end: int,
         required, no zero block or table — all-nice under
         :func:`_nice` (the exporter predicate; the raw scan's 1e-6
         floor rejects real near-zero coordinates on these stores),
-        x-ascending >= :data:`RAW_FIT_RATE` OR the pool fully
-        re-listed verbatim (junk spans absorb nothing and fail here).
+        x-ascending >= :data:`RAW_FIT_RATE` OR **one pool group**
+        fully re-listed verbatim (junk spans absorb nothing and fail
+        here).
+
+        The pool test is per GROUP, not over the union: on a multi-rep
+        store each node's flat region re-lists its own ``01 06`` pool
+        (the diagonal the composition then enforces), and the union
+        test could never fire when the part carries several groups.
+        This is the B2 twin family's reconciliation
+        (TolerantSweepDev0/1, 2026-11-23): the committed 2-bit table
+        walk misreads the first triple's high x byte as the write
+        count — its slot-shape sum is exactly one word over the
+        declared count (``sum(SHAPES) - write_count == 1``), so the
+        walk dies at the last element — while the flat reading at
+        ``counts_end + 4`` re-lists each rep's 8-vertex pool group
+        verbatim.  Bytes: ``counts_end`` carries the 4-B field
+        ``00 00 00 01`` then ``element_count`` f32 triples; the
+        phantom count byte is the high byte of the first x coordinate.
 
     Returns ``(law, elements, pts, region_end_rel, write_count,
     failure)`` with ``law`` in ``{'table', 'raw', 'flat', None}``;
@@ -2268,9 +2284,13 @@ def _decode_node_mixedwrite(payload: bytes, element_count: int, counts_end: int,
             pts = list(
                 struct.iter_unpack("<fff", payload[s : s + 12 * element_count])
             )
-            pset = set(poolv)
-            hits = len(pset & set(pts))
-            if asc >= RAW_FIT_RATE or (pset and hits == len(pset)):
+            pts_set = set(pts)
+            # Per rep: the node's own pool group must be re-listed
+            # verbatim.  The union of every group can never be absorbed
+            # by one node on a multi-rep store (the B2 twins: 8 vertices
+            # per group, two groups).
+            pool_hit = any(pset and pset <= pts_set for pset in pool_groups)
+            if asc >= RAW_FIT_RATE or pool_hit:
                 return (
                     "flat",
                     [(0, pt) for pt in pts],
@@ -2320,6 +2340,7 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
     or no rep exports."""
     poolv = [v for g in groups for v in g.vertices]
     pool_set = set(poolv)
+    pool_groups = [set(g.vertices) for g in groups]
     nodes = _scan_token_nodes(data, lo, hi)
     decoded = []
     law_counts = {"table": 0, "raw": 0, "flat": 0}
@@ -2329,7 +2350,7 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
         if counts_end is None:  # unreachable behind _scan_token_nodes
             continue
         law, elements, pts, region_end_rel, wc, failure = _decode_node_mixedwrite(
-            payload, c1, counts_end, poolv
+            payload, c1, counts_end, pool_groups
         )
         if law is None:
             node_failures.append(f"node@{npos}: {failure}" if failure else f"node@{npos}: undecoded")

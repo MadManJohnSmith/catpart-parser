@@ -1845,3 +1845,82 @@ def test_composite_0x49_fixture_exports_the_box(tmp_path, capsys):
     assert info["skipped_markers"] == {}  # 0x49 is exported, not skipped
     vertices, faces = parse_ply(ply_path)
     assert len(vertices) == 12 and len(faces) == 12
+
+
+# --- 2026-11-23: the B2 flat-law per-rep pool test -----------------------
+#
+# The stage-8 flat arm's pool test used the UNION of every pool group.
+# A multi-rep store can never satisfy that (each node's region re-lists
+# its own group), so the TolerantSweepDev0/1 twins stayed undecoded:
+# their committed 2-bit table walk is a phantom — the count byte is the
+# high byte of the first x coordinate, so the slot-shape sum is exactly
+# one word over the declared write count and the walk dies at the last
+# element — while the flat reading at counts_end + 4 re-lists each
+# rep's 8-vertex group verbatim.  These pins are the unit lever and the
+# corpus outcome (docs/evidence/2026-11-23-b2-flat-pool.md).
+
+
+def _flat_payload(points):
+    """token + (ec, ec) + the 4-B field + f32 triples (no table)."""
+    body = b"\xff\xff\x02\x00\x01" + bytes([len(points), len(points)])
+    body += b"\x00\x00\x00\x01"
+    return body + b"".join(struct.pack("<fff", *p) for p in points)
+
+
+def test_mixedwrite_flat_law_requires_one_pool_group_not_the_union():
+    """One fully re-listed group fires the flat arm even when the store's
+    other groups are not in this node's region (the B2 shape: 8 of 16
+    pool vertices); a proper subset of every group does not.  The
+    non-ascending x keeps the order arm off."""
+    pts = [(2.0, 0.0, 0.0), (0.0, 1.0, 0.0), (1.0, 0.0, 1.0)]
+    payload = _flat_payload(pts)
+    assert len(payload) == 47
+    other = (9.0, 9.0, 9.0)
+    # The union of both groups is not in the region; the first group is.
+    law, elements, got, end, write_count, failure = composite._decode_node_mixedwrite(
+        payload, 3, 7, [set(pts), {other}]
+    )
+    assert law == "flat"
+    assert got == pts
+    assert elements == [(0, p) for p in pts]
+    assert end == len(payload)
+    assert write_count == 9
+    assert failure == ""
+    # No group fully re-listed (each carries a vertex outside the
+    # node's region) -> not the flat law.
+    law, *_ = composite._decode_node_mixedwrite(
+        payload, 3, 7, [{pts[0], other}, {pts[1], other}]
+    )
+    assert law is None
+    law, *_ = composite._decode_node_mixedwrite(payload, 3, 7, [{other}])
+    assert law is None
+
+
+B2_FLAT_TWINS = {
+    # sha16: (vertices, triangles)
+    "416d14fd09a8c68d": (117, 24),
+    "434d4bb4b3ce97a3": (118, 32),
+}
+
+
+@pytest.mark.skipif(
+    not (Path(__file__).resolve().parents[1] / "corpus").exists(),
+    reason="corpus is gitignored / absent (the B2 twin differential)",
+)
+def test_b2_twins_export_on_the_flat_per_rep_pool_law(tmp_path):
+    """The two TolerantSweep twins export manifold through the mixed-write
+    composition with both reps on the flat law and zero degenerates."""
+    from catpart.geometry import build_export
+
+    paths = _corpus_part_paths(B2_FLAT_TWINS)
+    assert set(paths) == set(B2_FLAT_TWINS), "manifest/corpus rows missing"
+    for sha, (n_vertices, n_triangles) in sorted(B2_FLAT_TWINS.items()):
+        summary = build_export(paths[sha], tmp_path / f"{sha}.ply")
+        info = summary["composite"]
+        assert info["stage"] == "identity-mixedwrite-reps"
+        assert info["rep_laws"] == {"table": 0, "raw": 0, "flat": 2}
+        assert info["reps_exported"] == 2
+        assert summary["vertex_count"] == n_vertices
+        assert summary["triangle_count"] == n_triangles
+        assert summary["degenerate_triangle_count"] == 0
+        assert summary["mesh"]["manifold"] is True
