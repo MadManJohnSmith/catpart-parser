@@ -371,28 +371,6 @@ def decode_region(payload: bytes, element_count: int):
             "decode under the table law",
         )
     slots = table_slots(payload, table_start, table_len, element_count)
-    # The one-word arithmetic shortfall (2026-11-18, #50 B2): on the
-    # TolerantSweepDev0 twins the writer's P1g count is ONE word short
-    # of the 2-bit table's own budget — ``sum(shapes) - write_count ==
-    # 1`` — and the extra word is physically present in the payload
-    # (the last shape-2 write; the following bytes are the trailing
-    # region).  The law is fail-closed and exact: it fires ONLY on that
-    # arithmetic relation, the extended region must fit, and the walk,
-    # the finite-coordinate predicate and the refs gate are unchanged.
-    # Measured incidence: exactly 2 of 1,824 corpus parts (the twins),
-    # 0 elsewhere (docs/evidence/2026-11-18-b2-b3-variant-parts.md).
-    declared_write_count = write_count
-    shortfall = 0
-    if sum(SHAPES[v] for v in slots) == write_count + 1:
-        shortfall = 1
-        write_count += 1
-        if region_start + 4 * write_count > len(payload):
-            raise ExportError(
-                "undecoded-variant",
-                f"declared write count {declared_write_count} is one word "
-                f"short of the table's {write_count}-word budget, but the "
-                "extended region overruns the payload",
-            )
     region_end = region_start + 4 * write_count
     pos = region_start
     x = y = z = 0.0  # the initial LCP state is the origin (P1i subsumed)
@@ -442,9 +420,6 @@ def decode_region(payload: bytes, element_count: int):
         "region_bytes": 4 * write_count,
         "walk_end": pos,
     }
-    if shortfall:
-        info["declared_write_count"] = declared_write_count
-        info["write_count_shortfall"] = shortfall
     return elements, info
 
 
@@ -1301,13 +1276,14 @@ def decode_composite_store(
     triangulation) is unchanged; on any failure the caller re-raises
     the ORIGINAL clean-path error.
 
-    Stage-5 per-rep decomposition (stage-4b law, 2026-11-11): when the
-    single-rep reading fails the pool-absorption gate, the store body
-    may be a SEQUENCE of reps — rep k = (the k-th ``01 06`` pool
-    wrapper, the k-th walk-exact token-bearing list node, the strip
-    records in that node's territory) — and the k-th pool re-lists
-    verbatim (f32-exact, or within :data:`NOISE_REL` relative — the
-    measured double-rounding noise) in the k-th rep's region.  The
+    Stage-5 per-rep decomposition (stage-4b law, 2026-11-11; pairing
+    corrected 2026-11-18, #50 B3): when the single-rep reading fails
+    the pool-absorption gate, the store body may be a SEQUENCE of reps
+    — rep k = (the ``01 06`` pool wrapper, the token-bearing list node
+    immediately preceding that wrapper, the strip records in that
+    node's territory) — and the k-th pool re-lists verbatim
+    (f32-exact, or within :data:`NOISE_REL` relative — the measured
+    double-rounding noise) in the k-th rep's region.  The
     stage-3d "unabsorbed" family is the single-rep reading applied to
     multi-rep stores (docs/evidence/2026-11-11-per-rep-and-width-laws.md
     R1-R5).  Per rep: absorption, the M2b identity refs gate against
@@ -1330,8 +1306,8 @@ def decode_composite_store(
     when the raw-array law declines the store too, the per-rep
     decomposition runs over ALL token nodes on the FULL-body window
     (:func:`_decode_mixedwrite` — the zero-block extent candidates,
-    the flat law's counts_end-pinned start, the diagonal absorption
-    precondition with the sub-node route fail-closed); a store it
+    the flat law's counts_end-pinned start, the positional pairing and
+    absorption precondition with the sub-node route fail-closed); a store it
     covers exports with stage ``identity-mixedwrite-reps``, one it
     does not cover keeps ``undecoded-variant`` with the walk, raw AND
     composition gaps all named.
@@ -1628,13 +1604,18 @@ def _scan_token_nodes(data, lo: int, hi: int):
 def _rep_node_positions(scanned, groups):
     """Pair each pool group with its rep node (2026-11-18, #50 B3).
 
-    The measured corpus law (168 multi-rep stores; 154/154 absorbing
-    pairs): the pool wrapper FOLLOWS its rep's list node — the rep node
-    is the last token-bearing list node before the group's wrapper.
-    The first node after the group absorbs it 0/24 times, so the
-    fallback is never the reading.  A node already claimed by an
-    earlier group cannot re-list a second pool: the later group gets
-    ``None`` (ambiguous → fail-closed).  Pre-rep token nodes (the
+    The measured corpus law: the pool wrapper FOLLOWS its rep's list
+    node — the rep node is the last token-bearing list node before the
+    group's wrapper.  Measured over the 1,036 located composite stores
+    (1,442 manifest parts, read-only scan): 2,175 ``01 06`` pool
+    groups, ALL of them with a preceding token node; that node absorbs
+    the group on 2,149 of 2,175 (the 26 misses are partial/unexported
+    reps, named per rep, not pairing failures).  The first node AFTER
+    the wrapper absorbs 2 of 1,186 and in both cases the preceding
+    node absorbs too, so "after" is never the reading — there is no
+    pool-first fallback.  A node already claimed by an earlier group
+    cannot re-list a second pool: the later group gets ``None``
+    (ambiguous → fail-closed).  Pre-rep token nodes (the
     assembly/scene-graph nodes a recovered container can carry before
     the rep sequence) are simply not the last node before any group.
     """
@@ -1644,20 +1625,64 @@ def _rep_node_positions(scanned, groups):
     for g in groups:
         before = [pos for pos in order if pos < g.offset]
         node = before[-1] if before else None
-        if node is None:
-            # No node precedes the wrapper: the pool-first layout (the
-            # committed fixture shape and any corpus store that opens
-            # with its pool).  The first following token node is the
-            # only candidate; absorption still has to hold, so a wrong
-            # candidate stays fail-closed.
-            after = [pos for pos in order if pos > g.offset]
-            node = after[0] if after else None
         if node in claimed:
             node = None
         if node is not None:
             claimed.add(node)
         positions.append(node)
     return positions
+
+
+def _decode_rep_node(payload, element_count, poolv):
+    """One rep node under the per-rep law ladder (2026-11-18, #50 B3).
+
+    The committed table layout (:func:`decode_region`) is tried first,
+    so every rep the per-rep path already decoded keeps that exact
+    reading.  A node the committed layout rejects falls back to the
+    stage-8 law set (:func:`_decode_node_mixedwrite`): the zero-block
+    extent table, the raw f32 array and the flat all-triples region.
+    The flat law's absorption reference is the rep's OWN pool group — a
+    multi-rep store's pool spans every rep, so the store-level pool can
+    never re-list in one region (the TolerantSweepDev0/1 twins: each
+    8-vertex group re-lists 8/8 in its own flat region and 0/8 against
+    the other rep's).  Returns ``(record, failure)``; ``record`` is
+    ``None`` when no law decodes the node.
+    """
+    try:
+        elements, info = decode_region(payload, element_count)
+        return (
+            {
+                "law": "table",
+                "elements": elements,
+                "pts": [pt for _v, pt in elements if pt is not None],
+                "region_end_rel": info["walk_end"],
+                "write_count": info["write_count"],
+                "table_bytes": info["table_bytes"],
+            },
+            "",
+        )
+    except ExportError as exc:
+        committed = exc.detail
+    counts_end = _token_counts_end(payload)
+    if counts_end is None:
+        # Unreachable behind _scan_token_nodes' validated counts.
+        return None, committed
+    law, elements, pts, region_end_rel, wc, failure = _decode_node_mixedwrite(
+        payload, element_count, counts_end, poolv
+    )
+    if law is None:
+        return None, failure or committed
+    return (
+        {
+            "law": law,
+            "elements": elements,
+            "pts": pts,
+            "region_end_rel": region_end_rel,
+            "write_count": wc,
+            "table_bytes": (element_count + 3) // 4 if law == "table" else 0,
+        },
+        "",
+    )
 
 
 def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
@@ -1667,12 +1692,15 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
     Rep k = (pool group k, the token node immediately preceding that
     group, that node's record territory ``[region_end_k, next token
     node)``); the k-th pool re-lists verbatim (or within
-    :data:`NOISE_REL`) in the k-th rep's region.  A rep exports only
-    when its pool absorbs and its gated references resolve in-bounds
-    against its OWN element count; failing reps stay unexported with the
-    reason named.  When no rep exports, raises the stage-3d
-    ``unabsorbed`` classification with the per-rep residue named
-    (fail-closed, no guessing).
+    :data:`NOISE_REL`) in the k-th rep's region.  Each node decodes under
+    the law ladder of :func:`_decode_rep_node` (the committed table
+    layout first, then the stage-8 extent/raw/flat laws with the rep's
+    OWN pool group as the flat law's absorption reference).  A rep
+    exports only when its pool absorbs and its gated references resolve
+    in-bounds against its OWN element count; failing reps stay
+    unexported with the reason named.  When no rep exports, raises the
+    stage-3d ``unabsorbed`` classification with the per-rep residue
+    named (fail-closed, no guessing).
 
     The pairing is by the GROUP's position, not by the decoded index
     (:func:`_rep_node_positions`): a rep whose region does not decode
@@ -1685,32 +1713,42 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
     rep's records are never attributed to its predecessor.
     """
     scanned = _scan_token_nodes(data, lo, hi)
+    rep_nodes = _rep_node_positions(scanned, groups)
+    # A paired node's flat law is gated on its OWN group's vertices (see
+    # _decode_rep_node); an unpaired node decodes against no pool.
+    pool_by_node = {}
+    for group, node in zip(groups, rep_nodes):
+        if node is not None and node not in pool_by_node:
+            pool_by_node[node] = group
     decoded: dict[int, dict] = {}
+    node_failures = []
     for npos, payload, c1, _c2 in scanned:
-        try:
-            elements, info = decode_region(payload, c1)
-        except ExportError:
-            continue  # walk-exact failure: the rep has no decoded region
-        decoded[npos] = {
-            "pos": npos,
-            "payload": payload,
-            "elem": c1,
-            "elements": elements,
-            "pts": [pt for _v, pt in elements if pt is not None],
-            # absolute end of the point region (the territory start)
-            "region_end": npos + 4 + info["walk_end"],
-            "write_count": info["write_count"],
-            "table_bytes": info["table_bytes"],
-        }
+        group = pool_by_node.get(npos)
+        record, failure = _decode_rep_node(
+            payload, c1, list(group.vertices) if group is not None else []
+        )
+        if record is None:
+            node_failures.append(f"node@{npos}: {failure}")
+            continue
+        record.update(
+            {
+                "pos": npos,
+                "payload": payload,
+                "elem": c1,
+                # absolute end of the point region (the territory start)
+                "region_end": npos + 4 + record["region_end_rel"],
+            }
+        )
+        decoded[npos] = record
     if not decoded:
         raise ExportError(
             "undecoded-variant",
             f"node list does not re-list the pool: {n_missing} of "
             f"{n_pool} pool vertices absent from the decoded point "
             "region (unabsorbed variant; the per-rep decomposition "
-            "finds no walk-exact rep region either)",
+            "decodes no rep node under the table, extent, raw or flat "
+            f"law either: {'; '.join(node_failures[:2]) or 'no nodes'})",
         )
-    rep_nodes = _rep_node_positions(scanned, groups)
     scanned_positions = [npos for npos, _p, _c1, _c2 in scanned]
     points: list = []
     triangles: list = []
@@ -1744,9 +1782,9 @@ def _decode_per_rep(data, lo, hi, groups, n_missing, n_pool, seam_area=None):
         d = decoded.get(node)
         if d is None:
             reps_unexported.append(
-                f"rep {k}: the token node at {node} has no walk-exact "
-                "decoded region (its pool group stays unexported; the "
-                "region law does not decode the rep)"
+                f"rep {k}: the token node at {node} has no region under "
+                "the committed table layout or the stage-8 extent/raw/"
+                "flat laws (its pool group stays unexported)"
             )
             continue
         reps_decoded += 1
@@ -2381,12 +2419,11 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
     over the FULL-body window, with the stage-8 locator/predicate laws
     per node (:func:`_decode_node_mixedwrite`).
 
-    Rep k = (pool group k, the k-th law-decoded token node in body
-    order — the diagonal, measured on the census population: all 81
-    region-absorbable stores pair diagonally with exact f32 —, that
-    node's record territory ``[region_end_k, next decoded node)``).
+    Rep k = (pool group k, the token node immediately preceding that
+    group's wrapper — the measured order, 2026-11-18 #50 B3 —, that
+    node's record territory ``[region_end_k, next token node)``).
     The store exports only when EVERY pool vertex is absorbed by its
-    diagonal rep's region (exact f32, then the stage-4b noise
+    paired rep's region (exact f32, then the stage-4b noise
     tolerance capped at 10,000-vertex pools): vertices re-listed only
     by the ``05 08 01`` sub-node records have unpinned element indices
     and keep the store fail-closed for export (the stage-8 note's
@@ -2404,6 +2441,15 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
     poolv = [v for g in groups for v in g.vertices]
     pool_set = set(poolv)
     nodes = _scan_token_nodes(data, lo, hi)
+    # The rep pairing (2026-11-18, #50 B3; see _decode_per_rep): group
+    # k pairs with the token node immediately preceding its wrapper.
+    # The flat law's absorption gate uses that group's vertices only —
+    # a multi-rep store's whole pool cannot re-list in one region.
+    rep_nodes = _rep_node_positions(nodes, groups)
+    pool_by_node = {}
+    for group, node in zip(groups, rep_nodes):
+        if node is not None and node not in pool_by_node:
+            pool_by_node[node] = group
     decoded: dict[int, dict] = {}
     law_counts = {"table": 0, "raw": 0, "flat": 0}
     node_failures = []
@@ -2411,8 +2457,9 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
         counts_end = _token_counts_end(payload)
         if counts_end is None:  # unreachable behind _scan_token_nodes
             continue
+        group = pool_by_node.get(npos)
         law, elements, pts, region_end_rel, wc, failure = _decode_node_mixedwrite(
-            payload, c1, counts_end, poolv
+            payload, c1, counts_end, list(group.vertices) if group is not None else []
         )
         if law is None:
             node_failures.append(f"node@{npos}: {failure}" if failure else f"node@{npos}: undecoded")
@@ -2437,10 +2484,7 @@ def _decode_mixedwrite(data, lo: int, hi: int, groups, seam_area=None):
             f"window (table/raw/flat laws; "
             f"{'first: ' + node_failures[0] if node_failures else 'no token nodes'})",
         )
-    # The rep pairing (2026-11-18, #50 B3; see _decode_per_rep): group
-    # k pairs with the token node immediately preceding its wrapper, and
-    # a rep's territory ends at the next token node (decoded or not).
-    rep_nodes = _rep_node_positions(nodes, groups)
+    # A rep's territory ends at the next token node (decoded or not).
     scanned_positions = [npos for npos, _p, _c1, _c2 in nodes]
     # Store-level absorption precondition: every pool vertex in its
     # rep's region (exact f32, then the stage-4b noise tolerance; the
