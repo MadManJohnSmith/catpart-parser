@@ -2198,11 +2198,13 @@ def _triangle_area(vertices, tri):
 def test_coordinate_dedup_case_and_port_parity(tmp_path):
     """Python ≡ Port on the coordinate-dedup case store after B3: 545707b9
     keeps its 5 own reps and stays manifold at 4,072 triangles with the
-    coordinate dedup's fire gate never engaging (no dedup outcome), and
-    b912cbef keeps its committed emission (74,122 triangles after the
-    unified 4-bit law admitted the 5-byte multi-primitive records; #62
-    and #64 had admitted the 6-byte ones) with no dedup outcome at
-    all."""
+    coordinate dedup's fire gate never engaging (no dedup outcome) — the
+    unified 4-bit law re-reads its 0x41/0x44 records at their u16be width
+    (the boundary set halves, 2026-11-23), the pinned areas below carry
+    that reading — and b912cbef keeps its committed emission (74,122
+    triangles after the unified 4-bit law admitted the 5-byte
+    multi-primitive records; #62 and #64 had admitted the 6-byte ones)
+    with no dedup outcome at all."""
     import shutil
     import subprocess
 
@@ -2256,12 +2258,17 @@ def test_coordinate_dedup_case_and_port_parity(tmp_path):
                     continue
                 seen_facets.add(key)
                 unique += area
-            assert math.isclose(listed, 16192.314366, rel_tol=1e-9)
+            # 2026-11-23 (unified 4-bit law): the 0x41/0x44 records now
+            # vote their u16be width over the u8 misread, which halves the
+            # boundary set (2,214 -> 1,114 edges) and lifts the surface
+            # 16,192.31 -> 27,948.54 at the same 4,072 triangles; the
+            # store stays manifold with 0 degenerates.
+            assert math.isclose(listed, 27948.54415522707, rel_tol=1e-9)
             # B3 exports the store's own reps: 384 facets are coincident
             # copies with identical winding, so the listed area counts
             # them twice while the unique surface does not.
             assert copies == 384
-            assert math.isclose(unique, 12280.4249, rel_tol=1e-4)
+            assert math.isclose(unique, 24036.654693654753, rel_tol=1e-9)
         else:
             assert "unordered_dedup_dropped" not in summary["composite"]
             assert "unordered_dedup_declined" not in summary["composite"]

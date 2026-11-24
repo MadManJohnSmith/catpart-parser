@@ -704,12 +704,33 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
             for width in widths:
                 endians = ("big", "little") if (relaxed and width == 2) else ("big",)
                 for endian in endians:
+                    # The count table is read ONCE, incrementally: the
+                    # old read_counts(k) rebuilt the k-prefix for every
+                    # k, O(k^2) per record (the 13bb LedStrips profile:
+                    # the dominant cost of the whole export). Same
+                    # grammar and same P1g/MAX_REFS gates.
+                    counts: list[int] = []
+                    counts_pos = base
+                    counts_total = 0
                     for k in range(0, MAX_LOOP_COUNTS + 1):
-                        read = read_counts(data, base, k, nxt)
-                        if read is None:
-                            break
-                        counts, counts_bytes = read
-                        if sum(counts) != n:
+                        if k:
+                            if counts_pos >= nxt:
+                                break
+                            if data[counts_pos] == 0xFF:
+                                if counts_pos + 5 > nxt:
+                                    break
+                                value = int.from_bytes(
+                                    data[counts_pos + 1 : counts_pos + 5], "little"
+                                )
+                                counts_pos += 5
+                            else:
+                                value = data[counts_pos]
+                                counts_pos += 1
+                            if value > MAX_REFS:
+                                break
+                            counts.append(value)
+                            counts_total += value
+                        if counts_total != n:
                             continue
                         if k > BASE_LOOP_COUNTS and 0 in counts:
                             # #65 zero gate on the k extension: a u16be count
@@ -718,7 +739,7 @@ def parse_strip_records(data, lo: int, hi: int, element_count: int, elements=Non
                             # not-manifold mesh); every corpus record the
                             # extension admits is zero-free.
                             continue
-                        counts_end = base + counts_bytes
+                        counts_end = counts_pos
                         end = counts_end + width * n
                         # W7-B (2026-11-22): the exact-tiling slot reads
                         # the MERGED boundary list — an end exactly on a

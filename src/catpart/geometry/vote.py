@@ -236,9 +236,13 @@ def vote_ref_width(
     is NOT this family's record.  ``candidates`` may be any iterable;
     ties resolve to the first candidate in iteration order (the callers'
     width-ascending, big-endian-first enumeration)."""
+    # The skip map feeds only the loop-plane battery, which is silent
+    # without a stored normal: building it for every normal-less record
+    # is O(records * elements) on the big stores (the 13bb LedStrips
+    # profile). Lazy, never semantic.
     skips = (
         {i for i, (_v, pt) in enumerate(elements) if pt is None}
-        if elements is not None
+        if elements is not None and normal is not None
         else None
     )
     best = None

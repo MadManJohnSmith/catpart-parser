@@ -75,6 +75,21 @@ mm).
 **Python ≡ Rust**: `fidelity-cli export` produces byte-identical PLYs on
 both parts (Audi 225,958 / 114,314; Motor 251,380 / 125,754).
 
+### Decode cost (no semantic change)
+
+`13bb` (LedStrips_Smooth) exposed two quadratic corners on the Python
+side, located with `faulthandler` stacks: `vote_ref_width` rebuilt the
+transient-slot `skips` map over the whole element space for every
+normal-less record, and `_candidates` re-read the count table from
+`base` for every `k` (O(k^2) per record). Both are now lazy /
+incremental in the same gate order (the skip map is only built when a
+normal exists — `loop_plane_penalty` returns 0 without one — and the
+count table advances one entry per `k`). The store's decode fell from
+>30 min (the full suite stalled at 33%) to **485.8 s**, still
+**270,136 triangles, manifold, 0 degenerates**, and the 15-flip
+Python ≡ Rust differential stays byte-identical. The Rust crate keeps
+the straightforward reader: its decode of the same store is seconds.
+
 ### The 0x43 large-panel audit (cd88)
 
 `cd88ae9d4d51a439` (TouchRows_Wires) gains 6,290 triangles from the
@@ -111,7 +126,7 @@ All re-measured parts stay `manifold = True` with
 | `d4127e6b` | 5,094 | 6,774 | yes |
 | `b912cbef` (dedup no-regression) | 51,826 | 74,122 | yes |
 | `cd88ae9d` (relist pin) | 3,420 | 9,710 | yes |
-| `545707b9` (dedup case) | 2,978 | 4,072 | no |
+| `545707b9` (dedup case) | 2,978 | 4,072 | no (same count; the u16be re-read halves its boundary set and lifts the area 16,192.31 -> 27,948.54) |
 | `labios/main` | 8,995 | 9,622 | yes |
 
 `labios` is the cleanest official-corpus case: +627 triangles,
