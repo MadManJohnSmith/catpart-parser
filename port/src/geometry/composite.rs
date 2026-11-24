@@ -181,12 +181,14 @@ pub const EXPORTED_SHORT_MARKERS: [u8; 4] = [0x42, 0x49, 0x4A, 0x4C];
 /// behavior.
 pub const RELAXED_SHORT_MARKERS: [u8; 2] = [0x44, 0x41];
 
-/// Markers observed in the extended-header form (the family's scope;
-/// 2026-11-18, docs/evidence/2026-11-18-extended-header-family.md).
-pub const EXTENDED_HEADER_MARKERS: [u8; 2] = [0x47, 0x4F];
+/// Multi-primitive markers under the unified 4-bit bitmask
+/// (bit0=ty triangles, bit1=b3 strips, bit2=b4 polygons, bit3=12B
+/// normal): the 5-byte 2-primitive forms and the 6-byte 3-primitive
+/// forms. Twin: ``EXTENDED_HEADER_MARKERS``.
+pub const EXTENDED_HEADER_MARKERS: [u8; 8] = [0x43, 0x45, 0x46, 0x47, 0x4B, 0x4D, 0x4E, 0x4F];
 
-/// Extended-header markers carrying the 12-byte normal payload.
-pub const EXTENDED_NORMAL_MARKERS: [u8; 1] = [0x4F];
+/// Multi-primitive markers carrying the 12-byte normal payload (bit3).
+pub const EXTENDED_NORMAL_MARKERS: [u8; 4] = [0x4B, 0x4D, 0x4E, 0x4F];
 
 /// The primary-emit seam's keep threshold (2026-11-18, #34; twin:
 /// ``PRIMARY_LOOP_AREA_REL``): a refused primary loop is dropped only
@@ -1002,6 +1004,58 @@ fn parse_049_record(
     })
 }
 
+/// The 0x41 triangle-list record under the unified 4-bit bitmask
+/// (bit0 only): ``01 41 ty ff`` + ``u32le n`` with ``n == 3*ty`` and
+/// **no count table**, followed directly by the refs (the normal-less
+/// twin of :fn:`parse_049_record`). The width vote and exact-tiling
+/// boundary are the short-form law's.
+#[allow(clippy::too_many_arguments)]
+fn parse_041_record(
+    data: &[u8],
+    o: usize,
+    nxt: usize,
+    n: u32,
+    element_count: u32,
+    bounds: &[usize],
+    hi: usize,
+    accepted: &[(usize, usize)],
+) -> Option<RefVote> {
+    let ty = u32::from(data[o + 2]);
+    if ty == 0 || n != 3 * ty {
+        return None;
+    }
+    let refs_start = o + 8;
+    let widths: &[u8] = if element_count > 65_535 {
+        &[1, 2, 3]
+    } else {
+        &[1, 2]
+    };
+    let mut candidates = Vec::new();
+    for &width in widths {
+        let end = refs_start + width as usize * n as usize;
+        if end > hi {
+            continue;
+        }
+        let j = bounds.partition_point(|&b| b < end);
+        let nxt_eff = if j < bounds.len() { bounds[j] } else { hi };
+        if end > nxt && (end != nxt_eff || accepted.iter().any(|&(a, e)| a < end && o < e)) {
+            continue;
+        }
+        candidates.push(WidthCandidate {
+            width,
+            little: false,
+            counts: vec![3u32; ty as usize],
+            counts_end: refs_start,
+            end,
+            exact: end == nxt_eff,
+            tri_count: ty,
+            relaxed_u16: false,
+            k: 0,
+        });
+    }
+    vote_ref_width(data, n, candidates, element_count, None, None, true)
+}
+
 /// Every strip record with the width disambiguated (stage-3b rule,
 /// extended 2026-11-11 stage 4b: u24be candidate + the loop plane
 /// tiebreak; integrated 2026-11-12 stage 5, #34) — the twin's
@@ -1085,7 +1139,9 @@ fn parse_strip_records(
         let nxt = if i + 1 < hdrs.len() { hdrs[i + 1] } else { hi };
         let mk = data[o + 1];
         let hlen: usize = match facets::header_len(data, o) {
-            Some(6) | None => continue, // the extended form has its own parser
+            // The multi-primitive 5- and 6-byte forms have their own
+            // parser.
+            Some(5) | Some(6) | None => continue,
             Some(length) => length,
         };
         if o + hlen + 4 > nxt {
@@ -1131,6 +1187,51 @@ fn parse_strip_records(
             ext_hdrs.get(ext_hdrs.partition_point(|&h| h <= o)).copied()
         } else {
             None
+        };
+        // The #66/W1 anti-half-read battery for one short winner.
+        let half_read = |width: u8, end: usize| -> bool {
+            if relaxed
+                && width == 1
+                && h6.is_some_and(|h| {
+                    end < h
+                        && h < end + n as usize
+                        && h + 2 <= end + n as usize
+                        && (end - n as usize..end + n as usize).step_by(2).all(|p| {
+                            u32::from(u16::from_le_bytes([data[p], data[p + 1]])) < element_count
+                        })
+                })
+            {
+                // #66: a u8 winner whose u16le reading is a complete,
+                // in-bounds ref stream reaching at least one whole ref
+                // past a 6-byte header is a half-read of that stream,
+                // not a u8 record (the Audi 0x301e912 false header).
+                return true;
+            }
+            if width == 1
+                && n >= 8
+                && end + n as usize <= hi
+                && (0..2 * n as usize)
+                    .step_by(2)
+                    .all(|j| data[end - n as usize + j] == 0)
+                && (0..2 * n as usize).step_by(2).any(|j| {
+                    u32::from(u16::from_be_bytes([
+                        data[end - n as usize + j],
+                        data[end - n as usize + j + 1],
+                    ])) >= element_count
+                })
+            {
+                // W1 marathon anti-half-read (twin of the Python arm):
+                // the u8 winner's block is a u16be stream's high-half
+                // zeros (every even byte 0x00 over n >= 8 refs) whose
+                // u16be re-reading leaves the element space — the
+                // store's element space is truncated and the u8 reading
+                // is the permuted garbage the gap-edge OOB tiebreak kept
+                // (acc-Cont-Lft 0x5255e family). The u8 triangles are
+                // false surface and the u16be reading fails the #66 gate
+                // too; decline fail-closed.
+                return true;
+            }
+            false
         };
         // The ONE width vote (`vote_ref_width`): the candidates this
         // record's (width, endian, k) discovery admits, ranked by the
@@ -1213,12 +1314,7 @@ fn parse_strip_records(
                 }
             }
         }
-        let Some(RefVote {
-            refs,
-            counts,
-            width,
-            end,
-        }) = vote_ref_width(
+        let mut won = vote_ref_width(
             data,
             n,
             candidates,
@@ -1228,49 +1324,39 @@ fn parse_strip_records(
             // the short-form law RANKS repeats (the misread-detection
             // slot); the u16-over-u8 slot arms on the relaxed markers
             true,
-        )
+        );
+        if let Some(w) = &won
+            && half_read(w.width, w.end)
+        {
+            // The committed winner is a half-read of a wider stream:
+            // the record is unresolvable either way. Do NOT let the
+            // 0x41 no-count reading resurrect it (the Audi
+            // 0x301e912 canary).
+            continue;
+        }
+        if mk == 0x41 && hlen == 4 && n == 3 * u32::from(data[o + 2]) {
+            // The unified 4-bit no-count reading is the 0x41 primitive:
+            // it replaces a viable count-law winner (the small u16 refs
+            // can spell a coincidental count table) but never a winner
+            // the anti-half-read battery declined above.
+            if let Some(rec41) =
+                parse_041_record(data, o, nxt, n, element_count, &bounds, hi, &accepted_spans)
+            {
+                won = Some(rec41);
+            }
+        }
+        let Some(RefVote {
+            refs,
+            counts,
+            width,
+            end,
+        }) = won
         else {
             continue;
         };
-        if relaxed
-            && width == 1
-            && h6.is_some_and(|h| {
-                end < h
-                    && h < end + n as usize
-                    && h + 2 <= end + n as usize
-                    && (end - n as usize..end + n as usize).step_by(2).all(|p| {
-                        u32::from(u16::from_le_bytes([data[p], data[p + 1]])) < element_count
-                    })
-            })
-        {
-            // #66: a u8 winner whose u16le reading is a complete,
-            // in-bounds ref stream reaching at least one whole ref
-            // past a 6-byte header is a half-read of that stream,
-            // not a u8 record (the Audi 0x301e912 false header).
-            continue;
-        }
-        if width == 1
-            && n >= 8
-            && end + n as usize <= hi
-            && (0..2 * n as usize)
-                .step_by(2)
-                .all(|j| data[end - n as usize + j] == 0)
-            && (0..2 * n as usize).step_by(2).any(|j| {
-                u32::from(u16::from_be_bytes([
-                    data[end - n as usize + j],
-                    data[end - n as usize + j + 1],
-                ])) >= element_count
-            })
-        {
-            // W1 marathon anti-half-read (twin of the Python arm): the
-            // u8 winner's block is a u16be stream's high-half zeros
-            // (every even byte 0x00 over n >= 8 refs) whose u16be
-            // re-reading leaves the element space — the store's element
-            // space is truncated and the u8 reading is the permuted
-            // garbage the gap-edge OOB tiebreak kept (acc-Cont-Lft
-            // 0x5255e family). The u8 triangles are false surface and
-            // the u16be reading fails the #66 gate too; decline
-            // fail-closed.
+        if half_read(width, end) {
+            // The no-count winner carries the same guard (a width-1
+            // no-count parse can still be a half-read on its own).
             continue;
         }
         out.push(CompositeRecord {
@@ -1331,7 +1417,8 @@ fn parse_escaped_extended_records(
     let mut positions: Vec<usize> = Vec::new();
     let mut i = lo;
     while i + 3 <= hi {
-        if data[i] == 0x01 && (data[i + 1] == 0x47 || data[i + 1] == 0x4F) && data[i + 2] == 0xFF {
+        if data[i] == 0x01 && EXTENDED_HEADER_MARKERS.contains(&data[i + 1]) && data[i + 2] == 0xFF
+        {
             positions.push(i);
             i += 3;
         } else {
@@ -1340,7 +1427,8 @@ fn parse_escaped_extended_records(
     }
     let mut i = lo;
     while i + 5 <= hi {
-        if data[i] == 0x01 && (data[i + 1] == 0x47 || data[i + 1] == 0x4F) && data[i + 4] == 0xFF {
+        if data[i] == 0x01 && EXTENDED_HEADER_MARKERS.contains(&data[i + 1]) && data[i + 4] == 0xFF
+        {
             positions.push(i);
             i += 5;
         } else {
@@ -1348,11 +1436,10 @@ fn parse_escaped_extended_records(
         }
     }
     for &h in hdrs {
-        if data[h + 1] == 0x47 || data[h + 1] == 0x4F {
-            let len_ok = matches!(facets::header_len(data, h), Some(len) if len != 6);
-            if len_ok {
-                positions.push(h);
-            }
+        if EXTENDED_HEADER_MARKERS.contains(&data[h + 1])
+            && facets::header_len(data, h) != facets::multi_prim_header_len(data[h + 1])
+        {
+            positions.push(h);
         }
     }
     positions.sort_unstable();
@@ -1382,16 +1469,31 @@ fn parse_escaped_extended_records(
         if !EXTENDED_HEADER_MARKERS.contains(&mk) {
             continue;
         }
-        let Some((ty, mut p)) = read_count_checked(data, o + 2) else {
-            continue;
-        };
-        let Some((b3, p2)) = read_count_checked(data, p) else {
-            continue;
-        };
-        let Some((b4, p3)) = read_count_checked(data, p2) else {
-            continue;
-        };
-        p = p3;
+        let mut p = o + 2;
+        let mut ty = 0u32;
+        let mut b3 = 0u32;
+        let mut b4 = 0u32;
+        if mk & 1 != 0 {
+            let Some((value, next)) = read_count_checked(data, p) else {
+                continue;
+            };
+            ty = value;
+            p = next;
+        }
+        if mk & 2 != 0 {
+            let Some((value, next)) = read_count_checked(data, p) else {
+                continue;
+            };
+            b3 = value;
+            p = next;
+        }
+        if mk & 4 != 0 {
+            let Some((value, next)) = read_count_checked(data, p) else {
+                continue;
+            };
+            b4 = value;
+            p = next;
+        }
         if p >= hi || data[p] != 0xFF || p + 5 > hi {
             continue;
         }
@@ -1522,6 +1624,24 @@ fn short_record_spans(data: &[u8], hi: usize, records: &[CompositeRecord]) -> Ve
             spans.push((r.offset, r.offset + 20 + 2 * n as usize));
             continue;
         }
+        if r.marker == 0x41
+            && facets::header_len(data, r.offset) == Some(4)
+            && r.counts.iter().all(|&c| c == 3)
+        {
+            let n41 = u32::from_le_bytes([
+                data[r.offset + 4],
+                data[r.offset + 5],
+                data[r.offset + 6],
+                data[r.offset + 7],
+            ]);
+            let sum: u32 = r.counts.iter().copied().sum();
+            if n41 == 3 * u32::from(data[r.offset + 2]) && n41 == sum {
+                // The unified 0x41 reading is the no-count triangle
+                // list: its refs start at +8, with no count table.
+                spans.push((r.offset, r.offset + 8 + r.width as usize * n41 as usize));
+                continue;
+            }
+        }
         let hlen = facets::header_len(data, r.offset).unwrap_or(4);
         let has_normal = facets::NORMAL_MARKERS_ALL.contains(&r.marker);
         let base = r.offset + hlen + 4 + if has_normal { 12 } else { 0 };
@@ -1557,7 +1677,11 @@ fn parse_extended_facet_records(
     // refs.
     let mut accepted: Vec<(usize, usize)> = Vec::new();
     for (i, &o) in hdrs.iter().enumerate() {
-        if facets::header_len(data, o) != Some(6) {
+        let mk = data[o + 1];
+        let Some(expected_hlen) = facets::multi_prim_header_len(mk) else {
+            continue;
+        };
+        if facets::header_len(data, o) != Some(expected_hlen) {
             continue;
         }
         if shipped.iter().any(|&(a, e)| a <= o && o < e)
@@ -1571,26 +1695,43 @@ fn parse_extended_facet_records(
         }
         candidates += 1;
         let nxt = if i + 1 < hdrs.len() { hdrs[i + 1] } else { hi };
-        let mk = data[o + 1];
-        if !EXTENDED_HEADER_MARKERS.contains(&mk) {
-            continue;
+        let mut p_hdr = o + 2;
+        let mut ty = 0u32;
+        let mut b3 = 0u32;
+        let mut b4 = 0u32;
+        if mk & 1 != 0 {
+            ty = u32::from(data[p_hdr]);
+            p_hdr += 1;
         }
-        let ty = u32::from(data[o + 2]);
-        let b3 = u32::from(data[o + 3]);
-        let b4 = u32::from(data[o + 4]);
+        if mk & 2 != 0 {
+            b3 = u32::from(data[p_hdr]);
+            p_hdr += 1;
+        }
+        if mk & 4 != 0 {
+            b4 = u32::from(data[p_hdr]);
+        }
         let k = (b3 + b4) as usize;
         let has_normal = EXTENDED_NORMAL_MARKERS.contains(&mk);
-        let base = o + 10 + if has_normal { 12 } else { 0 };
+        let n_off = o + expected_hlen;
+        if n_off + 4 + if has_normal { 12 } else { 0 } > hi {
+            continue;
+        }
+        let base = n_off + 4 + if has_normal { 12 } else { 0 };
         let refs_start = base + k;
         if refs_start > hi {
             continue;
         }
-        let n = u32::from_le_bytes([data[o + 6], data[o + 7], data[o + 8], data[o + 9]]);
+        let n = u32::from_le_bytes([
+            data[n_off],
+            data[n_off + 1],
+            data[n_off + 2],
+            data[n_off + 3],
+        ]);
         let normal = if has_normal {
             Some((
-                f32_widen(data, o + 10),
-                f32_widen(data, o + 14),
-                f32_widen(data, o + 18),
+                f32_widen(data, n_off + 4),
+                f32_widen(data, n_off + 8),
+                f32_widen(data, n_off + 12),
             ))
         } else {
             None
@@ -2021,6 +2162,10 @@ fn triangulate(
         if !RELAXED_SHORT_MARKERS.contains(&rec.marker) {
             continue;
         }
+        // Unified 4-bit bitmask: 0x44 (0100) is the closed polygon fan
+        // (0x4C without normal); 0x41 (0001) is the no-count triangle
+        // list (3-ref strip loops).
+        let kind = if rec.marker == 0x44 { 0x4C } else { 0x42 };
         let mut o = 0usize;
         for c in &rec.counts {
             let loop_refs = &rec.refs[o..o + *c as usize];
@@ -2031,7 +2176,7 @@ fn triangulate(
             if loop_refs.iter().any(|&r| skips.contains(&(r as usize))) {
                 st.loops_curve_entry += 1;
                 st.dropped_loops
-                    .push((rec.marker, rec.normal, loop_refs.to_vec()));
+                    .push((kind, rec.normal, loop_refs.to_vec()));
                 continue;
             }
             st.loops_exported += 1;
@@ -2044,7 +2189,7 @@ fn triangulate(
                     )
                 })
                 .collect();
-            let (tris, deg) = loop_triangles(rec.marker, &idxs, &points);
+            let (tris, deg) = loop_triangles(kind, &idxs, &points);
             if deg != 0 {
                 // The extended-family precondition: a loop carrying a
                 // degenerate emission is declined WHOLE and its skip is
@@ -5715,6 +5860,55 @@ mod tests {
         let (records, candidates) = parse_extended_facet_records(&oob, 0, oob.len(), 64, None, &[]);
         assert_eq!(candidates, 1);
         assert!(records.is_empty());
+    }
+
+    /// The unified 4-bit 5-byte header: 0x43 = ty + b3, no normal,
+    /// no polygons; `01 43 ty b3 ff` + u32 n + the b3 counts + refs.
+    #[test]
+    fn parse_extended_records_admits_the_5_byte_form() {
+        let mut body = vec![0x01, 0x43, 1, 1, 0xFF];
+        body.extend_from_slice(&6u32.to_le_bytes());
+        body.extend_from_slice(&[3]);
+        for r in [0u16, 1, 2, 2, 3, 4] {
+            body.extend_from_slice(&r.to_be_bytes());
+        }
+        let (records, candidates) =
+            parse_extended_facet_records(&body, 0, body.len(), 64, None, &[]);
+        // The 5-byte header also matches the escaped-b4 discovery
+        // pattern (`ff` at +4), so the candidate counter sees both
+        // passes; the overlap guard keeps exactly one record.
+        assert_eq!(candidates, 2);
+        assert_eq!(records.len(), 1);
+        let rec = &records[0];
+        assert_eq!(rec.marker, 0x43);
+        assert_eq!(rec.triangles, 1);
+        assert_eq!(rec.strips, 1);
+        assert_eq!(rec.polygons, 0);
+        assert_eq!(rec.counts, vec![3]);
+        assert_eq!(rec.refs, vec![0, 1, 2, 2, 3, 4]);
+        assert_eq!(rec.normal, None);
+        assert_eq!(rec.end, body.len());
+    }
+
+    /// The unified 4-bit 0x41: bit0 only, no count table, n == 3*ty;
+    /// two 3-ref triangles tile exactly to the next header.
+    #[test]
+    fn parse_041_record_reads_the_no_count_triangle_list() {
+        let mut body = vec![0x01, 0x41, 2, 0xFF];
+        body.extend_from_slice(&6u32.to_le_bytes());
+        for r in [0u16, 1, 2, 2, 3, 4] {
+            body.extend_from_slice(&r.to_be_bytes());
+        }
+        body.extend_from_slice(&[0x01, 0x42, 0x01, 0xFF]);
+        body.extend_from_slice(&0u32.to_le_bytes());
+        body.extend_from_slice(&[0u8; 12]);
+        let (records, _) = parse_strip_records(&body, 0, body.len(), 10, None);
+        assert_eq!(records.len(), 2);
+        let rec = &records[0];
+        assert_eq!(rec.marker, 0x41);
+        assert_eq!(rec.counts, vec![3, 3]);
+        assert_eq!(rec.refs, vec![0, 1, 2, 2, 3, 4]);
+        assert_eq!(rec.width, 2);
     }
 
     /// The primary-emit seam (2026-11-18, #34): a candidate loop over

@@ -1716,7 +1716,13 @@ def test_labios_main_welds_panels_on_nonempty_primary_mesh(tmp_path, capsys):
     8,995 triangles / 7,024.81 mm², manifold, 29 loops welded under
     ``e0b-dup-pin``. The per-loop weld assertions are unchanged in
     kind — the store's primary mesh is non-empty and the welded loops
-    still ride the same battery + mesh guard."""
+    still ride the same battery + mesh guard.
+
+    2026-11-23 (the unified 4-bit law): the 5-byte multi-primitive
+    markers add 12 records / 627 triangles, so the pinned totals are
+    9,622 triangles / 7,098.50 mm², manifold AND closed (the 651
+    boundary edges close), 0 degenerates. The per-loop weld assertions
+    are unchanged."""
     from catpart.cli import main_export
 
     code = main_export([str(LABIOS_MAIN), "-o", str(tmp_path / "labios.ply")])
@@ -1725,16 +1731,17 @@ def test_labios_main_welds_panels_on_nonempty_primary_mesh(tmp_path, capsys):
     summary = json.loads(captured.out)
     validate(summary, load_schema("export-summary-v1"))
     info = summary["composite"]
-    assert summary["triangle_count"] == 8995
+    assert summary["triangle_count"] == 9622
     assert summary["vertex_count"] == 4813
     assert summary["mesh"]["manifold"] is True
+    assert summary["mesh"]["closed"] is True
     assert info["loops_curve_entry"] == 0
     assert info["loops_curve_entry_exported"] == 29
     assert info["curve_entry_law"] == "e0b-dup-pin"
-    assert info["extended_header_records"] == 27
-    assert info["extended_header_triangles"] == 4427
+    assert info["extended_header_records"] == 39
+    assert info["extended_header_triangles"] == 5054
     vertices, faces = parse_ply(tmp_path / "labios.ply")
-    assert abs(_ply_area(vertices, faces) - 7024.81) < 0.05
+    assert abs(_ply_area(vertices, faces) - 7098.50) < 0.05
 # --- the escaped facet count + the extended-header family (2026-11-18) -----
 
 
@@ -1963,6 +1970,12 @@ def test_triangulate_extended_degenerate_member_is_filtered_not_declining() -> N
 # (all manifold, 0 degenerate emissions; counts below are the measured
 # post-marathon values). The seam counter is asserted whenever the part
 # still takes the primary seam.
+# 2026-11-23 (unified 4-bit law): every count below was re-measured
+# with the 5-byte multi-primitive records admitted; all stay manifold
+# with 0 degenerate triangles, and the stores that close are named in
+# the law's evidence note. The Audi/Motor ground-truth A/B
+# (area_ratio >= 0.9997, Hausdorff <= 0.0007 mm) is the correctness
+# gate for the new records; this dict is the regression pin.
 PRIMARY_SEAM_FLIPS = {
     # 13bb5c0c gained its 120 k=17/18 0x42 records (#65's MAX_LOOP_COUNTS
     # raise; all in-bounds, 90 exact-tiling, the store stays manifold) —
@@ -1975,25 +1988,29 @@ PRIMARY_SEAM_FLIPS = {
     # skips and admits +5,297 real triangles: 224435 -> 229732, still
     # manifold with 0 degenerates and L2 pass (Smooth 33->0 in W7-B's
     # micro-batch evidence).
-    "13bb5c0c49616ade": 229732,
-    "2fb5b092857f70ec": 1753,
-    "44e63faa2d9abf84": 2524,
-    "4a32f59c1e637acd": 2451,
-    "4abf3eeaf892be44": 1973,
+    # 2026-11-23 (unified 4-bit law): the 5-byte multi-primitive records
+    # add +40,404 triangles (229732 -> 270136), manifold with 0
+    # degenerates; the Audi/Motor A/B pins the same law at
+    # area_ratio >= 0.9997 (docs/evidence/2026-11-23-unified-4bit-facets.md).
+    "13bb5c0c49616ade": 270136,
+    "2fb5b092857f70ec": 2293,
+    "44e63faa2d9abf84": 4502,
+    "4a32f59c1e637acd": 3438,
+    "4abf3eeaf892be44": 3196,
     # 612c5e7cc7291c71 gained its extended-header records' valid
     # siblings through the 2026-11-21 member-filter law (4505 -> 4521;
     # the degenerate members are filtered and named, the manifold
     # assembly gate unchanged) — the seam-flip pins the law recovers.
-    "612c5e7cc7291c71": 4593,
-    "6ab9e107b7f30308": 959,
-    "97a0a420923c5c67": 9106,
-    "a61588e5fe2cca5f": 3023,
-    "ba0900267e2072e1": 4395,
-    "bc235805f71fdf5a": 1753,
-    "c9fdd85256ae1eba": 17785,
-    "cd76cab52cf2fbe5": 1617,
-    "d31ea2c17d63c041": 2633,
-    "d4127e6b5cc39236": 5094,
+    "612c5e7cc7291c71": 6703,
+    "6ab9e107b7f30308": 1387,
+    "97a0a420923c5c67": 24882,
+    "a61588e5fe2cca5f": 7208,
+    "ba0900267e2072e1": 7562,
+    "bc235805f71fdf5a": 2293,
+    "c9fdd85256ae1eba": 19242,
+    "cd76cab52cf2fbe5": 2240,
+    "d31ea2c17d63c041": 3530,
+    "d4127e6b5cc39236": 6774,
 }
 
 
@@ -2088,7 +2105,7 @@ def test_primary_seam_port_parity_on_the_flips(tmp_path):
 # unchanged and stays pinned by the fixture arm
 # (test_composite_dedup_coordinate_relist_across_reps).
 
-DEDUP_COORD_CASE = {"545707b9871a535c": 2978}
+DEDUP_COORD_CASE = {"545707b9871a535c": 4072}
 # The zero-regression direction on the same seam: a store the primary
 # seam resolves keeps its committed geometry (the dedup never sees
 # a passing assembled mesh).  The #62 width vote admitted the store's
@@ -2099,7 +2116,7 @@ DEDUP_COORD_CASE = {"545707b9871a535c": 2978}
 # 2026-11-22 (marathon W1-B/W10 identity-per-rep): the multi-region
 # reading emits +457 more real triangles (51369 -> 51826), still
 # manifold, 0 degenerates, no dedup outcome.
-DEDUP_COORD_NO_REGRESSION = {"b912cbef805c541b": 51826}
+DEDUP_COORD_NO_REGRESSION = {"b912cbef805c541b": 74122}
 
 # --- 2026-11-21: the L1.1 adoption condition (#70) -------------------------
 #
@@ -2112,7 +2129,7 @@ DEDUP_COORD_NO_REGRESSION = {"b912cbef805c541b": 51826}
 # the external probe pins their return to not-manifold), while the ONE
 # official-corpus part the pass fires on carries a degenerate-free
 # candidate and must keep its adopted emission.
-RELIST_ADOPTED_PIN = {"cd88ae9d4d51a439": 3420}
+RELIST_ADOPTED_PIN = {"cd88ae9d4d51a439": 9710}
 
 
 @pytest.mark.skipif(
@@ -2127,6 +2144,14 @@ def test_relist_adoption_survives_the_degenerate_condition(tmp_path):
     relist outcome keys are absent and the emission carries +34 real
     triangles (3386 -> 3420), manifold with 0 degenerates. The L1.1
     adoption law itself stays pinned by the fixture arm
+
+    2026-11-23 (unified 4-bit law): the 5-byte multi-primitive records
+    close this store (1,044 boundary edges -> 0) and raise the pinned
+    count to 9,710, manifold with 0 degenerates; the area grows from
+    4,314.66 to 33,057.56 because the added records are the missing
+    large panels (audited by face-area distribution; the A/B gate is
+    docs/evidence/2026-11-23-unified-4bit-facets.md). The L1.1 adoption
+    law itself stays pinned by the fixture arm
     (test_composite_dedup_coordinate_relist_across_reps); when the store
     does reach the relist, its outcome must still be named.
     """
@@ -2172,11 +2197,12 @@ def _triangle_area(vertices, tri):
 )
 def test_coordinate_dedup_case_and_port_parity(tmp_path):
     """Python ≡ Port on the coordinate-dedup case store after B3: 545707b9
-    keeps its 5 its own reps and stays manifold at 2,266 triangles with
-    the coordinate dedup's fire gate never engaging (no dedup outcome),
-    and b912cbef keeps its committed emission (49,780 triangles after
-    #62 admitted its extended record and #64 admitted two escaped-form
-    ones) with no dedup outcome at all."""
+    keeps its 5 own reps and stays manifold at 4,072 triangles with the
+    coordinate dedup's fire gate never engaging (no dedup outcome), and
+    b912cbef keeps its committed emission (74,122 triangles after the
+    unified 4-bit law admitted the 5-byte multi-primitive records; #62
+    and #64 had admitted the 6-byte ones) with no dedup outcome at
+    all."""
     import shutil
     import subprocess
 

@@ -128,6 +128,13 @@ pub fn groups_repeat(refs: &[u32], tri_count: u32, counts: &[u32]) -> bool {
     }
     let mut off = 3 * tri_count as usize;
     for &c in counts {
+        // Python slices past the end to an EMPTY loop, and an empty
+        // loop is shorter than its count: a malformed/over-counted
+        // candidate is a repeat (the no-count 0x41 candidate carries
+        // its 3-ref groups in both slots). Mirror that exactly.
+        if c > 0 && off + c as usize > refs.len() {
+            return true;
+        }
         let loop_refs = &refs[off..off + c as usize];
         if c > 0 {
             let distinct: std::collections::HashSet<u32> = loop_refs.iter().copied().collect();

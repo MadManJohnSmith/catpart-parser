@@ -113,6 +113,18 @@ pub const EXPORTED_MARKERS: [u8; 3] = [0x42, 0x4A, 0x4C];
 /// G3's sanity cap on n (twin: ``MAX_REFS``).
 pub const MAX_REFS: u32 = 1_000_000;
 
+/// The unified 4-bit multi-primitive header length (twin:
+/// ``MULTI_PRIM_HEADER_LEN``): bit0=ty, bit1=b3, bit2=b4, bit3=normal.
+/// 5-byte forms carry two of the three primitive bytes; 6-byte forms
+/// carry all three.
+pub fn multi_prim_header_len(marker: u8) -> Option<usize> {
+    match marker {
+        0x43 | 0x45 | 0x46 | 0x4B | 0x4D | 0x4E => Some(5),
+        0x47 | 0x4F => Some(6),
+        _ => None,
+    }
+}
+
 /// One facet record parsed under the (width, k) tiling law (F1/F1w) —
 /// the twin's :class:`catpart.geometry.facets.FacetRecord` dataclass
 /// (frozen).
@@ -234,36 +246,28 @@ fn header_form_len(data: &[u8], i: usize, hi: usize) -> Option<usize> {
     if data[i + 3] == 0xFF {
         return Some(4);
     }
+    if i + 5 <= hi && data[i + 4] == 0xFF {
+        return Some(5);
+    }
     if i + 6 <= hi && data[i + 5] == 0xFF {
         return Some(6);
     }
     None
 }
 
-/// Every EXTENDED-header candidate position in ``[lo, hi)`` — the
-/// twin's ``facets.facet_headers``: the ``FACET_HEADER_RE`` scan (the
-/// regex engine's leftmost-non-overlapping order: a short-form match
-/// consumes four bytes, an extended one six) filtered to the 6-byte
-/// form. The committed short-form discovery (:fn:`strip_headers`) is
-/// untouched, so short-record parses stay identical.
+/// Every multi-primitive header candidate position in ``[lo, hi)`` —
+/// the twin's ``facets.facet_headers``: the ``FACET_HEADER_RE`` scan
+/// (leftmost-non-overlapping order, shortest form first) filtered to
+/// the marker's expected 5-byte or 6-byte form. The committed
+/// short-form discovery (:fn:`strip_headers`) is untouched.
 pub fn facet_headers(data: &[u8], lo: usize, hi: usize) -> Vec<usize> {
     let mut out = Vec::new();
     let mut i = lo;
     while i + 4 <= hi {
         match header_form_len(data, i, hi) {
-            // The twin's filter (`header_len(data, m.start()) == 6`,
-            // facets.py::facet_headers): the length is derived ff-first
-            // over (4, 5, 6), so a position with ``ff`` at BOTH +4 and
-            // +5 is a 5-byte variant there — never a 6-byte candidate.
-            // W7-B (2026-11-22): the missing ``+4`` arm was the head_ia
-            // 61/62 decline divergence (the phantom header boundary
-            // flipped one record's width vote to u24be).
-            Some(6) if data[i + 4] != 0xFF => {
+            Some(length) if multi_prim_header_len(data[i + 1]) == Some(length) => {
                 out.push(i);
-                i += 6;
-            }
-            Some(6) => {
-                i += 6;
+                i += length;
             }
             Some(length) => i += length,
             None => i += 1,
@@ -297,9 +301,10 @@ pub fn parse_facet_record(
     let mk = data[o + 1];
     let ty = data[o + 2];
     let header_len = match header_len(data, o) {
-        Some(6) | None => {
-            // The extended 6-byte form is a different grammar (its own
-            // parser: composite::parse_extended_facet_records).
+        Some(5) | Some(6) | None => {
+            // The multi-primitive 5- and 6-byte forms are a different
+            // grammar (their own parser:
+            // composite::parse_extended_facet_records).
             return None;
         }
         Some(length) => length,
@@ -939,12 +944,13 @@ mod tests {
         assert_eq!(read_counts(&data, 0, 1, 4), None);
     }
 
-    /// The extended-header discovery mirrors the regex's
+    /// The multi-primitive discovery mirrors the regex's
     /// leftmost-non-overlapping order: a short match consumes four
-    /// bytes, an extended one six; only the 6-byte form is returned.
+    /// bytes, a 5-byte form five, an extended one six; only the 5- and
+    /// 6-byte forms are returned.
     #[test]
-    fn facet_headers_finds_only_the_extended_form() {
-        // short (4) + extended (6) + short (4)
+    fn facet_headers_finds_the_multi_primitive_forms() {
+        // short (4) + extended (6) + short (4) + 5-byte (5)
         let mut body = Vec::new();
         body.extend_from_slice(&[0x01, 0x42, 0x01, 0xFF]);
         body.extend_from_slice(&[0x00, 0x00, 0x00, 0x00]);
@@ -952,11 +958,14 @@ mod tests {
         body.extend_from_slice(&[0x01, 0x47, 0xC6, 0x4F, 0x02, 0xFF]);
         body.extend_from_slice(&[0x23, 0x04, 0x00, 0x00]);
         body.extend_from_slice(&[0x01, 0x42, 0x01, 0xFF]);
-        assert_eq!(facet_headers(&body, 0, body.len()), vec![ext_at]);
+        let five_at = body.len();
+        body.extend_from_slice(&[0x01, 0x43, 0x03, 0x02, 0xFF]);
+        body.extend_from_slice(&[0x23, 0x04, 0x00, 0x00]);
+        assert_eq!(facet_headers(&body, 0, body.len()), vec![ext_at, five_at]);
         // header_len derives the form from the ff position (4/5/6).
         assert_eq!(header_len(&body, 0), Some(4));
         assert_eq!(header_len(&body, ext_at), Some(6));
-        assert_eq!(header_len(&body, body.len() - 4), Some(4));
+        assert_eq!(header_len(&body, five_at), Some(5));
     }
 
     /// A 6-byte extended header is not a record of the short grammar
