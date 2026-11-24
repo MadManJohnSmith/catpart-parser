@@ -68,8 +68,8 @@ L3_BLOCK = {
     },
 }
 
-#: The last accepted committed row (the escaped header form; #64).
-LAST_ACCEPTED_RUN_ID = "20261121T103944Z-d2c9ff"
+#: The last accepted committed row (the unified 4-bit law + W3/W15).
+LAST_ACCEPTED_RUN_ID = "20261124T125633Z-38c46d"
 
 
 def row_with_l3(l3: object) -> dict:
@@ -170,10 +170,10 @@ def test_every_committed_history_row_still_validates() -> None:
         for line in HISTORY_PATH.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    assert len(rows) == 30
+    assert len(rows) == 31
     for row in rows:
         validate(row, ROW_SCHEMA)
-    # The 14 pre-#58 rows are unchanged; the eleven post-#58 rows carry L3.
+    # The 14 pre-#58 rows are unchanged; the twelve post-#58 rows carry L3.
     assert all(row["scalars"]["L3"] is None for row in rows[:14])
     assert all(row["scalars"]["L3"] is not None for row in rows[14:])
 
