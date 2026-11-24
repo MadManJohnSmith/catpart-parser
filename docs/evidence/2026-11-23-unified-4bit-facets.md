@@ -133,6 +133,68 @@ All re-measured parts stay `manifold = True` with
 +73.69 mm² (7,024.81 -> 7,098.50, +1.05%) and 651 boundary edges close
 with 0 degenerates.
 
+## Submarino snapshot.20 (blind generalization, 757 parts)
+
+The shipped `main` (`32a73cf`) against `cf1e158` (the commit this branch
+was cut from), same snapshot:
+
+| | `cf1e158` | `main` |
+|---|---:|---:|
+| L2 pass | 722 / 757 (95.38 %) | **742 / 757 (98.02 %)** |
+| `degenerate-triangles` | 20 | **0** |
+| `empty-mesh` | 13 | 13 |
+| total triangles | 2,656,515 | 3,342,487 (+685,972) |
+
+Per-part transitions: **20 fail -> pass, 0 pass -> fail**, 722
+pass -> pass, 15 fail -> fail (the 13 `empty-mesh` below plus the two
+exception parts). Every restored part is manifold with 0 degenerate
+triangles.
+
+The two `pass -> fail` regressions the first cut produced were found
+here and fixed before landing:
+
+- `MB-base-tubes-YR` (16,655 -> 107): 5-byte header *patterns* served
+  as exact-tiling boundary witnesses in `parse_strip_records`, and two
+  such false candidates tiled onto each other; the short walk kept 20
+  of 104 records. The bounds list now admits only the committed 6-byte
+  `0x47`/`0x4f` witnesses, and the part exports **17,720**.
+- `MB-Torpedo-rail-Bow-YR` (12,115 -> 7,495): the 5-byte records left
+  2 degenerate slivers on an otherwise manifold single-rep reading, so
+  the multiregion second chance never fired. It now also fires on
+  skipped degenerates (adoption still requires a manifold,
+  degenerate-free merge), and the part exports **14,962**.
+
+Both are Python == Rust byte-identical.
+
+### The 13 `empty-mesh` census
+
+All 13 are display-only stores: `no-surface-display`, 3 carrier points
+(one `store-f32-points` source), `facet_candidate_count = 0`,
+`facet_record_count = 0`, `pool_group_count = 0`, `origin_kind =
+block`, and only `catprtcont: 3` containers. A raw byte scan finds
+5/6-byte header *patterns* in all 13 (4 also hold 0x41/0x44 short
+patterns), but **none of them sits in a routed facet region** — the
+store is never walked (`0/13` clean-path carriers). The remaining gap
+is the `catprtcont` container route, not the unified marker law: these
+parts carry no composited surface for the seam to read.
+
+## Official fitness (L2, `cf1e158` -> `32a73cf`)
+
+`scripts/triage/l2_fast_pass.py` over the whole manifest, the baseline
+pass from a `cf1e158` worktree and the branch pass from this tree
+(per-part, not asserted from history):
+
+| split | `cf1e158` | `main` | delta |
+|---|---:|---:|---:|
+| dev | 1,146 / 1,381 = **82.98 %** | 1,167 / 1,381 = **84.50 %** | **+21 parts, +1.52 pts** |
+| held-out | 57 / 61 = **93.44 %** | 57 / 61 = **93.44 %** | 0 |
+
+Per-part transitions: **1,203 pass -> pass, 21 fail -> pass, 0 pass ->
+fail**, 218 fail -> fail. The 21 flips are all dev `empty-mesh` parts
+the 5/6-byte records now surface; the remaining failures are the same
+in kind as the baseline's (189 `empty-mesh` + 29 exception parts, all
+pre-existing).
+
 ## Verification
 
 ```bash
@@ -160,7 +222,6 @@ cmp /tmp/rs-audi.ply /tmp/py-audi.ply
   on Gallyfrey.
 - Knurling screw: the `.CATPart` is not in this checkout; the reported
   13,590 triangles / closed / boundary 0 cannot be reproduced here.
-- Full Python suite + `scripts/check.sh` (cargo, wasm-pack, pkg sync,
-  node) before the merge.
-- W3 + W15 re-merge and the Submarino sweep are the next landing steps,
-  not part of this note.
+- The `catprtcont`-only container route (the 13 Submarino
+  `empty-mesh`): these stores are never walked, so no facet law can
+  see them; a separate container-routing ticket.
