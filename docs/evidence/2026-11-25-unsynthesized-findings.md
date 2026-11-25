@@ -7,8 +7,8 @@ page only says where it is, what it means and whether it is still open.
 
 Decision log (owner, 2026-11-25): merge W6, W12 and W20 (done); keep
 `acc-Cont-Lft` as a documented known gap; re-run the open-rate probe and
-unify the 97.99 % / 97.92 % pair (done — see §2); leave the W26/docs
-working tree uncommitted for review.
+unify the 97.99 % / 97.92 % pair (done — see §2); commit and push the
+W26/docs working tree (`d93393e`; gh-pages `2ba66e9`).
 
 ## 1. Branch-only evidence (merged 2026-11-25)
 
@@ -108,8 +108,8 @@ CSV; the re-run CSV is now authoritative.
   does not consume it yet.
 - **Submarino exception parts**: the 4-bit note says 15 fail-to-fail =
   13 empty-mesh + "the two exception parts", but does not name the two.
-- **W20 checker not wired**: `check_w20_csvs.py` passes on the 3 CSVs but
-  is not in `scripts/check.sh` (W12's checker is).
+- **W20 checker (resolved 2026-11-25)**: `check_w20_csvs.py` is now in
+  `scripts/check.sh`; the 3 CSVs are gate-covered.
 - **W26 record counters**: the 189-row claims CSV records per-part
   outcomes, not the per-record accepted/exact/refused counters (those
   live only in the warning text).
@@ -138,7 +138,8 @@ CSV; the re-run CSV is now authoritative.
    97.99 %, 29 BLANK (19 + 10).
 3. Keep `acc-Cont-Lft` as a known gap unless a narrow multi-node gate is
    approved.
-4. Leave the W26/docs working tree uncommitted for review.
+4. ~~Leave the W26/docs working tree uncommitted for review.~~ Committed
+   and pushed 2026-11-25 (`d93393e`); gh-pages `2ba66e9`.
 
 ## 6. Gates run for this index (2026-11-25)
 
@@ -148,3 +149,4 @@ CSV; the re-run CSV is now authoritative.
 - `bash -n scripts/check.sh` OK (the W12 merge added its checker line).
 - Site smoke (index, grind, evidence): pass after the final rebuild.
 - Open-rate probe: 1,413/1,442 = 97.99 %, 29 BLANK (19 + 10).
+- Full pytest: 1,080 passed, 7 skipped (465.92 s).
