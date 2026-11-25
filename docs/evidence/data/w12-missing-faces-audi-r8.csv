@@ -1,0 +1,26 @@
+pair,rank,n_cells,n_tris_missing,net_mm2,seam_skip_verts_in_bbox,unused_verts_in_bbox,registros_candidatos,bbox_min_x,bbox_min_y,bbox_min_z,bbox_max_x,bbox_max_y,bbox_max_z
+audi-r8,1,7509,34635,1803266.16,45,5314,"rep 38: unused=1152 gaps_owning=; rep 53: unused=1060 gaps_owning=45031183; rep 80: unused=892 gaps_owning=; rep 90: unused=874 gaps_owning=50424943; rep 12: unused=180 gaps_owning=; rep 76: unused=113 gaps_owning=48515236,48549226; rep 86: unused=113 gaps_owning=49656244,49677046; rep 79: unused=83 gaps_owning=; rep 82: unused=83 gaps_owning=; rep 83: unused=83 gaps_owning=; rep 85: unused=83 gaps_owning=; rep 89: unused=83 gaps_owning=; rep 92: unused=83 gaps_owning=; rep 93: unused=83 gaps_owning=; rep 95: unused=83 gaps_owning=; rep 78: unused=50 gaps_owning=; rep 88: unused=50 gaps_owning=; rep 14: unused=43 gaps_owning=; rep 15: unused=43 gaps_owning=; rep 10: unused=29 gaps_owning=; rep 11: unused=29 gaps_owning=; rep 40: unused=10 gaps_owning=; rep 39: unused=8 gaps_owning=; rep 33: unused=4 gaps_owning=",-4317.186,-947.5491,1.824,-3059.33,947.5491,949.6573
+audi-r8,2,1,1,594042.3,0,16,rep 0: unused=16 gaps_owning=,-2569.389,-885.5267,247.7055,-1898.554,885.5267,247.7055
+audi-r8,3,1,1,592419.42,0,15,rep 0: unused=15 gaps_owning=,-2569.389,-885.5267,247.7055,-1898.554,883.1075,247.7055
+audi-r8,4,2820,15845,466752.0,0,1610,"rep 70: unused=867 gaps_owning=48118345,48124503; rep 4: unused=204 gaps_owning=; rep 66: unused=113 gaps_owning=; rep 69: unused=83 gaps_owning=; rep 72: unused=83 gaps_owning=; rep 73: unused=83 gaps_owning=; rep 75: unused=83 gaps_owning=; rep 68: unused=50 gaps_owning=; rep 0: unused=44 gaps_owning=",-1540.284,-930.1692,4.3907,-543.7429,-545.1097,776.3336
+audi-r8,5,1,1,356954.04,0,2,rep 0: unused=2 gaps_owning=,-1898.554,-885.5267,247.7055,-1495.456,885.5267,247.7055
+audi-r8,6,1,1,346998.61,0,1,rep 0: unused=1 gaps_owning=,-1898.554,-885.5267,247.7055,-1495.456,838.3996,247.7055
+audi-r8,7,2543,15245,346814.43,174,1317,rep 60: unused=805 gaps_owning=46929494; rep 56: unused=113 gaps_owning=46165936; rep 59: unused=83 gaps_owning=; rep 62: unused=83 gaps_owning=; rep 63: unused=83 gaps_owning=; rep 65: unused=83 gaps_owning=; rep 58: unused=50 gaps_owning=; rep 3: unused=16 gaps_owning=; rep 2: unused=1 gaps_owning=,-1323.16,545.1097,4.6634,-677.4823,930.5345,677.9375
+audi-r8,8,489,2571,245594.31,0,678,rep 53: unused=482 gaps_owning=45031183; rep 12: unused=149 gaps_owning=; rep 38: unused=47 gaps_owning=,-4250.828,-764.2203,153.0417,-3987.2539,395.4195,410.5322
+audi-r8,9,15,17,172487.52,0,37,rep 14: unused=37 gaps_owning=,-3885.171,547.3931,156.8872,-3182.388,547.3932,693.9022
+audi-r8,10,15,17,172487.52,0,37,rep 15: unused=37 gaps_owning=,-3885.171,-547.3932,156.8872,-3182.388,-547.3931,693.9022
+audi-r8,11,342,1180,155146.2,0,290,rep 3: unused=254 gaps_owning=; rep 53: unused=19 gaps_owning=45031183; rep 7: unused=10 gaps_owning=; rep 2: unused=7 gaps_owning=,-679.8965,342.2672,157.4175,-60.0399,906.5327,657.3768
+audi-r8,12,11,13,153664.48,0,0,,-1377.469,545.1097,144.9732,-622.9511,545.1097,642.7233
+audi-r8,13,11,13,153664.48,0,0,,-1377.469,-545.1097,144.9732,-622.9511,-545.1097,642.7233
+audi-r8,14,343,1190,136674.45,0,280,rep 4: unused=253 gaps_owning=; rep 53: unused=17 gaps_owning=45031183; rep 7: unused=10 gaps_owning=,-660.4167,-906.5327,157.4175,-60.0399,-342.2672,657.3768
+audi-r8,15,323,520,120381.22,0,896,rep 60: unused=251 gaps_owning=46929494; rep 3: unused=199 gaps_owning=; rep 59: unused=83 gaps_owning=; rep 62: unused=83 gaps_owning=; rep 63: unused=83 gaps_owning=; rep 65: unused=83 gaps_owning=; rep 58: unused=50 gaps_owning=; rep 0: unused=36 gaps_owning=; rep 56: unused=28 gaps_owning=46165936,-1540.284,784.5945,144.9732,-543.7429,915.09,776.3336
+audi-r8,16,19,22,85659.43,0,24,rep 14: unused=24 gaps_owning=,-3885.371,547.3931,156.8872,-3472.918,547.3932,699.1266
+audi-r8,17,19,22,85659.43,0,24,rep 15: unused=24 gaps_owning=,-3885.371,-547.3932,156.8872,-3472.918,-547.3931,699.1266
+audi-r8,18,1,1,69706.5,0,3,rep 14: unused=3 gaps_owning=,-3885.171,547.3931,156.6039,-3178.975,547.3932,354.0193
+audi-r8,19,1,1,69706.5,0,3,rep 15: unused=3 gaps_owning=,-3885.171,-547.3931,156.6039,-3178.975,-547.3931,354.0193
+audi-r8,20,212,493,65592.02,0,166,rep 3: unused=56 gaps_owning=; rep 4: unused=56 gaps_owning=; rep 44: unused=52 gaps_owning=; rep 53: unused=2 gaps_owning=45031183,-80.0362,-408.413,155.7598,-0.1515,408.413,274.3384
+audi-r8,21,7,15,64373.7,0,39,rep 12: unused=25 gaps_owning=; rep 38: unused=13 gaps_owning=; rep 53: unused=1 gaps_owning=45031183,-4236.856,-549.0427,257.4797,-3987.2539,-394.4222,345.8833
+audi-r8,22,12,27,62991.98,0,39,rep 12: unused=25 gaps_owning=; rep 38: unused=13 gaps_owning=; rep 53: unused=1 gaps_owning=45031183,-4236.856,-549.0427,257.4797,-3987.2539,-394.4222,345.8833
+audi-r8,23,7,11,61621.06,0,5,rep 4: unused=5 gaps_owning=,-1377.469,-545.1097,144.9732,-526.5278,-545.1097,314.2195
+audi-r8,24,7,11,61621.06,0,5,rep 3: unused=5 gaps_owning=,-1377.469,545.1097,144.9732,-526.5278,545.1097,314.2195
+audi-r8,25,1,1,51842.57,0,5,rep 7: unused=5 gaps_owning=,-250.0,-319.3429,254.3384,-250.0,0.0,579.0212

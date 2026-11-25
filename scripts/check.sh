@@ -40,6 +40,10 @@ echo "check: pytest -q"
 # land green.
 echo "check: claims CSV quoting"
 "$PY" scripts/triage/check_claims_csv_quoting.py
+# W12 evidence-data family (dispatch-recipes rule: a new data family
+# lands WITH its width/format checker): docs/evidence/data/w12-*.csv.
+echo "check: w12 CSV quoting"
+"$PY" scripts/triage/check_w12_csvs.py
 # Port crate (Phase 5 spec §7, ticket #51): the cargo steps mirror
 # ci.yml's port job, same order. From V0 the Rust toolchain is a
 # REQUIRED dev dependency — a machine without it fails the gate
