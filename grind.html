@@ -16,11 +16,11 @@
   <div class="page-head">
     <div class="crumb">issue #34 · G6</div>
     <h1>The grind to the 80% bar</h1>
-    <p class="lead">L2 geometry-sanity climbed from a 5.50% baseline to 84.50% (1,167/1,381) on the 2026-11-24 accepted run, after the 2026-11-23/24
-    close-out landed the unified 4-bit facet law and the W3/W15 exact-surface route (0 pass&rarr;fail against <code>cf1e158</code>, Submarino at 98.02% =
-    742/757). The 2026-11-22 marathon added multi-region composite reads (Submarino 58.92% &rarr; 92.87%), and Phase 4 closed at 74.80% in four days during
-    the grind. Every entry below is a merged commit or a measured fitness pass — analyses that failed are recorded
-    as refutations, not smoothed away. Corrections are dated, never massaged.</p>
+    <p class="lead">L2 geometry-sanity climbed from a 5.50% baseline to <strong>90.30% (1,247/1,381)</strong> on the 2026-11-25 accepted run, after W26 added
+    the compact see-body face-GP route (+80 parts, 0 pass&rarr;fail) on top of the 2026-11-23/24 close-out (unified 4-bit facet law and the W3/W15 exact-surface
+    route; Submarino 98.02% = 742/757). The 2026-11-22 marathon added multi-region composite reads (Submarino 58.92% &rarr; 92.87%), and Phase 4 closed at 74.80%
+    in four days during the grind. Every entry below is a merged commit or a measured fitness pass — analyses that failed are recorded as refutations, not
+    smoothed away. Corrections are dated, never massaged.</p>
   </div>
 
   <div class="tl" id="tl"></div>
@@ -69,6 +69,19 @@
       return "<tr><td>" + r[cols[0]] + "</td><td class='n'>" + r[cols[1]] + "</td><td>" + (r[cols[2]] || "") + "</td></tr>";
     }).join("") + "</table>";
   }
+  var w26Card = "";
+  if (D.w26) {
+    var W = D.w26;
+    w26Card = '<div class="cls-card"><h3>W26 close-out — ' + W.date + '</h3>' +
+      '<div class="src">' + W.label + '</div>' +
+      table([
+        { m: "L2 dev", v: W.dev.pass + "/" + W.dev.total + " (" + W.dev.pct + "%)", n: W.note },
+        { m: "L2 held-out", v: W.held_out.pass + "/" + W.held_out.total + " (" + W.held_out.pct + "%)", n: "" },
+        { m: "L2 Submarino", v: W.submarino.pass + "/" + W.submarino.total + " (" + W.submarino.pct + "%)", n: "external snapshot, not re-run in this checkout" },
+        { m: "not-manifold", v: String(W.not_manifold), n: "W26 adds no manifold failures" },
+        { m: "Open Rate", v: W.open_rate, n: "honest: feature-tree-only parts excluded" },
+      ], ["m", "v", "n"]) + "</div>";
+  }
   var marathonCard = "";
   if (D.marathon) {
     var M = D.marathon;
@@ -82,7 +95,7 @@
         { m: "Open Rate", v: M.open_rate, n: "honest: feature-tree-only parts excluded" },
       ], ["m", "v", "n"]) + "</div>";
   }
-  document.getElementById("cls-grid").innerHTML = marathonCard +
+  document.getElementById("cls-grid").innerHTML = w26Card + marathonCard +
     '<div class="cls-card"><h3>Failure classes at the 2026-11-10 baseline</h3>' +
     '<div class="src">committed census · population ' + c.baseline_census.population + " parts (dev + held-out)</div>" +
     table(c.baseline_census.rows, ["class", "n", "note"]) + "</div>" +

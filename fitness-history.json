@@ -695,6 +695,39 @@
           "pending-merge": 0
         }
       }
+    },
+    {
+      "run_id": "20261125T161156Z-c85026",
+      "timestamp": "2026-11-25T16:11:56Z",
+      "dev": {
+        "clean": 1745,
+        "total": 1751,
+        "pct": 99.66
+      },
+      "l2": {
+        "dev": {
+          "pass": 1247,
+          "total": 1381,
+          "pct": 90.3
+        },
+        "held-out": {
+          "pass": 57,
+          "total": 61,
+          "pct": 93.44
+        }
+      },
+      "l3": {
+        "resolved": 23,
+        "total": 23,
+        "pct": 100.0,
+        "by_outcome": {
+          "decoded": 14,
+          "documented-negative": 3,
+          "documented-open": 6,
+          "candidate": 0,
+          "pending-merge": 0
+        }
+      }
     }
   ]
 }
