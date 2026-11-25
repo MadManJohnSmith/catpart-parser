@@ -41,7 +41,18 @@ from __future__ import annotations
 import mmap
 
 from catpart.geometry.errors import ExportError
-from catpart.geometry import display, face_gp, facets, grid, mesh, pool, ply, store, surface
+from catpart.geometry import (
+    display,
+    face_gp,
+    facets,
+    grid,
+    mesh,
+    pool,
+    ply,
+    seebody_gp,
+    store,
+    surface,
+)
 from catpart.geometry import composite, unclassified
 
 EXPORT_SCHEMA_VERSION = 1
@@ -68,6 +79,7 @@ WARN_SURFACE_TESSELLATED = "bspline-surface-tessellated"
 WARN_GRID_MESHED = "point-grid-meshed"
 WARN_GRID_REFUSED = "grid-candidates-refused"
 WARN_FACE_GP_MESHED = "bagrep-face-gp-meshed"
+WARN_SEEBODY_GP_MESHED = "seebody-compact-face-gp-meshed"
 WARN_NO_SURFACE_DISPLAY = "no-surface-display"
 
 
@@ -531,7 +543,7 @@ def _face_gp_fallback(data, original, previous, spans, grid_scan) -> tuple[dict,
     """
     scan = face_gp.scan_part(data)
     if scan is None:
-        return _display_fallback(data, original, previous, spans, grid_scan)
+        return _seebody_fallback(data, original, previous, spans, grid_scan)
 
     vertices = list(scan.vertices)
     triangles = list(scan.triangles)
@@ -617,6 +629,102 @@ def _face_gp_fallback(data, original, previous, spans, grid_scan) -> tuple[dict,
             "dedup_dropped": scan.dedup_dropped,
             "sub_records_counter": scan.sub_records_counter,
             "sub_records_counter_gated": scan.sub_records_counter_gated,
+        },
+    }
+    _self_check(summary)
+    return summary, vertices, triangles
+
+
+def _seebody_fallback(data, original, previous, spans, grid_scan) -> tuple[dict, list, list]:
+    """The compact CATSeeBodyCont face-GP route (W26, 2026-11-24).
+
+    The official ``empty-mesh`` parts carry a declared vertex region with
+    a 2-bit LCP table and ``0x51``/``0x50`` face records under the
+    CAT3DFaceGP law (:mod:`catpart.geometry.seebody_gp`), but no 01 06
+    pool for the composite route and no ``CATSurfacicRep`` span for the
+    face-gp route.  A part whose compact nodes walk exact and whose
+    gated records fold into a non-empty manifold mesh exports it —
+    source label ``seebody-compact-face-gp`` — replacing the store
+    path's vertices-only success when there is one.  A part with no
+    walk-exact compact node or no folded triangle falls through to the
+    display-carrier route with its summary unchanged.
+    """
+    scan = seebody_gp.scan_part(data)
+    if scan is None:
+        return _display_fallback(data, original, previous, spans, grid_scan)
+
+    vertices = list(scan.vertices)
+    triangles = list(scan.triangles)
+    stats = mesh.mesh_stats(triangles)
+    warnings = list(previous[0]["warnings"]) if previous is not None else []
+    warnings.append(
+        {
+            "class": WARN_SEEBODY_GP_MESHED,
+            "detail": seebody_gp.warning_detail(scan),
+        }
+    )
+    if grid_scan.has_candidates and grid_scan.refused:
+        refusals = ", ".join(
+            f"{reason}={count}" for reason, count in grid_scan.refusals
+        )
+        warnings.append(
+            {
+                "class": WARN_GRID_REFUSED,
+                "detail": f"{grid_scan.refused} of {grid_scan.shaped} "
+                f"structured grid candidate(s) refused ({refusals}); no "
+                "triangle was emitted and their points are displayed as "
+                "carriers (docs/evidence/2026-11-19-no-surface-fallback.md)",
+            }
+        )
+    if stats.boundary_edges:
+        warnings.append(
+            {
+                "class": WARN_OPEN_SHELL,
+                "detail": f"{stats.boundary_edges} boundary edges: the "
+                "mesh is a manifold but not closed (G3 F6: sheet-like "
+                "open shells are legitimate geometry, and compact "
+                "see-body nodes are concatenated with disjoint index "
+                "spaces — no topology join is attempted)",
+            }
+        )
+    unused = len(vertices) - mesh.used_vertex_count(triangles, len(vertices))
+    if unused:
+        warnings.append(
+            {
+                "class": WARN_UNUSED_VERTICES,
+                "detail": f"{unused} of {len(vertices)} compact see-body "
+                "vertices are not referenced by any exported triangle",
+            }
+        )
+
+    bbox_min, bbox_max = mesh.bounding_box(vertices)
+    summary = {
+        "schema_version": EXPORT_SCHEMA_VERSION,
+        "vertex_count": len(vertices),
+        "triangle_count": len(triangles),
+        "bounding_box": {"min": bbox_min, "max": bbox_max},
+        "warnings": warnings,
+        "store_ordinal": 0,
+        "origin_kind": store.ORIGIN_KIND_BLOCK,
+        "pool_group_count": 0,
+        "facet_candidate_count": 0,
+        "facet_record_count": 0,
+        "degenerate_triangle_count": 0,
+        "mesh": {
+            "edge_count": stats.edge_count,
+            "manifold": stats.manifold,
+            "closed": stats.closed,
+            "oriented": stats.oriented,
+            "boundary_edge_count": stats.boundary_edges,
+        },
+        "seebody_gp": {
+            "source": seebody_gp.SOURCE,
+            "nodes": scan.nodes,
+            "records_total": scan.records_total,
+            "records_exact_close": scan.records_exact_close,
+            "records_accepted": scan.records_accepted,
+            "degenerate_filtered": scan.degenerate_filtered,
+            "native_color_count": len(set(scan.tri_colors)),
         },
     }
     _self_check(summary)

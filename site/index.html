@@ -32,7 +32,7 @@
 
     <div class="stats">
       <div class="stat"><div class="k">L1 clean-parse (Dev)</div><div class="v good">99.66<span class="unit">%</span></div><div class="d">1,745 / 1,751 files · held-out 73/73</div></div>
-      <div class="stat"><div class="k">L2 geometry-sanity (Dev)</div><div class="v accent" id="stat-l2">…<span class="unit">%</span></div><div class="d">1,167 / 1,381 parts · bar re-adjusted 84.50%</div></div>
+      <div class="stat"><div class="k">L2 geometry-sanity (Dev)</div><div class="v accent" id="stat-l2">…<span class="unit">%</span></div><div class="d">1,247 / 1,381 parts · bar re-adjusted 90.30%</div></div>
       <div class="stat"><div class="k">L2 held-out</div><div class="v good">93.44<span class="unit">%</span></div><div class="d">57 / 61 unseen parts pass sanity</div></div>
       <div class="stat"><div class="k">Phase 6 Assemblies</div><div class="v good">100<span class="unit">%</span></div><div class="d">Product pairing &amp; 3D instancing · P4 bar met</div></div>
     </div>
@@ -46,7 +46,7 @@
     <div class="legend">
       <span><span class="sw" style="background:#38e1ff"></span>L2 dev (1,381 parts)</span>
       <span><span class="sw" style="background:#8b7bff"></span>L2 held-out (61 parts)</span>
-      <span><span class="sw" style="background:repeating-linear-gradient(90deg,#ffc857 0 6px,transparent 6px 12px)"></span>original 80% bar · re-adjusted to 84.50% at close</span>
+      <span><span class="sw" style="background:repeating-linear-gradient(90deg,#ffc857 0 6px,transparent 6px 12px)"></span>original 80% bar · re-adjusted to 90.30% at close</span>
     </div>
     <div id="chart"></div>
   </div>
@@ -54,7 +54,7 @@
   <h2 class="section">Explore</h2>
   <p class="section-sub">Everything here is generated from the repository — the format documentation, real decoder output, committed evidence and the grind log.</p>
   <div class="explore">
-    <a class="card" href="viewer/viewer.html"><div class="ic">🌐</div><h3>3D Web Viewer</h3><p>Interactive client-side parser &amp; 3D viewer for <code>.CATPart</code> and <code>.CATProduct</code> assemblies in WebAssembly — with exploded view and instance classification.</p></a>
+    <a class="card" href="viewer/viewer.html"><div class="ic">🌐</div><h3>3D Web Viewer</h3><p>Interactive client-side parser &amp; 3D viewer for <code>.CATPart</code> and <code>.CATProduct</code> assemblies in WebAssembly — with native CATIA colors, 28° crease shading, exploded view and instance classification.</p></a>
     <a class="card" href="format.html"><div class="ic">📐</div><h3>Format portal</h3><p>The reverse-engineered CATIA V5 structures: header, container table, payload blocks, geometry, trailer — rendered straight from <code>docs/format/</code>.</p></a>
     <a class="card" href="gallery.html"><div class="ic">Meshes</div><h3>Export gallery</h3><p>Real <code>catpart-export</code> output rendered in 3D — corpus-free fixtures plus the G3 precedent part, with the summary JSON each run emits.</p></a>
     <a class="card" href="evidence.html"><div class="ic">▤</div><h3>Evidence browser</h3><p>The committed claims and validation CSVs — searchable, sortable. The byte-ranged discipline behind every number.</p></a>
@@ -83,7 +83,7 @@ catpart-inspect bracket.CATPart</pre>
     <tr><th>Level / Phase</th><th>Deliverable</th><th>Status</th></tr>
     <tr><td>L0 (Phases 0–1)</td><td>Public corpus + byte-level triage with reproducible evidence</td><td><span class="pill done">done</span></td></tr>
     <tr><td>L1 (Phases 2–3)</td><td>Container map, metadata, inventory, names</td><td><span class="pill done">done</span></td></tr>
-    <tr><td>L2 (Phase 4)</td><td>Geometry: meshes exportable to STEP or renderable</td><td><span class="pill good">84.50% · closed</span></td></tr>
+    <tr><td>L2 (Phase 4)</td><td>Geometry: meshes exportable to STEP or renderable</td><td><span class="pill good">90.30% · closed</span></td></tr>
     <tr><td>Phase 5</td><td>Web Viewer: client-side .CATPart parsing in WebAssembly</td><td><span class="pill done">done</span></td></tr>
     <tr><td>Phase 6</td><td>Assemblies: .CATProduct pairing, spatial instancing &amp; UI tree</td><td><span class="pill done">done</span></td></tr>
     <tr><td>L3 (Phase 7)</td><td>B-rep construct coverage: topology graph + STEP export (facet subset; exact solids 0/1,442)</td><td><span class="pill good">23/23 resolved · closed</span></td></tr>

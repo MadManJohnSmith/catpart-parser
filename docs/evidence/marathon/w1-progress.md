@@ -130,6 +130,15 @@ Byte-verified effect on the trigger file: acc-Cont-Lft flips
 not-manifold → **pass** (triangles 1,405 → 563, degenerates 35 → 0;
 the garbage strip loops were the over-use source).
 
+**Later update (2026-11-25)**: the 563-triangle pass is node 0's
+territory only. The body carries 13 token nodes (12 walk-exact + 1
+container); the single-rep reading parses all 142 records against node
+0's 220 elements, and 96 seam declines + 19 relist skips force the mix
+to `manifold = True`, so the W1-B multi-region route never fires. The real per-rep reading is
+13 reps / 6,602 triangles / manifold / 0 degenerate / 12 boundary
+edges. Root cause and the gate trade-off:
+[2026-11-25-acc-cont-lft-single-rep.md](../2026-11-25-acc-cont-lft-single-rep.md).
+
 Tests: `tests/test_composite_export.py::test_composite_u8_winner_over_a_truncated_u16be_stream_is_declined`
 (byte-for-byte 0x5255e block) + the in-bounds negative control; port
 twins `u8_winner_over_a_truncated_u16be_stream_is_declined` /

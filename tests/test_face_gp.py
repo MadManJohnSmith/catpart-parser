@@ -590,3 +590,17 @@ def test_a_flag_01_chain_terminator_is_not_a_sub_record() -> None:
     stray = face_gp.SUBREC + bytes([0x30]) + face_gp.SUBREC + bytes([0x01]) \
         + b"\x01\x0c\x02\x02" + b"\x00" * 90
     assert face_gp._subrecord_positions(stray, 0, len(stray)) == []
+
+
+def test_a_native_color_header_is_a_valid_sub_record() -> None:
+    # the W26 compact route exposed arbitrary <B><G><R> color headers;
+    # the face-gp framing accepts them too (the strict gates unchanged)
+    record = bytearray(sub_record(tris=[(0, 1, 2)]))
+    record[5:8] = bytes([0x10, 0x20, 0x30])  # B, G, R
+    body = face_gp_span(TWELVE_POINTS, bytes(record))
+    start = body.find(b"CATSurfacicRep") - 4
+    positions = face_gp._subrecord_positions(body, start, len(body))
+    assert len(positions) == 1
+    scan = face_gp.scan_part(body)
+    assert scan is not None
+    assert scan.triangles

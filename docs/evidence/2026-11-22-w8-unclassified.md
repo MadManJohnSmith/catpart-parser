@@ -147,9 +147,18 @@ Zero classification regressions.
 
 ## 5. Open questions carried forward
 
-- Submarine-wide taxonomy + the LS-seg-22 flip: needs the snapshot
-  (host gap, not an analysis gap).
+- Submarine-wide taxonomy: still pending (host gap, not an analysis
+  gap); the LS-seg-22 flip itself closed 2026-11-25 (see the later
+  update below).
 - The empty-geometry-store parts' geometry, if any, lives outside the
   nested stream store (CGM B-rep containers — the W2 handoff's
   territory); two of the ten carry a large CATCGRCont block, and the
   CATCGRCont walk stays a closed negative per the wave coordinator.
+
+## Later update (2026-11-25)
+
+The snapshot is available in this checkout. `LS-seg-22.CATPart` now
+exports a closed **614-vertex / 1,156-triangle** mesh through
+`identity-multiregion` (18 reps, 0 degenerate, 0 boundary edges), so
+the `undecoded-variant` flip is closed. The Submarino-wide taxonomy
+re-run remains pending.

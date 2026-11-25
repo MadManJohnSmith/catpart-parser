@@ -2534,14 +2534,42 @@ def decode_composite_store(
         # assembled mesh's area, then re-decode with the seam armed.
         # Deterministic (same input, same walk); the cost is the one
         # extra triangulation of already-parsed records.
-        points, triangles, degenerate, info = decode_composite_store(
-            data,
-            span,
-            groups,
-            kinds,
-            allow_unrouted_elements=allow_unrouted_elements,
-            _seam_area=None,
-        )
+        try:
+            points, triangles, degenerate, info = decode_composite_store(
+                data,
+                span,
+                groups,
+                kinds,
+                allow_unrouted_elements=allow_unrouted_elements,
+                _seam_area=None,
+            )
+        except ExportError:
+            # Pool-less multi-region fallback (2026-11-24): stores whose
+            # single-rep walk fails (e.g. no 01 06 pool + multi-node
+            # CATProdCont stores such as BW-Door-Ade-YR, Cover-hatch-carg-trp-up,
+            # MD-case Exhaust manifold-B4) still carry clean per-period
+            # token nodes that _decode_multiregion resolves to closed
+            # manifold solids. The fallback is pool-less by construction:
+            # a store WITH pool groups is governed by the stage-5/8
+            # pool-absorption law, whose fail-closed verdicts (unpinned
+            # 05 08 01 residue) this reading must never override.
+            # Fail-closed: adopted only when no pool groups, non-empty,
+            # manifold, and degenerate-free; otherwise re-raise verbatim.
+            if groups:
+                raise
+            mr_status, mr_result, _mr_failure = _decode_multiregion(
+                data, span.body_lo, span.body_hi
+            )
+            if mr_status == "ok":
+                mr_points, mr_triangles, mr_degenerate, mr_info, _mr_offsets = mr_result
+                if (
+                    mr_triangles
+                    and mr_degenerate == 0
+                    and mesh.mesh_stats(list(mr_triangles)).manifold
+                ):
+                    mr_info.pop("_space_offsets", None)
+                    return mr_points, mr_triangles, mr_degenerate, mr_info
+            raise
         base_offsets = info.pop("_space_offsets", ())
         area = mesh_area(triangles, points)
         seam_points, seam_triangles, seam_degenerate, seam_info = (

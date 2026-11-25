@@ -209,6 +209,11 @@ fn class_record_spans(data: &[u8]) -> Vec<(usize, usize, bool)> {
     out
 }
 
+/// Middle 4 bytes of the 8-byte graphic attribute header preceding every
+/// CAT3DFaceGP (0x51) / counter-table (0x50) sub-record:
+/// ``[0x20|0x30] 04 04 ff ff <B> <G> <R>``.
+const SUBREC_MID: &[u8; 4] = b"\x04\x04\xff\xff";
+
 /// The patch sub-record openings in ``[lo, hi)``, in order — the twin's
 /// :func:`catpart.geometry.face_gp._subrecord_positions`.  Both framings
 /// count (``0x51`` face-GP and ``0x50`` counter table): a sub-record's
@@ -217,9 +222,22 @@ fn class_record_spans(data: &[u8]) -> Vec<(usize, usize, bool)> {
 /// writer emits them interleaved, and a span that runs past a
 /// neighboring sub-record cannot close byte-exact.
 fn subrecord_positions(data: &[u8], lo: usize, hi: usize) -> Vec<usize> {
-    find_all(data, SUBREC, lo, hi)
+    if hi < lo + 9 {
+        return Vec::new();
+    }
+    find_all(data, SUBREC_MID, lo + 1, hi - 4)
         .into_iter()
-        .filter(|&hit| data[hit + 8] == FLAG_FACE_GP || data[hit + 8] == FLAG_COUNTER_TABLE)
+        .filter_map(|mid| {
+            let hit = mid - 1;
+            if (data[hit] == 0x20 || data[hit] == 0x30)
+                && hit + 8 < hi
+                && (data[hit + 8] == FLAG_FACE_GP || data[hit + 8] == FLAG_COUNTER_TABLE)
+            {
+                Some(hit)
+            } else {
+                None
+            }
+        })
         .collect()
 }
 
@@ -1198,6 +1216,15 @@ mod tests {
         // sorted keys, so the dedup drops them (first copy wins)
         assert_eq!(scan.triangles, vec![(0, 1, 2), (2, 3, 4), (3, 4, 5)]);
         assert_eq!(scan.dedup_dropped, 2);
+    }
+
+    #[test]
+    fn a_native_color_header_is_a_valid_sub_record() {
+        // the W26 compact route exposed arbitrary <B><G><R> headers;
+        // the face-gp framing accepts them with the same strict gates
+        let mut record = sub_record_bytes(&[(0, 1, 2)], &[], &[], 3, true, true);
+        record[5..8].copy_from_slice(&[0x10, 0x20, 0x30]);
+        assert_eq!(subrecord_positions(&record, 0, record.len()), vec![0]);
     }
 
     #[test]

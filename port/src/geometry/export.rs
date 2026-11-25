@@ -90,7 +90,8 @@ use super::errors::{
     UNREADABLE_FILE,
 };
 use super::{
-    composite, display, face_gp, facets, grid, mesh, ply, pool, store, surface, unclassified,
+    composite, display, face_gp, facets, grid, mesh, ply, pool, seebody_gp, store, surface,
+    unclassified,
 };
 
 /// The summary's schema version (twin: ``EXPORT_SCHEMA_VERSION``).
@@ -127,6 +128,8 @@ pub const WARN_GRID_MESHED: &str = "point-grid-meshed";
 pub const WARN_GRID_REFUSED: &str = "grid-candidates-refused";
 /// The ``CATSurfacicRep`` patch-stream fallback (#63): the CAT3DFaceGP law.
 pub const WARN_FACE_GP_MESHED: &str = "bagrep-face-gp-meshed";
+/// The compact ``CATSeeBodyCont`` face-GP fallback (W26, 2026-11-24).
+pub const WARN_SEEBODY_GP_MESHED: &str = "seebody-compact-face-gp-meshed";
 /// The display-carrier fallback (2026-11-19): decoded carriers, no surface.
 pub const WARN_NO_SURFACE_DISPLAY: &str = "no-surface-display";
 
@@ -246,6 +249,28 @@ pub struct BagrepFaceGp {
     pub sub_records_counter_gated: usize,
 }
 
+/// The compact see-body block (W26, 2026-11-24) — the twin's
+/// ``seebody_gp`` dict; the counters of the compact
+/// ``CATSeeBodyCont`` face-GP decode
+/// (docs/evidence/2026-11-24-seebody-compact-face-gp.md).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SeeBodyGp {
+    /// The route's source label (``seebody-compact-face-gp``).
+    pub source: String,
+    /// Walk-exact compact nodes.
+    pub nodes: usize,
+    /// Every candidate record over the nodes' territories.
+    pub records_total: usize,
+    /// Records closing byte-exact at their extent.
+    pub records_exact_close: usize,
+    /// Records emitted behind the incremental edge guard.
+    pub records_accepted: usize,
+    /// Collapsed member triangles skipped by the strip/fan law.
+    pub degenerate_filtered: usize,
+    /// Distinct per-triangle native CATIA RGB colors.
+    pub native_color_count: usize,
+}
+
 /// The display-carrier block (the twin's ``no_surface_display`` dict;
 /// additive, schema ``additionalProperties: true``).  It is a display of
 /// the decoded carriers, never a surface reconstruction.
@@ -332,6 +357,11 @@ pub struct ExportSummary {
     /// CAT3DFaceGP law's folded mesh, source ``bagrep-face-gp``).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bagrep_face_gp: Option<BagrepFaceGp>,
+    /// The compact see-body block (W26, 2026-11-24); present only when
+    /// the part took the compact ``CATSeeBodyCont`` face-GP fallback
+    /// (source ``seebody-compact-face-gp``).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seebody_gp: Option<SeeBodyGp>,
     /// The stage-3a/12 recovery provenance; absent on stores the
     /// shipped law located.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -408,6 +438,9 @@ pub struct ExportOutcome {
     /// boundary; every loop's coordinates in dropped-loop encounter
     /// order).
     pub curves: Vec<Vec<(f64, f64, f64)>>,
+    /// The native per-triangle CATIA RGB colors of the compact see-body
+    /// route (empty on every other path; the §2.3 viewer exposure).
+    pub tri_colors: Vec<[u8; 3]>,
 }
 
 /// Export ``path``'s nested-store geometry to the PLY ``out_path`` —
@@ -621,6 +654,7 @@ fn surface_fallback(
         grid_meshing: None,
         store_recovery: None,
         bagrep_face_gp: None,
+        seebody_gp: None,
         no_surface_display: None,
         feature_tree: None,
     };
@@ -629,6 +663,7 @@ fn surface_fallback(
         vertices,
         triangles,
         curves: Vec::new(),
+        tri_colors: Vec::new(),
     })
 }
 
@@ -753,6 +788,7 @@ fn grid_fallback(
         }),
         store_recovery: None,
         bagrep_face_gp: None,
+        seebody_gp: None,
         no_surface_display: None,
         feature_tree: None,
     };
@@ -761,6 +797,7 @@ fn grid_fallback(
         vertices,
         triangles,
         curves: Vec::new(),
+        tri_colors: Vec::new(),
     })
 }
 
@@ -791,7 +828,7 @@ fn face_gp_fallback(
 ) -> Result<ExportOutcome, ExportError> {
     let scan = match face_gp::scan_part(data) {
         Some(scan) => scan,
-        None => return display_fallback(data, original, previous, spans, grid_scan),
+        None => return seebody_fallback(data, original, previous, spans, grid_scan),
     };
 
     let vertices = scan.vertices.clone();
@@ -896,6 +933,7 @@ fn face_gp_fallback(
             sub_records_counter: scan.sub_records_counter,
             sub_records_counter_gated: scan.sub_records_counter_gated,
         }),
+        seebody_gp: None,
         store_recovery: None,
         no_surface_display: None,
         feature_tree: None,
@@ -905,6 +943,138 @@ fn face_gp_fallback(
         vertices,
         triangles,
         curves: Vec::new(),
+        tri_colors: Vec::new(),
+    })
+}
+
+/// The compact ``CATSeeBodyCont`` face-GP route (W26, 2026-11-24) —
+/// the twin's :func:`catpart.geometry.export._seebody_fallback`.
+///
+/// The official ``empty-mesh`` parts carry a declared vertex region
+/// with a 2-bit LCP table and ``0x51``/``0x50`` face records under the
+/// CAT3DFaceGP law (:mod:`super::seebody_gp`), but no 01 06 pool for
+/// the composite route and no ``CATSurfacicRep`` span for the face-gp
+/// route.  A part whose compact nodes walk exact and whose gated
+/// records fold into a non-empty manifold mesh exports it — source
+/// label ``seebody-compact-face-gp`` — replacing the store path's
+/// vertices-only success when there is one.  A part with no walk-exact
+/// compact node or no folded triangle falls through to the
+/// display-carrier route with its summary unchanged.
+fn seebody_fallback(
+    data: &[u8],
+    original: Option<ExportError>,
+    previous: Option<ExportOutcome>,
+    spans: &[(usize, usize)],
+    grid_scan: &grid::GridScan,
+) -> Result<ExportOutcome, ExportError> {
+    let scan = match seebody_gp::scan_part(data) {
+        Some(scan) => scan,
+        None => return display_fallback(data, original, previous, spans, grid_scan),
+    };
+
+    let vertices = scan.vertices.clone();
+    let triangles = scan.triangles.clone();
+    let stats = mesh::mesh_stats(&triangles);
+    let mut warnings: Vec<Warning> = previous
+        .as_ref()
+        .map(|outcome| outcome.summary.warnings.clone())
+        .unwrap_or_default();
+    warnings.push(Warning {
+        class: WARN_SEEBODY_GP_MESHED.to_string(),
+        detail: seebody_gp::warning_detail(&scan),
+    });
+    if grid_scan.has_candidates() && grid_scan.refused > 0 {
+        let refusals = grid_scan
+            .refusals
+            .iter()
+            .map(|(reason, count)| format!("{reason}={count}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        warnings.push(Warning {
+            class: WARN_GRID_REFUSED.to_string(),
+            detail: format!(
+                "{} of {} structured grid candidate(s) refused ({}); no \
+                 triangle was emitted and their points are displayed as \
+                 carriers (docs/evidence/2026-11-19-no-surface-fallback.md)",
+                grid_scan.refused, grid_scan.shaped, refusals,
+            ),
+        });
+    }
+    if stats.boundary_edges > 0 {
+        warnings.push(Warning {
+            class: WARN_OPEN_SHELL.to_string(),
+            detail: format!(
+                "{} boundary edges: the mesh is a manifold but not closed \
+                 (G3 F6: sheet-like open shells are legitimate geometry, \
+                 and compact see-body nodes are concatenated with disjoint \
+                 index spaces — no topology join is attempted)",
+                stats.boundary_edges,
+            ),
+        });
+    }
+    let unused = vertices.len() - mesh::used_vertex_count(&triangles, vertices.len());
+    if unused > 0 {
+        warnings.push(Warning {
+            class: WARN_UNUSED_VERTICES.to_string(),
+            detail: format!(
+                "{} of {} compact see-body vertices are not referenced by \
+                 any exported triangle",
+                unused,
+                vertices.len(),
+            ),
+        });
+    }
+
+    let mut distinct_colors = scan.tri_colors.clone();
+    distinct_colors.sort_unstable();
+    distinct_colors.dedup();
+    let (bbox_min, bbox_max) = mesh::bounding_box(&vertices)
+        .expect("the see-body fallback always carries at least one triangle's vertices");
+    let summary = ExportSummary {
+        schema_version: EXPORT_SCHEMA_VERSION,
+        vertex_count: vertices.len(),
+        triangle_count: triangles.len(),
+        bounding_box: BoundingBox {
+            min: bbox_min,
+            max: bbox_max,
+        },
+        warnings,
+        store_ordinal: 0,
+        origin_kind: store::ORIGIN_KIND_BLOCK.to_string(),
+        pool_group_count: 0,
+        facet_candidate_count: 0,
+        facet_record_count: 0,
+        degenerate_triangle_count: 0,
+        mesh: MeshBlock {
+            edge_count: stats.edge_count,
+            manifold: stats.manifold,
+            closed: stats.closed,
+            oriented: stats.oriented,
+            boundary_edge_count: stats.boundary_edges,
+        },
+        composite: None,
+        surface_tessellation: None,
+        grid_meshing: None,
+        bagrep_face_gp: None,
+        seebody_gp: Some(SeeBodyGp {
+            source: seebody_gp::SOURCE.to_string(),
+            nodes: scan.nodes,
+            records_total: scan.records_total,
+            records_exact_close: scan.records_exact_close,
+            records_accepted: scan.records_accepted,
+            degenerate_filtered: scan.degenerate_filtered,
+            native_color_count: distinct_colors.len(),
+        }),
+        store_recovery: None,
+        no_surface_display: None,
+        feature_tree: None,
+    };
+    Ok(ExportOutcome {
+        summary,
+        vertices,
+        triangles,
+        curves: Vec::new(),
+        tri_colors: scan.tri_colors,
     })
 }
 
@@ -1052,6 +1222,7 @@ fn display_fallback(
             vertices: previous.vertices,
             triangles: previous.triangles,
             curves: previous.curves,
+            tri_colors: previous.tri_colors,
         });
     }
 
@@ -1084,6 +1255,7 @@ fn display_fallback(
         grid_meshing: None,
         store_recovery: None,
         bagrep_face_gp: None,
+        seebody_gp: None,
         no_surface_display: Some(block),
         feature_tree: None,
     };
@@ -1092,6 +1264,7 @@ fn display_fallback(
         vertices: Vec::new(),
         triangles: Vec::new(),
         curves: Vec::new(),
+        tri_colors: Vec::new(),
     };
     let tree = display::scan_feature_tree(data);
     if tree.has_tree() {
@@ -1515,6 +1688,7 @@ fn export_store(
         grid_meshing: None,
         store_recovery: None,
         bagrep_face_gp: None,
+        seebody_gp: None,
         no_surface_display: None,
         feature_tree: None,
     };
@@ -1536,6 +1710,7 @@ fn export_store(
         vertices: flat,
         triangles: soup.triangles,
         curves: Vec::new(),
+        tri_colors: Vec::new(),
     })
 }
 
@@ -1920,6 +2095,7 @@ fn export_composite_store(
         grid_meshing: None,
         store_recovery: None,
         bagrep_face_gp: None,
+        seebody_gp: None,
         no_surface_display: None,
         feature_tree: None,
     };
@@ -1938,6 +2114,7 @@ fn export_composite_store(
         vertices: points,
         triangles,
         curves,
+        tri_colors: Vec::new(),
     })
 }
 

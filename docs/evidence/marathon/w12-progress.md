@@ -67,3 +67,12 @@ script. The diff carries no runtime code (docs + scripts/triage only;
 pytest does not collect scripts/), so the skipped duplicate run's
 coverage delta is the cargo steps, untouched by this diff. CI and the
 orchestrator's merge gate remain the authority for main.
+
+**Later update (2026-11-25)**: W20
+(`docs/evidence/2026-11-22-w20-dodge-routing.md`, merged with this note)
+tested the Dodge "routing" inference. The reference is an independently
+re-tessellated 1:10 variant (x-extent f32-exact at ×10; y/z differ
+9.3 %/1.4 %), and all 6,310 reps export as one connected body with no
+wrong-store pick. W20 therefore **supersedes this note's causal verdict**
+("fix class ROUTING") while the oracle data (`matched=0`, Audi/Motor
+connectivity) stands.

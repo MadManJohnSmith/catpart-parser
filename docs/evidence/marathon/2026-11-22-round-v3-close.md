@@ -29,7 +29,7 @@
 
 ## Evidencia y ramas no integradas
 
-- **W3** E5 B-spline exacta: `marathon/w3-e5-algebra` (`d4a1fbc`). +15 L2 dev esperados, pero su ruta introdujo 2 `pass→fail` por degenerados (`First_Back_Shell`, `backshell_M`); **revertido de main**. **W15** dejó el fix en `marathon/w15-e5-tail` (`408f568`): filtro de degenerados en la ruta de superficie. Pendiente: re-merge y gate.
+- **W3** E5 B-spline exacta: `marathon/w3-e5-algebra` (`d4a1fbc`). +15 L2 dev esperados, pero su ruta introdujo 2 `pass→fail` por degenerados (`First_Back_Shell`, `backshell_M`); revertido initially. **W15** dejó el fix en `marathon/w15-e5-tail` (`408f568`). **Later update 2026-11-23**: W3+W15 re-merged as `04de331`; both parts pass (8,278 / 9,142 tris, 0 degenerates) and the route is in the 2026-11-24 / 2026-11-25 accepted rows. No longer pending.
 - **W6** Laya calibrado + top-targets: `marathon/w6-laya-oracle` (`d5975ae`), pendiente de merge (scripts/nota).
 - **W11** negativo B8 + scanner: `marathon/w11-analytic-surfaces` (`534c6c2`); mover escáner a `foundation/w11-analytic`, nota/CSV a main.
 - **W12** oráculo inverso: `marathon/w12-inverse-oracle` (`f481106`); evidencia + checker CSV + 1 línea en `check.sh`, pendiente.
@@ -50,7 +50,27 @@
 ## Siguiente sesión
 
 1. Reintentar el pytest completo sobre el árbol final y el probe del Submarino con W17 (W27 quedó sin cuota).
-2. Re-merge de W3 + fix de W15 y verificación de los +15 dev (0 regresiones).
-3. Merge de la evidencia W6/W11/W12/W19/W20 y las ramas foundation de los escáneres unwired.
+2. W3+W15 ya re-mergeados (`04de331`); no queda re-merge — el gate quedó cubierto por las filas aceptadas 2026-11-24/25.
+3. Merge de la evidencia W6/W12/W20 (W11/W19 ya son ancestros de main) y las ramas foundation de los escáneres unwired.
 4. Reintentar W21/W24/W25/W14 cuando el proveedor reponga cuota.
 5. Mantener el criterio: 0 regresiones, 0 fuerá bruta, gates intactos.
+
+## Known gap (2026-11-25)
+`acc-Cont-Lft.CATPart` flips `not-manifold → pass` in W1 and stays in
+the 92.87% — but the passing emission is **563 triangles** from node
+0's territory, not the body's surface. The store carries 13 token nodes
+(12 walk-exact + 1 container); the single-rep reading parses all 142
+records against node 0's 220 elements, 96 seam declines + 19 relist
+skips force the mix to `manifold = True`, and the W1-B multi-region
+route therefore never fires. The per-rep reading is 13 reps / **6,602 triangles** / manifold
+/ 0 degenerate / 12 boundary edges. Root cause, reopening criterion and
+reproduction: [2026-11-25-acc-cont-lft-single-rep.md](../2026-11-25-acc-cont-lft-single-rep.md).
+
+**Index of unsynthesized findings**: [2026-11-25-unsynthesized-findings.md](../2026-11-25-unsynthesized-findings.md).
+
+**Later update (2026-11-25)**: the open-rate census was re-run over the
+current tree: **1,413/1,442 = 97.99%** (1,304 MESH + 109 DISPLAY + 29
+BLANK = 19 `missing-geometry-store` + 10 `empty-geometry-store`). The
+97.92 % figure shown on the W26 site card was the stale committed CSV;
+the fresh probe supersedes it. Against the 2026-11-20 census: 45
+DISPLAY→MESH + 1 BLANK→MESH.

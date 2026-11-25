@@ -186,3 +186,12 @@ viewer's JS scan agrees with the reference on the sampled files.
 - `site/viewer/viewer.{js,html,css}` — the Feature / Spec Tree panel.
 - `scripts/triage/probe_w4_feature_tree.py` — the audit probe.
 - `docs/evidence/data/w4-feature-tree-{files,claims}.csv` — the data.
+
+## Later update (2026-11-25) — the census is no longer stale
+
+The committed `open-rate-files.csv` was re-run over the current tree:
+**1,413/1,442 = 97.99%** open — 1,304 MESH, 109 DISPLAY, 29 BLANK
+(19 `missing-geometry-store` + 10 `empty-geometry-store`). Against the
+2026-11-20 census this is 45 DISPLAY→MESH + 1 BLANK→MESH; the 80 W26
+rows were already MESH. The 97.99% figure stands, but the per-row CSV is
+now current: the earlier "stale by 24 rows" caveat is historical.

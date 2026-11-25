@@ -66,6 +66,13 @@ CATProdCont store span):
   0's — against rep 0's smaller space the parse misresolves and emits
   the 11 degenerates W10 measured on LS-Valv-75.
 
+**Later update (2026-11-25)**: on `acc-Cont-Lft` this container rep is
+node 5 of 13. The full per-rep reading is now 13 reps / 6,602
+triangles / manifold / 0 degenerate / 12 boundary edges; the single-rep
+emission still passes L2 with 563 triangles (node 0's territory), so
+the multi-region route is not adopted. See
+[2026-11-25-acc-cont-lft-single-rep.md](../2026-11-25-acc-cont-lft-single-rep.md).
+
 ## The law landed (units)
 
 1. **The multi-region scan's container second chance**

@@ -169,3 +169,9 @@ their base's figure). The 27 declined ext records would only ADD
 area if exported — they cannot move `matched` (identity 0.0) and
 worsen `area_ratio`; the residual decline is documented, not a fix
 surface for this finding.
+
+**Later update (2026-11-25)**: merged together with W12. This note
+supersedes W12's "fix class ROUTING" reading; W12's `matched=0` oracle
+data remains valid — Dodge is simply not a fidelity oracle for this
+pair. The unified index is
+[2026-11-25-unsynthesized-findings.md](2026-11-25-unsynthesized-findings.md).

@@ -17,11 +17,14 @@
 //!   builder; field order single-sourced with the native CLI seam,
 //!   §2.4).
 //! - ``decode_export(bytes) -> { summary, vertices: Float32Array,
-//!   triangles: Uint32Array, curves: Array<Float32Array>,
-//!   points: Float32Array, curveSegments: Uint32Array }`` — the
-//!   export-summary object, the pool in walk order, the decoded
-//!   triangles, the decoded polyline loops (the curve-entry point
-//!   sequences) for the overlay, and the no-surface display carriers
+//!   triangles: Uint32Array, triColors: Uint8Array,
+//!   curves: Array<Float32Array>, points: Float32Array,
+//!   curveSegments: Uint32Array }`` — the export-summary object, the
+//!   pool in walk order, the decoded triangles, the native per-triangle
+//!   CATIA RGB colors of the compact see-body route (flat RGB, same
+//!   triangle order; empty on every other path), the decoded polyline
+//!   loops (the curve-entry point sequences) for the overlay, and the
+//!   no-surface display carriers
 //!   (a flat f32 xyz point cloud + flat u32 point-index pairs, present
 //!   only when the part has no surface; see
 //!   ``docs/evidence/2026-11-19-no-surface-fallback.md``). ``curves``
@@ -77,7 +80,7 @@
 
 use wasm_bindgen::prelude::*;
 
-use js_sys::{Array, Float32Array, Object, Uint32Array};
+use js_sys::{Array, Float32Array, Object, Uint8Array, Uint32Array};
 
 use crate::geometry::errors::IO_ERROR;
 use crate::geometry::export::export_data;
@@ -169,6 +172,16 @@ pub fn decode_export(bytes: &[u8]) -> Result<JsValue, JsValue> {
     }
     let triangles = Uint32Array::from(abc.as_slice());
 
+    // The native per-triangle colors of the compact see-body route
+    // (W26, 2026-11-24): flat RGB bytes, same triangle order as
+    // ``triangles``. Empty on every other path; the viewer treats an
+    // empty array as "no native colors".
+    let mut rgb = Vec::with_capacity(outcome.tri_colors.len() * 3);
+    for color in &outcome.tri_colors {
+        rgb.extend_from_slice(color);
+    }
+    let tri_colors = Uint8Array::from(rgb.as_slice());
+
     // The additive curve exposure (§2.3): every dropped curve-entry
     // loop's pre-weld point sequence, in encounter order. Empty on the
     // non-composite path (the clean path has no curve-entry loops).
@@ -213,6 +226,8 @@ pub fn decode_export(bytes: &[u8]) -> Result<JsValue, JsValue> {
     js_sys::Reflect::set(&result, &JsValue::from_str("vertices"), &vertices.into())
         .expect("a fresh Object accepts a string-keyed property");
     js_sys::Reflect::set(&result, &JsValue::from_str("triangles"), &triangles.into())
+        .expect("a fresh Object accepts a string-keyed property");
+    js_sys::Reflect::set(&result, &JsValue::from_str("triColors"), &tri_colors.into())
         .expect("a fresh Object accepts a string-keyed property");
     js_sys::Reflect::set(&result, &JsValue::from_str("curves"), &curves.into())
         .expect("a fresh Object accepts a string-keyed property");

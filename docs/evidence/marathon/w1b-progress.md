@@ -90,6 +90,15 @@ does not cover. Reopening criterion for the 29: a per-rep seam pass
 attempted this round (the strict reading is the no-guessing law; the
 seam's area rule would need a measured corpus precedent first).
 
+**Later update (2026-11-25)**: `acc-Cont-Lft.CATPart` is the case where
+the route's fire gate matters. W1's half-read fix leaves its single-rep
+emission `manifold = True` / `degenerate = 0` (563 triangles), so this
+route never runs even though the body has 13 token nodes (12 walk-exact
++ 1 container) and the per-rep reading is 6,602 triangles / manifold /
+0 degenerate / 12 boundary edges. The claims row's 12-rep / 4,649-triangle projection
+predates W17's container rep. Root cause and reopening criterion:
+[2026-11-25-acc-cont-lft-single-rep.md](../2026-11-25-acc-cont-lft-single-rep.md).
+
 ## Parity, tests, gates
 
 - Python tests:

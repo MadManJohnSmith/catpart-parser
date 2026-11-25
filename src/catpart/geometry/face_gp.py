@@ -226,25 +226,40 @@ def _class_record_spans(data) -> list[tuple[int, int, str]]:
     return out
 
 
+#: Middle 4 bytes of the 8-byte graphic attribute header preceding every
+#: CAT3DFaceGP (0x51) / counter-table (0x50) sub-record:
+#: ``[0x20|0x30] 04 04 ff ff <B> <G> <R>``. Bytes [5..8] are the face's
+#: native BGR color (``ff d2 d2`` is only CATIA V5's default lavender-gray
+#: solid color RGB(210, 210, 255); colored parts carry any 3-byte BGR).
+SUBREC_MID = b"\x04\x04\xff\xff"
+
+
 def _subrecord_positions(data, lo: int, hi: int) -> list[int]:
     """The patch sub-record openings in ``[lo, hi)``, in order.
 
-    Both framings count (``0x51`` face-GP and ``0x50`` counter table):
-    a sub-record's extent ends at the NEXT sub-record of either kind,
-    so an interleaved ``0x50`` record ends the ``0x51`` it sits inside
-    — the measured writer emits them interleaved (the CAKhw/CAAMai
-    carriers), and a span that runs past a neighboring sub-record
-    cannot close byte-exact.
+    Matches both ``0x30`` (solid) and ``0x20`` (open surface) graphic
+    attribute headers with any 3-byte native BGR color followed by
+    ``0x51`` (face-GP) or ``0x50`` (counter table). Every strict gate
+    (kind, byte-exact closure, mult-3, bounds, manifold) remains unchanged.
     """
+    if hi < lo + 9:
+        return []
     out: list[int] = []
-    pos = lo
-    while True:
-        hit = data.find(SUBREC, pos, hi)
-        if hit < 0:
+    pos = lo + 1
+    end = hi - 4
+    while pos < end:
+        mid = data.find(SUBREC_MID, pos, end)
+        if mid < 0:
             return out
-        if data[hit + 8] in (FLAG_FACE_GP, FLAG_COUNTER_TABLE):
+        hit = mid - 1
+        if (
+            data[hit] in (0x20, 0x30)
+            and hit + 8 < hi
+            and data[hit + 8] in (FLAG_FACE_GP, FLAG_COUNTER_TABLE)
+        ):
             out.append(hit)
-        pos = hit + 1
+        pos = mid + 1
+    return out
 
 
 def _head_gate(head) -> bool:

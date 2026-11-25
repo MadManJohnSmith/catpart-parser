@@ -457,10 +457,12 @@ def test_scan_part_reports_the_carrier_census() -> None:
 GRID_PARTS = Path(__file__).resolve().parents[1] / "docs/evidence/data/grid-meshing-parts.csv"
 CORPUS_MANIFEST = Path(__file__).resolve().parents[1] / "manifests/corpus-manifest.csv"
 
-#: One pinned part: a store recovered in a CATBRepModeContainer block
-#: with 51 point runs, 8 ``33 32`` records (6 law-holding), 4 mid-ring /
-#: 8 circle records and 20 filler records — the mixed carrier shape.
-PINNED_PART = "002e03ea032528d30a7d8d13340869b0fd115b22a13ae64c723bf4ff16fc4f7a"
+#: One pinned part: the W26 compact see-body records present but not
+#: byte-exact closing, so the display route still renders its carriers —
+#: 9 point runs, 6 law-holding ``33 32`` segments and 18 curve records
+#: (the mixed carrier shape; the old CAACafSearch anchor now meshes
+#: through the compact route).
+PINNED_PART = "e460139494d5c9aaa6ca987b9f7509283c304d2b35dc4eee2bd7132673a6fe6d"
 
 
 def _manifest() -> dict[str, dict[str, str]]:
@@ -481,25 +483,34 @@ def _targets() -> list[str]:
         ]
 
 
-#: The 14 formerly-BLANK rows the bag-rep f32 arrays open (the four
-#: other formerly-BLANK rows with an array are the a5-priority parts that
-#: stay closed; the other 51 carry no array at all).
+#: The five formerly-BLANK rows the bag-rep f32 arrays still open as
+#: DISPLAY (the four other formerly-BLANK rows with an array are the
+#: a5-priority parts that stay closed; the other 51 carry no array at
+#: all). The other eight bag-rep-array rows now mesh under the later
+#: routes and are pinned in ``LATER_MESHED``; ``Ehi_BundleSegment3_2``
+#: moved to MESH under the W26 compact see-body route.
 BAGREP_OPENED = {
-    "084841b3a2068a72",
-    "18a5e736be72bf2d",
     "2e1684b0e0461b11",
     "314092359a7c42b0",
     "3b9452edecb4f777",
+    "b00e31c89c8b5791",
+    "d6aa6e71a25e9dd8",
+}
+#: Formerly-BLANK bag-rep-array rows the later facet/grid routes now
+#: mesh (the 2026-11-25 census re-run moved 45 DISPLAY rows to MESH).
+LATER_MESHED = {
+    "084841b3a2068a72",
     "4c361f3c5f63d9df",
     "95636572111e8b7a",
-    "b00e31c89c8b5791",
     "b0e07338249a0067",
     "c2598108ba61b0df",
     "c2d1ecc6dca46685",
-    "d6aa6e71a25e9dd8",
     "dc7e292322cf3435",
     "eaf6890653df8d33",
 }
+#: Formerly-BLANK bag-rep-array rows the W26 compact see-body route now
+#: meshes (the array's points are no longer the only geometry).
+SEEBODY_MESHED = {"18a5e736be72bf2d"}
 #: The five a5-priority rows. Four of them carried a bag-rep array and
 #: stayed BLANK under the bag-rep-only run; the subtype-4 patch head now
 #: opens all five as MESH (the display route is still not consulted).
@@ -521,11 +532,13 @@ def test_bagrep_arrays_open_the_missing_store_rows() -> None:
     """The combined open-rate census after all display levers (2026-11-20).
 
     ``docs/evidence/data/open-rate-files.csv`` is the merged-tree probe
-    over all 1,442 manifest part rows: 30 rows stay BLANK, the bag-rep
-    count-framed arrays and the #60 empty-scan f32-run fallback open 26
-    formerly-BLANK rows as DISPLAY (incl. the 2 container-less
-    V5_CFV2 binaries), the T1-relaxed grids open 15 rows as MESH
-    (#59), and the 4 non-CATIA rows classify not-a-catpart (#60).
+    over all 1,442 manifest part rows: 29 rows stay BLANK, the bag-rep
+    count-framed arrays and the #60 empty-scan f32-run fallback open the
+    remaining five formerly-BLANK rows as DISPLAY (incl. the 2
+    container-less V5_CFV2 binaries), the T1-relaxed grids and later
+    routes open 15 rows as MESH (#59), and the 4 non-CATIA rows classify
+    not-a-catpart (#60). The 2026-11-25 re-run moved 45 DISPLAY rows to
+    MESH; eight of the 13 bag-rep rows are in ``LATER_MESHED``.
     """
     import csv
 
@@ -534,17 +547,22 @@ def test_bagrep_arrays_open_the_missing_store_rows() -> None:
     assert len(rows) == 1442, len(rows)
     by_sha = {row["sha16"]: row for row in rows}
     blank = {row["sha16"] for row in rows if row["open kind"] == "BLANK"}
-    assert len(blank) == 30, sorted(blank)
+    assert len(blank) == 29, sorted(blank)
     for sha in BAGREP_OPENED:
         row = by_sha[sha]
         assert row["open kind"] == "DISPLAY", (sha, row)
         assert int(row["points"]) > 0, (sha, row)
+    for sha in LATER_MESHED | SEEBODY_MESHED:
+        row = by_sha[sha]
+        assert row["open kind"] == "MESH", (sha, row)
+        assert int(row["triangles"]) > 0, (sha, row)
     for sha in SUBTYPE4_RECOVERED:
         row = by_sha[sha]
         assert row["open kind"] == "MESH", (sha, row)
         assert int(row["triangles"]) > 0, (sha, row)
     assert SUBTYPE4_RECOVERED.isdisjoint(blank)
     assert BAGREP_OPENED.isdisjoint(blank)
+    assert LATER_MESHED.isdisjoint(blank)
 
 
 @pytest.mark.skipif(
@@ -554,10 +572,12 @@ def test_bagrep_arrays_open_the_missing_store_rows() -> None:
 def test_corpus_population_renders_the_decoded_carriers(tmp_path: Path) -> None:
     """The measured population (docs/evidence/2026-11-19-no-surface-fallback.md).
 
-    Of the 120 no-facet parts, the T1 grid relaxation (#59) now
-    triangulates 5 that refused whole before (4,422 candidate
-    triangles); 105 still open via the display fallback and 10 keep
-    their ``undecoded-variant`` class.  The bag-rep count-framed f32
+    Of the 120 no-facet parts, the T1 grid relaxation (#59) and the
+    facet routes triangulate 10; the W26 compact see-body route
+    (2026-11-24) now triangulates 41 more (their LCP-table nodes walk
+    exact and their 0x51/0x50 records close byte-exact).  59 still open
+    via the display fallback and 10 keep their
+    ``empty-geometry-store`` class.  The bag-rep count-framed f32
     arrays keep their measured share; the counts are pinned part by
     part in ``docs/evidence/data/no-surface-fallback-parts.csv``.
 
@@ -565,8 +585,9 @@ def test_corpus_population_renders_the_decoded_carriers(tmp_path: Path) -> None:
     containers: ``cachete_soporte_mirror`` loses the 9 points that were
     12-byte-stride byte patterns inside its ``CATPrtCont`` region
     (x/y/z up to 15,725 mm against the part's ±2,048 mm display
-    envelope), so the population total drops 9,685 -> 9,676.  Part
-    classification is unchanged (still 105 display).
+    envelope).  W26's 41 compact meshes move another 4,784 display
+    points and 175 curve segments to mesh territory, so the population
+    totals are re-pinned below (59 display / 51 mesh / 10 named).
     """
     root = Path(__file__).resolve().parents[1]
     manifest = _manifest()
@@ -603,26 +624,26 @@ def test_corpus_population_renders_the_decoded_carriers(tmp_path: Path) -> None:
     # W8's fail-closed family: the 10 store-validated, body-without-pool
     # parts are named empty-geometry-store (were the undecoded-variant
     # bucket before the rename); geometry and totals are unchanged.
-    assert classes == {"mesh": 10, "display": 100, "empty-geometry-store": 10}, classes
+    assert classes == {"mesh": 51, "display": 59, "empty-geometry-store": 10}, classes
     assert totals == {
-        "points": 7455,
-        "curve_segments": 188,
-        "parts_with_segments": 31,
-        "triangles": 63848,
+        "points": 2671,
+        "curve_segments": 13,
+        "parts_with_segments": 3,
+        "triangles": 73168,
     }, totals
     assert pinned is not None, "the pinned part must be in the display population"
-    assert pinned["point_count"] == 116
-    assert len(pinned["points"]) == 348  # flat f32 xyz
+    assert pinned["point_count"] == 37
+    assert len(pinned["points"]) == 111  # flat f32 xyz
     assert pinned["curve_segment_count"] == 6
     assert len(pinned["curve_segments"]) == 12  # flat index pairs
-    assert pinned["point_runs"] == 51
-    assert pinned["run_points"] == 92
-    assert pinned["curve_records"] == 40
-    assert pinned["decoded_curve_records"] == 18
-    assert pinned["skipped_curve_records"] == 22
+    assert pinned["point_runs"] == 9
+    assert pinned["run_points"] == 25
+    assert pinned["curve_records"] == 18
+    assert pinned["decoded_curve_records"] == 6
+    assert pinned["skipped_curve_records"] == 12
     assert pinned["line_records"] == 6
     assert pinned["surface"] is False
-    assert pinned["label"] == "no surface — showing 116 points, 6 curve segments"
+    assert pinned["label"] == "no surface — showing 37 points, 6 curve segments"
 
 
 def test_empty_scan_f32_run_fallback_opens_container_less_carriers() -> None:

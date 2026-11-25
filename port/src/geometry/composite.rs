@@ -3554,7 +3554,7 @@ pub fn decode_composite_store(
     kinds: &[Vec<u8>],
     allow_unrouted_elements: bool,
 ) -> Result<CompositeDecode, ExportError> {
-    let baseline = decode_store_once(
+    let baseline = match decode_store_once(
         data,
         span,
         groups,
@@ -3562,7 +3562,42 @@ pub fn decode_composite_store(
         allow_unrouted_elements,
         None,
         false,
-    )?;
+    ) {
+        Ok(b) => b,
+        Err(err) => {
+            // Pool-less multi-region fallback (2026-11-24): stores whose
+            // single-rep walk fails (e.g. no 01 06 pool + multi-node
+            // CATProdCont stores such as BW-Door-Ade-YR, Cover-hatch-carg-trp-up,
+            // MD-case Exhaust manifold-B4) still carry clean per-period
+            // token nodes that decode_multiregion resolves to closed
+            // manifold solids. The fallback is pool-less by construction:
+            // a store WITH pool groups is governed by the stage-5/8
+            // pool-absorption law, whose fail-closed verdicts (unpinned
+            // 05 08 01 residue) this reading must never override.
+            // Fail-closed: adopted only when no pool groups, non-empty,
+            // manifold, and degenerate-free; otherwise re-raise `err`.
+            if groups.is_empty()
+                && let MrOutcome::Adopted(cand) =
+                    decode_multiregion(data, span.body_lo, span.body_hi)
+            {
+                let cand_stats = mesh::mesh_stats(&cand.triangles);
+                if !cand.triangles.is_empty() && cand_stats.manifold && cand.degenerate == 0 {
+                    return Ok(CompositeDecode {
+                        kept_loop_tris: Vec::new(),
+                        kept_loop_count: 0,
+                        relist_forced: 0,
+                        points: cand.points,
+                        triangles: cand.triangles,
+                        degenerate: cand.degenerate,
+                        info: cand.info,
+                        curves: cand.curves,
+                        space_offsets: cand.space_offsets,
+                    });
+                }
+            }
+            return Err(err);
+        }
+    };
     let area = mesh::mesh_area(&baseline.triangles, &baseline.points);
     let seam = decode_store_once(
         data,

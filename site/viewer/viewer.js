@@ -54,6 +54,7 @@ const els = {
   wireBtn: document.getElementById("wire-toggle"),
   edgesBtn: document.getElementById("edges-toggle"),
   shadingBtn: document.getElementById("shading-toggle"),
+  materialBtn: document.getElementById("material-toggle"),
   viewButtons: {
     iso: document.getElementById("view-iso"),
     front: document.getElementById("view-front"),
@@ -98,7 +99,14 @@ let solidMaterial = null;
 let showCurves = false;
 let showWireframe = false;
 let showEdges = true; // CATIA-style crease edges: on by default
-let showEvenShading = false; // flat shading: every fragment shades front-facing
+let showEvenShading = false;
+const CREASE_ANGLE_DEG = 28;
+const MATERIAL_PRESETS = {
+  native: { color: 0xd2d2ff, metalness: 0.1, roughness: 0.65 },
+  "cad-gray": { color: 0xb4b4b4, metalness: 0.0, roughness: 0.8 },
+};
+let materialPreset = "native";
+let hasNativeTriColors = false; // the last build carried per-triangle CATIA colors
 let edgesObject = null;
 let bodiesComponents = null; // null while not measured / < 2 components
 let bodiesEpoch = 0; // guards the async body labeling across reloads
@@ -216,15 +224,148 @@ function disposeMesh() {
 
 /* ---- rendering the decoded result (Part Mode) ---- */
 
-function buildMesh(vertices, triangles) {
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
-  geometry.setIndex(new THREE.BufferAttribute(triangles, 1));
-  geometry.computeVertexNormals();
+/**
+ * Split vertex normals at sharp creases (> creaseDeg) while keeping smooth
+ * shading across curved CAD surfaces (cylinders, fillets, bodywork).
+ * Optionally attaches per-triangle native CATIA RGB colors (Uint8Array, 3 B/tri).
+ */
+function buildCreaseGeometry(vertices, triangles, creaseDeg = CREASE_ANGLE_DEG, triColors = null) {
+  const triCount = (triangles.length / 3) | 0;
+  if (triCount === 0) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(vertices, 3));
+    g.setIndex(new THREE.BufferAttribute(triangles, 1));
+    return g;
+  }
+  const useColors = !!(triColors && triColors.length >= triCount * 3);
+  const cosLimit = Math.cos((creaseDeg * Math.PI) / 180);
+  const faceNx = new Float32Array(triCount);
+  const faceNy = new Float32Array(triCount);
+  const faceNz = new Float32Array(triCount);
+  const faceArea = new Float32Array(triCount);
+
+  const edgeMap = new Map();
+  const vCount = (vertices.length / 3) | 0;
+  for (let t = 0; t < triCount; t++) {
+    const a = triangles[3 * t], b = triangles[3 * t + 1], c = triangles[3 * t + 2];
+    const ax = vertices[3 * a], ay = vertices[3 * a + 1], az = vertices[3 * a + 2];
+    const ux = vertices[3 * b] - ax, uy = vertices[3 * b + 1] - ay, uz = vertices[3 * b + 2] - az;
+    const vx = vertices[3 * c] - ax, vy = vertices[3 * c + 1] - ay, vz = vertices[3 * c + 2] - az;
+    const nx = uy * vz - uz * vy;
+    const ny = uz * vx - ux * vz;
+    const nz = ux * vy - uy * vx;
+    const len = Math.hypot(nx, ny, nz);
+    if (len > 1e-12) {
+      faceNx[t] = nx / len;
+      faceNy[t] = ny / len;
+      faceNz[t] = nz / len;
+      faceArea[t] = 0.5 * len;
+    }
+    const pairs = [[a, b], [b, c], [c, a]];
+    for (let p = 0; p < 3; p++) {
+      const u = pairs[p][0] < pairs[p][1] ? pairs[p][0] : pairs[p][1];
+      const v = pairs[p][0] < pairs[p][1] ? pairs[p][1] : pairs[p][0];
+      const key = u * vCount + v;
+      const prev = edgeMap.get(key);
+      if (prev === undefined) {
+        edgeMap.set(key, t);
+      } else if (prev >= 0) {
+        edgeMap.set(key, -(prev * triCount + t + 1));
+      } else {
+        edgeMap.set(key, -Number.MAX_SAFE_INTEGER);
+      }
+    }
+  }
+
+  const parent = new Int32Array(triCount);
+  for (let t = 0; t < triCount; t++) parent[t] = t;
+  const find = (x) => {
+    while (parent[x] !== x) {
+      parent[x] = parent[parent[x]];
+      x = parent[x];
+    }
+    return x;
+  };
+  for (const val of edgeMap.values()) {
+    if (val < 0 && val > -Number.MAX_SAFE_INTEGER) {
+      const code = -val - 1;
+      const t0 = Math.floor(code / triCount);
+      const t1 = code - t0 * triCount;
+      const dot = faceNx[t0] * faceNx[t1] + faceNy[t0] * faceNy[t1] + faceNz[t0] * faceNz[t1];
+      if (dot >= cosLimit) {
+        const r0 = find(t0), r1 = find(t1);
+        if (r0 !== r1) parent[r1] = r0;
+      }
+    }
+  }
+
+  const slotMap = new Map();
+  const outPos = [];
+  const outNx = [];
+  const outNy = [];
+  const outNz = [];
+  const outCol = useColors ? [] : null;
+  const outIdx = new Uint32Array(triangles.length);
+  for (let t = 0; t < triCount; t++) {
+    const grp = find(t);
+    const w = faceArea[t] || 1e-6;
+    const wx = faceNx[t] * w, wy = faceNy[t] * w, wz = faceNz[t] * w;
+    const cTag = useColors
+      ? `${triColors[3 * t]},${triColors[3 * t + 1]},${triColors[3 * t + 2]}`
+      : "";
+    for (let k = 0; k < 3; k++) {
+      const vi = triangles[3 * t + k];
+      const skey = useColors ? `${vi}:${grp}:${cTag}` : `${vi}:${grp}`;
+      let slot = slotMap.get(skey);
+      if (slot === undefined) {
+        slot = outNx.length;
+        slotMap.set(skey, slot);
+        outPos.push(vertices[3 * vi], vertices[3 * vi + 1], vertices[3 * vi + 2]);
+        outNx.push(wx);
+        outNy.push(wy);
+        outNz.push(wz);
+        if (useColors) {
+          outCol.push(
+            triColors[3 * t] / 255,
+            triColors[3 * t + 1] / 255,
+            triColors[3 * t + 2] / 255,
+          );
+        }
+      } else {
+        outNx[slot] += wx;
+        outNy[slot] += wy;
+        outNz[slot] += wz;
+      }
+      outIdx[3 * t + k] = slot;
+    }
+  }
+  const outNorm = new Float32Array(outNx.length * 3);
+  for (let i = 0; i < outNx.length; i++) {
+    const len = Math.hypot(outNx[i], outNy[i], outNz[i]) || 1;
+    outNorm[3 * i] = outNx[i] / len;
+    outNorm[3 * i + 1] = outNy[i] / len;
+    outNorm[3 * i + 2] = outNz[i] / len;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(outPos), 3));
+  g.setAttribute("normal", new THREE.BufferAttribute(outNorm, 3));
+  if (useColors) {
+    g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(outCol), 3));
+  }
+  g.setIndex(new THREE.BufferAttribute(outIdx, 1));
+  return g;
+}
+
+function buildMesh(vertices, triangles, triColors = null) {
+  const geometry = buildCreaseGeometry(vertices, triangles, CREASE_ANGLE_DEG, triColors);
+  hasNativeTriColors = !!geometry.getAttribute("color");
+  const preset = MATERIAL_PRESETS[materialPreset] || MATERIAL_PRESETS.native;
+  const useVertColors = hasNativeTriColors && materialPreset === "native";
   solidMaterial = new THREE.MeshStandardMaterial({
-    color: 0x8fb8d8,
-    metalness: 0.1,
-    roughness: 0.65,
+    color: useVertColors ? 0xffffff : preset.color,
+    vertexColors: useVertColors,
+    metalness: preset.metalness,
+    roughness: preset.roughness,
     wireframe: showWireframe,
     flatShading: showEvenShading,
     side: THREE.DoubleSide, // open shells are legitimate (G3 F6)
@@ -246,7 +387,7 @@ function buildMesh(vertices, triangles) {
   // the overlay disposes with the file's scene (clearScene). Hidden
   // while a Bodies component is toggled off (the overlay has no
   // per-component ranges; it comes back at full visibility).
-  const edgesGeometry = new THREE.EdgesGeometry(geometry, 25);
+  const edgesGeometry = new THREE.EdgesGeometry(geometry, CREASE_ANGLE_DEG);
   edgesObject = new THREE.LineSegments(
     edgesGeometry,
     new THREE.LineBasicMaterial({
@@ -271,7 +412,7 @@ function buildMesh(vertices, triangles) {
     center: sceneBounds.center,
     radius: sceneBounds.radius,
   });
-  labelBodies(geometry);
+  labelBodies(geometry, (vertices.length / 3) | 0, triangles);
 }
 
 /* ---- Bodies (w22, 2026-11-22) ----
@@ -287,25 +428,27 @@ function buildMesh(vertices, triangles) {
    boundary — the export contract carries one merged pool and the
    parser is out of reach for the viewer. */
 
-async function labelBodies(geometry) {
+async function labelBodies(geometry, weldedVertCount, weldedIndices) {
   const epoch = ++bodiesEpoch;
   const indexAttr = geometry.getIndex();
   const position = geometry.getAttribute("position");
   viewerState.bodies = { count: 1, components: [], allVisible: true, measuring: true };
   renderBodiesPanel();
-  const result = await computeComponents(position.count, indexAttr.array);
+  const result = await computeComponents(weldedVertCount || position.count, weldedIndices || indexAttr.array);
   if (epoch !== bodiesEpoch || !meshObject) return; // a newer load took over
   if (result.count >= 2) {
     const surface = meshObject.children.find((child) => child.name === "surface");
     const { index, ranges } = reorderByComponents(indexAttr.array, result.labels, result.count);
     const positionAttr = surface.geometry.getAttribute("position");
     const normalAttr = surface.geometry.getAttribute("normal");
+    const colorAttr = surface.geometry.getAttribute("color");
     meshObject.remove(surface);
     surface.geometry.dispose(); // the shared attributes re-upload once, then reuse
     bodiesComponents = ranges.map((range, k) => {
       const compGeometry = new THREE.BufferGeometry();
       compGeometry.setAttribute("position", positionAttr);
       compGeometry.setAttribute("normal", normalAttr);
+      if (colorAttr) compGeometry.setAttribute("color", colorAttr);
       compGeometry.setIndex(
         new THREE.BufferAttribute(index.subarray(range.start, range.start + range.count), 1),
       );
@@ -715,6 +858,7 @@ function refreshToggles(curveCount) {
   els.wireBtn.setAttribute("aria-pressed", showWireframe ? "true" : "false");
   els.edgesBtn.setAttribute("aria-pressed", showEdges ? "true" : "false");
   els.shadingBtn.setAttribute("aria-pressed", showEvenShading ? "true" : "false");
+  els.materialBtn.setAttribute("aria-pressed", materialPreset === "native" ? "true" : "false");
 }
 
 /* The scripted-check surface (window.viewer): the same state the
@@ -735,6 +879,8 @@ const viewerState = {
   edgesVisible: true,
   evenShading: false, // flat shading: every fragment shades front-facing
   shading: "smooth", // "smooth" | "flat" (the material state)
+  materialPreset: "native", // "native" | "cad-gray"
+  creaseAngleDeg: CREASE_ANGLE_DEG,
   view: null, // the CAD-view pose readout (cadviews.js)
   bodies: null, // the visual components (never decoded body boundaries)
   featureSelection: null, // the highlighted feature-census row
@@ -748,6 +894,8 @@ function publishState() {
   viewerState.edgesVisible = showEdges;
   viewerState.evenShading = showEvenShading;
   viewerState.shading = showEvenShading ? "flat" : "smooth";
+  viewerState.materialPreset = materialPreset;
+  viewerState.creaseAngleDeg = CREASE_ANGLE_DEG;
   viewerState.view = orbit.readout();
   window.viewer = viewerState;
 }
@@ -768,6 +916,33 @@ function currentFit() {
    producing dark faces. The mesh data (vertices, triangles, normals)
    is never touched, and the toggle costs one shader recompile, not a
    geometry pass — safe at Dodge scale. */
+function applyMaterialPreset(name) {
+  materialPreset = name in MATERIAL_PRESETS ? name : "native";
+  const p = MATERIAL_PRESETS[materialPreset];
+  const useVertColors = hasNativeTriColors && materialPreset === "native";
+  if (solidMaterial) {
+    solidMaterial.color.setHex(useVertColors ? 0xffffff : p.color);
+    solidMaterial.vertexColors = useVertColors;
+    solidMaterial.metalness = p.metalness;
+    solidMaterial.roughness = p.roughness;
+    solidMaterial.needsUpdate = true;
+  }
+  for (const inst of assemblyScene.instances.values()) {
+    inst.traverse((child) => {
+      if (child.isMesh && child.material) {
+        const instHasCols = !!(child.geometry && child.geometry.getAttribute("color"));
+        const useInstCols = instHasCols && materialPreset === "native";
+        child.material.color.setHex(useInstCols ? 0xffffff : p.color);
+        child.material.vertexColors = useInstCols;
+        child.material.metalness = p.metalness;
+        child.material.roughness = p.roughness;
+        child.material.needsUpdate = true;
+      }
+    });
+  }
+  publishState();
+}
+
 function applyEvenShading(on) {
   showEvenShading = !!on;
   if (solidMaterial) {
@@ -831,7 +1006,7 @@ async function loadFile(file) {
     displayPoints.length > 0; // segments are always indexed into points
   if (decoded) {
     if (decoded.triangles.length > 0) {
-      buildMesh(decoded.vertices, decoded.triangles);
+      buildMesh(decoded.vertices, decoded.triangles, decoded.triColors || null);
     }
     buildCurves(decoded.curves);
   }
@@ -1059,10 +1234,18 @@ async function loadAssemblyFromCatalog(catalog, preferredRoot = null) {
   };
 
   els.canvas.hidden = false;
+  const allUnresolved =
+    counts.totalInstances > 0 &&
+    counts.unresolvedInstances === counts.totalInstances &&
+    counts.placedInstances === 0 &&
+    counts.identityInstances === 0;
   setStatus(
-    `${rootProduct.name} — ${counts.totalInstances} instance${counts.totalInstances === 1 ? "" : "s"} ` +
-      `(${counts.placedInstances} placed, ${counts.identityInstances} identity, ` +
-      `${counts.unresolvedInstances} unresolved, ${counts.undecodableInstances} undecodable)`,
+    allUnresolved
+      ? `${rootProduct.name} — ${counts.totalInstances} unresolved instance${counts.totalInstances === 1 ? "" : "s"}: ` +
+          `a .CATProduct contains no 3D mesh; drop the folder, a .zip, or select the .CATProduct together with its .CATPart files.`
+      : `${rootProduct.name} — ${counts.totalInstances} instance${counts.totalInstances === 1 ? "" : "s"} ` +
+          `(${counts.placedInstances} placed, ${counts.identityInstances} identity, ` +
+          `${counts.unresolvedInstances} unresolved, ${counts.undecodableInstances} undecodable)`,
   );
   viewerState.status = "loaded";
   publishState();
@@ -1174,6 +1357,11 @@ els.shadingBtn.addEventListener("click", () => {
   els.shadingBtn.setAttribute("aria-pressed", showEvenShading ? "true" : "false");
   refreshToggles(viewerState.curveCount);
   publishState();
+});
+
+els.materialBtn.addEventListener("click", () => {
+  applyMaterialPreset(materialPreset === "native" ? "cad-gray" : "native");
+  els.materialBtn.setAttribute("aria-pressed", materialPreset === "native" ? "true" : "false");
 });
 
 for (const name of VIEW_NAMES) {

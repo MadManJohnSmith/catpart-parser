@@ -11,6 +11,8 @@ False``).  Every part is pushed through the shipped export seam
 
 - ``display`` — the export succeeded with the ``no_surface_display``
   block (points and/or law-pinned curve segments, zero triangles);
+- ``mesh`` — the export produced triangles through a non-display route
+  (the W26 compact see-body stream, or a grid/facet route);
 - ``error`` — the export raised a named class (a part with no
   displayable carrier keeps its pre-display classification).
 
@@ -223,6 +225,8 @@ def main() -> int:
     total = len(targets)
     assert total == 120, f"the population must be the 120 rows, got {total}"
     display = classes["display"]
+    mesh = classes["ok-without-display"]
+    named = total - display - mesh
     line = _line_reading_sample(manifest)
     records = line.get("records", 0)
     claims = [
@@ -235,8 +239,9 @@ def main() -> int:
             "label": "fact",
             "detail": f"{display}/{total} of the 120 non-opening no-facet parts render with the "
             f"display fallback (decoded carriers: points and/or law-pinned curve segments, zero "
-            f"triangles); the other {total - display} carry no displayable carrier and keep a "
-            "named failure class",
+            f"triangles); the other {mesh} mesh through a non-display route "
+            f"(W26 compact see-body / grid) and {named} keep a named failure class "
+            "(no displayable carrier)",
         },
         {
             "claim": "DF-02",

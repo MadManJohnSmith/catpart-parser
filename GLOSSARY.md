@@ -42,6 +42,16 @@ The structure terminating a file with `CB__END\0`, carrying size-like
 fields.
 _Avoid_: footer
 
+**Compact see-body face-GP (W26)**:
+The `CATSeeBodyCont`/`CATBRepModeContainer` geometry stream of the
+official empty-mesh parts: a `04 04 fd ff` node declares its vertices
+through a 2-bit LCP table (`a5 d4 68 53` header, `u32le write_count`),
+then `0x51`/`0x50` CAT3DFaceGP records reference that node's own element
+space. Exports only when every node walks exact, each accepted record
+closes byte-exact and the merged mesh is manifold
+(`docs/evidence/2026-11-24-seebody-compact-face-gp.md`).
+_Avoid_: seebody store, compact mesh
+
 ### Fitness
 
 **Fitness**:

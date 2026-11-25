@@ -42,8 +42,8 @@ for everyone who receives CATIA files without owning a CATIA seat.
 | Capability | Result | Evidence |
 |---|---|---|
 | **L1 — metadata & containers** (`catpart-inspect`) | 99.66% Dev (1,745/1,751), 100% held-out (73/73) — Phase 3 closed 2026-11-08 | [ROADMAP](docs/ROADMAP.md), [format docs](docs/format/README.md) |
-| **L2 — mesh export** (`catpart-export` → binary PLY) | 84.50% Dev (1,167/1,381), 57/61 held-out; Phase 4 closed 2026-11-13 at 74.80%, raised by the post-v1.0 decoder fixes, the 2026-11-23 unified 4-bit facet law and W3/W15 (accepted run 2026-11-24) | [close-out](docs/evidence/2026-11-13-phase4-close.md), [4-bit evidence](docs/evidence/2026-11-23-unified-4bit-facets.md) |
-| **Part viewer** (WASM, in the browser) | Rust/Python fidelity 3,266/3,266 (0 mismatches, full dual-slice corpus run); in-browser scalar reproduction WITHIN exact at the declared margin 0 — Phase 5 closed 2026-11-14 | [fidelity run](docs/evidence/2026-11-14-v6-fidelity-full-corpus.md), [acceptance](docs/evidence/2026-11-14-v6-phase5-close.md) |
+| **L2 — mesh export** (`catpart-export` → binary PLY) | 90.30% Dev (1,247/1,381), 57/61 held-out; Phase 4 closed 2026-11-13 at 74.80%, raised by the post-v1.0 decoder fixes, the 2026-11-23 unified 4-bit facet law, W3/W15 and the 2026-11-25 W26 compact see-body route (accepted run 2026-11-25) | [close-out](docs/evidence/2026-11-13-phase4-close.md), [4-bit evidence](docs/evidence/2026-11-23-unified-4bit-facets.md), [W26 evidence](docs/evidence/2026-11-24-seebody-compact-face-gp.md) |
+| **Part viewer** (WASM, in the browser) | Rust/Python fidelity 3,266/3,266 (0 mismatches, full dual-slice corpus run); in-browser scalar reproduction WITHIN exact at the declared margin 0; W26 adds native per-triangle CATIA colors and 28° crease shading — Phase 5 closed 2026-11-14 | [fidelity run](docs/evidence/2026-11-14-v6-fidelity-full-corpus.md), [acceptance](docs/evidence/2026-11-14-v6-phase5-close.md) |
 | **Assembly viewer** (`.CATProduct`, multi-file) | Folder/`.zip` drag-drop ingestion, decoded `[tx, ty, tz, qw, qx, qy, qz]` transforms (f64le, w-first quaternion), GPU-instanced rendering, exploded view, 4-state classification tree; P4 Assembly Bar met digit-for-digit, headless acceptance 8/8 — Phase 6 closed 2026-11-16 | [spec](docs/specs/phase6-assembly-viewer-spec.md), [bar](docs/evidence/2026-11-14-p4-assembly-bar.md), [review](docs/evidence/2026-11-16-p3-v6-acceptance-review.md) |
 | **L3 — B-rep constructs** | 23/23 frozen constructs resolved (14 decoded, 9 closed with published ceilings), L3 23/23 accepted — Phase 7 closed 2026-11-18 | [close-out](docs/evidence/2026-11-18-phase7-close.md) |
 
@@ -105,7 +105,7 @@ curve overlay, in-browser sanity gate, exploded assembly view.
 |---|---|---|
 | L0 | Public corpus + byte-level triage with reproducible evidence | done (Phase 0/1) |
 | L1 | Container/section map, metadata, container inventory, names | done (Phase 3) |
-| L2 | Geometry basics: meshes and curves exportable to STEP or renderable | closed at 74.80% (bar re-adjusted); now 84.50% (run 20261124T125633Z-38c46d) |
+| L2 | Geometry basics: meshes and curves exportable to STEP or renderable | closed at 74.80% (bar re-adjusted); now 90.30% (run 20261125T161156Z-c85026) |
 | Phase 5 (Viewer: Parts) | Client-side .CATPart parsing in WebAssembly, 3D WebGL render | done (Phase 5) |
 | Phase 6 (Assemblies) | Client-side .CATProduct parsing, multi-part instancing, 3D placement | done (Phase 6) |
 | L3 | B-rep constructs: topology graph + STEP (facet subset; exact solids 0/1,442) | closed 2026-11-18 — 23/23 constructs, L3 23/23 |
@@ -120,7 +120,7 @@ Spec-by-spec summary — authoritative per-ticket state lives in the
 | A — tooling & CI ([#8](https://github.com/MadManJohnSmith/catpart-parser/issues/8)) | package skeleton, CLI, fixture generator, fitness runner, GitHub Actions, gh-pages | 6/6 done (2026-11-09) |
 | B — format inference ([#9](https://github.com/MadManJohnSmith/catpart-parser/issues/9)) | container table & trailer, header/tail semantics, payload blocks, CGMGeom/CATCGRCont, R19 vs R21, format doc v1 | 6/6 done (2026-11-09) |
 | C — L1 parser ([#10](https://github.com/MadManJohnSmith/catpart-parser/issues/10)) | schema v1 + baseline, feature tree, names/units, acceptance, publication | 5/5 done (Phase 3, 2026-11-08) |
-| D — L2 geometry ([#28](https://github.com/MadManJohnSmith/catpart-parser/issues/28)) | store navigation, vertex pool, primitive semantics, export CLI, L2 fitness, grind to bar | 6/6 done (Phase 4, 2026-11-13; now 84.50% after the post-v1.0 fixes and the 4-bit facet law) |
+| D — L2 geometry ([#28](https://github.com/MadManJohnSmith/catpart-parser/issues/28)) | store navigation, vertex pool, primitive semantics, export CLI, L2 fitness, grind to bar | 6/6 done (Phase 4, 2026-11-13; now 90.30% after the post-v1.0 fixes, the 4-bit facet law and W26) |
 | E — WASM viewer ([#39](https://github.com/MadManJohnSmith/catpart-parser/issues/39)) | Rust toolchain, L1/L2 port + fidelity harness, composite decode, WASM boundary + viewer shell, in-browser reproduction, publication | 7/7 done (Phase 5, 2026-11-14) |
 | F — assemblies ([#45](https://github.com/MadManJohnSmith/catpart-parser/issues/45)) | product census, pairing law, transforms & instance binding, WASM product core, multi-file ingestion, 3D placement, UI + classification tree, headless Playwright acceptance | 12/12 done (Phase 6, 2026-11-16) |
 | G — B-rep ([#47](https://github.com/MadManJohnSmith/catpart-parser/issues/47)) | B-rep construct vocabulary, per-construct decode, topology graph + STEP, L3 close | 6/6 done (Phase 7, 2026-11-18) |

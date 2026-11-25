@@ -199,10 +199,16 @@ noise-matching fixtures exist; V2/V3 add the missing ones, §5).
 - `decode_inspect(bytes) -> JsValue` — the schema-v1 inspect document
   (what the metadata panel renders).
 - `decode_export(bytes) -> { summary, vertices: Float32Array,
-  triangles: Uint32Array, curves: Array<Float32Array> }` — the
-  export-summary object, the pool in walk order, the decoded
-  triangles, and the decoded polyline loops (the curve-entry point
-  sequences) for the overlay.
+  triangles: Uint32Array, triColors: Uint8Array,
+  curves: Array<Float32Array>, points: Float32Array,
+  curveSegments: Uint32Array }` — the export-summary object, the pool
+  in walk order, the decoded triangles, the native per-triangle CATIA
+  RGB colors of the compact see-body route (flat RGB, same triangle
+  order; empty on every other path; 2026-11-24), the decoded polyline
+  loops (the curve-entry point sequences) for the overlay, and the
+  no-surface display carriers (a flat f32 point cloud plus flat u32
+  point-index pairs; see
+  `docs/evidence/2026-11-19-no-surface-fallback.md`).
 - Failure: both return a classified error
   `{ error_class, detail }` with the exact Python error-class
   vocabulary (`missing-geometry-store`, `undecoded-variant`,

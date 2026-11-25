@@ -7,6 +7,8 @@
 
 **Later update (same day)**: the display route was extended with the bag-rep count-framed f32 arrays (`bagrep-f32-points`), so the same 120-row population now shows **106** displays with **26,993** points (the 8,319 added points ride on 29 of its rows), and the manifest-wide open rate rises from 95.19% to 96.17%. The route, the gates and the parity are recorded in [2026-11-19-bagrep-display.md](2026-11-19-bagrep-display.md); the historical figures above stay as the measurement of the pre-extension seam.
 
+**Later update (2026-11-25)**: the W26 compact see-body face-GP route now meshes 41 of these 120 parts (59 display / 51 mesh / 10 named remain; `no-surface-fallback-parts.csv` and `no-surface-fallback-claims.csv` regenerated). The display route is unchanged for the 59 that still carry no mesh; `Plaque1` is the new pinned display anchor because its compact records do not close byte-exact. See [2026-11-24-seebody-compact-face-gp.md](2026-11-24-seebody-compact-face-gp.md).
+
 ---
 
 ## 1. Executive summary

@@ -26,6 +26,7 @@ pub mod grid;
 pub mod mesh;
 pub mod ply;
 pub mod pool;
+pub mod seebody_gp;
 pub mod store;
 pub mod surface;
 pub mod unclassified;
