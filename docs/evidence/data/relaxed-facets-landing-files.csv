@@ -1,0 +1,116 @@
+sha16,path,stage,relaxed_loops_accepted,relaxed_loops_declined,records,records_landed,record_triangles,record_area_mm2,export_triangles
+07150c16d32e3888,corpus/povdoigt/SP-02/CATIA/preparation_commande_sepa/SP02_ALPHA_BETA_SEPA/SP02_ALPHA5_SEPA2_CAPUCHON.CATPart,identity-table-walk,0,0,2,0,0,0.000000,1326
+17930babf0fd01a8,corpus/Apoloo13/ASE_III/diseño_3d/moldes/diente_superior/diente_superior_molde.CATPart,identity-mixedwrite-reps,11,0,2,2,93,169.263010,69101
+19a3c1ccac917e55,corpus/Apoloo13/ASE_III/diseño_3d/modelos_originales/mandibula_original.CATPart,identity-table-walk,7,0,9,5,13,9.547388,20708
+19be2c11ec1b65dc,corpus/povdoigt/SP-02/CATIA/CATIA_vol/Carte_elec_finales/SMD_L2.8-W2.8_ILPS28QSWTR~SMD_L2.8-W2.8_ILPS28QSWTR~7Q6T.CATPart,identity-table-walk,0,0,1,0,0,0.000000,5040
+1a86d3bb78ed7ec7,corpus/SSadayuki/B31CAADoc/sample/CAAKnowHow.edu/CNext/resources/graphic/Hole.CATPart,identity-table-walk,0,0,10,0,0,0.000000,482
+1dd645971ef783f6,corpus/povdoigt/SP-02/CATIA/SP02_BETA5_SEPA2_PRINCIPALE v10002.CATPart,identity-table-walk,1,0,8,1,3,0.134439,22260
+1ee458de940a75d6,corpus/povdoigt/SP-02/CATIA/preparation_commande_sepa/SP02_ALPHA_BETA_SEPA/SP02_ALPHA5_SEPA2_LOQUET_RESSORT.CATPart,identity-table-walk,0,0,1,0,0,0.000000,1090
+1f516ad5e568f228,corpus/povdoigt/SP-02/CATIA/CATIA_vol/main.CATPart,identity-table-walk,7,0,4,4,24,6.416437,1242
+223c9965ae17178c,corpus/hssnadr/HTBX_01Ressources/02_MakingRessources/_CAO/STRUCTURE/CASE/Case_Top_Front.CATPart,identity-table-walk,137,0,16,14,137,119.466816,3096
+234b04f8927624d8,corpus/hssnadr/HTBX_01Ressources/02_MakingRessources/_CAO/_standard/TerminalBlock10_CI.CATPart,identity-table-walk,270,0,30,20,270,4.249488,4522
+25aeb5a0fa3de669,corpus/povdoigt/SP-02/CATIA/preparation_commande_sepa/SP02_ALPHA_BETA_SEPA/SP02_ALPHA5_SEPA2_PRINCIPALE.CATPart,identity-mixedwrite-reps,4,0,11,4,4,0.000152,59814
+26504a08b641ad7a,corpus/Dictor/HaneulMyo/model/Guntle.ver5.CATPart,identity-table-walk,4,0,19,3,19,42.313043,5564
+28a7585a1d91a682,corpus/Apoloo13/ASE_III/diseño_3d/teeth/upper_teeth/UPPER_teeth_blend_lqstl001_2.CATPart,identity-raw-array,11,0,1,1,106,234.646220,23252
+28b45358ed378393,corpus/Apoloo13/ASE_III/diseño_3d/cachete/cachete_palanca_inferior_mirror.CATPart,identity-mixedwrite-reps,4,0,5,3,53,4.028217,5254
+2aa2971373a4db0b,corpus/povdoigt/SP-02/CATIA/CATIA_vol/Carte_elec_finales/VSSOP-10_L3.0-W3.0-P0.50-LS4.9-BL~VSSOP-10_L3.0-W3.0-H1.1-LS4.9-P0.50~7Q6T.CATPart,identity-per-rep,24,0,40,20,72,0.014594,5416
+2b7d5e73dd24a419,corpus/povdoigt/SP-02/CATIA/catia_lucas/SP02_BETA/SP02_BETA_BAGUE_0.CATPart,identity-table-walk,12,0,2,2,36,1259.622216,572
+2bfc85fd01790e6c,corpus/povdoigt/SP-02/CATIA/CATIA_vol/SP02_BETA/SP02_BETA5_SEPA2_PRINCIPALE.CATPart,identity-table-walk,0,0,16,0,0,0.000000,25174
+2d92b6996a45d2e2,corpus/hssnadr/HTBX_01Ressources/02_MakingRessources/_CAO/CONTROL_BOARD/TerminalBlockCI.CATPart,identity-table-walk,0,0,4,0,0,0.000000,946
+2f1a6c001d9ec5f4,corpus/povdoigt/SP-02/CATIA/CATIA_vol/SP02_ALPHA5_SEPA2_STRUCTURE.CATPart,identity-table-walk,0,0,4,0,0,0.000000,1652
+2f1ab97dcc86c5f5,corpus/povdoigt/SP-02/CATIA/CATIA_vol/SEPARATION/SP02_ALPHA5_SEPA2_CAPUCHON.CATPart,identity-table-walk,1,0,6,1,6,3.097069,1032
+30cad0a34553d5da,corpus/povdoigt/SP-02/CATIA/catia_lucas/SP02_ALPHA/SP02_ALPHA_Cage_Para.CATPart,identity-table-walk,0,0,1,0,0,0.000000,35894
+341bd488e61d6061,corpus/Apoloo13/ASE_III/diseño_3d/frente/frente_&_UPPER_teeth.CATPart,identity-per-rep,4,0,3,2,25,5.844332,68446
+351426c065146ee9,corpus/dolganin/SO_SPIDAR300/spidar300/robot/cad/Electronica/Raspberry pi - model B/5009980900_SD_reader.CATPart,identity-per-rep,28,0,7,7,39,3.421758,5832
+396a9d79370f3e1f,corpus/povdoigt/SP-02/CATIA/CATIA_vol/SEPARATION/SP02_ALPHA5_SEPA2_PRINCIPALE_1.CATPart,identity-per-rep,0,0,16,0,0,0.000000,28182
+3d9cb9548b01918b,corpus/dolganin/SO_SPIDAR300/spidar300/robot/cad/Electronica/Raspberry pi - model B/471510001_HDMI.CATPart,identity-table-walk,3,0,3,2,13,4.468713,5690
+3ed073f3697d0c59,corpus/SSadayuki/B31CAADoc/sample/CAAAssemblyUI.edu/CNext/resources/graphic/plot.CATPart,identity-table-walk,0,0,2,0,0,0.000000,150
+3f10e1687b02ded0,corpus/hssnadr/HTBX_01Ressources/02_MakingRessources/_CAO/STRUCTURE/Base.CATPart,identity-table-walk,220,0,24,20,224,666.078164,17842
+400b074226b827aa,corpus/povdoigt/SP-02/CATIA/CATIA_vol/Carte_elec_finales/HDR-F-2.54_1X4~HDR-F-2.54_1x4~U5Q5.CATPart,identity-per-rep,77,0,46,43,77,0.000441,3846
+41cde56ae85ae087,corpus/dolganin/SO_SPIDAR300/spidar300/robot/cad/Electronica/Raspberry pi - model B/473460001_microUSB.CATPart,identity-table-walk,2,0,3,2,5,0.597878,2270
+4429e5a8dfc650cd,corpus/povdoigt/SP-02/CATIA/preparation_commande_sepa/SP02_ALPHA_BETA_SEPA/SP02_BETA5_SEPA2_PRINCIPALE.CATPart,identity-table-walk,4,0,12,4,7,0.065388,63060
+44e63faa2d9abf84,corpus/hssnadr/HTBX_01Ressources/02_MakingRessources/_CAO/_standard/M2.5_SerratedWasher.CATPart,identity-mixedwrite-reps,13,0,12,5,16,0.040834,4502
+45ee973441376e46,corpus/povdoigt/SP-02/CATIA/CATIA_vol/Cartes Electroniques/R0805~R0805_L2.0-W1.3-H0.6~eucq.CATPart,identity-per-rep,105,1,56,50,106,0.000431,930
+48fb5a24b5a78362,corpus/povdoigt/SP-02/CATIA/CATIA_vol/Carte_elec_finales/HDR-F-2.54_1X2~HDR-F-2.54_1x2~U5Q5.CATPart,identity-per-rep,89,0,55,49,89,0.000534,3052
+4a21610fa101a958,corpus/povdoigt/SP-02/CATIA/catia_lucas/SEPARATION/SP02_ALPHA5_SEPA2_PRINCIPALE_1.CATPart,identity-per-rep,7,0,24,5,21,123.524024,2302
+4d1b6c35efc860a1,corpus/hssnadr/HTBX_01Ressources/02_MakingRessources/_CAO/SYSTEM/LedStrips_WorkFile.CATPart,identity-per-rep,308,0,62,60,402,8.995388,60476
+4f9f3bc5e41827ba,corpus/povdoigt/SP-02/CATIA/CATIA_vol/SP02_BETA/Bague_Para_2_etage-2.CATPart,identity-table-walk,8,0,2,1,24,9.106795,12936
+50cd280f35dc350b,corpus/hssnadr/HTBX_01Ressources/02_MakingRessources/_CAO/Hitbox_WorkFile_main.CATPart,identity-per-rep,726,0,32,32,726,2127.774169,60280
+530674d3eb8bbe08,corpus/SSadayuki/B31CAADoc/sample/CAAElecHarnessItf.edu/CNext/resources/graphic/CAAEhiProtectionSample/backshell_F.CATPart,identity-table-walk,2,0,4,2,2,0.022549,810
+554ef6339fcf0a80,corpus/hssnadr/HTBX_01Ressources/02_MakingRessources/_CAO/SYSTEM/TouchCols_Solders.CATPart,identity-mixedwrite-reps,36,0,26,24,60,0.132229,1664
+5689954c867a0f70,corpus/hssnadr/HTBX_01Ressources/02_MakingRessources/_CAO/_standard/M3x16_CHC.CATPart,identity-table-walk,26,0,14,8,41,1.971084,14776
+58294667cca84de1,corpus/SSadayuki/B31CAADoc/sample/CAAElecRoutingItf.edu/CNext/resources/graphic/CAAEwrListWiresInBundleSegment/Support-plate.CATPart,identity-table-walk,0,0,1,0,0,0.000000,504
+5d3b46d186e8d500,corpus/povdoigt/SP-02/CATIA/old_catia/CATIA5/BETA/SP02_BETA_COIFFE.CATPart,identity-raw-array,2,0,2,2,144,36703.034612,286
+5d60f707f853397d,corpus/Apoloo13/ASE_III/diseño_3d/mandibula/mandibula.CATPart,identity-mixedwrite-reps,0,0,2,0,0,0.000000,76276
+5e5e9258eeb66d12,corpus/dolganin/SO_SPIDAR300/spidar300/robot/cad/Electronica/Raspberry pi - model B/SD Card.CATPart,identity-per-rep,0,0,1,0,0,0.000000,1116
+5f63b708f124307a,corpus/povdoigt/SP-02/CATIA/CATIA_vol/Composants_Generiques/ST3215_Servo.CATPart,identity-per-rep,2,0,6,2,2,0.037390,4454
+60b36a5dfc8f95e8,corpus/povdoigt/SP-02/CATIA/CATIA_vol/SP02_ALPHA/SP02_ALPHA_Cage_Para.CATPart,identity-table-walk,0,0,2,0,0,0.000000,29432
+673e7e305b5ce513,corpus/Apoloo13/ASE_III/diseño_3d/cachete/mandibula_palanca_izquierda.CATPart,identity-table-walk,1,0,1,1,5,2.195719,7144
+6833358e2f84a088,corpus/povdoigt/SP-02/CATIA/preparation_commande_sepa/SP02_ALPHA_BETA_SEPA/ECROU (1).CATPart,identity-table-walk,0,0,1,0,0,0.000000,4234
+6a693e273e425620,corpus/povdoigt/SP-02/CATIA/CATIA_vol/Carte_elec_finales/BUZ-SMD_3P-L5.0-W5.0-BL~BUZ-SMD_3P-L5.0-W5.0-H3.0-BL~U5Q5.CATPart,identity-per-rep,7,0,4,4,7,0.000075,2884
+6a92634b42b99eb5,corpus/Dictor/HaneulMyo/model/HandUp.Final.CATPart,identity-raw-array,12,0,6,6,20,30.294289,41466
+6ab9e107b7f30308,corpus/povdoigt/SP-02/CATIA/CATIA_vol/CONN-TH_3P-P2.50_B3B-XH-AM-LF-SN~CONN-TH_XH2.50-LI-3P~Of2H.CATPart,identity-per-rep,14,0,10,5,32,0.936803,1387
+6dc601c83817d6a9,corpus/hssnadr/HTBX_01Ressources/02_MakingRessources/_CAO/_standard/M3x20_CHC.CATPart,identity-table-walk,17,0,13,3,17,0.008113,18298
+70d6aabc39b6ffb0,corpus/Apoloo13/ASE_III/diseño_3d/mandibula/lower_theeth_&_mandibula.CATPart,identity-table-walk,2,0,2,1,13,0.285571,76089
+70f0c98180972462,corpus/hssnadr/HTBX_01Ressources/02_MakingRessources/_CAO/_standard/M3x10_CHC.CATPart,identity-table-walk,12,0,13,6,27,1.961278,9514
+75756ce67e471aae,corpus/povdoigt/SP-02/CATIA/CATIA_vol/Carte_elec_finales/SOD-323_L1.8-W1.3-LS2.5-RD~SOD-323_L1.7-W1.3-H1.1-LS2.5~U5Q5.CATPart,identity-per-rep,102,0,55,48,102,0.000346,1964
+75b4453bf01e2d0d,corpus/SSadayuki/B31CAADoc/sample/CAADraftingInterfaces.edu/CNext/resources/graphic/PartWithPlaneAndSketchForSectionView.CATPart,identity-table-walk,64,0,4,2,64,37971.605484,490
+76a2bb524e3a3c30,corpus/zhoujason457-stack/CAA_PrjSrc/CAAAerospaceSheetMetal.edu/Data.d/Joggle/CAATestModifyJoggle.CATPart,identity-table-walk,1,0,1,1,5,12360.278821,148
+7d20d4f1708fb29d,corpus/povdoigt/SP-02/CATIA/CATIA_vol/SP02_ALPHA/Maintien_Piles.CATPart,identity-table-walk,1,0,4,1,15,0.905147,6368
+80ee427d7905a585,corpus/hssnadr/HTBX_01Ressources/02_MakingRessources/_CAO/CONTROL_BOARD/DB9_FemaleCI.CATPart,identity-table-walk,305,0,24,24,305,21.661200,2504
+81cbaef95eb85c2f,corpus/povdoigt/SP-02/CATIA/CATIA_vol/SP02_ALPHA/SP02_ALPHA_AF/SP02_ALPHA_AF_BLOC_BAGUE0.CATPart,identity-table-walk,1,0,6,1,5,6.876142,1046
+82acf24bf9edb3ba,corpus/dolganin/SO_SPIDAR300/spidar300/robot/cad/Tornilleria/Tornillo cabeza hexagonal M3 x30.CATPart,identity-table-walk,50,0,2,2,50,5.372236,800
+8372dba763493855,corpus/Apoloo13/ASE_III/diseño_3d/cachete/cachete_palanca_inferior.CATPart,identity-mixedwrite-reps,4,0,5,3,53,4.028217,5254
+84cbee894d09961b,corpus/povdoigt/SP-02/CATIA/catia_lucas/SP02_ALPHA/SP02_ALPHA_AF/SP02_ALPHA_AF_BLOC_BAGUE0.CATPart,identity-table-walk,1,0,6,1,50,7.251319,7262
+87e4951f7644a376,corpus/povdoigt/SP-02/CATIA/CATIA_vol/SP02_ALPHA/SP02_ALPHA5_SEPA2_CAPUCHON.CATPart,identity-table-walk,1,0,6,1,6,3.097069,1030
+89f6f5ec67dda5cb,corpus/povdoigt/SP-02/CATIA/old_catia/CATIA4/ALPHA/ALPHA_SEPA/ALPHA_SEPA_SG90_and_arm.CATPart,identity-per-rep,0,0,1,0,0,0.000000,3908
+91fce1ad248b22a1,corpus/povdoigt/SP-02/CATIA/CATIA_vol/SEPARATION/SP02_BETA5_SEPA2_PRINCIPALE.CATPart,identity-table-walk,15,0,18,2,45,91.272158,5000
+9253a265661b32b5,corpus/povdoigt/SP-02/CATIA/CATIA_vol/SP02_BETA/Beta_Maintien_Cable_Cage.CATPart,identity-table-walk,0,0,2,0,0,0.000000,6382
+93a61b77005f6f69,corpus/povdoigt/SP-02/CATIA/CATIA_vol/Cartes Electroniques/SOP-6_L6.3-W4.4-P2.54-LS7.0_G3VM-61HR1~SOP-6_L6.3-W4.4-P2.54-LS7.0_G3VM-61HR1~eucq.CATPart,identity-table-walk,110,0,39,36,112,0.013715,1558
+9d3a36cac01e4654,corpus/povdoigt/SP-02/CATIA/CATIA_vol/SP02_ALPHA/SP02_BETA5_SEPA2_PRINCIPALE.CATPart,identity-table-walk,15,0,18,2,45,91.272158,4954
+a20ea428e8f3c316,corpus/povdoigt/SP-02/CATIA/CATIA_vol/Cartes Electroniques/BUZ-SMD_L12.8-W12.8_KTG1205CL~BUZ-SMD_L12.8-W12.8_KTG1205CL~eucq.CATPart,identity-table-walk,117,0,41,34,117,0.017519,1456
+a2914f8ba5df3e01,corpus/dolganin/SO_SPIDAR300/spidar300/robot/cad/Gimbal/raspicam.CATPart,identity-table-walk,1,0,1,1,4,0.559193,7144
+a34acec5af998093,corpus/dolganin/SO_SPIDAR300/spidar300/robot/cad/Electronica/Raspberry pi - model B/c-5558065-1-a1-3d.CATPart,identity-table-walk,0,0,2,0,0,0.000000,1914
+a4353b9baacdb08a,corpus/Apoloo13/ASE_III/diseño_3d/teeth/upper_teeth/UPPER_teeth_&_theethless.CATPart,identity-mixedwrite-reps,2,0,2,1,14,4.153439,17212
+a61588e5fe2cca5f,corpus/hssnadr/HTBX_01Ressources/02_MakingRessources/_CAO/_standard/M3_SerratedWasher.CATPart,identity-mixedwrite-reps,144,0,120,70,231,0.722130,7208
+a65c44a0f4940357,corpus/povdoigt/SP-02/CATIA/CATIA_vol/SP02_ALPHA/SP02_ALPHA5_SEPA2_VIS-SANS-FIN2.CATPart,identity-table-walk,13,0,20,10,13,0.008148,12688
+a7aef50eedd7c11e,corpus/Apoloo13/ASE_III/diseño_3d/lengua/lengua_v2/servo_disco.CATPart,identity-mixedwrite-reps,0,0,2,0,0,0.000000,17948
+a7e60395ba3906ec,corpus/Guilherme115/Motor-V6/05_Admissao_Escape/Compressor de Ar.CATPart,identity-table-walk,0,0,4,0,0,0.000000,5266
+a9dc371101913d46,corpus/povdoigt/SP-02/CATIA/catia_lucas/SP02_ALPHA/SP02_ALPHA_AF/SP02_ALPHA_AF_BLOC_BAGUE1.CATPart,identity-table-walk,1,0,6,1,16,7.217406,2496
+ab1c7b09f52a9658,corpus/Apoloo13/ASE_III/diseño_3d/moldes/head/head_hueca_x1.5.CATPart,identity-mixedwrite-reps,4,0,4,4,18,11296.744972,487214
+abda40e7464e1995,corpus/Guilherme115/Motor-V6/Garfo.CATPart,identity-per-rep,0,0,8,0,0,0.000000,1388
+abfd9e0d9e3a5974,corpus/povdoigt/SP-02/CATIA/catia_lucas/SP02_BETA/SP02_BETA5_SEPA2_PRINCIPALE.CATPart,identity-table-walk,0,0,18,0,0,0.000000,2382
+ae85fae7b1e69dbd,corpus/Apoloo13/ASE_III/diseño_3d/moldes/head/head_ia.CATPart,identity-mixedwrite-reps,5,0,10,5,12,1.126120,658972
+aed33a6631780ac9,corpus/hssnadr/HTBX_01Ressources/02_MakingRessources/_CAO/POWER_SUPPLY/RSP320/_NPart#440520.CATPart,identity-table-walk,395,0,33,25,395,144.454025,8103
+b4629da168fceae6,corpus/povdoigt/SP-02/CATIA/CATIA_vol/SP02_ALPHA/SP02_ALPHA_AF/ST3215_Servo.CATPart,identity-per-rep,153,0,15,9,153,17.243989,26940
+b5363479da466b7e,corpus/povdoigt/SP-02/CATIA/CATIA_vol/Carte_elec_finales/KEY-SMD_KMR2XXGXXX~KEY-SMD_5P-L4.2-W2.8-H1.9-LS4.6-P1.6~iaXJ.CATPart,identity-table-walk,113,0,73,65,137,0.589814,4054
+b694e9134b277180,corpus/dolganin/SO_SPIDAR300/spidar300/robot/cad/cuerpo/Base inferior.CATPart,identity-table-walk,1,0,2,1,9,0.351500,23276
+b739dc0097872c32,corpus/povdoigt/SP-02/CATIA/new_catia/SP02_ALPHA/SP02_ALPHA_AF/SP02_ALPHA_AF_BLOC_BAGUE0.CATPart,identity-table-walk,1,0,6,1,16,7.709071,4106
+ba5505989006a805,corpus/hssnadr/HTBX_01Ressources/02_MakingRessources/_CAO/_standard/M4_SerratedWasher.CATPart,identity-mixedwrite-reps,1,0,5,1,6,0.048093,4894
+ba6ae0de7400208e,corpus/Guilherme115/Motor-V6/03_Valvulas/Radiator.CATPart,identity-per-rep,131,0,16,16,131,152.211571,11066
+bc21020dffe9ba55,corpus/povdoigt/SP-02/CATIA/CATIA_vol/Carte_elec_finales/SOT-23-6_L2.9-W1.6-P0.95-LS2.8-BR~SOT-23-6_L2.9-W1.6-H1.5-LS2.8-P0.95~iaXJ.CATPart,identity-per-rep,0,0,6,0,0,0.000000,4799
+bfcf8a949ea9741d,corpus/povdoigt/SP-02/CATIA/CATIA_vol/Carte_elec_finales/Bloc_ELEC_Etage1.CATPart,identity-table-walk,0,0,1,0,0,0.000000,41532
+c40505a375276d39,corpus/hssnadr/HTBX_01Ressources/02_MakingRessources/_CAO/POWER_BOARD/PowerBoard_CI/Board.CATPart,identity-table-walk,4416,0,208,208,4416,144.541440,7692
+c4b7e908b409b3d9,corpus/hssnadr/HTBX_01Ressources/02_MakingRessources/_CAO/POWER_SUPPLY/RSP320/tn.1.1.1.CATPart,identity-per-rep,217,0,53,23,217,7.609260,7897
+c61a05374b408aa7,corpus/povdoigt/SP-02/CATIA/CATIA_vol/SP02_ALPHA/Coiffe-Alpha.CATPart,identity-mixedwrite-reps,1,0,2,1,164,754.448539,12678
+ccbb7862d8b280b5,corpus/Apoloo13/ASE_III/diseño_3d/modelos_originales/head_ia.CATPart,identity-mixedwrite-reps,1,0,1,1,5,3.399864,484980
+cd76cab52cf2fbe5,corpus/povdoigt/SP-02/CATIA/preparation_commande_sepa/SP02_ALPHA_BETA_SEPA/SP02_ALPHA5_SEPA2_(trouver-un-nom) .CATPart,identity-table-walk,107,0,15,11,107,76.154367,2240
+cefb5d163a5357f1,corpus/Guilherme115/Motor-V6/Caixa.CATPart,identity-per-rep,0,0,36,0,0,0.000000,5462
+d31ea2c17d63c041,corpus/povdoigt/SP-02/CATIA/CATIA_vol/Carte_elec_finales/SOT-23-3_L2.9-W1.3-P1.90-LS2.4-BR~SOT-23-3P_L2.9-W1.3-H1.0-LS2.4-P0.95~U5Q5.CATPart,identity-per-rep,4,0,6,4,26,0.006778,3530
+d4eace9b7427fb0c,corpus/povdoigt/SP-02/CATIA/CATIA_vol/Carte_elec_finales/CRYSTAL-SMD_3P-L3.2-W1.3-P1.2-BL~CRYSTAL-SMD_3P-L3.2-W1.3-P1.2-BL~U5Q5.CATPart,identity-table-walk,0,0,1,0,0,0.000000,970
+d6848e7bf18e3482,corpus/hssnadr/HTBX_01Ressources/02_MakingRessources/_CAO/SYSTEM/TouchRows_Solders.CATPart,identity-table-walk,48,0,48,48,120,0.264750,3120
+dbde88d5770dc4dc,corpus/hssnadr/HTBX_01Ressources/02_MakingRessources/_CAO/STRUCTURE/CASE/Case_Logo_Black.CATPart,identity-table-walk,0,0,2,0,0,0.000000,3006
+ddf10d7f2ccb21a9,corpus/Apoloo13/ASE_III/diseño_3d/teeth/upper_teeth/UPPER_theethless.CATPart,identity-raw-array,1,0,1,1,13,1.845977,9904
+df2ef82709e3ada8,corpus/povdoigt/SP-02/CATIA/CATIA_vol/Carte_elec_finales/SO-16_L10.3-W4.4-P1.27-LS7.0-BL~SO-16_L10.3-W4.4-H2.1-P1.27~U5Q5.CATPart,identity-per-rep,120,0,47,41,120,0.001077,9862
+e1eed72192bb974e,corpus/povdoigt/SP-02/CATIA/CATIA_vol/SP02_ALPHA/SP02_ALPHA5_SEPA2_PRINCIPALE_1.CATPart,identity-per-rep,0,0,16,0,0,0.000000,4332
+e48e2ee05ca58825,corpus/hssnadr/HTBX_01Ressources/02_MakingRessources/_CAO/_standard/M3x30_CHC.CATPart,identity-table-walk,26,0,14,8,41,1.971084,27096
+e6338c4024b4f5f9,corpus/hssnadr/HTBX_01Ressources/02_MakingRessources/_CAO/STRUCTURE/InnerCase_Cut.CATPart,identity-table-walk,0,0,1,0,0,0.000000,3848
+e9ca6192a2854002,corpus/povdoigt/SP-02/CATIA/CATIA_vol/Cartes Electroniques/SP02_PCB_Allumage_Pre-RCE.CATPart,identity-per-rep,1467,0,824,737,1467,0.051458,21809
+eb536f05f70283f8,corpus/povdoigt/SP-02/CATIA/CATIA_vol/Carte_elec_finales/LQFP-64_L10.0-W10.0-P0.50-LS12.0-BL~LQFP-64_L10.0-W10.0-H1.4-LS12.0-P0.50~U5Q5.CATPart,identity-per-rep,115,0,145,80,423,0.094220,27888
+f2096cf220292dd9,corpus/hssnadr/HTBX_01Ressources/02_MakingRessources/_CAO/_standard/M2.5x25_CHC.CATPart,identity-mixedwrite-reps,16,0,10,8,35,1.982355,30166
+f4a5df2adceb68cc,corpus/povdoigt/SP-02/CATIA/CATIA_vol/SP02_ALPHA5_SEPA2_PRINCIPALE.CATPart,identity-mixedwrite-reps,6,0,13,5,14,470.388747,42064
+f55f6ba7c826dba6,corpus/povdoigt/SP-02/CATIA/preparation_commande_sepa/SP02_ALPHA_BETA_SEPA/main.CATPart,identity-table-walk,1,0,1,1,3,0.162108,2042
+f9009fbd08a5ac95,corpus/dolganin/SO_SPIDAR300/spidar300/robot/cad/servo/996r/Tapa servo.CATPart,identity-table-walk,0,0,2,0,0,0.000000,1888
+fac22ea3ee861d6d,corpus/SSadayuki/B31CAADoc/online/CAAScd2dlUseCases/samples/Disc-2DL.CATPart,identity-table-walk,244,0,4,2,244,5256.112198,3184
+fc8eae5e43f61a1b,corpus/Guilherme115/Motor-V6/Cruzeta01.CATPart,identity-table-walk,0,0,8,0,0,0.000000,296
+ffdbc4f7a2569ab8,corpus/povdoigt/SP-02/CATIA/CATIA_vol/Carte_elec_finales/SOT-23_L2.9-W1.3-P1.90-LS2.4-BR~SOT-23-3P_L2.9-W1.3-H1.0-LS2.4-P0.95~U5Q5.CATPart,identity-per-rep,5,0,6,4,29,0.007573,3587

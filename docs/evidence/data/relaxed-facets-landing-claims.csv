@@ -1,0 +1,11 @@
+claim,statement,label,scope,release,observations,passes,rate
+T3-10_refs_in_bounds,T3 relaxed records' refs that fall inside the rep element space,fact,115 T3 carrier files (2026-11-20 report),all,52691,52691,1.000000
+T3-11_refs_written,refs that land on a written element coordinate (the remainder are curve-entry skip slots),fact,115 T3 carrier files (2026-11-20 report),all,52691,44076,0.836500
+T3-12_loops_triangulated,relaxed loops whose every ref is written and that triangulate,fact,115 T3 carrier files (2026-11-20 report),all,15059,10784,0.716117
+T3-13_records_landed,relaxed records with at least one triangulated loop,fact,115 T3 carrier files (2026-11-20 report),all,2709,1977,0.729790
+T3-14_degenerate_triangles,degenerate triangles among the triangulated relaxed loops,fact,115 T3 carrier files (2026-11-20 report),all,12553,0,0.000000
+T3-15_files_landed,carrier files with at least one landed relaxed record,fact,115 T3 carrier files (2026-11-20 report),all,115,84,0.730435
+T3-16_0x44_loops_triangulated,0x44 relaxed loops whose every ref is written and that triangulate,fact,115 T3 carrier files (2026-11-20 report),all,1266,370,0.292259
+T3-17_0x41_loops_triangulated,0x41 relaxed loops whose every ref is written and that triangulate,fact,115 T3 carrier files (2026-11-20 report),all,13793,10414,0.755021
+T3-18_0x44_refs_written,0x44 refs that land on a written element coordinate,fact,115 T3 carrier files (2026-11-20 report),all,11312,7600,0.671853
+T3-19_0x41_refs_written,0x41 refs that land on a written element coordinate,fact,115 T3 carrier files (2026-11-20 report),all,41379,36476,0.881510

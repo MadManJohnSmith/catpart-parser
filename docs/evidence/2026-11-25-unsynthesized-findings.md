@@ -110,6 +110,11 @@ CSV; the re-run CSV is now authoritative.
   13 empty-mesh + "the two exception parts", but does not name the two.
 - **W20 checker (resolved 2026-11-25)**: `check_w20_csvs.py` is now in
   `scripts/check.sh`; the 3 CSVs are gate-covered.
+- **T3 landing audit (resolved 2026-11-25)**: per-record ref/loop audit
+  and current net delta in
+  [2026-11-25-relaxed-facets-landing.md](2026-11-25-relaxed-facets-landing.md);
+  52,691/52,691 refs in bounds, +22,578 triangles / +176,185 mm²,
+  0 manifold regressions.
 - **W26 record counters**: the 189-row claims CSV records per-part
   outcomes, not the per-record accepted/exact/refused counters (those
   live only in the warning text).

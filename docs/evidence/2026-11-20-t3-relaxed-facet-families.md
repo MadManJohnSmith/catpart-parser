@@ -67,3 +67,12 @@ of 2026-11-07/08); the accepted baseline and every site pin remain at
 a61588e5 2,986 → 3,017) with PLY byte-identity; the new corpus-gated
 `test_relaxed_families_export_under_the_strict_guard` pins the counters,
 manifold and degenerate invariants on a 0x44 carrier.
+
+**Follow-up (2026-11-25)**: the per-record landing audit and the current
+shipped-vs-base delta are in
+[2026-11-25-relaxed-facets-landing.md](2026-11-25-relaxed-facets-landing.md).
+Later laws moved the base: the current net is **+22,578 triangles /
++176,185.3 mm²** with 0 manifold regressions, while the +701/+191,338
+figures above are the `44f2b1e` measurement; 52,691/52,691 relaxed refs
+are in their rep's element space, and the 12,553 direct-loop landings
+carry 0 degenerate triangles.
