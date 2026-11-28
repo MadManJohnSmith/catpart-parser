@@ -32,8 +32,29 @@ vertex-set sampling only — a reference differing only in interior
 triangle density passes Hausdorff and Chamfer and is caught ONLY by
 ``area_ratio``; normals/orientation are never compared; a reference
 with extra far-away vertices inflates B→A distances without any
-CATPart-side signal. ``--selftest`` pins all three edges on synthetic
+CATPart-side signal. ``--selftest`` pins the edges on synthetic
 fixtures (the negative-fixture rule) and is what CI runs.
+
+Cross-unit/cross-scale pairs (marathon W24): CATPart files carry no
+units field, so a pair whose reference is exported at different units
+(cm vs mm) or scale cannot be compared raw — the distances are unit
+garbage and ``area_ratio`` carries the squared mismatch (Dodge
+Challenger: raw ratio 202.2 = x100 units x 2.02 physical). The
+``--ref-scale auto|1|10`` mode resolves a deterministic per-pair
+linear factor from the bbox diagonals (``factor = diag(catpart) /
+diag(reference)``, snapped to ``AUTO_CANDIDATES`` within
+``AUTO_TOLERANCE``) and SCALES THE REFERENCE by it, so metrics land in
+the CATPart's units; the factor, its raw diagonal ratio and the
+snap deviation are REPORTED in every record (``normalization`` block
++ ``ref_scale_*`` CSV columns) — never applied silently. What auto
+does NOT discriminate (the detector rule, stated once): a genuine unit
+mismatch from a coincidental ~x10 size ratio — both look identical
+from a bbox diagonal; the reported raw ratio + deviation is the audit
+trail and ``--ref-scale 1`` restores the raw pairing. An auto ratio
+outside every candidate's window is a named refusal
+(``normalization-uncertain``, exit 2), never a guessed factor; the
+forced ``1``/``10`` modes skip the confidence window by definition
+(the operator owns the override and the record says ``forced``).
 
 Batch mode (``--batch pairs.csv`` with ``catpart_path,reference_path``
 columns) streams pair by pair — the 757-file sweep holds one mesh at a
@@ -70,9 +91,20 @@ OUTCOME_EXPORT_FAILURE = "export-failure"
 OUTCOME_EMPTY_MESH = "empty-mesh"
 OUTCOME_STEP_REFUSED = "step-reference-unsupported"
 OUTCOME_UNREADABLE_REFERENCE = "unreadable-reference"
+OUTCOME_NORMALIZATION_UNCERTAIN = "normalization-uncertain"
 
 #: The voxel grid's default cell: the reference bbox diagonal / this.
 CELL_DIVISOR = 128
+
+#: The auto normalization's candidate factors (the --ref-scale choices)
+#: and its confidence window: a bbox-diagonal ratio further than ±5%
+#: from EVERY candidate refuses loudly instead of guessing. The window
+#: covers the measured shape-variant drift of an independently
+#: re-tessellated same-part pair (Dodge: the 3D diagonal sits 1.6% off
+#: the exact x10 while the x extent is f32-exact; the y/z extents
+#: differ 9.3%/1.4% because the variants genuinely differ).
+AUTO_CANDIDATES = (1.0, 10.0)
+AUTO_TOLERANCE = 0.05
 
 #: The selftest's synthetic tolerance (float32 vertices travel through
 #: the PLY; the zero-mesh checks pin 1e-5, not bit zero).
@@ -161,8 +193,10 @@ def _read_binary_le_ply(path: Path) -> MeshData:
 def _read_stl(path: Path) -> MeshData:
     """Binary or ASCII STL, size-probed: 84 + 50 * n == file size means
     binary (the robust test — binary files may legally start with
-    'solid'). ASCII vertices are deduplicated by rounding key so the
-    per-facet duplication does not triple the vertex set."""
+    'solid'). Binary facets stream in bounded chunks (the file is never
+    materialized — the anti-OOM rule); ASCII streams line by line.
+    Vertices are deduplicated by rounding key so the per-facet
+    duplication does not triple the vertex set."""
     mesh = MeshData()
     size = path.stat().st_size
     with path.open("rb") as fh:
@@ -170,13 +204,19 @@ def _read_stl(path: Path) -> MeshData:
         if len(head) == 84:
             (count,) = struct.unpack("<I", head[80:84])
             if size == 84 + 50 * count:
-                raw = fh.read(50 * count)
                 verts: dict[tuple[int, int, int], int] = {}
-                for i in range(count):
-                    record = raw[i * 50 : (i + 1) * 50]
-                    xyz = struct.unpack("<12f", record[:48])
-                    for j in (3, 6, 9):
-                        mesh.triangles.append(_stl_vertex(mesh, verts, xyz[j : j + 3]))
+                remaining = count
+                while remaining:
+                    want = min(remaining, 8192)
+                    chunk = fh.read(50 * want)
+                    if len(chunk) < 50 * want:
+                        raise ValueError(f"{path}: truncated STL facet block")
+                    for offset in range(0, 50 * want, 50):
+                        record = chunk[offset : offset + 50]
+                        xyz = struct.unpack("<12f", record[:48])
+                        for j in (3, 6, 9):
+                            mesh.triangles.append(_stl_vertex(mesh, verts, xyz[j : j + 3]))
+                    remaining -= want
                 return mesh
     # ASCII STL: solid facet loop (vertex dedup as above).
     with path.open("r", encoding="utf-8", errors="replace") as fh:
@@ -205,26 +245,26 @@ def _stl_vertex(mesh: MeshData, verts: dict, xyz) -> int:
 
 
 def _read_obj(path: Path) -> MeshData:
-    """OBJ: ``v x y z`` vertices (kept in order), ``f a/b/c ...`` faces
-    with 1-based (possibly negative) indices, n-gons fan-triangulated."""
+    """OBJ: ``v x y z`` vertices appended straight into the vertex array
+    (no intermediate list — the anti-OOM rule), ``f a/b/c ...`` faces
+    with 1-based (possibly negative) indices, n-gons fan-triangulated.
+    Faces reference already-defined vertices (the OBJ contract), so the
+    negative-index base is the vertex count so far."""
     mesh = MeshData()
-    raw_vertices: list[tuple[float, float, float]] = []
     with path.open("r", encoding="utf-8", errors="replace") as fh:
         for line in fh:
             parts = line.split()
             if len(parts) >= 4 and parts[0] == "v":
-                raw_vertices.append((float(parts[1]), float(parts[2]), float(parts[3])))
+                mesh.vertices.extend((float(parts[1]), float(parts[2]), float(parts[3])))
             elif len(parts) >= 4 and parts[0] == "f":
                 indices = []
                 for token in parts[1:]:
                     field = token.split("/")[0]
                     i = int(field)
-                    i = len(raw_vertices) + i + 1 if i < 0 else i - 1
+                    i = mesh.vertex_count + i + 1 if i < 0 else i - 1
                     indices.append(i)
                 for k in range(1, len(indices) - 1):
                     mesh.triangles.extend((indices[0], indices[k], indices[k + 1]))
-    for xyz in raw_vertices:
-        mesh.vertices.extend(xyz)
     return mesh
 
 
@@ -352,16 +392,110 @@ def percentile(sorted_values: array.array, fraction: float) -> float:
     return sorted_values[index]
 
 
+# --- the per-pair normalization (W24) ----------------------------------------
+
+
+class NormalizationUncertain(ValueError):
+    """Auto normalization could not resolve a confident factor: the
+    caller turns this into the ``normalization-uncertain`` refusal, so
+    an un-confident pair fails loudly instead of comparing garbage."""
+
+    def __init__(self, detail: str, raw_ratio: float | None) -> None:
+        super().__init__(detail)
+        self.raw_ratio = raw_ratio
+
+
+def resolve_ref_scale(catpart_diag: float, reference_diag: float, mode: str) -> tuple[float, dict]:
+    """The deterministic per-pair factor resolution.
+
+    ``factor`` multiplies the REFERENCE mesh, so metrics land in the
+    CATPart's units (Dodge: the reference is cm, the file mm — factor
+    10 puts the reference at the file's numeric scale and the squared
+    ``area_unit_factor`` 100 removes the cm²-vs-mm² area mismatch).
+    ``auto`` infers the factor from the bbox diagonals and snaps it to
+    ``AUTO_CANDIDATES`` within ``AUTO_TOLERANCE``; anything else raises
+    :class:`NormalizationUncertain`. Forced ``1``/``10`` skip the
+    confidence window (the operator owns the override; the measured
+    diagonal ratio still travels in the record) and both report
+    everything they apply.
+    """
+    raw = catpart_diag / reference_diag if catpart_diag > 0.0 and reference_diag > 0.0 else None
+    if mode == "1" or mode == "10":
+        factor = float(mode)
+        return factor, {
+            "resolution": "forced",
+            "basis": "explicit-flag",
+            "factor": factor,
+            "area_unit_factor": factor * factor,
+            "catpart_diagonal": catpart_diag,
+            "reference_diagonal": reference_diag,
+            "raw_diagonal_ratio": raw,
+        }
+    if mode != "auto":
+        raise ValueError(f"unknown ref-scale mode: {mode!r}")
+    if raw is None:
+        raise NormalizationUncertain(
+            "auto normalization needs positive bbox diagonals; a mesh "
+            f"diagonal is {catpart_diag if catpart_diag <= 0 else reference_diag}",
+            None,
+        )
+    best = min(AUTO_CANDIDATES, key=lambda candidate: abs(raw - candidate) / candidate)
+    deviation = abs(raw - best) / best
+    if deviation > AUTO_TOLERANCE:
+        raise NormalizationUncertain(
+            f"bbox-diagonal ratio {raw:.6f} sits {deviation:.1%} from the nearest "
+            f"candidate {best} (candidates {AUTO_CANDIDATES} at ±{AUTO_TOLERANCE:.0%}); "
+            "pass --ref-scale 1 or 10 to force the pairing",
+            raw,
+        )
+    return best, {
+        "resolution": "auto",
+        "basis": "bbox-diagonal",
+        "factor": best,
+        "area_unit_factor": best * best,
+        "catpart_diagonal": catpart_diag,
+        "reference_diagonal": reference_diag,
+        "raw_diagonal_ratio": raw,
+        "candidate_deviation": deviation,
+        "tolerance": AUTO_TOLERANCE,
+    }
+
+
+def scale_mesh(mesh: MeshData, factor: float) -> None:
+    """In-place uniform vertex scaling (the normalization is applied to
+    the reference mesh; in-place array mutation keeps the streaming
+    memory shape — no copy of the vertex block)."""
+    vertices = mesh.vertices
+    for i in range(len(vertices)):
+        vertices[i] *= factor
+
+
 # --- the pair measurement ---------------------------------------------------
 
 
-def measure_pair(catpart_path: Path, reference_path: Path, cell_size: float | None = None) -> dict:
+def measure_pair(
+    catpart_path: Path,
+    reference_path: Path,
+    cell_size: float | None = None,
+    ref_scale: str = "1",
+) -> dict:
     """One full comparison: export the CATPart (the shipped seam), read
-    the reference, compute the metrics, return the outcome record.
+    the reference, resolve the per-pair normalization (W24), compute
+    the metrics, return the outcome record.
+
+    With ``ref_scale="1"`` (the default) nothing is scaled and every
+    record equals the pre-W24 pairing. ``"auto"``/``"10"`` scale the
+    REFERENCE by the resolved linear factor, so distances land in the
+    CATPart's units; ``area_ratio`` is then the corrected ratio (the
+    as-read one travels as ``area_ratio_raw``), and the factor plus its
+    basis are REPORTED in the ``normalization`` block — never applied
+    silently. An un-confident ``auto`` resolution is the named
+    ``normalization-uncertain`` refusal (exit-code semantics carried by
+    :func:`main`), never a guessed factor.
 
     Every non-metric outcome (export failure, empty mesh, STEP
-    reference) is a named outcome with exit-code semantics carried by
-    :func:`main`; the record always states which side is missing so a
+    reference, unreadable reference, uncertain normalization) is a
+    named outcome; the record always states which side is missing so a
     merge report cannot mistake a refusal for a passing delta.
     """
     started = time.monotonic()
@@ -418,6 +552,22 @@ def measure_pair(catpart_path: Path, reference_path: Path, cell_size: float | No
             "reference": str(reference_path),
         }
 
+    catpart_diag = _bbox_diagonal(catpart_mesh)
+    reference_diag = _bbox_diagonal(reference_mesh)
+    try:
+        factor, normalization = resolve_ref_scale(catpart_diag, reference_diag, ref_scale)
+    except NormalizationUncertain as exc:
+        return {
+            "outcome": OUTCOME_NORMALIZATION_UNCERTAIN,
+            "detail": str(exc),
+            "ref_scale_mode": ref_scale,
+            "raw_diagonal_ratio": exc.raw_ratio,
+            "catpart": str(catpart_path),
+            "reference": str(reference_path),
+        }
+    if factor != 1.0:
+        scale_mesh(reference_mesh, factor)
+
     cell = cell_size if cell_size is not None else _bbox_diagonal(reference_mesh) / CELL_DIVISOR
     grid = VertexGrid(reference_mesh, cell)
 
@@ -428,6 +578,7 @@ def measure_pair(catpart_path: Path, reference_path: Path, cell_size: float | No
 
     area_a = total_area(catpart_mesh)
     area_b = total_area(reference_mesh)
+    area_unit = factor * factor
     return {
         "outcome": OUTCOME_METRICS,
         "catpart": str(catpart_path),
@@ -439,6 +590,12 @@ def measure_pair(catpart_path: Path, reference_path: Path, cell_size: float | No
         "area_catpart": area_a,
         "area_reference": area_b,
         "area_ratio": area_a / area_b if area_b else None,
+        "area_ratio_raw": area_a / (area_b / area_unit) if area_b else None,
+        "ref_scale_mode": ref_scale,
+        "ref_scale_factor": factor,
+        "area_unit_factor": area_unit,
+        "raw_diagonal_ratio": normalization["raw_diagonal_ratio"],
+        "normalization": normalization,
         "chamfer_ab": chamfer_ab,
         "chamfer_ba": chamfer_ba,
         "chamfer": (chamfer_ab + chamfer_ba) / 2.0,
@@ -480,7 +637,10 @@ def _cube_mesh(scale: float = 1.0, shift: tuple[float, float, float] = (0.0, 0.0
 def run_selftest() -> list[str]:
     """The pinned edges, on synthetic fixtures: identical meshes -> all
     zeros; translated -> Hausdorff == the shift; scaled 2x -> area_ratio
-    == 4. Returns the failure lines (empty = pass)."""
+    == 4; the density blind spot; auto normalization infers x10 on a
+    x10 pair (collapsing it to Hausdorff 0), refuses a ratio no
+    candidate explains, and the forced mode reports its override.
+    Returns the failure lines (empty = pass)."""
     failures: list[str] = []
     base = _cube_mesh()
 
@@ -516,6 +676,35 @@ def run_selftest() -> list[str]:
         failures.append("vertex-identical density change must pass Hausdorff (this IS the blind spot)")
     if abs(total_area(dense) / total_area(base) - 2.0) > SELFTEST_TOL:
         failures.append("double-listed triangles must double the area (the area_ratio catch)")
+
+    # The W24 normalization edges: auto infers the x10 reference scale
+    # (the area unit travels as its square), the normalized pair
+    # collapses to zero distance, a ratio no candidate explains is the
+    # named refusal, and the forced mode reports its override.
+    big, small = _cube_mesh(scale=10.0), _cube_mesh()
+    factor, info = resolve_ref_scale(_bbox_diagonal(big), _bbox_diagonal(small), "auto")
+    if factor != 10.0 or info["area_unit_factor"] != 100.0:
+        failures.append(f"auto must infer 10 with area unit 100 on a x10 pair: {info}")
+    scale_mesh(small, factor)
+    _, mean, peak = directed_distances(big, VertexGrid(small, _bbox_diagonal(big) / CELL_DIVISOR))
+    if peak > SELFTEST_TOL or abs(mean) > SELFTEST_TOL:
+        failures.append(f"the x10 pair must collapse to 0 after normalization: mean={mean} max={peak}")
+
+    try:
+        resolve_ref_scale(_bbox_diagonal(_cube_mesh(scale=2.7)), _bbox_diagonal(base), "auto")
+        failures.append("auto must refuse a diagonal ratio no candidate explains")
+    except NormalizationUncertain:
+        pass
+
+    forced_factor, forced_info = resolve_ref_scale(
+        _bbox_diagonal(_cube_mesh(scale=10.0)), _bbox_diagonal(_cube_mesh()), "10"
+    )
+    if (
+        forced_factor != 10.0
+        or forced_info["resolution"] != "forced"
+        or abs(forced_info["raw_diagonal_ratio"] - 10.0) > SELFTEST_TOL
+    ):
+        failures.append(f"forced 10 must report the override and the measured ratio: {forced_info}")
     return failures
 
 
@@ -525,7 +714,9 @@ BATCH_COLUMNS = ("catpart_path", "reference_path", "outcome", "error_class", "ar
                  "chamfer", "chamfer_ab", "chamfer_ba", "hausdorff_max", "hausdorff_ab_max",
                  "hausdorff_ba_max", "hausdorff_p95", "hausdorff_ab_p95", "hausdorff_ba_p95",
                  "catpart_vertices", "catpart_triangles", "reference_vertices",
-                 "reference_triangles", "cell_size", "wall_seconds", "peak_rss_mib")
+                 "reference_triangles", "cell_size", "wall_seconds", "peak_rss_mib",
+                 "ref_scale_mode", "ref_scale_factor", "area_unit_factor",
+                 "raw_diagonal_ratio", "area_ratio_raw")
 
 
 def _append_csv_row(csv_path: Path, record: dict) -> None:
@@ -545,6 +736,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--catpart", type=Path, help="the .CATPart under test")
     parser.add_argument("--reference", type=Path, help="the reference .STL/.OBJ mesh")
     parser.add_argument("--cell-size", type=float, default=None, help="voxel cell override (default: reference bbox diagonal / 128)")
+    parser.add_argument(
+        "--ref-scale",
+        choices=("auto", "1", "10"),
+        default="1",
+        help="per-pair normalization: scale the REFERENCE by the linear factor "
+        "(auto infers it from the bbox diagonals and reports it; 1 = raw pairing; "
+        "an un-confident auto ratio refuses as normalization-uncertain, exit 2)",
+    )
     parser.add_argument("--batch", type=Path, help="pairs CSV (catpart_path,reference_path) streamed row by row")
     parser.add_argument("--csv", type=Path, default=None, help="append one metrics row per pair here")
     parser.add_argument("--selftest", action="store_true", help="run the pinned synthetic edges and exit")
@@ -554,7 +753,7 @@ def main(argv: list[str] | None = None) -> int:
         failures = run_selftest()
         for line in failures:
             print(f"selftest FAIL: {line}", file=sys.stderr)
-        print(f"selftest: {'FAIL' if failures else 'ok'} (5 pinned edges)")
+        print(f"selftest: {'FAIL' if failures else 'ok'} (8 pinned edges)")
         return 1 if failures else 0
 
     pairs: list[tuple[Path, Path]] = []
@@ -578,7 +777,7 @@ def main(argv: list[str] | None = None) -> int:
             }
             exit_code = 2
         else:
-            record = measure_pair(catpart_path, reference_path, args.cell_size)
+            record = measure_pair(catpart_path, reference_path, args.cell_size, args.ref_scale)
             if record["outcome"] != OUTCOME_METRICS:
                 exit_code = 2
         if args.csv is not None:

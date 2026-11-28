@@ -1,4 +1,4 @@
-"""The ground-truth fidelity harness's tests (marathon W7).
+"""The ground-truth fidelity harness's tests (marathon W7 + W24).
 
 Pinned edges, on synthetic fixtures (the negative-fixture rule, with
 the harness's own ``--selftest`` as the committed --selftest mode):
@@ -11,7 +11,14 @@ the harness's own ``--selftest`` as the committed --selftest mode):
 - a 2x scale -> area_ratio exactly 4.0;
 - the stated blind spot: a vertex-identical density change passes
   Hausdorff/Chamfer and is caught ONLY by area_ratio;
-- ``.STEP`` reference -> the named refusal (exit 2), never a fake mesh.
+- ``.STEP`` reference -> the named refusal (exit 2), never a fake mesh;
+- W24 normalization: a tenth-scale reference (the Dodge cross-unit
+  shape) -> ``--ref-scale auto`` infers factor 10 with area unit 100
+  and collapses the pair to Hausdorff ~0; a unit-matched reference
+  (the Audi/Motor shape) stays at factor 1 with metrics IDENTICAL to
+  the raw pairing; an unexplainable diagonal ratio is the named
+  ``normalization-uncertain`` refusal (exit 2); forced ``1``/``10``
+  bypass the confidence window but report the measured ratio.
 """
 
 from __future__ import annotations
@@ -20,6 +27,7 @@ import importlib.util
 import struct
 from pathlib import Path
 
+import pytest
 
 from fixtures_gen import build_fixture
 
@@ -211,6 +219,156 @@ def test_storeless_catpart_is_a_named_outcome(tmp_path: Path) -> None:
     record = gt.measure_pair(path, tmp_path / "unused.stl")
     assert record["outcome"] == gt.OUTCOME_EXPORT_FAILURE, record
     assert record["error_class"] == "missing-geometry-store"
+
+
+# --- W24: the per-pair normalization -----------------------------------------
+
+
+def _scaled_copy(mesh, factor: float):
+    """A scaled duplicate of a mesh (the cross-unit reference shape)."""
+    scaled = gt.MeshData()
+    scaled.vertices.extend(mesh.vertices)
+    scaled.triangles.extend(mesh.triangles)
+    gt.scale_mesh(scaled, factor)
+    return scaled
+
+
+def _exported_mesh(tmp_path: Path):
+    """The shipped seam's mesh for the geometry fixture (exported once
+    per test — the CATPart side of every synthetic pair below)."""
+    catpart_path = _geometry_fixture(tmp_path)
+    ply_path = tmp_path / "export.ply"
+    from catpart.geometry import build_export
+
+    build_export(catpart_path, ply_path)
+    return catpart_path, gt._read_binary_le_ply(ply_path)
+
+
+# The f32 round trip (coords -> x0.1 -> STL float32 -> x10) perturbs
+# coordinates by ~6e-8 relative (~1e-4 absolute at fixture scale): the
+# normalized zero is pinned at 1e-3, not bit zero.
+SCALE_ROUNDTRIP_TOL = 1e-3
+
+
+def test_auto_infers_ten_on_a_tenth_scale_reference_and_collapses_it(tmp_path: Path) -> None:
+    """The Dodge cross-unit shape, synthetic: the reference is the same
+    mesh at x0.1 (cm-space vs the file's mm). Auto infers factor 10,
+    reports the area unit x100, and the normalized pair collapses to
+    Hausdorff ~0 with area_ratio 1 (raw ratio 100 travels alongside)."""
+    catpart_path, mesh = _exported_mesh(tmp_path)
+    stl_path = tmp_path / "tenth-scale.stl"
+    _write_binary_stl(stl_path, _scaled_copy(mesh, 0.1))
+
+    record = gt.measure_pair(catpart_path, stl_path, ref_scale="auto")
+    assert record["outcome"] == gt.OUTCOME_METRICS, record
+    assert record["ref_scale_mode"] == "auto"
+    assert record["ref_scale_factor"] == 10.0
+    assert record["area_unit_factor"] == 100.0
+    assert record["normalization"]["resolution"] == "auto"
+    assert record["normalization"]["basis"] == "bbox-diagonal"
+    assert abs(record["normalization"]["raw_diagonal_ratio"] - 10.0) <= SCALE_ROUNDTRIP_TOL
+    assert record["hausdorff_max"] <= SCALE_ROUNDTRIP_TOL, "x10 normalization must collapse the pair"
+    assert record["hausdorff_p95"] <= SCALE_ROUNDTRIP_TOL
+    assert record["chamfer"] <= SCALE_ROUNDTRIP_TOL
+    assert abs(record["area_ratio"] - 1.0) <= SCALE_ROUNDTRIP_TOL
+    assert abs(record["area_ratio_raw"] - 100.0) <= 1.0, "the raw cm2-vs-mm2 ratio must stay visible"
+
+
+def test_auto_normalizes_nothing_on_a_unit_matched_pair(tmp_path: Path) -> None:
+    """The Audi/Motor shape (diag ratio ~1, real pairs sit at Hausdorff
+    0.0007/0.00003 mm): auto keeps factor 1 and the metrics are
+    IDENTICAL to the raw pairing — no silent rescale of honest pairs."""
+    catpart_path, mesh = _exported_mesh(tmp_path)
+    stl_path = tmp_path / "same-units.stl"
+    _write_binary_stl(stl_path, mesh)
+
+    auto_record = gt.measure_pair(catpart_path, stl_path, ref_scale="auto")
+    raw_record = gt.measure_pair(catpart_path, stl_path, ref_scale="1")
+    assert auto_record["outcome"] == gt.OUTCOME_METRICS, auto_record
+    assert auto_record["ref_scale_factor"] == 1.0
+    assert auto_record["area_unit_factor"] == 1.0
+    assert auto_record["normalization"]["raw_diagonal_ratio"] == 1.0
+    assert auto_record["hausdorff_max"] <= TOL and auto_record["chamfer"] <= TOL
+    for key in ("area_ratio", "area_ratio_raw", "chamfer", "hausdorff_max", "hausdorff_p95"):
+        assert auto_record[key] == raw_record[key], f"{key} must not move on a unit-matched pair"
+
+
+def test_forced_one_keeps_a_cross_unit_pair_raw(tmp_path: Path) -> None:
+    """--ref-scale 1 on the x10 pair: no normalization (the operator's
+    override), and the raw unit garbage shows — area_ratio 100, the
+    scaled Hausdorff unfixed."""
+    catpart_path, mesh = _exported_mesh(tmp_path)
+    stl_path = tmp_path / "tenth-scale.stl"
+    _write_binary_stl(stl_path, _scaled_copy(mesh, 0.1))
+
+    record = gt.measure_pair(catpart_path, stl_path, ref_scale="1")
+    assert record["outcome"] == gt.OUTCOME_METRICS, record
+    assert record["ref_scale_factor"] == 1.0
+    assert record["normalization"]["resolution"] == "forced"
+    assert abs(record["area_ratio"] - 100.0) <= 1.0
+    assert record["hausdorff_ab_max"] >= 1.0, "the raw pairing must show the scale gap"
+
+
+def test_auto_refuses_an_unexplainable_diagonal_ratio(tmp_path: Path) -> None:
+    """A reference at x0.37 (diag ratio ~2.7, inside no candidate's
+    window): the named refusal, exit 2, no fabricated metrics."""
+    catpart_path, mesh = _exported_mesh(tmp_path)
+    stl_path = tmp_path / "odd-scale.stl"
+    _write_binary_stl(stl_path, _scaled_copy(mesh, 0.37))
+
+    record = gt.measure_pair(catpart_path, stl_path, ref_scale="auto")
+    assert record["outcome"] == gt.OUTCOME_NORMALIZATION_UNCERTAIN, record
+    assert "chamfer" not in record and "area_ratio" not in record, "a refusal carries no metrics"
+    assert abs(record["raw_diagonal_ratio"] - 2.7) <= 0.01
+    assert gt.main(["--catpart", str(catpart_path), "--reference", str(stl_path), "--ref-scale", "auto"]) == 2
+
+
+def test_main_writes_the_normalization_columns(tmp_path: Path) -> None:
+    """--ref-scale auto flows through main() into the CSV: the factor,
+    the area unit and the raw ratio travel with every metrics row."""
+    import csv as _csv
+
+    catpart_path, mesh = _exported_mesh(tmp_path)
+    stl_path = tmp_path / "tenth-scale.stl"
+    _write_binary_stl(stl_path, _scaled_copy(mesh, 0.1))
+    out_csv = tmp_path / "batch.csv"
+    assert gt.main(["--catpart", str(catpart_path), "--reference", str(stl_path),
+                    "--ref-scale", "auto", "--csv", str(out_csv)]) == 0
+    with out_csv.open(newline="", encoding="utf-8") as fh:
+        row = next(_csv.DictReader(fh))
+    assert row["outcome"] == gt.OUTCOME_METRICS
+    assert row["ref_scale_mode"] == "auto"
+    assert float(row["ref_scale_factor"]) == 10.0
+    assert float(row["area_unit_factor"]) == 100.0
+    assert abs(float(row["area_ratio_raw"]) - 100.0) <= 1.0
+
+
+def test_resolve_ref_scale_snaps_a_dodge_style_ratio() -> None:
+    """The measured Dodge case at unit level: a x10.157 diagonal ratio
+    (x-exact f32, y/z shifted by the re-tessellation) snaps to 10 with
+    the deviation reported, never hidden."""
+    factor, info = gt.resolve_ref_scale(5620.8, 553.249, "auto")
+    assert factor == 10.0
+    assert info["area_unit_factor"] == 100.0
+    assert info["resolution"] == "auto"
+    assert info["raw_diagonal_ratio"] == 5620.8 / 553.249
+    assert abs(info["candidate_deviation"] - (5620.8 / 553.249 - 10.0) / 10.0) <= 1e-12
+
+
+def test_resolve_ref_scale_forced_bypasses_the_window_but_reports() -> None:
+    factor, info = gt.resolve_ref_scale(2.7, 1.0, "10")
+    assert factor == 10.0 and info["resolution"] == "forced"
+    assert info["raw_diagonal_ratio"] == 2.7, "the override must carry the measured ratio"
+    factor, info = gt.resolve_ref_scale(2.7, 1.0, "1")
+    assert factor == 1.0 and info["area_unit_factor"] == 1.0
+
+
+def test_resolve_ref_scale_refuses_out_of_window_ratios() -> None:
+    for catpart_diag, reference_diag in ((9.4, 1.0), (1.06, 1.0), (0.5, 1.0), (2.7, 1.0)):
+        with pytest.raises(gt.NormalizationUncertain):
+            gt.resolve_ref_scale(catpart_diag, reference_diag, "auto")
+    with pytest.raises(gt.NormalizationUncertain, match="positive bbox diagonals"):
+        gt.resolve_ref_scale(0.0, 1.0, "auto")  # a zero diagonal cannot be normalized
 
 
 def test_batch_mode_streams_one_row_per_pair(tmp_path: Path) -> None:
